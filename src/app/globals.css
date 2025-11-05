@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Base Colors */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* Brand Colors */
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    /* Neutral Colors */
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Feedback Colors */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 142.1 76.2% 36.3%;
+    --success-foreground: 355.7 100% 97.3%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 48 96% 89%;
+    --info: 199 89% 48%;
+    --info-foreground: 210 40% 98%;
+
+    /* Audit & Security Specific */
+    --risk-critical: 0 84.2% 60.2%;
+    --risk-high: 25 95% 53%;
+    --risk-medium: 48 96% 53%;
+    --risk-low: 142.1 76.2% 36.3%;
+
+    --status-success: 142.1 76.2% 36.3%;
+    --status-failure: 0 84.2% 60.2%;
+    --status-partial: 48 96% 53%;
+
+    /* UI Elements */
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+
+    /* Typography - defaults */
+    --font-family-primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-family-heading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-family-mono: "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --font-size-base: 16px;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 1.875rem;
+    --font-size-4xl: 2.25rem;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.75;
+    --letter-spacing-tight: -0.025em;
+    --letter-spacing-normal: 0;
+    --letter-spacing-wide: 0.025em;
+
+    /* Text Colors */
+    --text-body: 222.2 84% 4.9%;
+    --text-heading: 222.2 84% 4.9%;
+    --text-muted: 215.4 16.3% 46.9%;
+    --text-link: 221.2 83.2% 53.3%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-active: 221.2 83.2% 53.3%;
+    --sidebar-active-foreground: 210 40% 98%;
+
+    /* Table */
+    --table-header-bg: 210 40% 98%;
+    --table-header-fg: 222.2 47.4% 11.2%;
+    --table-row-hover: 210 40% 98%;
+    --table-border: 214.3 31.8% 91.4%;
+  }
+
+  .dark {
+    /* Base Colors */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Brand Colors */
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    /* Neutral Colors */
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    /* Feedback Colors */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 142.1 70.6% 45.3%;
+    --success-foreground: 144.9 80.4% 10%;
+    --warning: 48 96% 53%;
+    --warning-foreground: 26 83.3% 14.1%;
+    --info: 199 89% 48%;
+    --info-foreground: 210 40% 98%;
+
+    /* Audit & Security Specific */
+    --risk-critical: 0 72.2% 50.6%;
+    --risk-high: 25 95% 53%;
+    --risk-medium: 48 96% 53%;
+    --risk-low: 142.1 70.6% 45.3%;
+
+    --status-success: 142.1 70.6% 45.3%;
+    --status-failure: 0 72.2% 50.6%;
+    --status-partial: 48 96% 53%;
+
+    /* UI Elements */
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    /* Text Colors */
+    --text-body: 210 40% 98%;
+    --text-heading: 210 40% 98%;
+    --text-muted: 215 20.2% 65.1%;
+    --text-link: 217.2 91.2% 59.8%;
+
+    /* Sidebar */
+    --sidebar-background: 217.2 32.6% 12%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-active: 217.2 91.2% 59.8%;
+    --sidebar-active-foreground: 222.2 47.4% 11.2%;
+
+    /* Table */
+    --table-header-bg: 217.2 32.6% 12%;
+    --table-header-fg: 210 40% 98%;
+    --table-row-hover: 217.2 32.6% 15%;
+    --table-border: 217.2 32.6% 17.5%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-size: var(--font-size-base);
+  }
+
+  body {
+    @apply bg-background;
+    color: hsl(var(--text-body));
+    font-family: var(--font-family-primary);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-normal);
+    letter-spacing: var(--letter-spacing-normal);
+    /* Prevent flash during initial load */
+    opacity: 0;
+    animation: fadeIn 0.2s ease-in forwards;
+    animation-delay: 0.05s;
+  }
+
+  p {
+    color: hsl(var(--text-body));
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--text-heading));
+    font-family: var(--font-family-heading);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+  }
+
+  a {
+    color: hsl(var(--text-link));
+  }
+
+  .text-muted-foreground {
+    color: hsl(var(--text-muted)) !important;
+  }
+
+  code, pre, kbd, samp {
+    font-family: var(--font-family-mono);
+  }
+
+  button {
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family-primary);
+  }
+
+  input, textarea, select {
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family-primary);
+  }
+
+  label {
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family-primary);
+  }
+
+  @keyframes fadeIn {
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+@layer components {
+  /* Prevent flash during hydration - sidebar starts hidden */
+  .admin-sidebar {
+    opacity: 0;
+    transition: opacity 0.15s ease-in-out, transform 0.3s ease-in-out;
+  }
+
+  /* Show sidebar after first render */
+  .admin-sidebar.hydrated {
+    opacity: 1;
+  }
+
+  /* Admin sidebar positioning based on document direction */
+  [dir="ltr"] .admin-sidebar {
+    left: 0;
+    border-right: 1px solid hsl(var(--border));
+  }
+
+  [dir="rtl"] .admin-sidebar {
+    right: 0;
+    border-left: 1px solid hsl(var(--border));
+  }
+
+  /* Hide sidebar on mobile by default */
+  @media (max-width: 1023px) {
+    [dir="ltr"] .admin-sidebar:not(.translate-x-0) {
+      transform: translateX(-100%);
+    }
+
+    [dir="rtl"] .admin-sidebar:not(.translate-x-0) {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Main content margin based on direction */
+  @media (min-width: 1024px) {
+    [dir="ltr"] .admin-main {
+      margin-left: 16rem; /* w-64 = 16rem */
+    }
+
+    [dir="rtl"] .admin-main {
+      margin-right: 16rem;
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "/admin/config/settings/page": "app/admin/config/settings/page.js",
+  "/admin/config/languages/page": "app/admin/config/languages/page.js",
+  "/admin/audit/page": "app/admin/audit/page.js",
+  "/admin/config/translations/page": "app/admin/config/translations/page.js",
+  "/admin/settings/theme/page": "app/admin/settings/theme/page.js",
+  "/api/audit/events/route": "app/api/audit/events/route.js",
+  "/api/theme/route": "app/api/theme/route.js",
+  "/api/translations/route": "app/api/translations/route.js",
+  "/api/admin/languages/route": "app/api/admin/languages/route.js"
+}
