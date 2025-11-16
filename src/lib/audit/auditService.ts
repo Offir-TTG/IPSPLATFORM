@@ -15,15 +15,20 @@ import type {
 } from './types';
 
 // Initialize Supabase client
-// Note: This should use your actual Supabase URL and anon key
+// Note: Uses SERVICE_ROLE_KEY to bypass RLS for system-level audit logging
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 let supabase: ReturnType<typeof createClient> | null = null;
 
 function getSupabaseClient() {
   if (!supabase) {
-    supabase = createClient(supabaseUrl, supabaseAnonKey);
+    supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
   }
   return supabase;
 }
@@ -261,6 +266,15 @@ export async function logConfigChange(
 ) {
   const clientInfo = getClientInfo();
 
+  // Filter out automatic database fields that shouldn't be shown in audit logs
+  const automaticFields = ['updated_at', 'created_at', 'id'];
+  const filteredOldValues = oldValues ? Object.fromEntries(
+    Object.entries(oldValues).filter(([key]) => !automaticFields.includes(key))
+  ) : undefined;
+  const filteredNewValues = newValues ? Object.fromEntries(
+    Object.entries(newValues).filter(([key]) => !automaticFields.includes(key))
+  ) : undefined;
+
   return logAuditEvent({
     user_id: userId,
     event_type: 'UPDATE',
@@ -268,8 +282,8 @@ export async function logConfigChange(
     resource_type: resourceType,
     resource_id: resourceId,
     action: `Updated ${resourceType} configuration`,
-    old_values: oldValues,
-    new_values: newValues,
+    old_values: filteredOldValues,
+    new_values: filteredNewValues,
     risk_level: 'high',
     ...clientInfo,
     metadata,

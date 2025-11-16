@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/server';
+import { getCurrentTenant } from '@/lib/tenant/detection';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +11,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Email, password, first name, and last name are required' },
         { status: 400 }
+      );
+    }
+
+    // Get current tenant
+    const tenant = await getCurrentTenant(request);
+    if (!tenant) {
+      return NextResponse.json(
+        { success: false, error: 'Tenant not found' },
+        { status: 404 }
       );
     }
 
@@ -43,18 +53,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create user profile using service role client for admin access
-    const supabaseAdmin = createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
+    // Use admin client to bypass RLS for user creation
+    const supabaseAdmin = createAdminClient();
 
+    // Create user profile with tenant_id
     const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .insert({
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
         first_name,
         last_name,
         phone: phone || null,
+        tenant_id: tenant.id,
       })
       .select()
       .single();
@@ -84,11 +87,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Add user to tenant_users table
+    const { error: tenantUserError } = await supabaseAdmin
+      .from('tenant_users')
+      .insert({
+        tenant_id: tenant.id,
+        user_id: authData.user.id,
+        role: 'student',
+        status: 'active',
+        joined_at: new Date().toISOString(),
+      });
+
+    if (tenantUserError) {
+      console.error('Tenant user creation error:', tenantUserError);
+      // Continue anyway - user was created, just not added to tenant_users
+      // This can be fixed manually by admin if needed
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         user: userData,
         session: authData.session,
+        tenant: {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          role: 'student',
+        },
       },
       message: 'Account created successfully',
     });

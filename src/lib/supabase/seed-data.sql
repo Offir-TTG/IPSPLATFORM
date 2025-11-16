@@ -59,20 +59,20 @@ INSERT INTO public.translations (language_code, translation_key, translation_val
   ('he', 'auth.signup.loginLink', 'התחבר', 'auth'),
 
   -- Common
-  ('he', 'common.loading', 'טוען...', 'common'),
-  ('he', 'common.save', 'שמור', 'common'),
-  ('he', 'common.cancel', 'ביטול', 'common'),
-  ('he', 'common.delete', 'מחק', 'common'),
-  ('he', 'common.edit', 'ערוך', 'common'),
-  ('he', 'common.view', 'צפה', 'common'),
-  ('he', 'common.search', 'חיפוש', 'common'),
-  ('he', 'common.filter', 'סינון', 'common'),
-  ('he', 'common.sort', 'מיון', 'common'),
-  ('he', 'common.actions', 'פעולות', 'common'),
-  ('he', 'common.status', 'סטטוס', 'common'),
-  ('he', 'common.date', 'תאריך', 'common'),
-  ('he', 'common.time', 'שעה', 'common'),
-  ('he', 'common.language', 'שפה', 'common');
+  ('he', 'common.loading', 'טוען...', 'both'),
+  ('he', 'common.save', 'שמור', 'both'),
+  ('he', 'common.cancel', 'ביטול', 'both'),
+  ('he', 'common.delete', 'מחק', 'both'),
+  ('he', 'common.edit', 'ערוך', 'both'),
+  ('he', 'common.view', 'צפה', 'both'),
+  ('he', 'common.search', 'חיפוש', 'both'),
+  ('he', 'common.filter', 'סינון', 'both'),
+  ('he', 'common.sort', 'מיון', 'both'),
+  ('he', 'common.actions', 'פעולות', 'both'),
+  ('he', 'common.status', 'סטטוס', 'both'),
+  ('he', 'common.date', 'תאריך', 'both'),
+  ('he', 'common.time', 'שעה', 'both'),
+  ('he', 'common.language', 'שפה', 'both');
 
 -- ============================================================================
 -- 2. SEED ENGLISH TRANSLATIONS

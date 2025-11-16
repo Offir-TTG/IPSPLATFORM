@@ -25,12 +25,26 @@ export default function RootLayout({
               (function() {
                 try {
                   // Set language and direction
+                  var pathname = window.location.pathname;
                   var userLangStored = localStorage.getItem('user_language');
                   var adminLangStored = localStorage.getItem('admin_language');
-                  var isAdminPage = window.location.pathname.startsWith('/admin');
-                  var lang = isAdminPage
-                    ? (adminLangStored || userLangStored || 'he')
-                    : (userLangStored || adminLangStored || 'he');
+
+                  // Public pages (signup, login, reset-password, verify-email) should always be LTR/English
+                  var publicPages = ['/signup', '/login', '/reset-password', '/verify-email'];
+                  var isPublicPage = publicPages.some(function(page) { return pathname.startsWith(page); });
+
+                  var isAdminPage = pathname.startsWith('/admin');
+
+                  // Force English (LTR) for public pages
+                  var lang;
+                  if (isPublicPage) {
+                    lang = 'en';
+                  } else if (isAdminPage) {
+                    lang = adminLangStored || userLangStored || 'he';
+                  } else {
+                    lang = userLangStored || adminLangStored || 'he';
+                  }
+
                   var rtlLanguages = ['he', 'ar', 'fa', 'ur', 'yi'];
                   var dir = rtlLanguages.includes(lang) ? 'rtl' : 'ltr';
                   document.documentElement.lang = lang;

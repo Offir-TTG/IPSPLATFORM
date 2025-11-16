@@ -1,11 +1,21 @@
 {
-  "/admin/config/settings/page": "app/admin/config/settings/page.js",
-  "/admin/config/languages/page": "app/admin/config/languages/page.js",
-  "/admin/audit/page": "app/admin/audit/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/admin/lms/programs/page": "app/admin/lms/programs/page.js",
   "/admin/config/translations/page": "app/admin/config/translations/page.js",
-  "/admin/settings/theme/page": "app/admin/settings/theme/page.js",
-  "/api/audit/events/route": "app/api/audit/events/route.js",
-  "/api/theme/route": "app/api/theme/route.js",
   "/api/translations/route": "app/api/translations/route.js",
-  "/api/admin/languages/route": "app/api/admin/languages/route.js"
+  "/api/admin/languages/route": "app/api/admin/languages/route.js",
+  "/api/admin/translations/route": "app/api/admin/translations/route.js",
+  "/api/admin/common-languages/route": "app/api/admin/common-languages/route.js",
+  "/admin/config/languages/page": "app/admin/config/languages/page.js",
+  "/api/admin/settings/route": "app/api/admin/settings/route.js",
+  "/admin/config/settings/page": "app/admin/config/settings/page.js",
+  "/api/theme/route": "app/api/theme/route.js",
+  "/api/programs/route": "app/api/programs/route.js",
+  "/admin/settings/theme/page": "app/admin/settings/theme/page.js",
+  "/api/superadmin/stats/route": "app/api/superadmin/stats/route.js",
+  "/api/lms/courses/route": "app/api/lms/courses/route.js",
+  "/api/lms/courses/[id]/route": "app/api/lms/courses/[id]/route.js",
+  "/admin/lms/courses/page": "app/admin/lms/courses/page.js",
+  "/admin/lms/courses/[id]/page": "app/admin/lms/courses/[id]/page.js",
+  "/api/lms/modules/route": "app/api/lms/modules/route.js"
 }

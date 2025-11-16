@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
 // Helper function to clear translation cache
 async function clearCache() {
@@ -93,27 +94,17 @@ export async function GET(request: NextRequest) {
 // POST - Create or update translation
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // Verify tenant admin
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get user role from metadata (avoid RLS issues with users table)
-    const userRole = user.user_metadata?.role || 'user';
-    const isAdmin = userRole === 'admin';
-
-    if (!isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
+        { success: false, error: 'Unauthorized or insufficient permissions' },
         { status: 403 }
       );
     }
+
+    const { user, tenant } = auth;
+    const supabase = await createClient();
 
     const { language_code, translation_key, translation_value, category } = await request.json();
 
@@ -165,27 +156,17 @@ export async function POST(request: NextRequest) {
 // PUT - Bulk update translations
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // Verify tenant admin
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get user role from metadata (avoid RLS issues with users table)
-    const userRole = user.user_metadata?.role || 'user';
-    const isAdmin = userRole === 'admin';
-
-    if (!isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
+        { success: false, error: 'Unauthorized or insufficient permissions' },
         { status: 403 }
       );
     }
+
+    const { user, tenant } = auth;
+    const supabase = await createClient();
 
     const { language_code, translations } = await request.json();
 
@@ -238,27 +219,17 @@ export async function PUT(request: NextRequest) {
 // DELETE - Delete translation
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // Verify tenant admin
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get user role from metadata (avoid RLS issues with users table)
-    const userRole = user.user_metadata?.role || 'user';
-    const isAdmin = userRole === 'admin';
-
-    if (!isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
+        { success: false, error: 'Unauthorized or insufficient permissions' },
         { status: 403 }
       );
     }
+
+    const { user, tenant } = auth;
+    const supabase = await createClient();
 
     const { searchParams } = new URL(request.url);
     const languageCode = searchParams.get('language');

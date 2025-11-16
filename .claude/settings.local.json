@@ -3,7 +3,16 @@
     "allow": [
       "Bash(cat:*)",
       "Bash(npm run dev:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(\"C:\\Users\\OffirOmer\\Documents\\IPSPlatform\\src\\app\\admin\\lms\\courses\\[id]\\page.tsx\")",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")"
     ],
     "deny": [],
     "ask": []

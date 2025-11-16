@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useUserLanguage } from '@/context/AppContext';
+import { useUserLanguage, useTenant } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 export default function LoginPage() {
   const router = useRouter();
   const { t, loading: translationsLoading } = useUserLanguage();
+  const { setTenant } = useTenant();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -43,6 +44,17 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to login');
       }
 
+      // Set tenant information in context
+      if (data.data.tenant) {
+        setTenant({
+          id: data.data.tenant.id,
+          name: data.data.tenant.name,
+          slug: data.data.tenant.slug,
+          role: data.data.tenant.role,
+        });
+        localStorage.setItem('tenant_name', data.data.tenant.name);
+      }
+
       // Redirect based on user role
       if (data.data.user.role === 'admin') {
         router.push('/admin/dashboard');
@@ -70,9 +82,12 @@ export default function LoginPage() {
             <BookOpen className="h-8 w-8 text-primary" />
             <span className="text-2xl font-bold">{t('nav.home')}</span>
           </Link>
-          <h1 className="text-3xl font-bold mb-2">{t('auth.login.title')}</h1>
+          <h1 className="text-3xl font-bold mb-2">Super Admin Login</h1>
           <p className="text-muted-foreground">
-            {t('auth.login.welcome')}
+            Platform administrator access only
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Organization users: use your organization's login URL
           </p>
         </div>
 

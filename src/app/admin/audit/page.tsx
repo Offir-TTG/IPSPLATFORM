@@ -25,7 +25,8 @@ export default function AdminAuditPage() {
   const [filters, setFilters] = useState<FilterState>({});
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(0);
-  const [limit] = useState(50);
+  const [limit] = useState(20);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const [stats, setStats] = useState({
     totalEvents: 0,
@@ -278,82 +279,62 @@ export default function AdminAuditPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                padding: '1rem',
                 backgroundColor: 'hsl(var(--card))',
                 border: '1px solid hsl(var(--border))',
-                borderRadius: 'calc(var(--radius) * 2)',
-                padding: '1rem 1.5rem'
+                borderRadius: 'calc(var(--radius) * 2)'
               }}>
                 <div style={{
                   fontSize: 'var(--font-size-sm)',
                   color: 'hsl(var(--text-muted))',
                   fontFamily: 'var(--font-family-primary)'
                 }}>
-                  {t('common.showing', 'Showing')} {page * limit + 1} {t('common.to', 'to')}{' '}
-                  {Math.min((page + 1) * limit, totalCount)} {t('common.of', 'of')} {totalCount}{' '}
-                  {t('common.events', 'events')}
+                  {t('common.page', 'Page')} {page + 1} {t('common.of', 'of')} {totalPages}
                 </div>
-
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setPage(Math.max(0, page - 1))}
-                    disabled={page === 0}
+                    disabled={page === 0 || loading}
                     style={{
-                      padding: '0.5rem',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: 'calc(var(--radius) * 1.5)',
-                      backgroundColor: 'transparent',
-                      color: 'hsl(var(--foreground))',
-                      cursor: page === 0 ? 'not-allowed' : 'pointer',
-                      opacity: page === 0 ? 0.5 : 1,
-                      transition: 'background-color 0.2s'
+                      padding: '0.5rem 1rem',
+                      backgroundColor: 'hsl(var(--secondary))',
+                      color: 'hsl(var(--secondary-foreground))',
+                      borderRadius: 'var(--radius)',
+                      cursor: page === 0 || loading ? 'not-allowed' : 'pointer',
+                      opacity: page === 0 || loading ? 0.5 : 1,
+                      fontSize: 'var(--font-size-sm)',
+                      fontFamily: 'var(--font-family-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      border: 'none'
                     }}
-                    onMouseEnter={(e) => {
-                      if (page !== 0) {
-                        e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                    aria-label={t('common.previous', 'Previous')}
+                    className="hover:opacity-90 transition-opacity"
                   >
-                    <ChevronLeft className="h-5 w-5" />
+                    <ChevronLeft className="h-4 w-4" />
+                    {t('common.previous', 'Previous')}
                   </button>
-
-                  <span style={{
-                    padding: '0 1rem',
-                    fontSize: 'var(--font-size-sm)',
-                    fontWeight: 'var(--font-weight-medium)',
-                    color: 'hsl(var(--text-body))',
-                    fontFamily: 'var(--font-family-primary)'
-                  }}>
-                    {t('common.page', 'Page')} {page + 1} {t('common.of', 'of')} {totalPages}
-                  </span>
-
                   <button
                     onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-                    disabled={page >= totalPages - 1}
+                    disabled={page >= totalPages - 1 || loading}
                     style={{
-                      padding: '0.5rem',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: 'calc(var(--radius) * 1.5)',
-                      backgroundColor: 'transparent',
-                      color: 'hsl(var(--foreground))',
-                      cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer',
-                      opacity: page >= totalPages - 1 ? 0.5 : 1,
-                      transition: 'background-color 0.2s'
+                      padding: '0.5rem 1rem',
+                      backgroundColor: 'hsl(var(--primary))',
+                      color: 'hsl(var(--primary-foreground))',
+                      borderRadius: 'var(--radius)',
+                      cursor: page >= totalPages - 1 || loading ? 'not-allowed' : 'pointer',
+                      opacity: page >= totalPages - 1 || loading ? 0.5 : 1,
+                      fontSize: 'var(--font-size-sm)',
+                      fontFamily: 'var(--font-family-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      border: 'none'
                     }}
-                    onMouseEnter={(e) => {
-                      if (page < totalPages - 1) {
-                        e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                    aria-label={t('common.next', 'Next')}
+                    className="hover:opacity-90 transition-opacity"
                   >
-                    <ChevronRight className="h-5 w-5" />
+                    {t('common.next', 'Next')}
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               </div>

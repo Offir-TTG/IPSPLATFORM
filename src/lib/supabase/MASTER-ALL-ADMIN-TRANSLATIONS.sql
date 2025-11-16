@@ -367,23 +367,23 @@ INSERT INTO public.translation_keys (key, category, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO public.translations (language_code, translation_key, translation_value, category) VALUES
-  ('he', 'common.save', 'שמור', 'common'),
-  ('he', 'common.cancel', 'ביטול', 'common'),
-  ('he', 'common.edit', 'ערוך', 'common'),
-  ('he', 'common.delete', 'מחק', 'common'),
-  ('he', 'common.saving', 'שומר...', 'common'),
-  ('he', 'common.noData', 'אין מידע זמין', 'common'),
-  ('he', 'common.error', 'שגיאה', 'common'),
-  ('he', 'common.success', 'הצלחה', 'common'),
+  ('he', 'common.save', 'שמור', 'both'),
+  ('he', 'common.cancel', 'ביטול', 'both'),
+  ('he', 'common.edit', 'ערוך', 'both'),
+  ('he', 'common.delete', 'מחק', 'both'),
+  ('he', 'common.saving', 'שומר...', 'both'),
+  ('he', 'common.noData', 'אין מידע זמין', 'both'),
+  ('he', 'common.error', 'שגיאה', 'both'),
+  ('he', 'common.success', 'הצלחה', 'both'),
 
-  ('en', 'common.save', 'Save', 'common'),
-  ('en', 'common.cancel', 'Cancel', 'common'),
-  ('en', 'common.edit', 'Edit', 'common'),
-  ('en', 'common.delete', 'Delete', 'common'),
-  ('en', 'common.saving', 'Saving...', 'common'),
-  ('en', 'common.noData', 'No data available', 'common'),
-  ('en', 'common.error', 'Error', 'common'),
-  ('en', 'common.success', 'Success', 'common')
+  ('en', 'common.save', 'Save', 'both'),
+  ('en', 'common.cancel', 'Cancel', 'both'),
+  ('en', 'common.edit', 'Edit', 'both'),
+  ('en', 'common.delete', 'Delete', 'both'),
+  ('en', 'common.saving', 'Saving...', 'both'),
+  ('en', 'common.noData', 'No data available', 'both'),
+  ('en', 'common.error', 'Error', 'both'),
+  ('en', 'common.success', 'Success', 'both')
 ON CONFLICT (language_code, translation_key) DO NOTHING;
 
 -- ============================================================================

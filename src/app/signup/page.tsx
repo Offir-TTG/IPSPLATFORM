@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useUserLanguage } from '@/context/AppContext';
+import { useUserLanguage, useTenant } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 export default function SignupPage() {
   const router = useRouter();
   const { t, loading: translationsLoading } = useUserLanguage();
+  const { setTenant } = useTenant();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -68,6 +69,17 @@ export default function SignupPage() {
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to sign up');
+      }
+
+      // Set tenant information in context
+      if (data.data.tenant) {
+        setTenant({
+          id: data.data.tenant.id,
+          name: data.data.tenant.name,
+          slug: data.data.tenant.slug,
+          role: data.data.tenant.role,
+        });
+        localStorage.setItem('tenant_name', data.data.tenant.name);
       }
 
       router.push('/student/dashboard');

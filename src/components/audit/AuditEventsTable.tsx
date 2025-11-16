@@ -6,13 +6,8 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
-  Eye,
-  Calendar,
-  User,
-  FileText,
   ChevronDown,
   ChevronUp,
-  FolderOpen,
 } from 'lucide-react';
 import type { AuditEvent } from '@/lib/audit/types';
 
@@ -38,20 +33,20 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
     switch (riskLevel) {
       case 'critical':
       case 'high':
-        return <AlertTriangle className="h-4 w-4" style={{ color }} />;
+        return <AlertTriangle className="h-3.5 w-3.5" style={{ color }} />;
       default:
-        return <Shield className="h-4 w-4" style={{ color }} />;
+        return <Shield className="h-3.5 w-3.5" style={{ color }} />;
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'success':
-        return <CheckCircle className="h-4 w-4" style={{ color: 'hsl(142 71% 45%)' }} />;
+        return <CheckCircle className="h-3.5 w-3.5" style={{ color: 'hsl(142 71% 45%)' }} />;
       case 'failure':
-        return <XCircle className="h-4 w-4" style={{ color: 'hsl(0 84% 60%)' }} />;
+        return <XCircle className="h-3.5 w-3.5" style={{ color: 'hsl(0 84% 60%)' }} />;
       default:
-        return <AlertTriangle className="h-4 w-4" style={{ color: 'hsl(45 93% 47%)' }} />;
+        return <AlertTriangle className="h-3.5 w-3.5" style={{ color: 'hsl(45 93% 47%)' }} />;
     }
   };
 
@@ -81,18 +76,125 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   };
 
   const formatDate = (dateString: string) => {
+    // Parse the date - ensure proper timezone handling
     const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
+    const now = new Date();
+
+    // Format for display with full context
+    const dateStr = date.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
+      year: 'numeric',
+    });
+
+    const timeStr = date.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
     });
+
+    return { dateStr, timeStr };
+  };
+
+  const formatResourceType = (resourceType: string) => {
+    return resourceType
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const formatActionName = (action: string) => {
+    // Normalize action names for better readability
+    return action
+      .replace(/^Updated\s+/i, 'Updated ')
+      .replace(/^Created\s+/i, 'Created ')
+      .replace(/^Deleted\s+/i, 'Deleted ')
+      .replace(/_/g, ' ')
+      .split(' ')
+      .map((word, index) =>
+        index === 0 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase()
+      )
+      .join(' ');
+  };
+
+  const getChangedFieldsSummary = (event: AuditEvent): string | null => {
+    if (event.event_type !== 'UPDATE' || !event.changed_fields || event.changed_fields.length === 0) {
+      return null;
+    }
+
+    const fields = event.changed_fields
+      .map(field => field.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '))
+      .slice(0, 3);
+
+    if (event.changed_fields.length > 3) {
+      return `${fields.join(', ')} +${event.changed_fields.length - 3} more`;
+    }
+    return fields.join(', ');
   };
 
   const toggleExpand = (eventId: string) => {
     setExpandedEvent(expandedEvent === eventId ? null : eventId);
+  };
+
+  const renderValueDiff = (oldVal: any, newVal: any, field: string) => {
+    const oldStr = typeof oldVal === 'object' ? JSON.stringify(oldVal, null, 2) : String(oldVal);
+    const newStr = typeof newVal === 'object' ? JSON.stringify(newVal, null, 2) : String(newVal);
+
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div style={{
+            fontSize: 'var(--font-size-xs)',
+            fontWeight: 'var(--font-weight-semibold)',
+            color: 'hsl(var(--text-muted))',
+            fontFamily: 'var(--font-family-primary)',
+            marginBottom: '0.25rem'
+          }}>
+            {t('admin.audit.details.before', 'Before')}
+          </div>
+          <div style={{
+            fontSize: 'var(--font-size-xs)',
+            fontFamily: 'var(--font-family-mono)',
+            padding: '0.375rem',
+            borderRadius: 'calc(var(--radius) * 1)',
+            backgroundColor: 'hsl(0 84% 60% / 0.05)',
+            border: '1px solid hsl(0 84% 60% / 0.2)',
+            textDecoration: 'line-through',
+            color: 'hsl(var(--text-muted))',
+            maxHeight: '100px',
+            overflow: 'auto'
+          }}>
+            {oldStr}
+          </div>
+        </div>
+        <div>
+          <div style={{
+            fontSize: 'var(--font-size-xs)',
+            fontWeight: 'var(--font-weight-semibold)',
+            color: 'hsl(142 71% 45%)',
+            fontFamily: 'var(--font-family-primary)',
+            marginBottom: '0.25rem'
+          }}>
+            {t('admin.audit.details.after', 'After')}
+          </div>
+          <div style={{
+            fontSize: 'var(--font-size-xs)',
+            fontFamily: 'var(--font-family-mono)',
+            padding: '0.375rem',
+            borderRadius: 'calc(var(--radius) * 1)',
+            backgroundColor: 'hsl(142 71% 45% / 0.05)',
+            border: '1px solid hsl(142 71% 45% / 0.2)',
+            color: 'hsl(var(--text-body))',
+            fontWeight: 'var(--font-weight-medium)',
+            maxHeight: '100px',
+            overflow: 'auto'
+          }}>
+            {newStr}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (events.length === 0) {
@@ -109,7 +211,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
         textAlign: 'center',
         color: 'hsl(var(--text-muted))'
       }}>
-        <FileText className="h-12 w-12 mb-4" style={{ color: 'currentColor', stroke: 'currentColor' }} />
+        <Shield className="h-12 w-12 mb-4" style={{ color: 'hsl(var(--text-muted))' }} />
         <p style={{
           fontSize: 'var(--font-size-base)',
           fontFamily: 'var(--font-family-primary)'
@@ -128,26 +230,27 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
       overflow: 'hidden'
     }}>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{
             backgroundColor: 'hsl(var(--muted) / 0.3)',
             borderBottom: '1px solid hsl(var(--border))'
           }}>
             <tr>
               <th style={{
-                padding: '0.75rem 1rem',
+                padding: '0.625rem 0.75rem',
                 textAlign: 'start',
                 fontSize: 'var(--font-size-xs)',
                 fontWeight: 'var(--font-weight-semibold)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-heading))',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em'
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap'
               }}>
                 {t('admin.audit.table.time', 'Time')}
               </th>
               <th style={{
-                padding: '0.75rem 1rem',
+                padding: '0.625rem 0.75rem',
                 textAlign: 'start',
                 fontSize: 'var(--font-size-xs)',
                 fontWeight: 'var(--font-weight-semibold)',
@@ -159,7 +262,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                 {t('admin.audit.table.user', 'User')}
               </th>
               <th style={{
-                padding: '0.75rem 1rem',
+                padding: '0.625rem 0.75rem',
                 textAlign: 'start',
                 fontSize: 'var(--font-size-xs)',
                 fontWeight: 'var(--font-weight-semibold)',
@@ -171,77 +274,66 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                 {t('admin.audit.table.action', 'Action')}
               </th>
               <th style={{
-                padding: '0.75rem 1rem',
+                padding: '0.625rem 0.75rem',
                 textAlign: 'start',
                 fontSize: 'var(--font-size-xs)',
                 fontWeight: 'var(--font-weight-semibold)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-heading))',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em'
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap'
               }}>
                 {t('admin.audit.table.resource', 'Resource')}
               </th>
               <th style={{
-                padding: '0.75rem 1rem',
-                textAlign: 'start',
-                fontSize: 'var(--font-size-xs)',
-                fontWeight: 'var(--font-weight-semibold)',
-                fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-heading))',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}>
-                {t('admin.audit.table.type', 'Type')}
-              </th>
-              <th style={{
-                padding: '0.75rem 1rem',
-                textAlign: 'start',
-                fontSize: 'var(--font-size-xs)',
-                fontWeight: 'var(--font-weight-semibold)',
-                fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-heading))',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}>
-                {t('admin.audit.table.risk', 'Risk')}
-              </th>
-              <th style={{
-                padding: '0.75rem 1rem',
-                textAlign: 'start',
-                fontSize: 'var(--font-size-xs)',
-                fontWeight: 'var(--font-weight-semibold)',
-                fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-heading))',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}>
-                {t('admin.audit.table.status', 'Status')}
-              </th>
-              <th style={{
-                padding: '0.75rem 1rem',
+                padding: '0.625rem 0.75rem',
                 textAlign: 'center',
                 fontSize: 'var(--font-size-xs)',
                 fontWeight: 'var(--font-weight-semibold)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-heading))',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em'
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap'
               }}>
-                {t('admin.audit.table.details', 'Details')}
+                {t('admin.audit.table.type', 'Type')}
               </th>
+              <th style={{
+                padding: '0.625rem 0.75rem',
+                textAlign: 'center',
+                fontSize: 'var(--font-size-xs)',
+                fontWeight: 'var(--font-weight-semibold)',
+                fontFamily: 'var(--font-family-primary)',
+                color: 'hsl(var(--text-heading))',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap'
+              }}>
+                {t('admin.audit.table.risk', 'Risk')}
+              </th>
+              <th style={{
+                padding: '0.625rem 0.75rem',
+                textAlign: 'center',
+                fontSize: 'var(--font-size-xs)',
+                fontWeight: 'var(--font-weight-semibold)',
+                fontFamily: 'var(--font-family-primary)',
+                color: 'hsl(var(--text-heading))',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                width: '40px'
+              }}></th>
             </tr>
           </thead>
-          <tbody style={{
-            borderTop: '1px solid hsl(var(--border))'
-          }}>
-            {events.map((event) => (
+          <tbody>
+            {events.map((event, index) => (
               <>
                 <tr
                   key={event.id}
                   style={{
                     cursor: 'pointer',
-                    transition: 'background-color 0.2s'
+                    transition: 'background-color 0.15s',
+                    borderBottom: index < events.length - 1 ? '1px solid hsl(var(--border))' : 'none'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
@@ -251,246 +343,239 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                   }}
                   onClick={() => toggleExpand(event.id)}
                 >
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4" style={{ color: 'hsl(var(--text-muted))' }} />
-                      <span style={{
-                        fontFamily: 'var(--font-family-mono)',
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'hsl(var(--text-body))'
-                      }}>{formatDate(event.event_timestamp)}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4" style={{ color: 'hsl(var(--text-muted))' }} />
-                      <div>
-                        <div style={{
-                          fontWeight: 'var(--font-weight-medium)',
-                          color: 'hsl(var(--text-heading))',
-                          fontSize: 'var(--font-size-sm)',
-                          fontFamily: 'var(--font-family-primary)'
-                        }}>
-                          {event.user_email || t('admin.audit.table.system', 'System')}
-                        </div>
-                        {event.user_role && (
-                          <div style={{
-                            fontSize: 'var(--font-size-xs)',
-                            color: 'hsl(var(--text-muted))',
-                            fontFamily: 'var(--font-family-primary)',
-                            marginTop: '0.25rem'
-                          }}>{event.user_role}</div>
-                        )}
+                  {/* Time */}
+                  <td style={{ padding: '0.625rem 0.75rem', verticalAlign: 'middle', minWidth: '180px' }}>
+                    <div style={{
+                      fontFamily: 'var(--font-family-mono)',
+                      fontSize: 'var(--font-size-xs)',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      <div style={{
+                        color: 'hsl(var(--text-body))',
+                        fontWeight: 'var(--font-weight-medium)',
+                        marginBottom: '0.125rem'
+                      }}>
+                        {formatDate(event.event_timestamp).timeStr}
+                      </div>
+                      <div style={{
+                        color: 'hsl(var(--text-muted))',
+                        fontSize: 'var(--font-size-xs)'
+                      }}>
+                        {formatDate(event.event_timestamp).dateStr}
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+
+                  {/* User */}
+                  <td style={{ padding: '0.625rem 0.75rem', verticalAlign: 'middle' }}>
+                    <div>
+                      <div style={{
+                        fontWeight: 'var(--font-weight-medium)',
+                        color: 'hsl(var(--text-heading))',
+                        fontSize: 'var(--font-size-sm)',
+                        fontFamily: 'var(--font-family-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '200px'
+                      }}>
+                        {event.user_email || t('admin.audit.table.system', 'System')}
+                      </div>
+                      {event.user_role && (
+                        <div style={{
+                          fontSize: 'var(--font-size-xs)',
+                          color: 'hsl(var(--text-muted))',
+                          fontFamily: 'var(--font-family-primary)'
+                        }}>
+                          {event.user_role}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Action */}
+                  <td style={{ padding: '0.625rem 0.75rem', verticalAlign: 'middle' }}>
                     <div style={{
                       fontWeight: 'var(--font-weight-medium)',
-                      color: 'hsl(var(--text-heading))',
+                      color: 'hsl(var(--text-body))',
                       fontSize: 'var(--font-size-sm)',
                       fontFamily: 'var(--font-family-primary)'
-                    }}>{event.action}</div>
-                    {event.description && (
+                    }}>
+                      {formatActionName(event.action)}
+                    </div>
+                    {getChangedFieldsSummary(event) ? (
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'hsl(var(--primary))',
+                        fontFamily: 'var(--font-family-primary)',
+                        fontWeight: 'var(--font-weight-medium)',
+                        marginTop: '0.125rem'
+                      }}>
+                        {t('admin.audit.table.changed', 'Changed')}: {getChangedFieldsSummary(event)}
+                      </div>
+                    ) : event.description && (
                       <div style={{
                         fontSize: 'var(--font-size-xs)',
                         color: 'hsl(var(--text-muted))',
                         fontFamily: 'var(--font-family-primary)',
-                        marginTop: '0.25rem'
-                      }} className="line-clamp-1">
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '250px'
+                      }}>
                         {event.description}
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+
+                  {/* Resource */}
+                  <td style={{ padding: '0.625rem 0.75rem', verticalAlign: 'middle' }}>
                     <div style={{
-                      fontFamily: 'var(--font-family-mono)',
                       fontSize: 'var(--font-size-xs)',
-                      color: 'hsl(var(--text-body))'
+                      color: 'hsl(var(--text-body))',
+                      fontFamily: 'var(--font-family-primary)',
+                      whiteSpace: 'nowrap'
                     }}>
-                      {event.resource_type}
+                      {formatResourceType(event.resource_type)}
                     </div>
                     {event.resource_name && (
                       <div style={{
                         fontSize: 'var(--font-size-xs)',
                         color: 'hsl(var(--text-muted))',
                         fontFamily: 'var(--font-family-primary)',
-                        marginTop: '0.25rem'
-                      }}>{event.resource_name}</div>
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '150px'
+                      }}>
+                        {event.resource_name}
+                      </div>
                     )}
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+
+                  {/* Type Badge */}
+                  <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', verticalAlign: 'middle' }}>
                     <span
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        padding: '0.25rem 0.75rem',
-                        borderRadius: 'calc(var(--radius) * 4)',
-                        fontSize: 'var(--font-size-xs)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        fontFamily: 'var(--font-family-primary)',
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: 'calc(var(--radius) * 3)',
+                        fontSize: '0.625rem',
+                        fontWeight: 'var(--font-weight-semibold)',
+                        fontFamily: 'var(--font-family-mono)',
+                        whiteSpace: 'nowrap',
                         ...getEventTypeBadgeStyle(event.event_type)
                       }}
                     >
                       {event.event_type}
                     </span>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <div className="flex items-center gap-2">
+
+                  {/* Risk */}
+                  <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', verticalAlign: 'middle' }}>
+                    <div className="flex items-center justify-center gap-1">
                       {getRiskIcon(event.risk_level)}
-                      <span
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '0.25rem 0.75rem',
-                          borderRadius: 'calc(var(--radius) * 4)',
-                          fontSize: 'var(--font-size-xs)',
-                          fontWeight: 'var(--font-weight-medium)',
-                          fontFamily: 'var(--font-family-primary)',
-                          textTransform: 'capitalize',
-                          ...getRiskBadgeStyle(event.risk_level)
-                        }}
-                      >
-                        {event.risk_level}
-                      </span>
-                    </div>
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <div className="flex items-center gap-2">
                       {getStatusIcon(event.status)}
-                      <span style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        color: 'hsl(var(--text-body))',
-                        textTransform: 'capitalize'
-                      }}>{event.status}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-center">
+
+                  {/* Expand Button */}
+                  <td style={{ padding: '0.625rem 0.75rem', textAlign: 'center', verticalAlign: 'middle' }}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleExpand(event.id);
                       }}
-                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      style={{
+                        padding: '0.25rem',
+                        borderRadius: 'calc(var(--radius) * 1)',
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        color: 'hsl(var(--text-muted))',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
                     >
                       {expandedEvent === event.id ? (
-                        <ChevronUp className="h-5 w-5 text-gray-500" />
+                        <ChevronUp className="h-4 w-4" />
                       ) : (
-                        <ChevronDown className="h-5 w-5 text-gray-500" />
+                        <ChevronDown className="h-4 w-4" />
                       )}
                     </button>
                   </td>
                 </tr>
 
-                {/* Expanded details */}
+                {/* Expanded Details */}
                 {expandedEvent === event.id && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-4 bg-gray-50 dark:bg-gray-900">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        {/* Event Details */}
-                        <div>
-                          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                            {t('admin.audit.details.eventDetails', 'Event Details')}
+                    <td colSpan={7} style={{
+                      padding: '1rem',
+                      backgroundColor: 'hsl(var(--muted) / 0.2)',
+                      borderBottom: index < events.length - 1 ? '1px solid hsl(var(--border))' : 'none'
+                    }}>
+                      {/* Exact Changes */}
+                      {event.event_type === 'UPDATE' && event.changed_fields && event.changed_fields.length > 0 && event.old_values && event.new_values && (() => {
+                        // Filter out automatic fields that aren't relevant to display
+                        const relevantFields = event.changed_fields.filter(field =>
+                          field !== 'updated_at' && field !== 'created_at'
+                        );
+                        return relevantFields.length > 0;
+                      })() && (
+                        <div style={{ marginBottom: '1rem' }}>
+                          <div style={{
+                            fontSize: 'var(--font-size-xs)',
+                            fontWeight: 'var(--font-weight-semibold)',
+                            fontFamily: 'var(--font-family-primary)',
+                            color: 'hsl(var(--text-heading))',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: '0.5rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                          }}>
+                            <AlertTriangle className="h-3.5 w-3.5" style={{ color: 'hsl(var(--primary))' }} />
+                            {t('admin.audit.details.exactChanges', 'Exact Changes')} ({event.changed_fields.filter(f => f !== 'updated_at' && f !== 'created_at').length})
                           </div>
-                          <div className="space-y-1">
-                            <div className="text-gray-700 dark:text-gray-300">
-                              <span className="text-gray-500">{t('admin.audit.details.id', 'ID')}:</span> {event.id.slice(0, 8)}...
-                            </div>
-                            <div className="text-gray-700 dark:text-gray-300">
-                              <span className="text-gray-500">{t('admin.audit.details.category', 'Category')}:</span> {event.event_category}
-                            </div>
-                            {event.session_id && (
-                              <div className="text-gray-700 dark:text-gray-300">
-                                <span className="text-gray-500">{t('admin.audit.details.session', 'Session')}:</span> {event.session_id.slice(0, 8)}
-...
+                          <div className="space-y-2">
+                            {event.changed_fields
+                              .filter(field => field !== 'updated_at' && field !== 'created_at')
+                              .map((field) => (
+                              <div key={field}>
+                                <div style={{
+                                  fontSize: 'var(--font-size-xs)',
+                                  fontWeight: 'var(--font-weight-semibold)',
+                                  fontFamily: 'var(--font-family-mono)',
+                                  color: 'hsl(var(--primary))',
+                                  marginBottom: '0.25rem',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  {field}
+                                </div>
+                                {renderValueDiff(event.old_values?.[field], event.new_values?.[field], field)}
                               </div>
-                            )}
+                            ))}
                           </div>
                         </div>
+                      )}
 
-                        {/* Network Info */}
-                        {(event.ip_address || event.user_agent) && (
+                      {/* Metadata Grid */}
+                      <div className="grid grid-cols-3 gap-4 text-xs">
+                        <div>
+                          <span style={{ color: 'hsl(var(--text-muted))' }}>ID:</span>{' '}
+                          <span style={{ fontFamily: 'var(--font-family-mono)' }}>{event.id.slice(0, 8)}...</span>
+                        </div>
+                        <div>
+                          <span style={{ color: 'hsl(var(--text-muted))' }}>Category:</span>{' '}
+                          {event.event_category}
+                        </div>
+                        {event.ip_address && (
                           <div>
-                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                              {t('admin.audit.details.network', 'Network')}
-                            </div>
-                            <div className="space-y-1">
-                              {event.ip_address && (
-                                <div className="text-gray-700 dark:text-gray-300">
-                                  <span className="text-gray-500">{t('admin.audit.details.ip', 'IP')}:</span> {event.ip_address}
-                                </div>
-                              )}
-                              {event.user_agent && (
-                                <div className="text-gray-700 dark:text-gray-300 text-xs break-all">
-                                  <span className="text-gray-500">{t('admin.audit.details.agent', 'Agent')}:</span> {event.user_agent.slice(0, 50)}...
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Compliance */}
-                        {event.compliance_flags && event.compliance_flags.length > 0 && (
-                          <div>
-                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                              {t('admin.audit.details.compliance', 'Compliance')}
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {event.compliance_flags.map((flag) => (
-                                <span
-                                  key={flag}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-                                >
-                                  {flag}
-                                </span>
-                              ))}
-                            </div>
-                            {event.is_student_record && (
-                              <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                ⚠️ {t('admin.audit.details.studentRecord', 'Student Record (FERPA Protected)')}
-                              </div>
-                            )}
-                            {event.is_minor_data && (
-                              <div className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                                ⚠️ {t('admin.audit.details.minorData', 'Minor Data (COPPA Applicable)')}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Changes (if UPDATE) */}
-                        {event.event_type === 'UPDATE' && (event.old_values || event.new_values) && (
-                          <div className="col-span-2 md:col-span-4">
-                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                              {t('admin.audit.details.changes', 'Changes')}
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              {event.old_values && (
-                                <div>
-                                  <div className="text-xs text-gray-500 mb-1">{t('admin.audit.details.before', 'Before')}:</div>
-                                  <pre className="text-xs bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700 overflow-x-auto">
-                                    {JSON.stringify(event.old_values, null, 2)}
-                                  </pre>
-                                </div>
-                              )}
-                              {event.new_values && (
-                                <div>
-                                  <div className="text-xs text-gray-500 mb-1">{t('admin.audit.details.after', 'After')}:</div>
-                                  <pre className="text-xs bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700 overflow-x-auto">
-                                    {JSON.stringify(event.new_values, null, 2)}
-                                  </pre>
-                                </div>
-                              )}
-                            </div>
-                            {event.changed_fields && event.changed_fields.length > 0 && (
-                              <div className="mt-2">
-                                <span className="text-xs text-gray-500">{t('admin.audit.details.changedFields', 'Changed fields')}:</span>{' '}
-                                <span className="text-xs text-gray-700 dark:text-gray-300">
-                                  {event.changed_fields.join(', ')}
-                                </span>
-                              </div>
-                            )}
+                            <span style={{ color: 'hsl(var(--text-muted))' }}>IP:</span>{' '}
+                            <span style={{ fontFamily: 'var(--font-family-mono)' }}>{event.ip_address}</span>
                           </div>
                         )}
                       </div>

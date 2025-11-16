@@ -1,0 +1,24 @@
+export function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const sizeClasses = {
+    sm: 'h-4 w-4 border-2',
+    md: 'h-8 w-8 border-3',
+    lg: 'h-12 w-12 border-4',
+  };
+
+  return (
+    <div className="flex items-center justify-center">
+      <div
+        className={`${sizeClasses[size]} border-primary border-t-transparent rounded-full animate-spin`}
+      />
+    </div>
+  );
+}
+
+export function LoadingPage({ message = 'Loading...' }: { message?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+      <LoadingSpinner size="lg" />
+      <p className="text-muted-foreground text-sm">{message}</p>
+    </div>
+  );
+}

@@ -172,55 +172,7 @@ function hexToHsl(hex: string): string {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
-// Font options
-const FONT_OPTIONS = {
-  system: {
-    label: 'System Fonts',
-    fonts: [
-      { value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', label: 'System Default' },
-      { value: 'Arial, sans-serif', label: 'Arial' },
-      { value: 'Helvetica, sans-serif', label: 'Helvetica' },
-      { value: 'Georgia, serif', label: 'Georgia' },
-      { value: 'Times New Roman, serif', label: 'Times New Roman' },
-    ]
-  },
-  hebrew: {
-    label: 'Hebrew Fonts',
-    fonts: [
-      { value: 'Heebo, sans-serif', label: 'Heebo' },
-      { value: 'Rubik, sans-serif', label: 'Rubik' },
-      { value: 'Assistant, sans-serif', label: 'Assistant' },
-      { value: 'Alef, sans-serif', label: 'Alef' },
-      { value: 'Varela Round, sans-serif', label: 'Varela Round' },
-      { value: 'Frank Ruhl Libre, serif', label: 'Frank Ruhl Libre' },
-      { value: 'David Libre, serif', label: 'David Libre' },
-    ]
-  },
-  google: {
-    label: 'Google Fonts',
-    fonts: [
-      { value: 'Inter, sans-serif', label: 'Inter' },
-      { value: 'Roboto, sans-serif', label: 'Roboto' },
-      { value: 'Open Sans, sans-serif', label: 'Open Sans' },
-      { value: 'Lato, sans-serif', label: 'Lato' },
-      { value: 'Montserrat, sans-serif', label: 'Montserrat' },
-      { value: 'Poppins, sans-serif', label: 'Poppins' },
-      { value: 'Playfair Display, serif', label: 'Playfair Display' },
-      { value: 'Merriweather, serif', label: 'Merriweather' },
-    ]
-  },
-  monospace: {
-    label: 'Monospace Fonts',
-    fonts: [
-      { value: '"SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace', label: 'SF Mono' },
-      { value: '"Fira Code", monospace', label: 'Fira Code' },
-      { value: '"Source Code Pro", monospace', label: 'Source Code Pro' },
-      { value: '"JetBrains Mono", monospace', label: 'JetBrains Mono' },
-      { value: 'Monaco, Consolas, monospace', label: 'Monaco' },
-      { value: 'Consolas, monospace', label: 'Consolas' },
-    ]
-  }
-};
+// Font options - note: will be moved inside component to use t() function
 
 // Helper: Parse numeric value from size string
 const parseNumericValue = (value: string): number => {
@@ -260,6 +212,56 @@ export default function ThemeSettingsPage() {
     body: isHebrew ? 'זהו טקסט גוף רגיל' : 'This is body text',
     heading: isHebrew ? 'כותרת לדוגמה' : 'Sample Heading',
     code: isHebrew ? '// קוד לדוגמה' : '// Sample code'
+  };
+
+  // Font options with translations
+  const FONT_OPTIONS = {
+    system: {
+      label: t('admin.theme.fontGroupSystem', 'System Fonts'),
+      fonts: [
+        { value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', label: t('admin.theme.fontSystemDefault', 'System Default') },
+        { value: 'Arial, sans-serif', label: 'Arial' },
+        { value: 'Helvetica, sans-serif', label: 'Helvetica' },
+        { value: 'Georgia, serif', label: 'Georgia' },
+        { value: 'Times New Roman, serif', label: 'Times New Roman' },
+      ]
+    },
+    hebrew: {
+      label: t('admin.theme.fontGroupHebrew', 'Hebrew Fonts'),
+      fonts: [
+        { value: 'Heebo, sans-serif', label: 'Heebo' },
+        { value: 'Rubik, sans-serif', label: 'Rubik' },
+        { value: 'Assistant, sans-serif', label: 'Assistant' },
+        { value: 'Alef, sans-serif', label: 'Alef' },
+        { value: 'Varela Round, sans-serif', label: 'Varela Round' },
+        { value: 'Frank Ruhl Libre, serif', label: 'Frank Ruhl Libre' },
+        { value: 'David Libre, serif', label: 'David Libre' },
+      ]
+    },
+    google: {
+      label: t('admin.theme.fontGroupGoogle', 'Google Fonts'),
+      fonts: [
+        { value: 'Inter, sans-serif', label: 'Inter' },
+        { value: 'Roboto, sans-serif', label: 'Roboto' },
+        { value: 'Open Sans, sans-serif', label: 'Open Sans' },
+        { value: 'Lato, sans-serif', label: 'Lato' },
+        { value: 'Montserrat, sans-serif', label: 'Montserrat' },
+        { value: 'Poppins, sans-serif', label: 'Poppins' },
+        { value: 'Playfair Display, serif', label: 'Playfair Display' },
+        { value: 'Merriweather, serif', label: 'Merriweather' },
+      ]
+    },
+    monospace: {
+      label: t('admin.theme.fontGroupMonospace', 'Monospace Fonts'),
+      fonts: [
+        { value: '"SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace', label: t('admin.theme.fontSFMono', 'SF Mono') },
+        { value: '"Fira Code", monospace', label: 'Fira Code' },
+        { value: '"Source Code Pro", monospace', label: 'Source Code Pro' },
+        { value: '"JetBrains Mono", monospace', label: 'JetBrains Mono' },
+        { value: 'Monaco, Consolas, monospace', label: 'Monaco' },
+        { value: 'Consolas, monospace', label: 'Consolas' },
+      ]
+    }
   };
 
   useEffect(() => {
@@ -521,7 +523,7 @@ export default function ThemeSettingsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {group.colors.map((color) => {
                   const bgKey = `${prefix}${color.key}` as keyof ThemeConfig;
-                  const fgKey = color.fgKey ? `${prefix}${color.fgKey}` as keyof ThemeConfig : null;
+                  const fgKey = ('fgKey' in color && color.fgKey) ? `${prefix}${color.fgKey}` as keyof ThemeConfig : null;
                   const bgValue = theme[bgKey] as string;
                   const fgValue = fgKey ? theme[fgKey] as string : null;
 

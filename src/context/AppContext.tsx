@@ -1,6 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { initializeTenantContext } from '@/lib/supabase/client';
+import type { Tenant } from '@/lib/tenant/types';
 
 // ============================================================================
 // TYPES
@@ -17,6 +19,13 @@ interface LanguageInfo {
   direction: Direction;
   is_active: boolean;
   is_default: boolean;
+}
+
+interface TenantInfo {
+  id: string;
+  name: string;
+  slug: string;
+  role: string | null;
 }
 
 interface AppContextType {
@@ -36,6 +45,12 @@ interface AppContextType {
   effectiveTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
+
+  // Tenant Management
+  tenant: TenantInfo | null;
+  tenantLoading: boolean;
+  setTenant: (tenant: TenantInfo | null) => void;
+  isSuperAdmin: boolean;
 }
 
 // ============================================================================
@@ -88,6 +103,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return 'system';
   });
   const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
+
+  // Tenant state
+  const [tenant, setTenantState] = useState<TenantInfo | null>(() => {
+    if (typeof window !== 'undefined') {
+      const tenantId = localStorage.getItem('tenant_id');
+      const tenantSlug = localStorage.getItem('tenant_slug');
+      const tenantName = localStorage.getItem('tenant_name');
+      const tenantRole = localStorage.getItem('tenant_role');
+
+      if (tenantId && tenantSlug && tenantName) {
+        return { id: tenantId, slug: tenantSlug, name: tenantName, role: tenantRole };
+      }
+    }
+    return null;
+  });
+  const [tenantLoading, setTenantLoading] = useState(true); // Start as true, will be set to false after initialization
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  // ============================================================================
+  // TENANT MANAGEMENT
+  // ============================================================================
+
+  // Initialize tenant context on mount
+  useEffect(() => {
+    const initTenant = async () => {
+      setTenantLoading(true);
+      try {
+        await initializeTenantContext();
+
+        // After initialization, get tenant info from localStorage
+        const tenantId = localStorage.getItem('tenant_id');
+        const tenantSlug = localStorage.getItem('tenant_slug');
+        const tenantName = localStorage.getItem('tenant_name');
+        const tenantRole = localStorage.getItem('tenant_role');
+
+        if (tenantId && tenantSlug) {
+          setTenantState({
+            id: tenantId,
+            slug: tenantSlug,
+            name: tenantName || tenantSlug,
+            role: tenantRole,
+          });
+        }
+
+        // Check if user is super admin - MUST complete before loading finishes
+        try {
+          const response = await fetch('/api/superadmin/stats');
+          const data = await response.json();
+          setIsSuperAdmin(data.success === true);
+        } catch (error) {
+          setIsSuperAdmin(false);
+        }
+      } catch (error) {
+        console.error('Failed to initialize tenant context:', error);
+        setIsSuperAdmin(false); // Ensure we set this even on error
+      } finally {
+        // CRITICAL: Add micro-delay to ensure state updates propagate
+        // React state updates are asynchronous, so we wait for next tick
+        await new Promise(resolve => setTimeout(resolve, 0));
+        setTenantLoading(false);
+      }
+    };
+
+    initTenant();
+  }, []);
+
+  const setTenant = (newTenant: TenantInfo | null) => {
+    setTenantState(newTenant);
+
+    if (newTenant) {
+      localStorage.setItem('tenant_id', newTenant.id);
+      localStorage.setItem('tenant_slug', newTenant.slug);
+      localStorage.setItem('tenant_name', newTenant.name);
+      if (newTenant.role) {
+        localStorage.setItem('tenant_role', newTenant.role);
+      }
+    } else {
+      localStorage.removeItem('tenant_id');
+      localStorage.removeItem('tenant_slug');
+      localStorage.removeItem('tenant_name');
+      localStorage.removeItem('tenant_role');
+    }
+  };
 
   // ============================================================================
   // THEME MANAGEMENT
@@ -258,6 +356,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         effectiveTheme,
         setTheme,
         toggleTheme,
+        tenant,
+        tenantLoading,
+        setTenant,
+        isSuperAdmin,
       }}
     >
       {children}
@@ -327,4 +429,25 @@ export function useTheme() {
 
 export function useLanguage() {
   return useUserLanguage();
+}
+
+export function useTenant() {
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useTenant must be used within an AppProvider');
+  }
+
+  return {
+    tenant: context.tenant,
+    loading: context.tenantLoading,
+    setTenant: context.setTenant,
+    tenantId: context.tenant?.id || null,
+    tenantSlug: context.tenant?.slug || null,
+    tenantName: context.tenant?.name || null,
+    tenantRole: context.tenant?.role || null,
+    isAdmin: context.tenant?.role === 'admin' || context.tenant?.role === 'owner',
+    isOwner: context.tenant?.role === 'owner',
+    isInstructor: context.tenant?.role === 'instructor' || context.tenant?.role === 'admin' || context.tenant?.role === 'owner',
+    isSuperAdmin: context.isSuperAdmin,
+  };
 }

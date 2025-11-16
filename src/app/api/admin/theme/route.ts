@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { logConfigChange, logAuditEvent } from '@/lib/audit/auditService';
 
 // GET - Fetch all theme configurations (admin only)
@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
 // PUT - Update theme configuration
 export async function PUT(request: NextRequest) {
   try {
+    // Use regular client for authentication
     const supabase = await createClient();
 
     // Check if user is admin
@@ -142,8 +143,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Get user role from metadata (avoid RLS issues with users table)
-    const userRole = user.user_metadata?.role || 'user';
+    // Get user role using admin client (bypasses RLS)
+    const adminClient = createAdminClient();
+    const { data: userData } = await adminClient
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const userRole = userData?.role || 'student';
     const isAdmin = userRole === 'admin';
 
     if (!isAdmin) {
@@ -162,14 +170,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Get old values for audit trail
-    const { data: oldTheme } = await supabase
+    // Get old values for audit trail using admin client
+    const { data: oldTheme } = await adminClient
       .from('theme_configs')
       .select('*')
       .eq('id', id)
       .single();
 
-    const { data: theme, error } = await supabase
+    // Update theme using admin client (bypasses RLS)
+    const { data: theme, error } = await adminClient
       .from('theme_configs')
       .update(updates)
       .eq('id', id)

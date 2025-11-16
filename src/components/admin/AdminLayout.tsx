@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useAdminLanguage } from '@/context/AppContext';
+import { useAdminLanguage, useTenant } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
@@ -45,6 +45,7 @@ interface NavSection {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { t, language } = useAdminLanguage();
+  const { isSuperAdmin } = useTenant();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -80,7 +81,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   // The inline script in layout.tsx sets document.dir before React loads
   // No JavaScript state needed - CSS handles everything
 
-  const navSections: NavSection[] = [
+  const baseNavSections: NavSection[] = [
     {
       titleKey: 'admin.nav.overview',
       items: [
@@ -108,6 +109,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
     {
+      titleKey: 'admin.nav.learning',
+      items: [
+        { key: 'admin.nav.lms_programs', icon: BookOpen, href: '/admin/lms/programs' },
+        { key: 'admin.nav.lms_courses', icon: GraduationCap, href: '/admin/lms/courses' },
+      ],
+    },
+    {
       titleKey: 'admin.nav.business',
       items: [
         { key: 'admin.nav.payments', icon: CreditCard, href: '/admin/payments' },
@@ -121,6 +129,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
   ];
+
+  const navSections = baseNavSections;
 
   const isActive = (href: string) => pathname === href;
 
