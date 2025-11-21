@@ -149,12 +149,12 @@ export async function POST(
     // Log audit event
     await logAuditEvent({
       userId: user.id,
-      userEmail: user.email,
+      userEmail: user.email || 'unknown',
       action: 'program.course_added',
       details: {
         programId: params.id,
         courseId: course_id,
-        courseName: data.course?.title,
+        courseName: (data.course as any)?.title,
         isRequired: is_required,
         order: courseOrder,
       },
@@ -221,7 +221,7 @@ export async function PUT(
     // Log audit event
     await logAuditEvent({
       userId: user.id,
-      userEmail: user.email,
+      userEmail: user.email || 'unknown',
       action: 'program.courses_reordered',
       details: {
         programId: params.id,

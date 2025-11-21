@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Extend global type
+declare global {
+  var translationsCache: Map<string, any> | undefined;
+}
+
 // Clear translation cache endpoint
 export async function POST(request: NextRequest) {
   try {

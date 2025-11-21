@@ -112,18 +112,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch course name for Zoom topic pattern
-    let courseName = '';
-    if (create_zoom_meetings && zoom_topic_pattern?.includes('{course_name}')) {
-      const supabase = createAdminClient();
-      const { data: course } = await supabase
-        .from('courses')
-        .select('title')
-        .eq('id', course_id)
-        .single();
+    // Fetch course name and tenant_id for Zoom topic pattern
+    const supabase = createAdminClient();
+    const { data: course, error: courseError } = await supabase
+      .from('courses')
+      .select('title, tenant_id')
+      .eq('id', course_id)
+      .single();
 
-      courseName = course?.title || '';
+    if (courseError || !course) {
+      return NextResponse.json(
+        { success: false, error: 'Course not found' },
+        { status: 404 }
+      );
     }
+
+    const courseName = course.title || '';
+    const tenantId = course.tenant_id;
 
     // Create all lessons
     const createdLessons = [];
@@ -234,7 +239,7 @@ export async function POST(request: NextRequest) {
     let zoomFailCount = 0;
 
     if (create_zoom_meetings) {
-      const zoomService = new ZoomService();
+      const zoomService = new ZoomService(tenantId);
 
       // If recurring Zoom meeting, create one recurring meeting for all
       if (zoom_recurring && recurrence_type === 'weekly' && createdLessons.length > 1) {

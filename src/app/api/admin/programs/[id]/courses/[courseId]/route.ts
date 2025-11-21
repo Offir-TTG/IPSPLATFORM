@@ -56,12 +56,12 @@ export async function DELETE(
     // Log audit event
     await logAuditEvent({
       userId: user.id,
-      userEmail: user.email,
+      userEmail: user.email || 'unknown',
       action: 'program.course_removed',
       details: {
         programId: params.id,
         courseId: params.courseId,
-        courseName: courseData?.course?.title,
+        courseName: (courseData?.course as any)?.title,
       },
       ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown',
@@ -144,12 +144,12 @@ export async function PATCH(
     // Log audit event
     await logAuditEvent({
       userId: user.id,
-      userEmail: user.email,
+      userEmail: user.email || 'unknown',
       action: 'program.course_settings_updated',
       details: {
         programId: params.id,
         courseId: params.courseId,
-        courseName: data.course?.title,
+        courseName: (data.course as any)?.title,
         updates: updates,
       },
       ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',

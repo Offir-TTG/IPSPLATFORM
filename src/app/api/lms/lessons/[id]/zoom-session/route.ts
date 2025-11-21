@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { zoomService } from '@/lib/zoom/zoomService';
+import { ZoomService } from '@/lib/zoom/zoomService';
 
 // ============================================================================
 // GET /api/lms/lessons/[id]/zoom-session
@@ -130,7 +130,22 @@ export async function PATCH(
 
     console.log('[PATCH /api/lms/lessons/[id]/zoom-session] Update options:', JSON.stringify(updateOptions, null, 2));
 
+    // Get lesson to access tenant_id
+    const { data: lesson, error: lessonError } = await supabase
+      .from('lessons')
+      .select('tenant_id')
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lesson) {
+      return NextResponse.json(
+        { success: false, error: 'Lesson not found' },
+        { status: 404 }
+      );
+    }
+
     // Update Zoom meeting using service
+    const zoomService = new ZoomService(lesson.tenant_id);
     const result = await zoomService.updateMeetingForLesson(lessonId, updateOptions);
 
     console.log('[PATCH /api/lms/lessons/[id]/zoom-session] Result:', JSON.stringify(result, null, 2));

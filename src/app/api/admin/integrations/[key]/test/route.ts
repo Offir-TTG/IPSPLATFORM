@@ -67,6 +67,10 @@ export async function POST(
         testResult = await testTwilioConnection(credentials);
         break;
 
+      case 'keap':
+        testResult = await testKeapConnection(credentials);
+        break;
+
       default:
         return NextResponse.json(
           { error: 'Unsupported integration type' },
@@ -494,6 +498,132 @@ async function testTwilioConnection(credentials: Record<string, any>) {
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Twilio connection failed'
+    };
+  }
+}
+
+// Test Keap connection
+async function testKeapConnection(credentials: Record<string, any>) {
+  try {
+    // Validate required fields
+    const requiredFields = ['client_id', 'client_secret'];
+    const missingFields = requiredFields.filter(field => !credentials[field]);
+
+    if (missingFields.length > 0) {
+      return {
+        success: false,
+        message: `Missing required fields: ${missingFields.join(', ')}`
+      };
+    }
+
+    // Check if we have tokens already
+    if (!credentials.access_token || !credentials.refresh_token) {
+      // Generate OAuth authorization URL
+      const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/admin/config/integrations`;
+      const authUrl = `https://signin.infusionsoft.com/app/oauth/authorize?client_id=${credentials.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=full`;
+
+      return {
+        success: false,
+        message: `Keap requires OAuth authorization.
+
+AUTHORIZATION REQUIRED:
+1. Click this link to authorize: ${authUrl}
+2. After authorization, you'll receive an access token and refresh token
+3. The system will automatically save these tokens
+
+Note: This is a one-time setup. After authorization, the tokens will auto-refresh.`
+      };
+    }
+
+    // Test with existing access token or refresh it
+    try {
+      // Try to get account info with current access token
+      const accountResponse = await fetch('https://api.infusionsoft.com/crm/rest/v1/account/profile', {
+        headers: {
+          'Authorization': `Bearer ${credentials.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (accountResponse.ok) {
+        const accountData = await accountResponse.json();
+        return {
+          success: true,
+          message: `Connected to Keap account: ${accountData.company_name || accountData.email || 'Success'}`
+        };
+      }
+
+      // If access token is expired, try to refresh it
+      if (accountResponse.status === 401 && credentials.refresh_token) {
+        const authString = Buffer.from(`${credentials.client_id}:${credentials.client_secret}`).toString('base64');
+
+        const refreshResponse = await fetch('https://api.infusionsoft.com/token', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${authString}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: credentials.refresh_token
+          })
+        });
+
+        if (!refreshResponse.ok) {
+          const errorData = await refreshResponse.json();
+          return {
+            success: false,
+            message: `Failed to refresh Keap token: ${errorData.error_description || errorData.error || 'Token refresh failed'}. You may need to re-authorize the application.`
+          };
+        }
+
+        const tokenData = await refreshResponse.json();
+
+        // Update credentials with new tokens
+        const supabase = await createClient();
+        await supabase
+          .from('integrations')
+          .update({
+            credentials: {
+              ...credentials,
+              access_token: tokenData.access_token,
+              refresh_token: tokenData.refresh_token
+            }
+          })
+          .eq('integration_key', 'keap');
+
+        // Test again with new token
+        const retryResponse = await fetch('https://api.infusionsoft.com/crm/rest/v1/account/profile', {
+          headers: {
+            'Authorization': `Bearer ${tokenData.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (retryResponse.ok) {
+          const accountData = await retryResponse.json();
+          return {
+            success: true,
+            message: `Connected to Keap account: ${accountData.company_name || accountData.email || 'Success'} (token refreshed)`
+          };
+        }
+      }
+
+      return {
+        success: false,
+        message: `Keap API error: ${accountResponse.statusText}. Status: ${accountResponse.status}`
+      };
+
+    } catch (apiError: any) {
+      return {
+        success: false,
+        message: `Keap API test failed: ${apiError.message || 'Unknown error'}`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Keap connection failed'
     };
   }
 }

@@ -271,15 +271,42 @@ export async function getDocuSignClient(): Promise<DocuSignClient> {
   try {
     const supabase = await createClient();
 
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error('[getDocuSignClient] Failed to get user:', userError);
+      throw new Error('Authentication required. Please ensure you are logged in.');
+    }
+
+    // Get tenant_id from tenant_users relationship
+    const { data: tenantUsers, error: tenantError } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .limit(1)
+      .single();
+
+    if (tenantError || !tenantUsers) {
+      console.error('[getDocuSignClient] Failed to get tenant:', tenantError);
+      throw new Error('No active tenant found for user. Please contact support.');
+    }
+
+    const tenantId = tenantUsers.tenant_id;
+
+    // Query integrations filtered by tenant_id
     const { data: integration, error } = await supabase
       .from('integrations')
       .select('*')
       .eq('integration_key', 'docusign')
+      .eq('tenant_id', tenantId)
       .eq('is_enabled', true)
       .single();
 
     if (error || !integration) {
-      throw new Error('DocuSign integration is not enabled or not configured');
+      console.error('[getDocuSignClient] Integration query error:', error);
+      throw new Error('DocuSign integration is not enabled or not configured for this tenant');
     }
 
     const credentials = integration.credentials as DocuSignCredentials;
@@ -291,7 +318,7 @@ export async function getDocuSignClient(): Promise<DocuSignClient> {
 
     return new DocuSignClient(credentials, settings);
   } catch (error) {
-    console.error('Failed to get DocuSign client:', error);
+    console.error('[getDocuSignClient] Failed to get DocuSign client:', error);
     throw error;
   }
 }

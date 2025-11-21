@@ -89,6 +89,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
     {
+      titleKey: 'admin.nav.learning',
+      items: [
+        { key: 'admin.nav.lms_programs', icon: BookOpen, href: '/admin/lms/programs' },
+        { key: 'admin.nav.lms_courses', icon: GraduationCap, href: '/admin/lms/courses' },
+      ],
+    },
+    {
       titleKey: 'admin.nav.configuration',
       items: [
         { key: 'admin.nav.languages', icon: Languages, href: '/admin/config/languages' },
@@ -98,30 +105,22 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.features', icon: Flag, href: '/admin/config/features' },
         { key: 'admin.nav.integrations', icon: Plug, href: '/admin/config/integrations' },
         { key: 'admin.nav.navigation', icon: Navigation, href: '/admin/config/navigation' },
-      ],
-    },
-    {
-      titleKey: 'admin.nav.content',
-      items: [
-        { key: 'admin.nav.programs', icon: BookOpen, href: '/admin/programs' },
-        { key: 'admin.nav.courses', icon: GraduationCap, href: '/admin/courses' },
-        { key: 'admin.nav.users', icon: Users, href: '/admin/users' },
-      ],
-    },
-    {
-      titleKey: 'admin.nav.learning',
-      items: [
-        { key: 'admin.nav.lms_programs', icon: BookOpen, href: '/admin/lms/programs' },
-        { key: 'admin.nav.lms_courses', icon: GraduationCap, href: '/admin/lms/courses' },
+        { key: 'admin.nav.emails', icon: Mail, href: '/admin/emails' },
+        { key: 'admin.nav.keap.dashboard', icon: Users, href: '/admin/keap' },
       ],
     },
     {
       titleKey: 'admin.nav.business',
       items: [
         { key: 'admin.nav.payments', icon: CreditCard, href: '/admin/payments' },
-        { key: 'admin.nav.emails', icon: Mail, href: '/admin/emails' },
       ],
     },
+//    {
+//      titleKey: 'admin.nav.keap',
+//      items: [
+//        { key: 'admin.nav.keap.dashboard', icon: Users, href: '/admin/keap' },
+//      ],
+//    },
     {
       titleKey: 'admin.nav.security',
       items: [

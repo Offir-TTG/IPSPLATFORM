@@ -102,13 +102,17 @@ export async function GET(
     }
 
     // Log attendance
-    await supabase.from('lesson_attendance').insert({
-      lesson_id: lessonId,
-      user_id: user.id,
-      tenant_id: lesson.courses.tenant_id,
-      status: 'present',
-      joined_at: new Date().toISOString(),
-    }).catch(console.error);
+    try {
+      await supabase.from('lesson_attendance').insert({
+        lesson_id: lessonId,
+        user_id: user.id,
+        tenant_id: (lesson.courses as any)?.tenant_id,
+        status: 'present',
+        joined_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Failed to log attendance:', error);
+    }
 
     // Return join URL
     return NextResponse.json({

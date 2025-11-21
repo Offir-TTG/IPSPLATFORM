@@ -199,14 +199,111 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
 
   console.log('Payment intent succeeded:', paymentIntent.id);
 
-  // Update payment record if exists
-  await supabase
+  const {
+    id,
+    amount,
+    currency,
+    metadata,
+  } = paymentIntent;
+
+  const {
+    tenant_id,
+    enrollment_id,
+    payment_type,
+    schedule_id,
+  } = metadata;
+
+  if (!tenant_id || !enrollment_id) {
+    console.error('Missing required metadata in payment intent');
+    // Fall back to old behavior
+    await supabase
+      .from('payments')
+      .update({
+        status: 'completed',
+        updated_at: new Date().toISOString()
+      })
+      .eq('stripe_payment_intent', paymentIntent.id);
+    return;
+  }
+
+  // Get enrollment details
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('user_id')
+    .eq('id', enrollment_id)
+    .single();
+
+  if (!enrollment) {
+    console.error(`Enrollment not found: ${enrollment_id}`);
+    return;
+  }
+
+  // Create payment record
+  const { error: paymentError } = await supabase
     .from('payments')
-    .update({
+    .insert({
+      tenant_id,
+      user_id: enrollment.user_id,
+      enrollment_id,
+      amount: amount / 100,
+      currency: currency.toUpperCase(),
+      payment_method: 'stripe',
+      transaction_id: paymentIntent.charges?.data[0]?.id || id,
+      stripe_payment_intent_id: id,
       status: 'completed',
-      updated_at: new Date().toISOString()
-    })
-    .eq('stripe_payment_intent', paymentIntent.id);
+      metadata: {
+        payment_type,
+        schedule_id,
+        stripe_payment_method: paymentIntent.payment_method,
+      },
+    });
+
+  if (paymentError) {
+    console.error('Error creating payment record:', paymentError);
+    return;
+  }
+
+  // Update payment schedule to paid
+  if (schedule_id) {
+    await supabase
+      .from('payment_schedules')
+      .update({
+        status: 'paid',
+        paid_date: new Date().toISOString(),
+      })
+      .eq('id', schedule_id)
+      .eq('tenant_id', tenant_id);
+  }
+
+  // Update enrollment payment status
+  const { data: schedules } = await supabase
+    .from('payment_schedules')
+    .select('amount, status')
+    .eq('enrollment_id', enrollment_id)
+    .eq('tenant_id', tenant_id);
+
+  if (schedules) {
+    const totalAmount = schedules.reduce((sum: number, s: any) => sum + parseFloat(s.amount.toString()), 0);
+    const paidAmount = schedules
+      .filter((s: any) => s.status === 'paid')
+      .reduce((sum: number, s: any) => sum + parseFloat(s.amount.toString()), 0);
+
+    const isFullyPaid = paidAmount >= totalAmount;
+    const isDeposit = payment_type === 'deposit';
+
+    await supabase
+      .from('enrollments')
+      .update({
+        paid_amount: paidAmount,
+        payment_status: isFullyPaid ? 'paid' : 'partial',
+        deposit_paid: isDeposit || undefined,
+        status: isFullyPaid ? 'active' : 'pending_payment',
+      })
+      .eq('id', enrollment_id)
+      .eq('tenant_id', tenant_id);
+  }
+
+  console.log(`Payment succeeded for enrollment ${enrollment_id}: $${amount / 100}`);
 }
 
 // Handle payment intent failed
@@ -215,44 +312,64 @@ async function handlePaymentIntentFailed(supabase: any, event: Stripe.Event) {
 
   console.log('Payment intent failed:', paymentIntent.id);
 
-  // Update payment record
-  await supabase
-    .from('payments')
-    .update({
-      status: 'failed',
-      failure_reason: paymentIntent.last_payment_error?.message,
-      updated_at: new Date().toISOString()
-    })
-    .eq('stripe_payment_intent', paymentIntent.id);
+  const {
+    id,
+    metadata,
+    last_payment_error,
+  } = paymentIntent;
 
-  // Update enrollment if linked
-  const { data: payment } = await supabase
-    .from('payments')
-    .select('enrollment_id')
-    .eq('stripe_payment_intent', paymentIntent.id)
-    .single();
+  const {
+    tenant_id,
+    enrollment_id,
+    schedule_id,
+  } = metadata;
 
-  if (payment?.enrollment_id) {
+  if (!tenant_id || !enrollment_id) {
+    console.error('Missing required metadata in payment intent');
+    // Fall back to old behavior
     await supabase
-      .from('enrollments')
+      .from('payments')
       .update({
-        payment_status: 'failed',
+        status: 'failed',
+        failure_reason: paymentIntent.last_payment_error?.message,
         updated_at: new Date().toISOString()
       })
-      .eq('id', payment.enrollment_id);
-
-    // Create notification
-    await supabase.from('notifications').insert({
-      type: 'payment_failed',
-      title: 'Payment Failed',
-      message: `Payment failed: ${paymentIntent.last_payment_error?.message || 'Unknown error'}`,
-      data: {
-        enrollment_id: payment.enrollment_id,
-        payment_intent: paymentIntent.id
-      },
-      created_at: new Date().toISOString()
-    });
+      .eq('stripe_payment_intent', paymentIntent.id);
+    return;
   }
+
+  // Update payment schedule to failed with retry logic
+  if (schedule_id) {
+    const { data: schedule } = await supabase
+      .from('payment_schedules')
+      .select('retry_count')
+      .eq('id', schedule_id)
+      .eq('tenant_id', tenant_id)
+      .single();
+
+    if (schedule) {
+      const retryCount = (schedule.retry_count || 0) + 1;
+      const maxRetries = 3;
+
+      // Calculate next retry date (exponential backoff: 1 day, 3 days, 7 days)
+      const retryDays = retryCount === 1 ? 1 : retryCount === 2 ? 3 : 7;
+      const nextRetryDate = new Date();
+      nextRetryDate.setDate(nextRetryDate.getDate() + retryDays);
+
+      await supabase
+        .from('payment_schedules')
+        .update({
+          status: 'failed',
+          retry_count: retryCount,
+          next_retry_date: retryCount < maxRetries ? nextRetryDate.toISOString() : null,
+          last_error: last_payment_error?.message || 'Payment failed',
+        })
+        .eq('id', schedule_id)
+        .eq('tenant_id', tenant_id);
+    }
+  }
+
+  console.error(`Payment failed for enrollment ${enrollment_id}: ${last_payment_error?.message}`);
 }
 
 // Handle subscription created

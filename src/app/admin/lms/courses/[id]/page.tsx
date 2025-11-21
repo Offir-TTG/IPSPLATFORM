@@ -23,7 +23,6 @@ import {
 import {
   ArrowLeft,
   Plus,
-  Save,
   Eye,
   EyeOff,
   PlusCircle,
@@ -220,7 +219,7 @@ function SortableModule({
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" dir={direction}>
+              <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={onAddLesson}>
                   <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                   {t('lms.builder.add_lesson', 'Add Lesson')}
@@ -1672,7 +1671,7 @@ export default function CourseBuilderPage() {
                     t={t}
                     isRtl={isRtl}
                     direction={direction}
-                    onStatusMessage={showMessage}
+                    onStatusMessage={(message) => showMessage(message.type, message.text)}
                   />
                 </CardContent>
               </Card>

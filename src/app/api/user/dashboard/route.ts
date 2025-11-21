@@ -20,10 +20,11 @@ export const GET = withAuth(
         // Log failed dashboard access
         logAuditEvent({
           userId: user.id,
+          userEmail: user.email || 'unknown',
           action: 'dashboard.access_failed',
-          resourceType: 'dashboard',
-          resourceId: user.id,
-          metadata: {
+          details: {
+            resourceType: 'dashboard',
+            resourceId: user.id,
             error: error.message,
           },
         }).catch((err) => console.error('Audit log failed:', err));
@@ -37,10 +38,11 @@ export const GET = withAuth(
       // Async audit logging (don't block response)
       logAuditEvent({
         userId: user.id,
+        userEmail: user.email || 'unknown',
         action: 'dashboard.accessed',
-        resourceType: 'dashboard',
-        resourceId: user.id,
-        metadata: {
+        details: {
+          resourceType: 'dashboard',
+          resourceId: user.id,
           enrollmentsCount: data?.enrollments?.length || 0,
           upcomingSessionsCount: data?.upcoming_sessions?.length || 0,
           pendingAssignmentsCount: data?.pending_assignments?.length || 0,
@@ -69,10 +71,11 @@ export const GET = withAuth(
       // Log error
       logAuditEvent({
         userId: user.id,
+        userEmail: user.email || 'unknown',
         action: 'dashboard.error',
-        resourceType: 'dashboard',
-        resourceId: user.id,
-        metadata: {
+        details: {
+          resourceType: 'dashboard',
+          resourceId: user.id,
           error: error instanceof Error ? error.message : 'Unknown error',
         },
       }).catch((err) => console.error('Audit log failed:', err));
@@ -83,5 +86,5 @@ export const GET = withAuth(
       );
     }
   },
-  ['student', 'instructor', 'parent']
+  ['student', 'instructor']
 );

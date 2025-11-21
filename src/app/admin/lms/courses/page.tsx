@@ -74,7 +74,7 @@ import { CURRENCIES } from '@/lib/utils/currency';
 // ============================================================================
 
 interface CreateCourseData {
-  program_id: string;
+  program_id: string | undefined;
   title: string;
   description?: string;
   start_date: string;
@@ -1316,7 +1316,7 @@ export default function CoursesListPage() {
                 <Select
                   value={newCourse.program_id || undefined}
                   onValueChange={(value) => {
-                    const newValue = value === '_clear' ? undefined : value;
+                    const newValue: string | undefined = value === '_clear' ? undefined : value;
                     setNewCourse({ ...newCourse, program_id: newValue });
                     if (validationErrors.program_id) {
                       setValidationErrors({ ...validationErrors, program_id: '' });
@@ -1457,7 +1457,7 @@ export default function CoursesListPage() {
                           ...newCourse,
                           is_standalone: checked,
                           // Clear program if switching to standalone
-                          program_id: checked ? undefined : newCourse.program_id
+                          program_id: (checked ? undefined : newCourse.program_id) as string | undefined
                         });
                       }}
                     />
@@ -1472,7 +1472,7 @@ export default function CoursesListPage() {
                           ...newCourse,
                           is_standalone: checked,
                           // Clear program if switching to standalone
-                          program_id: checked ? undefined : newCourse.program_id
+                          program_id: (checked ? undefined : newCourse.program_id) as string | undefined
                         });
                       }}
                     />
@@ -1732,7 +1732,7 @@ export default function CoursesListPage() {
                 <Select
                   value={editCourse.program_id || undefined}
                   onValueChange={(value) => {
-                    const newValue = value === '_clear' ? undefined : value;
+                    const newValue: string | undefined = value === '_clear' ? undefined : value;
                     setEditCourse({ ...editCourse, program_id: newValue });
                     if (validationErrors.program_id) {
                       setValidationErrors({ ...validationErrors, program_id: '' });
@@ -1873,7 +1873,7 @@ export default function CoursesListPage() {
                           ...editCourse,
                           is_standalone: checked,
                           // Clear program if switching to standalone
-                          program_id: checked ? undefined : editCourse.program_id
+                          program_id: (checked ? undefined : editCourse.program_id) as string | undefined
                         });
                       }}
                     />
@@ -1888,7 +1888,7 @@ export default function CoursesListPage() {
                           ...editCourse,
                           is_standalone: checked,
                           // Clear program if switching to standalone
-                          program_id: checked ? undefined : editCourse.program_id
+                          program_id: (checked ? undefined : editCourse.program_id) as string | undefined
                         });
                       }}
                     />
@@ -2093,7 +2093,7 @@ export default function CoursesListPage() {
                 <Select
                   value={duplicateCourse.program_id || undefined}
                   onValueChange={(value) => {
-                    const newValue = value === '_clear' ? undefined : value;
+                    const newValue: string | undefined = value === '_clear' ? undefined : value;
                     setDuplicateCourse({ ...duplicateCourse, program_id: newValue });
                     if (validationErrors.program_id) {
                       setValidationErrors({ ...validationErrors, program_id: '' });
@@ -2230,7 +2230,7 @@ export default function CoursesListPage() {
                           ...duplicateCourse,
                           is_standalone: checked,
                           // Clear program if switching to standalone
-                          program_id: checked ? undefined : duplicateCourse.program_id
+                          program_id: (checked ? undefined : duplicateCourse.program_id) as string | undefined
                         });
                       }}
                     />
@@ -2245,7 +2245,7 @@ export default function CoursesListPage() {
                           ...duplicateCourse,
                           is_standalone: checked,
                           // Clear program if switching to standalone
-                          program_id: checked ? undefined : duplicateCourse.program_id
+                          program_id: (checked ? undefined : duplicateCourse.program_id) as string | undefined
                         });
                       }}
                     />

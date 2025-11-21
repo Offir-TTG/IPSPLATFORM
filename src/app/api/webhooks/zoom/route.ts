@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { zoomService } from '@/lib/zoom/zoomService';
+import { ZoomService } from '@/lib/zoom/zoomService';
 import crypto from 'crypto';
 
 /**
@@ -194,7 +194,33 @@ async function handleRecordingCompleted(payload: any) {
     recordingCount: payload.object.recording_files?.length || 0
   });
 
+  // Get Zoom session to find tenant_id
+  const supabase = await createClient();
+  const { data: zoomSession } = await supabase
+    .from('zoom_sessions')
+    .select('lesson_id')
+    .eq('zoom_meeting_id', payload.object.id)
+    .single();
+
+  if (!zoomSession?.lesson_id) {
+    console.error('[Zoom] No lesson found for meeting:', payload.object.id);
+    return;
+  }
+
+  // Get lesson to find tenant_id
+  const { data: lesson } = await supabase
+    .from('lessons')
+    .select('tenant_id')
+    .eq('id', zoomSession.lesson_id)
+    .single();
+
+  if (!lesson?.tenant_id) {
+    console.error('[Zoom] No tenant_id found for lesson:', zoomSession.lesson_id);
+    return;
+  }
+
   // Process recording using zoom service
+  const zoomService = new ZoomService(lesson.tenant_id);
   const result = await zoomService.processRecordingWebhook(payload);
 
   if (!result.success) {

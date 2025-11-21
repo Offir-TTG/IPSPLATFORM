@@ -416,7 +416,7 @@ export default function ProgramsPage() {
 
     setSaving(true);
     try {
-      let uploadedImageUrl = formData.image_url;
+      let uploadedImageUrl: string | null | undefined = formData.image_url;
 
       // Upload new image if there's a file
       if (imageFile) {

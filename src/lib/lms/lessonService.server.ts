@@ -197,7 +197,16 @@ export const lessonService = {
 
       if (config.create_zoom_meetings && data.length > 0) {
         const { ZoomService } = await import('@/lib/zoom/zoomService');
-        const zoomService = new ZoomService();
+        // Get tenant_id from the first lesson
+        const tenantId = data[0].tenant_id;
+        if (!tenantId) {
+          console.error('[bulkCreateLessons] No tenant_id found on lessons');
+          return {
+            success: false,
+            error: 'No tenant context found for creating Zoom meetings',
+          };
+        }
+        const zoomService = new ZoomService(tenantId);
 
         for (const lesson of data) {
           try {
@@ -291,23 +300,30 @@ export const lessonService = {
         try {
           console.log('[updateLesson] Auto-syncing changes to Zoom meeting:', zoomMeetingId);
           const { ZoomService } = await import('@/lib/zoom/zoomService');
-          const zoomService = new ZoomService();
-
-          // Build update options for Zoom
-          const zoomUpdateOptions: any = {};
-          if (updates.start_time) zoomUpdateOptions.start_time = updates.start_time;
-          if (updates.duration) zoomUpdateOptions.duration = updates.duration;
-          if (updates.timezone) zoomUpdateOptions.timezone = updates.timezone;
-          if (updates.title) zoomUpdateOptions.topic = updates.title;
-
-          const zoomResult = await zoomService.updateMeetingForLesson(id, zoomUpdateOptions);
-
-          if (!zoomResult.success) {
-            console.error('[updateLesson] Failed to sync to Zoom:', zoomResult.error);
-            zoomSyncMessage = ` (Warning: Zoom sync failed - ${zoomResult.error})`;
+          // Get tenant_id from the updated lesson
+          const tenantId = (data as any).tenant_id;
+          if (!tenantId) {
+            console.error('[updateLesson] No tenant_id found on lesson');
+            zoomSyncMessage = ' (Zoom sync skipped: no tenant context)';
           } else {
-            console.log('[updateLesson] Successfully synced changes to Zoom');
-            zoomSyncMessage = ' and synced to Zoom meeting';
+            const zoomService = new ZoomService(tenantId);
+
+            // Build update options for Zoom
+            const zoomUpdateOptions: any = {};
+            if (updates.start_time) zoomUpdateOptions.start_time = updates.start_time;
+            if (updates.duration) zoomUpdateOptions.duration = updates.duration;
+            if (updates.timezone) zoomUpdateOptions.timezone = updates.timezone;
+            if (updates.title) zoomUpdateOptions.topic = updates.title;
+
+            const zoomResult = await zoomService.updateMeetingForLesson(id, zoomUpdateOptions);
+
+            if (!zoomResult.success) {
+              console.error('[updateLesson] Failed to sync to Zoom:', zoomResult.error);
+              zoomSyncMessage = ` (Warning: Zoom sync failed - ${zoomResult.error})`;
+            } else {
+              console.log('[updateLesson] Successfully synced changes to Zoom');
+              zoomSyncMessage = ' and synced to Zoom meeting';
+            }
           }
         } catch (zoomError) {
           // Don't fail the lesson update if Zoom service is unavailable
@@ -338,6 +354,23 @@ export const lessonService = {
       console.log('[lessonService.deleteLesson] Starting delete for:', id);
       const supabase = createAdminClient();
 
+      // Get the lesson to access tenant_id
+      const { data: lesson, error: lessonFetchError } = await supabase
+        .from('lessons')
+        .select('tenant_id')
+        .eq('id', id)
+        .single();
+
+      if (lessonFetchError || !lesson) {
+        console.log('[lessonService.deleteLesson] Error fetching lesson:', lessonFetchError);
+        return {
+          success: false,
+          error: 'Lesson not found',
+        };
+      }
+
+      const tenantId = lesson.tenant_id;
+
       // First, get zoom session info before deleting
       console.log('[lessonService.deleteLesson] Checking for zoom_sessions...');
       const { data: zoomSessions, error: zoomFetchError } = await supabase
@@ -356,7 +389,7 @@ export const lessonService = {
         console.log('[lessonService.deleteLesson] Found', zoomSessions.length, 'Zoom meetings to delete');
         try {
           const { ZoomService } = await import('@/lib/zoom/zoomService');
-          const zoomService = new ZoomService();
+          const zoomService = new ZoomService(tenantId);
           const zoomClient = await (zoomService as any).getZoomClient();
 
           for (const session of zoomSessions) {

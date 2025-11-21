@@ -66,9 +66,10 @@ export interface CreateMeetingOptions {
 
 export class ZoomService {
   private zoomClient: ZoomClient | null = null;
+  private tenantId: string;
 
-  constructor() {
-    // Don't initialize ZoomClient here - do it lazily when needed
+  constructor(tenantId: string) {
+    this.tenantId = tenantId;
   }
 
   /**
@@ -81,15 +82,19 @@ export class ZoomService {
 
     const supabase = createAdminClient();
 
+    // Query integrations filtered by tenant_id
+    // Using admin client to bypass RLS, but still filter by tenant_id for security
     const { data: integration, error } = await supabase
       .from('integrations')
       .select('*')
       .eq('integration_key', 'zoom')
+      .eq('tenant_id', this.tenantId)
       .eq('is_enabled', true)
       .single();
 
     if (error || !integration) {
-      throw new Error('Zoom integration is not enabled or not configured');
+      console.error('[ZoomService] Integration query error:', error);
+      throw new Error('Zoom integration is not enabled or not configured for this tenant');
     }
 
     const credentials = integration.credentials;
@@ -605,5 +610,5 @@ export class ZoomService {
   }
 }
 
-// Export singleton instance
-export const zoomService = new ZoomService();
+// Note: ZoomService requires tenant_id parameter, so no singleton export
+// Create instances as needed: new ZoomService(tenantId)

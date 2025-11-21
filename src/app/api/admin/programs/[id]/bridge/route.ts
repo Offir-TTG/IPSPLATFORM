@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { zoomService } from '@/lib/zoom/zoomService';
+import { ZoomService } from '@/lib/zoom/zoomService';
 
 // ============================================================================
 // POST /api/admin/programs/[id]/bridge
@@ -64,6 +64,7 @@ export async function POST(
     }
 
     // Create or get existing bridge link
+    const zoomService = new ZoomService(program.tenant_id);
     const result = await zoomService.createInstructorBridgeLink(
       programId,
       instructorId

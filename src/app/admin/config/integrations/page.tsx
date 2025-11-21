@@ -21,7 +21,8 @@ import {
   Globe,
   Shield,
   Settings,
-  Plug
+  Plug,
+  Users
 } from 'lucide-react';
 
 interface Integration {
@@ -349,12 +350,121 @@ export default function IntegrationsPage() {
           placeholder: 'MGxxxx...'
         }
       ]
+    },
+    {
+      key: 'keap',
+      name: 'Keap (Infusionsoft)',
+      description: t('admin.integrations.keap.description', 'CRM and marketing automation platform'),
+      icon: <Users className="h-5 w-5" />,
+      fields: [
+        {
+          key: 'client_id',
+          label: t('admin.integrations.keap.clientId', 'Client ID'),
+          type: 'text',
+          placeholder: t('admin.integrations.keap.clientIdPlaceholder', 'Your Keap Client ID'),
+          required: true
+        },
+        {
+          key: 'client_secret',
+          label: t('admin.integrations.keap.clientSecret', 'Client Secret'),
+          type: 'password',
+          placeholder: t('admin.integrations.keap.clientSecretPlaceholder', 'Your Keap Client Secret'),
+          required: true
+        },
+        {
+          key: 'access_token',
+          label: t('admin.integrations.keap.accessToken', 'Access Token'),
+          type: 'password',
+          placeholder: t('admin.integrations.keap.accessTokenPlaceholder', 'Generated after OAuth authorization'),
+          required: false
+        },
+        {
+          key: 'refresh_token',
+          label: t('admin.integrations.keap.refreshToken', 'Refresh Token'),
+          type: 'password',
+          placeholder: t('admin.integrations.keap.refreshTokenPlaceholder', 'Generated after OAuth authorization'),
+          required: false
+        }
+      ],
+      settings: [
+        {
+          key: 'auto_sync_contacts',
+          label: t('admin.integrations.keap.autoSyncContacts', 'Auto-sync Contacts'),
+          type: 'toggle'
+        },
+        {
+          key: 'default_tag_category',
+          label: t('admin.integrations.keap.defaultTagCategory', 'Default Tag Category'),
+          type: 'text',
+          placeholder: t('admin.integrations.keap.defaultTagCategoryPlaceholder', 'LMS Students')
+        },
+        {
+          key: 'sync_frequency',
+          label: t('admin.integrations.keap.syncFrequency', 'Sync Frequency'),
+          type: 'select',
+          options: [
+            { value: 'realtime', label: t('admin.integrations.keap.syncRealtime', 'Real-time') },
+            { value: 'hourly', label: t('admin.integrations.keap.syncHourly', 'Hourly') },
+            { value: 'daily', label: t('admin.integrations.keap.syncDaily', 'Daily') },
+            { value: 'manual', label: t('admin.integrations.keap.syncManual', 'Manual') }
+          ]
+        }
+      ]
     }
   ];
 
   useEffect(() => {
     fetchIntegrations();
   }, []);
+
+  // Handle OAuth callbacks (Keap, DocuSign, etc.)
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+
+      if (code) {
+        // Determine which integration based on URL or state
+        const keapIntegration = integrations.find(i => i.integration_key === 'keap');
+
+        if (keapIntegration) {
+          try {
+            toast.info('Processing Keap authorization...');
+
+            // Exchange code for tokens
+            const response = await fetch('/api/admin/integrations/keap/oauth-callback', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ code }),
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              toast.success('Keap authorization successful! Tokens have been saved.');
+
+              // Refresh integrations to show new tokens
+              await fetchIntegrations();
+
+              // Clean up URL
+              window.history.replaceState({}, document.title, window.location.pathname);
+            } else {
+              const error = await response.json();
+              toast.error(`Keap authorization failed: ${error.error || 'Unknown error'}`);
+            }
+          } catch (error) {
+            console.error('OAuth callback error:', error);
+            toast.error('Failed to process Keap authorization');
+          }
+        }
+      }
+    };
+
+    if (integrations.length > 0) {
+      handleOAuthCallback();
+    }
+  }, [integrations]);
 
   const fetchIntegrations = async () => {
     try {

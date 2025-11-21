@@ -5,20 +5,28 @@ import dynamic from 'next/dynamic';
 import 'react-quill/dist/quill.snow.css';
 
 interface RichTextEditorProps {
-  value: string;
+  value?: string;
+  content?: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
   dir?: 'ltr' | 'rtl';
+  id?: string;
+  minHeight?: string;
 }
 
 const RichTextEditor: React.FC<RichTextEditorProps> = ({
   value,
+  content,
   onChange,
   placeholder,
   className = '',
   dir = 'ltr',
+  id,
+  minHeight = '200px',
 }) => {
+  // Use content if provided, otherwise use value
+  const editorValue = content ?? value ?? '';
   // Dynamically import ReactQuill to avoid SSR issues
   const ReactQuill = useMemo(
     () => dynamic(() => import('react-quill'), { ssr: false }),
@@ -49,10 +57,10 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   ];
 
   return (
-    <div className={`rich-text-editor ${className}`} dir={dir}>
+    <div className={`rich-text-editor ${className}`} dir={dir} id={id} style={{ minHeight }}>
       <ReactQuill
         theme="snow"
-        value={value}
+        value={editorValue}
         onChange={onChange}
         modules={modules}
         formats={formats}

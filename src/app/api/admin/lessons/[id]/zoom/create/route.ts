@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { zoomService } from '@/lib/zoom/zoomService';
+import { ZoomService } from '@/lib/zoom/zoomService';
 
 // ============================================================================
 // POST /api/admin/lessons/[id]/zoom/create
@@ -35,7 +35,19 @@ export async function POST(
 
     const lessonId = params.id;
 
+    // Get lesson to access tenant_id
+    const { data: lesson, error: lessonError } = await supabase
+      .from('lessons')
+      .select('tenant_id')
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lesson) {
+      return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
+    }
+
     // Create Zoom meeting using service
+    const zoomService = new ZoomService(lesson.tenant_id);
     const result = await zoomService.createMeetingForLesson(lessonId);
 
     if (!result.success) {
