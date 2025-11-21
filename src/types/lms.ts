@@ -99,11 +99,15 @@ export interface BulkLessonCreateInput {
   count: number;
   title_pattern: string; // e.g., "Lesson {n}"
   description_template?: string;
+  content_template?: string;
   starting_order: number;
-  base_start_time: string; // ISO datetime string
-  interval_days?: number; // Days between lessons, default: 1
+  start_time_base: string; // ISO datetime string
+  time_increment_minutes?: number; // Minutes between lessons
   duration?: number; // Duration in minutes, default: 60
   is_published?: boolean;
+  status?: string;
+  materials?: any[];
+  create_zoom_meetings?: boolean; // Auto-create Zoom meetings for each lesson
 }
 
 // ============================================================================
@@ -657,6 +661,13 @@ export interface Course {
   start_date: string;
   end_date: string | null;
   is_active: boolean;
+  image_url: string | null;
+  course_type: 'course' | 'lecture' | 'workshop' | 'webinar';
+  is_standalone: boolean;
+  price: number | null;
+  currency: string | null;
+  payment_plan: 'one_time' | 'installments' | null;
+  installment_count: number | null;
   created_at: string;
   updated_at: string;
 
@@ -673,8 +684,9 @@ export interface Course {
 // Extended Lesson type with LMS fields
 export interface Lesson {
   id: string;
-  course_id: string;
-  module_id: string | null; // NEW: Added by lms-schema.sql
+  // Note: course_id does not exist in database - lessons are related to courses through modules
+  // The relationship is: lessons.module_id → modules.course_id
+  module_id: string | null; // Lessons belong to modules, not directly to courses
   tenant_id: string;
   title: string;
   description: string | null;
@@ -682,10 +694,31 @@ export interface Lesson {
   order: number;
   start_time: string;
   duration: number;
+  timezone?: string; // IANA timezone identifier (e.g., 'Asia/Jerusalem', 'America/New_York')
+
+  // Zoom Basic Info
   zoom_meeting_id: string | null;
   zoom_join_url: string | null;
   zoom_start_url: string | null;
   recording_url: string | null;
+
+  // Zoom Security Settings
+  zoom_passcode?: string | null;
+  zoom_waiting_room?: boolean;
+  zoom_join_before_host?: boolean;
+  zoom_mute_upon_entry?: boolean;
+  zoom_require_authentication?: boolean;
+
+  // Zoom Video/Audio Settings
+  zoom_host_video?: boolean;
+  zoom_participant_video?: boolean;
+  zoom_audio?: 'both' | 'telephony' | 'voip';
+
+  // Zoom Recording Settings
+  zoom_auto_recording?: 'none' | 'local' | 'cloud';
+  zoom_record_speaker_view?: boolean;
+  zoom_recording_disclaimer?: boolean;
+
   materials: LessonMaterial[];
   content_blocks: ContentBlock[]; // NEW: Added by lms-schema.sql
   is_published: boolean; // NEW: Added by lms-schema.sql
@@ -715,6 +748,77 @@ export interface ContentBlock {
   type: string;
   content: any;
   order: number;
+}
+
+// Lesson input types
+export interface LessonCreateInput {
+  course_id: string;
+  module_id?: string | null;
+  title: string;
+  description?: string | null;
+  content?: string | null;
+  order: number;
+  start_time: string;
+  duration: number;
+  timezone?: string;
+
+  // Zoom Security Settings
+  zoom_passcode?: string | null;
+  zoom_waiting_room?: boolean;
+  zoom_join_before_host?: boolean;
+  zoom_mute_upon_entry?: boolean;
+  zoom_require_authentication?: boolean;
+
+  // Zoom Video/Audio Settings
+  zoom_host_video?: boolean;
+  zoom_participant_video?: boolean;
+  zoom_audio?: 'both' | 'telephony' | 'voip';
+
+  // Zoom Recording Settings
+  zoom_auto_recording?: 'none' | 'local' | 'cloud';
+  zoom_record_speaker_view?: boolean;
+  zoom_recording_disclaimer?: boolean;
+
+  materials?: LessonMaterial[];
+  is_published?: boolean;
+  status?: 'scheduled' | 'live' | 'completed' | 'cancelled';
+}
+
+export interface LessonUpdateInput {
+  title?: string;
+  description?: string | null;
+  content?: string | null;
+  order?: number;
+  start_time?: string;
+  duration?: number;
+  timezone?: string;
+
+  // Zoom Basic Info
+  zoom_meeting_id?: string | null;
+  zoom_join_url?: string | null;
+  zoom_start_url?: string | null;
+  recording_url?: string | null;
+
+  // Zoom Security Settings
+  zoom_passcode?: string | null;
+  zoom_waiting_room?: boolean;
+  zoom_join_before_host?: boolean;
+  zoom_mute_upon_entry?: boolean;
+  zoom_require_authentication?: boolean;
+
+  // Zoom Video/Audio Settings
+  zoom_host_video?: boolean;
+  zoom_participant_video?: boolean;
+  zoom_audio?: 'both' | 'telephony' | 'voip';
+
+  // Zoom Recording Settings
+  zoom_auto_recording?: 'none' | 'local' | 'cloud';
+  zoom_record_speaker_view?: boolean;
+  zoom_recording_disclaimer?: boolean;
+
+  materials?: LessonMaterial[];
+  is_published?: boolean;
+  status?: 'scheduled' | 'live' | 'completed' | 'cancelled';
 }
 
 // Extended Program type
@@ -915,3 +1019,52 @@ export type LMSUpdateInput =
   | AttendanceUpdateInput
   | DiscussionUpdateInput
   | AnnouncementUpdateInput;
+
+// ============================================================================
+// COURSE MATERIALS
+// ============================================================================
+
+export type MaterialCategory = 'syllabus' | 'reading' | 'assignment' | 'reference' | 'other';
+
+export interface CourseMaterial {
+  id: string;
+  tenant_id: string;
+  course_id: string;
+  title: string;
+  description: string | null;
+  file_name: string;
+  file_url: string;
+  file_type: string; // MIME type
+  file_size: number; // bytes
+  display_order: number;
+  is_published: boolean;
+  category: MaterialCategory | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+
+  // Relations
+  course?: Course;
+  uploader?: User;
+}
+
+export interface CourseMaterialCreateInput {
+  course_id: string;
+  title: string;
+  description?: string;
+  file_name: string;
+  file_url: string;
+  file_type: string;
+  file_size: number;
+  display_order?: number;
+  is_published?: boolean;
+  category?: MaterialCategory;
+}
+
+export interface CourseMaterialUpdateInput {
+  title?: string;
+  description?: string;
+  display_order?: number;
+  is_published?: boolean;
+  category?: MaterialCategory;
+}

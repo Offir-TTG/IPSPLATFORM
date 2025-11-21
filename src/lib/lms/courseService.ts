@@ -122,6 +122,12 @@ export const courseService = {
     start_date: string;
     end_date?: string;
     is_active?: boolean;
+    course_type: 'course' | 'lecture' | 'workshop' | 'webinar';
+    is_standalone?: boolean;
+    price?: number;
+    currency?: string;
+    payment_plan?: 'one_time' | 'installments';
+    installment_count?: number;
   }): Promise<ApiResponse<Course>> {
     try {
       
@@ -253,6 +259,12 @@ export const courseService = {
           start_date: originalCourse.start_date,
           end_date: originalCourse.end_date,
           is_active: false, // Duplicates start as inactive
+          course_type: originalCourse.course_type,
+          is_standalone: originalCourse.is_standalone,
+          price: originalCourse.price,
+          currency: originalCourse.currency,
+          payment_plan: originalCourse.payment_plan,
+          installment_count: originalCourse.installment_count,
         })
         .select()
         .single();

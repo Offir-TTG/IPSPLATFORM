@@ -83,8 +83,31 @@ export async function PATCH(
     // Get old course data for audit
     const oldCourse = await courseService.getCourseById(params.id);
 
+    // Validate standalone pricing if changing to standalone
+    if (body.is_standalone && (!body.price || !body.payment_plan)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'lms.course.error_standalone_pricing_required',
+          message: 'Price and payment plan are required for standalone courses'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Build update data - only include pricing fields if standalone
+    const updateData: any = { ...body };
+
+    // If switching to non-standalone, explicitly set pricing fields to null
+    if (body.is_standalone === false) {
+      updateData.price = null;
+      updateData.currency = null;
+      updateData.payment_plan = null;
+      updateData.installment_count = null;
+    }
+
     // Update course
-    const result = await courseService.updateCourse(params.id, body);
+    const result = await courseService.updateCourse(params.id, updateData);
 
     if (!result.success) {
       return NextResponse.json(

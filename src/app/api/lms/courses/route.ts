@@ -85,15 +85,31 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validate required fields
-    if (!body.program_id || !body.title || !body.start_date) {
+    if (!body.program_id || !body.title || !body.start_date || !body.course_type) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        {
+          success: false,
+          error: 'lms.course.error_missing_required_fields',
+          message: 'Missing required fields'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate standalone pricing if applicable
+    if (body.is_standalone && (!body.price || !body.payment_plan)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'lms.course.error_standalone_pricing_required',
+          message: 'Price and payment plan are required for standalone courses'
+        },
         { status: 400 }
       );
     }
 
     // Create course
-    const result = await courseService.createCourse({
+    const courseData: any = {
       program_id: body.program_id,
       instructor_id: body.instructor_id || user.id,
       title: body.title,
@@ -102,7 +118,21 @@ export async function POST(request: NextRequest) {
       start_date: body.start_date,
       end_date: body.end_date,
       is_active: body.is_active ?? false,
-    });
+      course_type: body.course_type,
+      is_standalone: body.is_standalone ?? false,
+    };
+
+    // Only add pricing fields if standalone
+    if (body.is_standalone) {
+      courseData.price = body.price;
+      courseData.currency = body.currency || 'usd';
+      courseData.payment_plan = body.payment_plan;
+      if (body.payment_plan === 'installments' && body.installment_count) {
+        courseData.installment_count = body.installment_count;
+      }
+    }
+
+    const result = await courseService.createCourse(courseData);
 
     if (!result.success) {
       return NextResponse.json(
