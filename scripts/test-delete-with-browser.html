@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Lesson Delete</title>
+</head>
+<body>
+    <h1>Test Lesson Deletion</h1>
+    <p>Lesson ID: <input type="text" id="lessonId" value="0e15822a-97d8-4f76-9374-54b4a670a9f2" style="width: 300px"></p>
+    <button onclick="testDelete()">Delete Lesson</button>
+    <pre id="output"></pre>
+
+    <script>
+        async function testDelete() {
+            const lessonId = document.getElementById('lessonId').value;
+            const output = document.getElementById('output');
+
+            output.textContent = 'Testing DELETE request...\n';
+
+            try {
+                const response = await fetch(`http://localhost:3000/api/lms/lessons/${lessonId}`, {
+                    method: 'DELETE',
+                    credentials: 'include', // Important for cookies
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const result = await response.json();
+
+                output.textContent += `\nStatus: ${response.status}\n`;
+                output.textContent += `Response: ${JSON.stringify(result, null, 2)}\n`;
+
+                if (response.status === 401) {
+                    output.textContent += '\n❌ UNAUTHORIZED - Session may have expired\n';
+                    output.textContent += 'Please make sure you are logged in to the main app first!\n';
+                } else if (result.success) {
+                    output.textContent += '\n✅ Lesson deleted successfully!\n';
+                } else {
+                    output.textContent += '\n❌ Failed to delete lesson\n';
+                }
+            } catch (error) {
+                output.textContent += `\nError: ${error.message}\n`;
+            }
+        }
+    </script>
+</body>
+</html>

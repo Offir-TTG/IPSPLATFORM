@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { moduleService } from '@/lib/lms/moduleService';
+import { moduleService } from '@/lib/lms/moduleService.server';
 
 // ============================================================================
 // GET /api/lms/modules/[id]
@@ -9,10 +9,11 @@ import { moduleService } from '@/lib/lms/moduleService';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
+    const { id } = await params;
 
     // Check authentication
     const {
@@ -30,7 +31,7 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams;
     const includeLessons = searchParams.get('include_lessons') === 'true';
 
-    const result = await moduleService.getModuleById(params.id, includeLessons);
+    const result = await moduleService.getModuleById(id, includeLessons);
 
     if (!result.success) {
       return NextResponse.json(
@@ -59,10 +60,11 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
+    const { id } = await params;
 
     // Check authentication
     const {
@@ -80,7 +82,7 @@ export async function PATCH(
     const body = await request.json();
 
     // Update module
-    const result = await moduleService.updateModule(params.id, body);
+    const result = await moduleService.updateModule(id, body);
 
     if (!result.success) {
       return NextResponse.json(
@@ -95,7 +97,7 @@ export async function PATCH(
       event_type: 'UPDATE',
       event_category: 'EDUCATION',
       resource_type: 'modules',
-      resource_id: params.id,
+      resource_id: id,
       action: 'Updated module',
       new_values: body,
       risk_level: 'low',
@@ -122,10 +124,13 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
+    const { id } = await params;
+
+    console.log('[DELETE /api/lms/modules/[id]] Deleting module:', id);
 
     // Check authentication
     const {
@@ -133,14 +138,18 @@ export async function DELETE(
     } = await supabase.auth.getUser();
 
     if (!user) {
+      console.error('[DELETE /api/lms/modules/[id]] User not authenticated');
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
+    console.log('[DELETE /api/lms/modules/[id]] User authenticated:', user.id);
+
     // Delete module
-    const result = await moduleService.deleteModule(params.id);
+    const result = await moduleService.deleteModule(id);
+    console.log('[DELETE /api/lms/modules/[id]] Delete result:', result);
 
     if (!result.success) {
       return NextResponse.json(
@@ -155,9 +164,9 @@ export async function DELETE(
       event_type: 'DELETE',
       event_category: 'EDUCATION',
       resource_type: 'modules',
-      resource_id: params.id,
+      resource_id: id,
       action: 'Deleted module',
-      description: `Deleted module ${params.id}`,
+      description: `Deleted module ${id}`,
       risk_level: 'medium',
     });
 

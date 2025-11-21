@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getCurrentTenant, validateUserTenantAccess, getUserTenantRole } from '@/lib/tenant/detection';
 
 export async function POST(request: NextRequest) {
+  let response = NextResponse.next();
+
   try {
     const { email, password } = await request.json();
 
@@ -13,7 +15,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
+    // Create Supabase client with cookie management for API routes
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return request.cookies.get(name)?.value;
+          },
+          set(name: string, value: string, options: CookieOptions) {
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+            });
+          },
+          remove(name: string, options: CookieOptions) {
+            response.cookies.set({
+              name,
+              value: '',
+              ...options,
+            });
+          },
+        },
+      }
+    );
 
     // Sign in with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -89,7 +116,7 @@ export async function POST(request: NextRequest) {
     const tenantRole = await getUserTenantRole(authData.user.id, tenant.id);
 
     // Get user profile data
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError} = await supabase
       .from('users')
       .select('*')
       .eq('id', authData.user.id)
@@ -102,7 +129,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    // Create response with user data
+    // The cookies are already set by the signInWithPassword call via the cookie callbacks
+    response = NextResponse.json({
       success: true,
       data: {
         user: userData,
@@ -115,6 +144,8 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

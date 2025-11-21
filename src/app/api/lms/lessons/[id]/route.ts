@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { lessonService } from '@/lib/lms/lessonService';
+import { lessonService } from '@/lib/lms/lessonService.server';
 
 // ============================================================================
 // GET /api/lms/lessons/[id]
@@ -125,6 +125,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    console.log('[DELETE /api/lms/lessons/[id]] Starting delete for lesson:', params.id);
     const supabase = await createClient();
 
     // Check authentication
@@ -132,15 +133,20 @@ export async function DELETE(
       data: { user },
     } = await supabase.auth.getUser();
 
+    console.log('[DELETE /api/lms/lessons/[id]] User authenticated:', user ? user.id : 'NO USER');
+
     if (!user) {
+      console.log('[DELETE /api/lms/lessons/[id]] 401 - No user found');
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
+    console.log('[DELETE /api/lms/lessons/[id]] Calling lessonService.deleteLesson');
     // Delete lesson
     const result = await lessonService.deleteLesson(params.id);
+    console.log('[DELETE /api/lms/lessons/[id]] Delete result:', result);
 
     if (!result.success) {
       return NextResponse.json(

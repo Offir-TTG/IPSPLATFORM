@@ -73,6 +73,15 @@ export function createAdminClient() {
       auth: {
         autoRefreshToken: false,
         persistSession: false
+      },
+      db: {
+        schema: 'public'
+      },
+      global: {
+        headers: {
+          'X-Client-Info': 'ips-platform-admin',
+          'Prefer': 'return=representation'
+        }
       }
     }
   );

@@ -12,7 +12,10 @@
       "Bash(xargs kill:*)",
       "Bash(\"C:\\Users\\OffirOmer\\Documents\\IPSPlatform\\src\\app\\admin\\lms\\courses\\[id]\\page.tsx\")",
       "Bash(taskkill:*)",
-      "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")"
+      "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(npx supabase:*)"
     ],
     "deny": [],
     "ask": []

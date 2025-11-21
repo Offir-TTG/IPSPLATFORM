@@ -83,6 +83,7 @@ export const POST = withAuth(async (request: NextRequest, user: any) => {
         docusign_template_id: body.docusign_template_id || null,
         installment_count: body.installment_count || null,
         require_signature: body.require_signature ?? false,
+        image_url: body.image_url || null, // Store image URL
       })
       .select()
       .single();

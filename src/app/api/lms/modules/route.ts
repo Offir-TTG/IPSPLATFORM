@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { moduleService } from '@/lib/lms/moduleService.server';
 
+// Force dynamic rendering - no caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // ============================================================================
 // GET /api/lms/modules
 // List modules for a course
@@ -39,16 +43,26 @@ export async function GET(request: NextRequest) {
     const result = await moduleService.getModulesByCourse(courseId, includeLessons);
 
     if (!result.success) {
+      console.error('Failed to fetch modules:', result.error);
       return NextResponse.json(
         { success: false, error: result.error },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      data: result.data,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data: result.data,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      }
+    );
   } catch (error) {
     console.error('Error fetching modules:', error);
     return NextResponse.json(
@@ -102,6 +116,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!result.success) {
+      console.error('Module creation failed:', result.error);
       return NextResponse.json(
         { success: false, error: result.error },
         { status: 400 }

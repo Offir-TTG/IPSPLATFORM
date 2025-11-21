@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { createClient } from '@/lib/supabase/server';
 
 interface ZoomMeetingSettings {
   host_video?: boolean;
@@ -11,12 +12,14 @@ interface ZoomMeetingSettings {
   audio?: 'both' | 'telephony' | 'voip';
   auto_recording?: 'local' | 'cloud' | 'none';
   waiting_room?: boolean;
+  meeting_authentication?: boolean;
+  enable_waiting_room?: boolean;
 }
 
 interface CreateMeetingParams {
   topic: string;
   type: 2 | 8; // 2 = scheduled, 8 = recurring
-  start_time: string; // ISO 8601 format
+  start_time?: string; // ISO 8601 format (optional for instant meetings)
   duration: number; // in minutes
   timezone?: string;
   password?: string;
@@ -60,21 +63,42 @@ interface ZoomRecordingResponse {
   recording_files: ZoomRecording[];
 }
 
+interface ZoomCredentials {
+  account_id: string;
+  client_id: string;
+  client_secret: string;
+  sdk_key?: string;
+  sdk_secret?: string;
+}
+
+interface ZoomSettings {
+  default_meeting_duration?: string;
+  auto_recording?: 'local' | 'cloud' | 'none';
+  waiting_room?: boolean;
+  join_before_host?: boolean;
+}
+
 export class ZoomClient {
   private api: AxiosInstance;
   private accountId: string;
   private clientId: string;
   private clientSecret: string;
+  private sdkKey?: string;
+  private sdkSecret?: string;
+  private settings: ZoomSettings;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
 
-  constructor() {
-    this.accountId = process.env.ZOOM_ACCOUNT_ID || '';
-    this.clientId = process.env.ZOOM_CLIENT_ID || '';
-    this.clientSecret = process.env.ZOOM_CLIENT_SECRET || '';
+  constructor(credentials: ZoomCredentials, settings?: ZoomSettings) {
+    this.accountId = credentials.account_id;
+    this.clientId = credentials.client_id;
+    this.clientSecret = credentials.client_secret;
+    this.sdkKey = credentials.sdk_key;
+    this.sdkSecret = credentials.sdk_secret;
+    this.settings = settings || {};
 
     if (!this.accountId || !this.clientId || !this.clientSecret) {
-      throw new Error('Zoom credentials are not configured');
+      throw new Error('Zoom credentials are not configured properly');
     }
 
     this.api = axios.create({
@@ -121,7 +145,43 @@ export class ZoomClient {
       return this.accessToken as string;
     } catch (error) {
       console.error('Failed to get Zoom access token:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.reason || error.response?.data?.error || error.message;
+        throw new Error(`Failed to authenticate with Zoom: ${errorMsg}`);
+      }
       throw new Error('Failed to authenticate with Zoom');
+    }
+  }
+
+  /**
+   * Test the connection to Zoom API
+   */
+  async testConnection(): Promise<{ success: boolean; message: string; userInfo?: any }> {
+    try {
+      // Try to get an access token
+      await this.getAccessToken();
+
+      // Get user info to verify credentials
+      const response = await this.api.get('/users/me');
+
+      return {
+        success: true,
+        message: `Connected successfully as: ${response.data.first_name} ${response.data.last_name} (${response.data.email})`,
+        userInfo: response.data
+      };
+    } catch (error) {
+      console.error('Zoom connection test failed:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.response?.data?.error || error.message;
+        return {
+          success: false,
+          message: `Connection failed: ${errorMsg}`
+        };
+      }
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Connection test failed'
+      };
     }
   }
 
@@ -130,25 +190,28 @@ export class ZoomClient {
    */
   async createMeeting(params: CreateMeetingParams): Promise<ZoomMeeting> {
     try {
+      const defaultDuration = parseInt(this.settings.default_meeting_duration || '60');
+      const autoRecording = this.settings.auto_recording || 'none';
+
       const response = await this.api.post('/users/me/meetings', {
         topic: params.topic,
         type: params.type,
         start_time: params.start_time,
-        duration: params.duration,
-        timezone: params.timezone || 'America/New_York',
+        duration: params.duration || defaultDuration,
+        timezone: params.timezone || 'UTC',
         password: params.password,
         agenda: params.agenda,
         settings: {
           host_video: true,
           participant_video: true,
-          join_before_host: false,
+          join_before_host: this.settings.join_before_host ?? false,
           mute_upon_entry: true,
           watermark: false,
           use_pmi: false,
           approval_type: 2, // no registration required
           audio: 'both',
-          auto_recording: 'cloud',
-          waiting_room: true,
+          auto_recording: autoRecording,
+          waiting_room: this.settings.waiting_room ?? true,
           ...params.settings,
         },
       });
@@ -156,8 +219,23 @@ export class ZoomClient {
       return response.data;
     } catch (error) {
       console.error('Failed to create Zoom meeting:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to create Zoom meeting: ${errorMsg}`);
+      }
       throw new Error('Failed to create Zoom meeting');
     }
+  }
+
+  /**
+   * Create an instant meeting (starts immediately)
+   */
+  async createInstantMeeting(topic: string, duration?: number): Promise<ZoomMeeting> {
+    return this.createMeeting({
+      topic,
+      type: 2, // Instant meeting
+      duration: duration || parseInt(this.settings.default_meeting_duration || '60'),
+    });
   }
 
   /**
@@ -169,6 +247,10 @@ export class ZoomClient {
       return response.data;
     } catch (error) {
       console.error('Failed to get Zoom meeting:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to get Zoom meeting: ${errorMsg}`);
+      }
       throw new Error('Failed to get Zoom meeting');
     }
   }
@@ -184,6 +266,10 @@ export class ZoomClient {
       await this.api.patch(`/meetings/${meetingId}`, params);
     } catch (error) {
       console.error('Failed to update Zoom meeting:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to update Zoom meeting: ${errorMsg}`);
+      }
       throw new Error('Failed to update Zoom meeting');
     }
   }
@@ -196,7 +282,33 @@ export class ZoomClient {
       await this.api.delete(`/meetings/${meetingId}`);
     } catch (error) {
       console.error('Failed to delete Zoom meeting:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to delete Zoom meeting: ${errorMsg}`);
+      }
       throw new Error('Failed to delete Zoom meeting');
+    }
+  }
+
+  /**
+   * List all meetings for the user
+   */
+  async listMeetings(type: 'scheduled' | 'live' | 'upcoming' = 'upcoming'): Promise<ZoomMeeting[]> {
+    try {
+      const response = await this.api.get('/users/me/meetings', {
+        params: {
+          type,
+          page_size: 300
+        }
+      });
+      return response.data.meetings || [];
+    } catch (error) {
+      console.error('Failed to list Zoom meetings:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to list Zoom meetings: ${errorMsg}`);
+      }
+      throw new Error('Failed to list Zoom meetings');
     }
   }
 
@@ -209,6 +321,10 @@ export class ZoomClient {
       return response.data;
     } catch (error) {
       console.error('Failed to get Zoom recordings:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to get Zoom recordings: ${errorMsg}`);
+      }
       throw new Error('Failed to get Zoom recordings');
     }
   }
@@ -221,59 +337,96 @@ export class ZoomClient {
       await this.api.delete(`/meetings/${meetingId}/recordings`);
     } catch (error) {
       console.error('Failed to delete Zoom recording:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to delete Zoom recording: ${errorMsg}`);
+      }
       throw new Error('Failed to delete Zoom recording');
     }
   }
 
   /**
-   * Get recording download token (for downloading cloud recordings)
+   * Get past meeting participants
    */
-  async getRecordingDownloadToken(downloadUrl: string): Promise<string> {
+  async getMeetingParticipants(meetingId: string): Promise<any[]> {
     try {
-      // Extract meeting UUID from download URL
-      const urlParams = new URL(downloadUrl).searchParams;
-      const meetingUUID = urlParams.get('meeting_id');
-
-      if (!meetingUUID) {
-        throw new Error('Invalid download URL');
-      }
-
-      const response = await this.api.get(
-        `/meetings/${meetingUUID}/recordings/settings`
-      );
-
-      return response.data.download_access_token;
+      const response = await this.api.get(`/past_meetings/${meetingId}/participants`);
+      return response.data.participants || [];
     } catch (error) {
-      console.error('Failed to get recording download token:', error);
-      throw new Error('Failed to get recording download token');
+      console.error('Failed to get meeting participants:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMsg = error.response?.data?.message || error.message;
+        throw new Error(`Failed to get meeting participants: ${errorMsg}`);
+      }
+      throw new Error('Failed to get meeting participants');
     }
   }
 
   /**
    * Generate Zoom SDK JWT token for client-side integration
+   * Note: This requires the SDK key and secret to be configured
    */
   generateSDKJWT(meetingNumber: string, role: 0 | 1): string {
     // Role: 0 = participant, 1 = host
-    // This is a simplified version - in production, use a proper JWT library
-    const sdkKey = process.env.NEXT_PUBLIC_ZOOM_SDK_KEY || '';
-    const sdkSecret = process.env.NEXT_PUBLIC_ZOOM_SDK_SECRET || '';
-
-    if (!sdkKey || !sdkSecret) {
-      throw new Error('Zoom SDK credentials are not configured');
+    if (!this.sdkKey || !this.sdkSecret) {
+      throw new Error('Zoom SDK credentials are not configured. Please add SDK Key and SDK Secret in the integration settings.');
     }
 
-    // In production, use jsonwebtoken library to generate JWT
-    // For now, this is a placeholder
-    throw new Error('SDK JWT generation not implemented - use jsonwebtoken library');
+    // Use jsonwebtoken library to generate JWT
+    const jwt = require('jsonwebtoken');
+
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + 60 * 60 * 2; // 2 hours
+
+    const payload = {
+      sdkKey: this.sdkKey,
+      mn: meetingNumber,
+      role,
+      iat,
+      exp,
+      appKey: this.sdkKey,
+      tokenExp: exp
+    };
+
+    return jwt.sign(payload, this.sdkSecret);
   }
 }
 
-// Singleton instance
-let zoomClient: ZoomClient | null = null;
+/**
+ * Get Zoom client with credentials from database
+ */
+export async function getZoomClient(): Promise<ZoomClient> {
+  try {
+    const supabase = await createClient();
 
-export function getZoomClient(): ZoomClient {
-  if (!zoomClient) {
-    zoomClient = new ZoomClient();
+    const { data: integration, error } = await supabase
+      .from('integrations')
+      .select('*')
+      .eq('integration_key', 'zoom')
+      .eq('is_enabled', true)
+      .single();
+
+    if (error || !integration) {
+      throw new Error('Zoom integration is not enabled or not configured');
+    }
+
+    const credentials = integration.credentials as ZoomCredentials;
+    const settings = integration.settings as ZoomSettings;
+
+    if (!credentials.account_id || !credentials.client_id || !credentials.client_secret) {
+      throw new Error('Zoom credentials are incomplete. Please configure the integration in the admin panel.');
+    }
+
+    return new ZoomClient(credentials, settings);
+  } catch (error) {
+    console.error('Failed to get Zoom client:', error);
+    throw error;
   }
-  return zoomClient;
+}
+
+/**
+ * Get Zoom client with specific credentials (for testing)
+ */
+export function createZoomClient(credentials: ZoomCredentials, settings?: ZoomSettings): ZoomClient {
+  return new ZoomClient(credentials, settings);
 }

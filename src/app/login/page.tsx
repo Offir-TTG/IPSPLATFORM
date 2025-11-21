@@ -7,6 +7,7 @@ import { BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUserLanguage, useTenant } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { supabase } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -41,7 +42,25 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        console.error('Login failed:', data);
         throw new Error(data.error || 'Failed to login');
+      }
+
+      console.log('Login successful, setting session...');
+
+      // Set the Supabase session on the client
+      if (data.data.session) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.data.session.access_token,
+          refresh_token: data.data.session.refresh_token,
+        });
+
+        if (sessionError) {
+          console.error('Failed to set session:', sessionError);
+          throw new Error('Failed to set session');
+        }
+
+        console.log('Session set successfully');
       }
 
       // Set tenant information in context
@@ -55,13 +74,15 @@ export default function LoginPage() {
         localStorage.setItem('tenant_name', data.data.tenant.name);
       }
 
+      // Wait a bit for cookies to be set
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       // Redirect based on user role
-      if (data.data.user.role === 'admin') {
+      if (data.data.user.role === 'admin' || data.data.user.role === 'super_admin') {
         router.push('/admin/dashboard');
-      } else if (data.data.user.role === 'instructor') {
-        router.push('/instructor/dashboard');
       } else {
-        router.push('/student/dashboard');
+        // Students, Instructors, and Parents go to user portal
+        router.push('/dashboard');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -82,12 +103,9 @@ export default function LoginPage() {
             <BookOpen className="h-8 w-8 text-primary" />
             <span className="text-2xl font-bold">{t('nav.home')}</span>
           </Link>
-          <h1 className="text-3xl font-bold mb-2">Super Admin Login</h1>
+          <h1 className="text-3xl font-bold mb-2">{t('auth.login.title', 'Welcome Back')}</h1>
           <p className="text-muted-foreground">
-            Platform administrator access only
-          </p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Organization users: use your organization's login URL
+            {t('auth.login.subtitle', 'Sign in to your account to continue')}
           </p>
         </div>
 

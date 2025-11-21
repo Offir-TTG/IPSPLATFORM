@@ -64,6 +64,16 @@ export default function TranslationsPage() {
     totalPages: 0,
   });
   const [currentPage, setCurrentPage] = useState(1);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  // Responsive breakpoints
+  const isMobile = windowWidth <= 640;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Smart debounce: immediate for empty/short, delayed for longer searches
   useEffect(() => {
@@ -247,7 +257,7 @@ export default function TranslationsPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="max-w-6xl space-y-6">
         {/* Header */}
         <div>
           <h1 style={{

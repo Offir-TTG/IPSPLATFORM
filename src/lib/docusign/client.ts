@@ -1,32 +1,53 @@
 import docusign from 'docusign-esign';
+import { createClient } from '@/lib/supabase/server';
 
-interface RecipientInfo {
+export interface RecipientInfo {
   email: string;
   name: string;
   recipientId: string;
   routingOrder?: string;
 }
 
-interface EnvelopeResponse {
+export interface EnvelopeResponse {
   envelopeId: string;
   status: string;
   statusDateTime: string;
 }
 
+export interface DocuSignCredentials {
+  account_id: string;
+  integration_key: string;
+  user_id: string;
+  private_key: string;
+  oauth_base_path: string;
+  base_path: string;
+}
+
+export interface DocuSignSettings {
+  default_template_id?: string;
+  auto_send?: boolean;
+}
+
 export class DocuSignClient {
   private apiClient: docusign.ApiClient;
   private accountId: string;
+  private integrationKey: string;
+  private userId: string;
+  private privateKey: string;
+  private settings: DocuSignSettings;
 
-  constructor() {
-    this.accountId = process.env.DOCUSIGN_ACCOUNT_ID || '';
-    const integrationKey = process.env.DOCUSIGN_INTEGRATION_KEY || '';
-    const userId = process.env.DOCUSIGN_USER_ID || '';
-    const privateKey = process.env.DOCUSIGN_PRIVATE_KEY || '';
-    const oAuthBasePath = process.env.DOCUSIGN_OAUTH_BASE_PATH || '';
-    const basePath = process.env.DOCUSIGN_BASE_PATH || '';
+  constructor(credentials: DocuSignCredentials, settings?: DocuSignSettings) {
+    this.accountId = credentials.account_id;
+    this.integrationKey = credentials.integration_key;
+    this.userId = credentials.user_id;
+    this.privateKey = credentials.private_key;
+    this.settings = settings || {};
 
-    if (!this.accountId || !integrationKey || !userId || !privateKey) {
-      throw new Error('DocuSign credentials are not configured');
+    const oAuthBasePath = credentials.oauth_base_path;
+    const basePath = credentials.base_path;
+
+    if (!this.accountId || !this.integrationKey || !this.userId || !this.privateKey) {
+      throw new Error('DocuSign credentials are incomplete. Please configure the integration in the admin panel.');
     }
 
     // Initialize API client
@@ -40,17 +61,20 @@ export class DocuSignClient {
    */
   private async authenticate(): Promise<void> {
     try {
-      const integrationKey = process.env.DOCUSIGN_INTEGRATION_KEY || '';
-      const userId = process.env.DOCUSIGN_USER_ID || '';
-      const privateKey = process.env.DOCUSIGN_PRIVATE_KEY || '';
       const scopes = ['signature', 'impersonation'];
+
+      // Format private key - replace \n with actual newlines if needed
+      let privateKey = this.privateKey;
+      if (privateKey.includes('\\n')) {
+        privateKey = privateKey.replace(/\\n/g, '\n');
+      }
 
       // Request JWT token
       const results = await this.apiClient.requestJWTUserToken(
-        integrationKey,
-        userId,
+        this.integrationKey,
+        this.userId,
         scopes,
-        Buffer.from(privateKey),
+        Buffer.from(privateKey, 'utf8'),
         3600 // 1 hour
       );
 
@@ -218,14 +242,63 @@ export class DocuSignClient {
       throw new Error('Failed to download documents');
     }
   }
+
+  /**
+   * List all templates
+   */
+  async listTemplates(): Promise<Array<{ templateId: string; name: string }>> {
+    await this.authenticate();
+
+    try {
+      const templatesApi = new docusign.TemplatesApi(this.apiClient);
+      const templates = await templatesApi.listTemplates(this.accountId);
+
+      return (templates.envelopeTemplates || []).map((template: any) => ({
+        templateId: template.templateId || '',
+        name: template.name || '',
+      }));
+    } catch (error) {
+      console.error('Failed to list templates:', error);
+      throw new Error('Failed to list templates');
+    }
+  }
 }
 
-// Singleton instance
-let docusignClient: DocuSignClient | null = null;
+/**
+ * Get DocuSign client with credentials from database
+ */
+export async function getDocuSignClient(): Promise<DocuSignClient> {
+  try {
+    const supabase = await createClient();
 
-export function getDocuSignClient(): DocuSignClient {
-  if (!docusignClient) {
-    docusignClient = new DocuSignClient();
+    const { data: integration, error } = await supabase
+      .from('integrations')
+      .select('*')
+      .eq('integration_key', 'docusign')
+      .eq('is_enabled', true)
+      .single();
+
+    if (error || !integration) {
+      throw new Error('DocuSign integration is not enabled or not configured');
+    }
+
+    const credentials = integration.credentials as DocuSignCredentials;
+    const settings = integration.settings as DocuSignSettings;
+
+    if (!credentials.account_id || !credentials.integration_key || !credentials.user_id || !credentials.private_key) {
+      throw new Error('DocuSign credentials are incomplete. Please configure the integration in the admin panel.');
+    }
+
+    return new DocuSignClient(credentials, settings);
+  } catch (error) {
+    console.error('Failed to get DocuSign client:', error);
+    throw error;
   }
-  return docusignClient;
+}
+
+/**
+ * Get DocuSign client with specific credentials (for testing)
+ */
+export function createDocuSignClient(credentials: DocuSignCredentials, settings?: DocuSignSettings): DocuSignClient {
+  return new DocuSignClient(credentials, settings);
 }

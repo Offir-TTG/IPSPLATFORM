@@ -57,6 +57,7 @@ export default function LanguagesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingLanguage, setEditingLanguage] = useState<Language | null>(null);
   const [deletingLanguage, setDeletingLanguage] = useState<Language | null>(null);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   const [formData, setFormData] = useState<Language>({
     code: '',
     name: '',
@@ -67,6 +68,17 @@ export default function LanguagesPage() {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Responsive breakpoints
+  const isMobile = windowWidth <= 640;
+  const isTablet = windowWidth > 640 && windowWidth <= 768;
+  const isDesktop = windowWidth > 768;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     loadLanguages();
@@ -315,7 +327,7 @@ export default function LanguagesPage() {
 
   return (
     <AdminLayout>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="max-w-6xl" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -360,7 +372,9 @@ export default function LanguagesPage() {
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-family-primary)',
               fontWeight: 'var(--font-weight-medium)',
-              transition: 'opacity 0.2s'
+              transition: 'opacity 0.2s',
+              width: isMobile ? '100%' : 'auto',
+              justifyContent: isMobile ? 'center' : 'flex-start'
             }}
             className="hover:opacity-90"
           >

@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 // ============================================================================
-// MULTITENANCY MIDDLEWARE
+// MULTITENANCY & AUTH MIDDLEWARE
 // ============================================================================
-// Detects tenant from subdomain and sets tenant context
-// Runs before every request to validate tenant access
+// 1. Refreshes Supabase auth session cookies
+// 2. Detects tenant from subdomain and sets tenant context
+// 3. Runs before every request to validate tenant access
 // ============================================================================
 
 // Environment configuration
@@ -19,6 +21,12 @@ const RESERVED_SUBDOMAINS = ['www', 'api', 'admin', 'app', 'dashboard', 'status'
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
+
   // Skip middleware for static files and Next.js internals
   if (
     pathname.startsWith('/_next') ||
@@ -27,12 +35,58 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/public') ||
     pathname.includes('.')  // Skip files with extensions (images, etc.)
   ) {
-    return NextResponse.next();
+    return response;
   }
 
+  // ============================================================================
+  // STEP 1: Refresh Supabase Auth Session
+  // ============================================================================
+  // This is CRITICAL for auth to work correctly in Next.js App Router
+  // It ensures auth cookies are refreshed and available to server components
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({
+            name,
+            value,
+            ...options,
+          });
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          });
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({
+            name,
+            value: '',
+            ...options,
+          });
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+          });
+        },
+      },
+    }
+  );
+
+  // This triggers the cookie refresh
+  await supabase.auth.getUser();
+
+  // ============================================================================
+  // STEP 2: Handle Multitenancy
+  // ============================================================================
   // If multitenancy is not enabled, use default tenant
   if (!MULTITENANCY_ENABLED) {
-    const response = NextResponse.next();
     response.headers.set('x-tenant-slug', DEFAULT_TENANT_SLUG);
     return response;
   }
@@ -42,7 +96,6 @@ export async function middleware(request: NextRequest) {
 
   // For local development
   if (hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
-    const response = NextResponse.next();
     response.headers.set('x-tenant-slug', DEFAULT_TENANT_SLUG);
     return response;
   }
@@ -74,7 +127,6 @@ export async function middleware(request: NextRequest) {
   // For now, we'll pass it through and let the API validate
 
   // Set tenant slug in headers for the application to use
-  const response = NextResponse.next();
   response.headers.set('x-tenant-slug', tenantSlug);
 
   return response;

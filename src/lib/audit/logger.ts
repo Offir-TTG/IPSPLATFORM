@@ -13,25 +13,22 @@ export async function logAuditEvent(params: AuditEventParams): Promise<void> {
   try {
     const supabase = await createClient();
 
-    // Get user's tenant_id
-    const { data: userData } = await supabase
-      .from('users')
-      .select('tenant_id')
-      .eq('id', params.userId)
-      .single();
-
     // Log to audit_events table
+    // Note: event_timestamp has DEFAULT NOW(), so we don't need to pass it
     const { error } = await supabase
       .from('audit_events')
       .insert({
-        tenant_id: userData?.tenant_id,
         user_id: params.userId,
         user_email: params.userEmail,
+        event_type: 'UPDATE', // Default to UPDATE, can be parameterized later
+        event_category: 'DATA', // Default to DATA, can be parameterized later
+        resource_type: 'program', // This should be parameterized based on action
         action: params.action,
-        details: params.details || {},
-        ip_address: params.ipAddress || 'unknown',
-        user_agent: params.userAgent || 'unknown',
-        created_at: new Date().toISOString()
+        description: JSON.stringify(params.details || {}),
+        ip_address: params.ipAddress,
+        user_agent: params.userAgent,
+        status: 'success',
+        risk_level: 'low'
       });
 
     if (error) {

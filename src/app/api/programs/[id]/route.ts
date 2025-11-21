@@ -68,6 +68,7 @@ export const PATCH = withAuth(async (
     if (body.duration_weeks !== undefined) updateData.duration_weeks = body.duration_weeks;
     if (body.max_students !== undefined) updateData.max_students = body.max_students;
     if (body.docusign_template_id !== undefined) updateData.docusign_template_id = body.docusign_template_id;
+    if (body.image_url !== undefined) updateData.image_url = body.image_url;
 
     const { data: program, error } = await supabase
       .from('programs')

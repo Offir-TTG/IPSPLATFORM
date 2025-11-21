@@ -421,7 +421,7 @@ export default function ThemeSettingsPage() {
     <AdminLayout>
       <div className="max-w-6xl space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Palette className="h-6 w-6 text-primary" />

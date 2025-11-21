@@ -3,6 +3,8 @@ import { Heebo } from 'next/font/google';
 import './globals.css';
 import { AppProvider } from '@/context/AppContext';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { QueryProvider } from '@/providers/QueryProvider';
+import { Toaster } from 'sonner';
 
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], weight: ['300', '400', '500', '600', '700'] });
 
@@ -115,9 +117,14 @@ export default function RootLayout({
         />
       </head>
       <body className={heebo.className} suppressHydrationWarning>
-        <AppProvider>
-          <ThemeProvider>{children}</ThemeProvider>
-        </AppProvider>
+        <QueryProvider>
+          <AppProvider>
+            <ThemeProvider>
+              {children}
+              <Toaster position="top-right" richColors />
+            </ThemeProvider>
+          </AppProvider>
+        </QueryProvider>
       </body>
     </html>
   );

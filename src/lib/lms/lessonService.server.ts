@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import type {
   Lesson,
   LessonCreateInput,
@@ -66,12 +66,15 @@ export const lessonService = {
     try {
       const supabase = await createClient();
 
+      // Explicitly list all columns to avoid PostgREST schema cache issues
+      const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
+
       let query = supabase
         .from('lessons')
         .select(
           includeTopics
-            ? '*, lesson_topics(*), module:modules(*), course:courses(*)'
-            : '*, module:modules(*), course:courses(*)'
+            ? `${lessonsColumns}, lesson_topics(*), module:modules(*), course:courses(*)`
+            : `${lessonsColumns}, module:modules(*), course:courses(*)`
         )
         .eq('id', id)
         .single();
@@ -104,10 +107,13 @@ export const lessonService = {
     try {
       const supabase = await createClient();
 
+      // Explicitly list all columns to avoid PostgREST schema cache issues
+      const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
+
       const { data, error } = await supabase
         .from('lessons')
         .insert(lessonData)
-        .select()
+        .select(lessonsColumns)
         .single();
 
       if (error) {
@@ -170,10 +176,13 @@ export const lessonService = {
       }
 
       // Insert all lessons
+      // Explicitly list all columns to avoid PostgREST schema cache issues
+      const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
+
       const { data, error } = await supabase
         .from('lessons')
         .insert(lessons)
-        .select();
+        .select(lessonsColumns);
 
       if (error) {
         return {
@@ -182,6 +191,34 @@ export const lessonService = {
         };
       }
 
+      // Auto-create Zoom meetings if requested
+      let zoomCreatedCount = 0;
+      let zoomFailedCount = 0;
+
+      if (config.create_zoom_meetings && data.length > 0) {
+        const { ZoomService } = await import('@/lib/zoom/zoomService');
+        const zoomService = new ZoomService();
+
+        for (const lesson of data) {
+          try {
+            const zoomResult = await zoomService.createMeetingForLesson(lesson.id);
+            if (zoomResult.success) {
+              zoomCreatedCount++;
+            } else {
+              zoomFailedCount++;
+              console.error(`Failed to create Zoom meeting for lesson ${lesson.id}:`, zoomResult.error);
+            }
+          } catch (err) {
+            zoomFailedCount++;
+            console.error(`Error creating Zoom meeting for lesson ${lesson.id}:`, err);
+          }
+        }
+      }
+
+      const message = config.create_zoom_meetings
+        ? `Successfully created ${data.length} lessons (${zoomCreatedCount} Zoom meetings created, ${zoomFailedCount} failed)`
+        : `Successfully created ${data.length} lessons`;
+
       return {
         success: true,
         data: {
@@ -189,8 +226,10 @@ export const lessonService = {
           created_count: data.length,
           failed_count: 0,
           created_ids: data.map((l: Lesson) => l.id),
+          zoom_created_count: zoomCreatedCount,
+          zoom_failed_count: zoomFailedCount,
         },
-        message: `Successfully created ${data.length} lessons`,
+        message,
       };
     } catch (error) {
       return {
@@ -207,11 +246,36 @@ export const lessonService = {
     try {
       const supabase = await createClient();
 
+      // Check if this lesson has a Zoom meeting and if we're updating Zoom-relevant fields
+      const zoomRelevantFields = ['start_time', 'duration', 'timezone', 'title'];
+      const hasZoomRelevantUpdates = zoomRelevantFields.some(field => field in updates);
+
+      let zoomSessionExists = false;
+      let zoomMeetingId = null;
+
+      if (hasZoomRelevantUpdates) {
+        // Check if there's a Zoom session for this lesson
+        const { data: zoomSession } = await supabase
+          .from('zoom_sessions')
+          .select('zoom_meeting_id')
+          .eq('lesson_id', id)
+          .maybeSingle();
+
+        if (zoomSession?.zoom_meeting_id) {
+          zoomSessionExists = true;
+          zoomMeetingId = zoomSession.zoom_meeting_id;
+        }
+      }
+
+      // Update the lesson in the database
+      // Explicitly list all columns to avoid PostgREST schema cache issues
+      const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
+
       const { data, error } = await supabase
         .from('lessons')
         .update(updates)
         .eq('id', id)
-        .select()
+        .select(lessonsColumns)
         .single();
 
       if (error) {
@@ -221,10 +285,42 @@ export const lessonService = {
         };
       }
 
+      // Auto-sync to Zoom if a Zoom meeting exists and relevant fields were updated
+      let zoomSyncMessage = '';
+      if (zoomSessionExists && hasZoomRelevantUpdates) {
+        try {
+          console.log('[updateLesson] Auto-syncing changes to Zoom meeting:', zoomMeetingId);
+          const { ZoomService } = await import('@/lib/zoom/zoomService');
+          const zoomService = new ZoomService();
+
+          // Build update options for Zoom
+          const zoomUpdateOptions: any = {};
+          if (updates.start_time) zoomUpdateOptions.start_time = updates.start_time;
+          if (updates.duration) zoomUpdateOptions.duration = updates.duration;
+          if (updates.timezone) zoomUpdateOptions.timezone = updates.timezone;
+          if (updates.title) zoomUpdateOptions.topic = updates.title;
+
+          const zoomResult = await zoomService.updateMeetingForLesson(id, zoomUpdateOptions);
+
+          if (!zoomResult.success) {
+            console.error('[updateLesson] Failed to sync to Zoom:', zoomResult.error);
+            zoomSyncMessage = ` (Warning: Zoom sync failed - ${zoomResult.error})`;
+          } else {
+            console.log('[updateLesson] Successfully synced changes to Zoom');
+            zoomSyncMessage = ' and synced to Zoom meeting';
+          }
+        } catch (zoomError) {
+          // Don't fail the lesson update if Zoom service is unavailable
+          console.error('[updateLesson] Error syncing to Zoom:', zoomError);
+          const errorMsg = zoomError instanceof Error ? zoomError.message : 'Unknown error';
+          zoomSyncMessage = ` (Warning: Zoom sync failed - ${errorMsg})`;
+        }
+      }
+
       return {
         success: true,
         data: data as Lesson,
-        message: 'Lesson updated successfully',
+        message: `Lesson updated successfully${zoomSyncMessage}`,
       };
     } catch (error) {
       return {
@@ -239,27 +335,104 @@ export const lessonService = {
    */
   async deleteLesson(id: string): Promise<ApiResponse<void>> {
     try {
-      const supabase = await createClient();
+      console.log('[lessonService.deleteLesson] Starting delete for:', id);
+      const supabase = createAdminClient();
 
-      // First delete any topics
-      await supabase.from('lesson_topics').delete().eq('lesson_id', id);
+      // First, get zoom session info before deleting
+      console.log('[lessonService.deleteLesson] Checking for zoom_sessions...');
+      const { data: zoomSessions, error: zoomFetchError } = await supabase
+        .from('zoom_sessions')
+        .select('zoom_meeting_id')
+        .eq('lesson_id', id);
+
+      if (zoomFetchError) {
+        console.log('[lessonService.deleteLesson] Error fetching zoom sessions:', zoomFetchError);
+      }
+
+      // Delete Zoom meetings from Zoom API if they exist
+      let zoomDeletedCount = 0;
+      let zoomFailedCount = 0;
+      if (zoomSessions && zoomSessions.length > 0) {
+        console.log('[lessonService.deleteLesson] Found', zoomSessions.length, 'Zoom meetings to delete');
+        try {
+          const { ZoomService } = await import('@/lib/zoom/zoomService');
+          const zoomService = new ZoomService();
+          const zoomClient = await (zoomService as any).getZoomClient();
+
+          for (const session of zoomSessions) {
+            if (session.zoom_meeting_id) {
+              try {
+                console.log('[lessonService.deleteLesson] Deleting Zoom meeting:', session.zoom_meeting_id);
+                await zoomClient.deleteMeeting(session.zoom_meeting_id);
+                console.log('[lessonService.deleteLesson] Successfully deleted Zoom meeting:', session.zoom_meeting_id);
+                zoomDeletedCount++;
+              } catch (zoomDeleteError) {
+                // Log but don't fail the entire delete operation if Zoom API fails
+                console.error('[lessonService.deleteLesson] Failed to delete Zoom meeting:', session.zoom_meeting_id, zoomDeleteError);
+                zoomFailedCount++;
+              }
+            }
+          }
+        } catch (zoomServiceError) {
+          // Log but don't fail if Zoom service is not configured
+          console.error('[lessonService.deleteLesson] Zoom service error:', zoomServiceError);
+          zoomFailedCount = zoomSessions.length;
+        }
+      }
+
+      // Delete zoom sessions from database
+      console.log('[lessonService.deleteLesson] Deleting zoom_sessions from database...');
+      const { data: deletedZoom, error: zoomError } = await supabase
+        .from('zoom_sessions')
+        .delete()
+        .eq('lesson_id', id)
+        .select();
+      console.log('[lessonService.deleteLesson] Deleted zoom_sessions:', deletedZoom?.length || 0);
+      if (zoomError) console.log('[lessonService.deleteLesson] Zoom sessions error:', zoomError);
+
+      // Delete lesson topics
+      console.log('[lessonService.deleteLesson] Deleting lesson_topics...');
+      const { data: deletedTopics, error: topicsError } = await supabase
+        .from('lesson_topics')
+        .delete()
+        .eq('lesson_id', id)
+        .select();
+      console.log('[lessonService.deleteLesson] Deleted lesson_topics:', deletedTopics?.length || 0);
+      if (topicsError) console.log('[lessonService.deleteLesson] Topics error:', topicsError);
 
       // Then delete the lesson
-      const { error } = await supabase
+      console.log('[lessonService.deleteLesson] Deleting lesson...');
+      const { data: deletedLesson, error } = await supabase
         .from('lessons')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select();
+
+      console.log('[lessonService.deleteLesson] Delete result - data:', deletedLesson, 'error:', error);
 
       if (error) {
+        console.log('[lessonService.deleteLesson] Lesson delete error:', error);
         return {
           success: false,
           error: error.message,
         };
       }
 
+      // Build message with Zoom deletion status
+      let message = 'Lesson deleted successfully';
+      if (zoomDeletedCount > 0 || zoomFailedCount > 0) {
+        if (zoomDeletedCount > 0 && zoomFailedCount === 0) {
+          message += ` (${zoomDeletedCount} Zoom meeting${zoomDeletedCount > 1 ? 's' : ''} deleted)`;
+        } else if (zoomDeletedCount > 0 && zoomFailedCount > 0) {
+          message += ` (${zoomDeletedCount} Zoom meeting${zoomDeletedCount > 1 ? 's' : ''} deleted, ${zoomFailedCount} failed)`;
+        } else if (zoomFailedCount > 0) {
+          message += ` (Warning: Failed to delete ${zoomFailedCount} Zoom meeting${zoomFailedCount > 1 ? 's' : ''})`;
+        }
+      }
+
       return {
         success: true,
-        message: 'Lesson deleted successfully',
+        message,
       };
     } catch (error) {
       return {

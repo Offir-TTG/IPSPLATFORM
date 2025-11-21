@@ -42,6 +42,16 @@ export default function SettingsPage() {
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  // Responsive breakpoints
+  const isMobile = windowWidth <= 640;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     loadSettings();
@@ -403,7 +413,7 @@ export default function SettingsPage() {
 
   return (
     <AdminLayout>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="max-w-6xl" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -450,12 +460,14 @@ export default function SettingsPage() {
               opacity: saving ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '0.5rem',
               border: 'none',
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-family-primary)',
               fontWeight: 'var(--font-weight-medium)',
-              transition: 'opacity 0.2s'
+              transition: 'opacity 0.2s',
+              width: isMobile ? '100%' : 'auto'
             }}
             className="hover:opacity-90"
           >

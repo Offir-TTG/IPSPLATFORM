@@ -1,219 +1,159 @@
 'use client';
 
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import {
-  Bold,
-  Italic,
-  List,
-  ListOrdered,
-  Quote,
-  Undo,
-  Redo,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  AlignJustify,
-  Heading2,
-  Heading3,
-  Code
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import React, { useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import 'react-quill/dist/quill.snow.css';
 
 interface RichTextEditorProps {
-  content: string;
-  onChange: (content: string) => void;
+  value: string;
+  onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
   dir?: 'ltr' | 'rtl';
-  minHeight?: string;
 }
 
-export function RichTextEditor({
-  content,
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
+  value,
   onChange,
-  placeholder = 'Start typing...',
-  className,
+  placeholder,
+  className = '',
   dir = 'ltr',
-  minHeight = '150px'
-}: RichTextEditorProps) {
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        bulletList: {
-          keepMarks: true,
-          keepAttributes: false,
-        },
-        orderedList: {
-          keepMarks: true,
-          keepAttributes: false,
-        },
-      }),
-    ],
-    content: content,
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-    },
-    editorProps: {
-      attributes: {
-        class: cn(
-          'prose prose-sm sm:prose lg:prose-lg xl:prose-xl focus:outline-none min-h-[150px] px-3 py-2',
-          'max-w-none',
-          dir === 'rtl' ? 'text-right' : 'text-left',
-          className
-        ),
-        dir: dir,
-        style: `min-height: ${minHeight}`,
-      },
-    },
-  });
-
-  if (!editor) {
-    return null;
-  }
-
-  const ToolbarButton = ({
-    onClick,
-    active = false,
-    disabled = false,
-    children,
-    title
-  }: {
-    onClick: () => void;
-    active?: boolean;
-    disabled?: boolean;
-    children: React.ReactNode;
-    title: string;
-  }) => (
-    <Button
-      type="button"
-      size="sm"
-      variant={active ? 'default' : 'ghost'}
-      onClick={onClick}
-      disabled={disabled}
-      className="h-8 w-8 p-0"
-      title={title}
-    >
-      {children}
-    </Button>
+}) => {
+  // Dynamically import ReactQuill to avoid SSR issues
+  const ReactQuill = useMemo(
+    () => dynamic(() => import('react-quill'), { ssr: false }),
+    []
   );
+
+  const modules = {
+    toolbar: [
+      [{ header: [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      [{ align: [] }],
+      ['link'],
+      ['clean'],
+    ],
+  };
+
+  const formats = [
+    'header',
+    'bold',
+    'italic',
+    'underline',
+    'strike',
+    'list',
+    'bullet',
+    'align',
+    'link',
+  ];
 
   return (
-    <div className="border rounded-lg overflow-hidden">
-      {/* Toolbar */}
-      <div className={cn(
-        "border-b bg-muted/50 p-2 flex flex-wrap gap-1",
-        dir === 'rtl' ? 'flex-row-reverse' : ''
-      )}>
-        <div className={cn(
-          "flex gap-1",
-          dir === 'rtl' ? 'flex-row-reverse' : ''
-        )}>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            active={editor.isActive('bold')}
-            title="Bold"
-          >
-            <Bold className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            active={editor.isActive('italic')}
-            title="Italic"
-          >
-            <Italic className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            active={editor.isActive('code')}
-            title="Code"
-          >
-            <Code className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
+    <div className={`rich-text-editor ${className}`} dir={dir}>
+      <ReactQuill
+        theme="snow"
+        value={value}
+        onChange={onChange}
+        modules={modules}
+        formats={formats}
+        placeholder={placeholder}
+        className="bg-background"
+      />
+      <style jsx global>{`
+        .rich-text-editor .quill {
+          background: hsl(var(--background));
+          border: 1px solid hsl(var(--border));
+          border-radius: 0.375rem;
+        }
 
-        <div className="w-px h-8 bg-border mx-1" />
+        .rich-text-editor .ql-toolbar {
+          background: hsl(var(--muted));
+          border: none;
+          border-bottom: 1px solid hsl(var(--border));
+          border-top-left-radius: 0.375rem;
+          border-top-right-radius: 0.375rem;
+        }
 
-        <div className={cn(
-          "flex gap-1",
-          dir === 'rtl' ? 'flex-row-reverse' : ''
-        )}>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            active={editor.isActive('heading', { level: 2 })}
-            title="Heading 2"
-          >
-            <Heading2 className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-            active={editor.isActive('heading', { level: 3 })}
-            title="Heading 3"
-          >
-            <Heading3 className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
+        .rich-text-editor .ql-container {
+          border: none;
+          font-family: inherit;
+          font-size: 0.875rem;
+        }
 
-        <div className="w-px h-8 bg-border mx-1" />
+        .rich-text-editor .ql-editor {
+          min-height: 150px;
+          max-height: 300px;
+          overflow-y: auto;
+          color: hsl(var(--foreground));
+        }
 
-        <div className={cn(
-          "flex gap-1",
-          dir === 'rtl' ? 'flex-row-reverse' : ''
-        )}>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            active={editor.isActive('bulletList')}
-            title="Bullet List"
-          >
-            <List className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            active={editor.isActive('orderedList')}
-            title="Numbered List"
-          >
-            <ListOrdered className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            active={editor.isActive('blockquote')}
-            title="Quote"
-          >
-            <Quote className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
+        .rich-text-editor .ql-editor.ql-blank::before {
+          color: hsl(var(--muted-foreground));
+          font-style: normal;
+        }
 
-        <div className="w-px h-8 bg-border mx-1" />
+        .rich-text-editor .ql-stroke {
+          stroke: hsl(var(--foreground));
+        }
 
-        <div className={cn(
-          "flex gap-1",
-          dir === 'rtl' ? 'flex-row-reverse' : ''
-        )}>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().chain().focus().undo().run()}
-            title="Undo"
-          >
-            <Undo className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().chain().focus().redo().run()}
-            title="Redo"
-          >
-            <Redo className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
-      </div>
+        .rich-text-editor .ql-fill {
+          fill: hsl(var(--foreground));
+        }
 
-      {/* Editor */}
-      <div className="bg-background">
-        <EditorContent
-          editor={editor}
-          className="min-h-[150px]"
-        />
-      </div>
+        .rich-text-editor .ql-picker-label {
+          color: hsl(var(--foreground));
+        }
+
+        .rich-text-editor .ql-toolbar button:hover,
+        .rich-text-editor .ql-toolbar button:focus,
+        .rich-text-editor .ql-toolbar button.ql-active {
+          color: hsl(var(--primary));
+        }
+
+        .rich-text-editor .ql-toolbar button:hover .ql-stroke,
+        .rich-text-editor .ql-toolbar button:focus .ql-stroke,
+        .rich-text-editor .ql-toolbar button.ql-active .ql-stroke {
+          stroke: hsl(var(--primary));
+        }
+
+        .rich-text-editor .ql-toolbar button:hover .ql-fill,
+        .rich-text-editor .ql-toolbar button:focus .ql-fill,
+        .rich-text-editor .ql-toolbar button.ql-active .ql-fill {
+          fill: hsl(var(--primary));
+        }
+
+        /* RTL support */
+        .rich-text-editor[dir='rtl'] .ql-editor {
+          direction: rtl;
+          text-align: right;
+        }
+
+        .rich-text-editor[dir='rtl'] .ql-editor.ql-blank::before {
+          text-align: right;
+          right: 15px;
+          left: auto;
+        }
+
+        .rich-text-editor[dir='rtl'] .ql-toolbar {
+          direction: rtl;
+        }
+
+        .rich-text-editor[dir='rtl'] .ql-editor ul,
+        .rich-text-editor[dir='rtl'] .ql-editor ol {
+          padding-right: 1.5em;
+          padding-left: 0;
+        }
+
+        .rich-text-editor[dir='rtl'] .ql-editor p,
+        .rich-text-editor[dir='rtl'] .ql-editor h1,
+        .rich-text-editor[dir='rtl'] .ql-editor h2,
+        .rich-text-editor[dir='rtl'] .ql-editor h3 {
+          text-align: right;
+        }
+      `}</style>
     </div>
   );
-}
+};
+
+export { RichTextEditor };
+export default RichTextEditor;

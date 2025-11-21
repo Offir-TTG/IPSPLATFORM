@@ -43,3 +43,11 @@ next-env.d.ts
 # OS
 Thumbs.db
 .DS_Store
+
+# Windows reserved names
+nul
+CON
+PRN
+AUX
+COM*
+LPT*
