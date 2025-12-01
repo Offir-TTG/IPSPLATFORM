@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Translation Cache</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .info {
+            background: #e3f2fd;
+            color: #1976d2;
+            border-left: 4px solid #1976d2;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #2e7d32;
+        }
+        .warning {
+            background: #fff3e0;
+            color: #f57c00;
+            border-left: 4px solid #f57c00;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 10px 10px 0;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .code {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        ul {
+            line-height: 1.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Clear Translation Cache</h1>
+
+        <div class="status info">
+            <strong>Why do I need this?</strong><br>
+            Your browser stores translations in localStorage for faster loading. After updating translations in the database, you need to clear this cache to see the new translations.
+        </div>
+
+        <h2>Step 1: Clear localStorage</h2>
+        <button onclick="clearCache()">Clear Translation Cache</button>
+        <button onclick="clearAllCache()">Clear ALL Cache</button>
+
+        <div id="result"></div>
+
+        <h2>Step 2: Reload the page</h2>
+        <button onclick="reloadPage()">Reload Page</button>
+
+        <h2>What gets cleared:</h2>
+        <ul>
+            <li><code>translations_admin_he</code> - Hebrew admin translations</li>
+            <li><code>translations_admin_en</code> - English admin translations</li>
+            <li><code>translations_user_he</code> - Hebrew user translations</li>
+            <li><code>translations_user_en</code> - English user translations</li>
+        </ul>
+
+        <div class="status warning">
+            <strong>Note:</strong> After clearing cache, you need to refresh the page for changes to take effect.
+        </div>
+
+        <h2>Manual Method (if buttons don't work):</h2>
+        <p>Open DevTools Console (F12) and paste this:</p>
+        <div class="code">
+localStorage.removeItem("translations_admin_he");<br>
+localStorage.removeItem("translations_admin_en");<br>
+localStorage.removeItem("translations_user_he");<br>
+localStorage.removeItem("translations_user_en");<br>
+location.reload();
+        </div>
+    </div>
+
+    <script>
+        function clearCache() {
+            const keys = [
+                'translations_admin_he',
+                'translations_admin_en',
+                'translations_user_he',
+                'translations_user_en'
+            ];
+
+            let cleared = 0;
+            keys.forEach(key => {
+                if (localStorage.getItem(key)) {
+                    localStorage.removeItem(key);
+                    cleared++;
+                }
+            });
+
+            const result = document.getElementById('result');
+            if (cleared > 0) {
+                result.innerHTML = `<div class="status success">✅ Successfully cleared ${cleared} translation cache entries!</div>`;
+            } else {
+                result.innerHTML = `<div class="status info">ℹ️ No translation cache found. Cache was already clear.</div>`;
+            }
+        }
+
+        function clearAllCache() {
+            const beforeCount = localStorage.length;
+            localStorage.clear();
+            const result = document.getElementById('result');
+            result.innerHTML = `<div class="status success">✅ Cleared ALL localStorage (${beforeCount} items)</div>`;
+        }
+
+        function reloadPage() {
+            location.reload();
+        }
+
+        // Auto-show status on page load
+        window.onload = function() {
+            const keys = [
+                'translations_admin_he',
+                'translations_admin_en',
+                'translations_user_he',
+                'translations_user_en'
+            ];
+
+            const found = keys.filter(key => localStorage.getItem(key));
+
+            if (found.length > 0) {
+                const result = document.getElementById('result');
+                result.innerHTML = `<div class="status warning">⚠️ Found ${found.length} cached translation files. Click "Clear Translation Cache" to remove them.</div>`;
+            }
+        };
+    </script>
+</body>
+</html>

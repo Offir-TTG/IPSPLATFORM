@@ -25,6 +25,7 @@ import {
   Mail,
   LogOut,
   Shield,
+  UserPlus,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -44,18 +45,27 @@ interface NavSection {
 }
 
 export function AdminLayout({ children }: AdminLayoutProps) {
-  const { t, language } = useAdminLanguage();
+  const { t, language, loading: translationsLoading } = useAdminLanguage();
   const { isSuperAdmin } = useTenant();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Mark as mounted (client-side only)
+    setMounted(true);
     // Mark as hydrated to show sidebar
     setHydrated(true);
   }, []);
+
+  // Don't render translated content until mounted and translations loaded
+  // This prevents hydration mismatch
+  if (!mounted) {
+    return null;
+  }
 
   const handleLogout = async () => {
     try {
@@ -93,6 +103,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       items: [
         { key: 'admin.nav.lms_programs', icon: BookOpen, href: '/admin/lms/programs' },
         { key: 'admin.nav.lms_courses', icon: GraduationCap, href: '/admin/lms/courses' },
+        { key: 'admin.nav.enrollments', icon: UserPlus, href: '/admin/enrollments' },
       ],
     },
     {

@@ -115,21 +115,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upsert translation
+    // Upsert translation (Supabase will automatically detect conflict on language_code, translation_key, tenant_id)
+    const upsertData = {
+      language_code,
+      translation_key,
+      translation_value,
+      category: category || translation_key.split('.')[0],
+      tenant_id: tenant.id,
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log('Upserting translation:', upsertData);
+
     const { data: translation, error } = await supabase
       .from('translations')
-      .upsert({
-        language_code,
-        translation_key,
-        translation_value,
-        category: category || translation_key.split('.')[0],
-      }, {
-        onConflict: 'language_code,translation_key',
+      .upsert(upsertData, {
+        onConflict: 'tenant_id,language_code,translation_key',
+        ignoreDuplicates: false,
       })
       .select()
       .single();
 
     if (error) {
+      console.error('Translation upsert error:', error);
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 500 }
@@ -183,12 +191,15 @@ export async function PUT(request: NextRequest) {
       translation_key: t.key,
       translation_value: t.value,
       category: t.category || t.key.split('.')[0],
+      tenant_id: tenant.id,
+      updated_at: new Date().toISOString(),
     }));
 
     const { data, error } = await supabase
       .from('translations')
       .upsert(translationsToUpsert, {
-        onConflict: 'language_code,translation_key',
+        onConflict: 'tenant_id,language_code,translation_key',
+        ignoreDuplicates: false,
       })
       .select();
 

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, CreditCard, Lock, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useUserLanguage } from '@/context/AppContext';
 
 interface PaymentInfo {
   schedule_id: string;
@@ -19,6 +20,7 @@ interface PaymentInfo {
 }
 
 export default function PaymentPage() {
+  const { t } = useUserLanguage();
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -127,12 +129,12 @@ export default function PaymentPage() {
     return (
       <div className="container mx-auto py-8 max-w-2xl">
         <Alert variant="destructive">
-          <AlertDescription>{error || 'Payment information not found'}</AlertDescription>
+          <AlertDescription>{error || t('user.payments.checkout.infoNotFound', 'Payment information not found')}</AlertDescription>
         </Alert>
         <Button asChild className="mt-4">
           <Link href={`/payments/${params.id}`}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Payment Details
+            <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
+            {t('user.payments.checkout.backToDetails', 'Back to Payment Details')}
           </Link>
         </Button>
       </div>
@@ -147,11 +149,11 @@ export default function PaymentPage() {
             <div className="rounded-full bg-green-100 p-4 mb-4">
               <CreditCard className="h-12 w-12 text-green-600" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Payment Successful!</h2>
+            <h2 className="text-2xl font-bold mb-2">{t('user.payments.checkout.success', 'Payment Successful!')}</h2>
             <p className="text-muted-foreground text-center mb-4">
-              Your payment has been processed successfully.
+              {t('user.payments.checkout.successDesc', 'Your payment has been processed successfully.')}
             </p>
-            <p className="text-sm text-muted-foreground">Redirecting...</p>
+            <p className="text-sm text-muted-foreground">{t('user.payments.checkout.redirecting', 'Redirecting...')}</p>
           </CardContent>
         </Card>
       </div>
@@ -162,8 +164,8 @@ export default function PaymentPage() {
     <div className="container mx-auto py-8 max-w-2xl">
       <Button variant="ghost" asChild className="mb-6">
         <Link href={`/payments/${params.id}`}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
+          <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
+          {t('user.payments.checkout.back', 'Back')}
         </Link>
       </Button>
 
@@ -171,24 +173,24 @@ export default function PaymentPage() {
         {/* Payment Summary */}
         <Card>
           <CardHeader>
-            <CardTitle>Payment Summary</CardTitle>
-            <CardDescription>Review your payment details</CardDescription>
+            <CardTitle>{t('user.payments.checkout.summary', 'Payment Summary')}</CardTitle>
+            <CardDescription>{t('user.payments.checkout.reviewDetails', 'Review your payment details')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">Course</span>
+              <span className="text-muted-foreground">{t('user.payments.checkout.course', 'Course')}</span>
               <span className="font-medium">{paymentInfo.product_name}</span>
             </div>
             <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">Payment Type</span>
+              <span className="text-muted-foreground">{t('user.payments.checkout.paymentType', 'Payment Type')}</span>
               <span className="font-medium capitalize">{paymentInfo.payment_type}</span>
             </div>
             <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">Payment Number</span>
+              <span className="text-muted-foreground">{t('user.payments.checkout.paymentNumber', 'Payment Number')}</span>
               <span className="font-medium">#{paymentInfo.payment_number}</span>
             </div>
             <div className="flex justify-between py-3">
-              <span className="text-lg font-semibold">Total Amount</span>
+              <span className="text-lg font-semibold">{t('user.payments.checkout.totalAmount', 'Total Amount')}</span>
               <span className="text-2xl font-bold">
                 {formatCurrency(paymentInfo.amount, paymentInfo.currency)}
               </span>
@@ -199,9 +201,9 @@ export default function PaymentPage() {
         {/* Payment Form Placeholder */}
         <Card>
           <CardHeader>
-            <CardTitle>Payment Method</CardTitle>
+            <CardTitle>{t('user.payments.checkout.paymentMethod', 'Payment Method')}</CardTitle>
             <CardDescription>
-              Secure payment powered by Stripe
+              {t('user.payments.checkout.securePayment', 'Secure payment powered by Stripe')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -210,19 +212,19 @@ export default function PaymentPage() {
               <Alert>
                 <Lock className="h-4 w-4" />
                 <AlertDescription>
-                  Your payment information is secure and encrypted.
+                  {t('user.payments.checkout.secureInfo', 'Your payment information is secure and encrypted.')}
                 </AlertDescription>
               </Alert>
 
               {/* Placeholder for Stripe Elements */}
               <div className="border-2 border-dashed border-muted rounded-lg p-8 text-center">
                 <CreditCard className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="font-semibold mb-2">Stripe Payment Form</h3>
+                <h3 className="font-semibold mb-2">{t('user.payments.checkout.stripeForm', 'Stripe Payment Form')}</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  This area will contain the Stripe Elements payment form.
+                  {t('user.payments.checkout.stripeFormDesc', 'This area will contain the Stripe Elements payment form.')}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Backend is fully ready • Install Stripe React components to enable
+                  {t('user.payments.checkout.backendReady', 'Backend is fully ready • Install Stripe React components to enable')}
                 </p>
               </div>
 
@@ -240,19 +242,19 @@ export default function PaymentPage() {
               >
                 {processing ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
+                    <Loader2 className="h-4 w-4 ltr:mr-2 rtl:ml-2 animate-spin" />
+                    {t('user.payments.checkout.processing', 'Processing...')}
                   </>
                 ) : (
                   <>
-                    <Lock className="h-4 w-4 mr-2" />
-                    Pay {formatCurrency(paymentInfo.amount, paymentInfo.currency)}
+                    <Lock className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                    {t('user.payments.checkout.pay', 'Pay')} {formatCurrency(paymentInfo.amount, paymentInfo.currency)}
                   </>
                 )}
               </Button>
 
               <p className="text-xs text-center text-muted-foreground">
-                By completing this payment, you agree to the terms and conditions.
+                {t('user.payments.checkout.termsAgree', 'By completing this payment, you agree to the terms and conditions.')}
               </p>
             </div>
           </CardContent>
@@ -261,7 +263,7 @@ export default function PaymentPage() {
         {/* Security Notice */}
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Lock className="h-4 w-4" />
-          <span>Secured by Stripe • PCI-DSS Compliant</span>
+          <span>{t('user.payments.checkout.securityNotice', 'Secured by Stripe • PCI-DSS Compliant')}</span>
         </div>
       </div>
     </div>

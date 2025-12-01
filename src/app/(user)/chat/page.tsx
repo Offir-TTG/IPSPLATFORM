@@ -16,8 +16,10 @@ import {
 } from 'lucide-react';
 import { useChat, type Conversation, type Message } from '@/hooks/useChat';
 import { formatDistanceToNow } from 'date-fns';
+import { useUserLanguage } from '@/context/AppContext';
 
 export default function ChatPage() {
+  const { t } = useUserLanguage();
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,7 +72,7 @@ export default function ChatPage() {
   if (loading && conversations.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-muted-foreground">Loading chats...</div>
+        <div className="text-muted-foreground">{t('user.chat.loadingChats', 'Loading chats...')}</div>
       </div>
     );
   }
@@ -81,12 +83,12 @@ export default function ChatPage() {
       <Card className="w-80 flex flex-col">
         {/* Header */}
         <div className="p-4 border-b">
-          <h2 className="text-lg font-semibold mb-3">Messages</h2>
+          <h2 className="text-lg font-semibold mb-3">{t('user.chat.messages', 'Messages')}</h2>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute ltr:left-3 rtl:right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search conversations..."
+              placeholder={t('user.chat.searchConversations', 'Search conversations...')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -112,7 +114,7 @@ export default function ChatPage() {
             <div className="p-8 text-center">
               <MessageCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                No conversations yet
+                {t('user.chat.noConversationsYet', 'No conversations yet')}
               </p>
             </div>
           ) : (
@@ -151,7 +153,7 @@ export default function ChatPage() {
                           )}
                         </div>
                         {conv.unread_count > 0 && (
-                          <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 bg-destructive text-destructive-foreground rounded-full text-[10px] font-semibold flex items-center justify-center">
+                          <span className="absolute -top-1 ltr:-right-1 rtl:-left-1 h-5 min-w-[20px] px-1 bg-destructive text-destructive-foreground rounded-full text-[10px] font-semibold flex items-center justify-center">
                             {conv.unread_count}
                           </span>
                         )}
@@ -162,7 +164,7 @@ export default function ChatPage() {
                             {conv.conversation_name}
                           </h3>
                           {conv.last_message_at && (
-                            <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                            <span className="text-xs text-muted-foreground flex-shrink-0 ltr:ml-2 rtl:mr-2">
                               {formatDistanceToNow(new Date(conv.last_message_at), {
                                 addSuffix: true,
                               })}
@@ -193,9 +195,9 @@ export default function ChatPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <MessageCircle className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Select a conversation</h3>
+              <h3 className="text-lg font-semibold mb-2">{t('user.chat.selectConversation', 'Select a conversation')}</h3>
               <p className="text-sm text-muted-foreground">
-                Choose a conversation from the sidebar to start chatting
+                {t('user.chat.chooseConversation', 'Choose a conversation from the sidebar to start chatting')}
               </p>
             </div>
           </div>
@@ -222,7 +224,7 @@ export default function ChatPage() {
                   <h2 className="font-semibold">{activeConversation?.conversation_name}</h2>
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
                     <Users className="h-3 w-3" />
-                    {activeConversation?.participant_count} participants • {activeConversation?.context_name}
+                    {activeConversation?.participant_count} {t('user.chat.participants', 'participants')} • {activeConversation?.context_name}
                   </p>
                 </div>
               </div>
@@ -248,7 +250,7 @@ export default function ChatPage() {
                   <div className="text-center">
                     <MessageCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      No messages yet. Start the conversation!
+                      {t('user.chat.noMessages', 'No messages yet. Start the conversation!')}
                     </p>
                   </div>
                 </div>
@@ -340,7 +342,7 @@ export default function ChatPage() {
                         handleSendMessage(e);
                       }
                     }}
-                    placeholder="Type a message..."
+                    placeholder={t('user.chat.typeMessage', 'Type a message...')}
                     rows={1}
                     style={{
                       width: '100%',
@@ -389,7 +391,7 @@ export default function ChatPage() {
                   }}
                   className="hover:opacity-90"
                 >
-                  <Send className="h-5 w-5" />
+                  <Send className="h-5 w-5 ltr:rotate-0 rtl:rotate-180" />
                 </button>
               </div>
             </form>

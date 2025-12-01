@@ -21,6 +21,7 @@ import {
   Receipt,
   AlertTriangle,
   UserCheck,
+  Package,
 } from 'lucide-react';
 
 interface PaymentStats {
@@ -35,12 +36,21 @@ interface PaymentStats {
 }
 
 export default function PaymentsPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction, language } = useAdminLanguage();
+  const isRtl = direction === 'rtl';
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const isMobile = windowWidth <= 640;
 
   useEffect(() => {
     fetchStats();
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const fetchStats = async () => {
@@ -60,10 +70,8 @@ export default function PaymentsPage() {
   if (loading || !stats) {
     return (
       <AdminLayout>
-        <div className="space-y-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="text-muted-foreground">Loading payment statistics...</div>
-          </div>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );
@@ -71,26 +79,48 @@ export default function PaymentsPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
           <div>
-            <h1 className="text-3xl font-bold">{t('admin.payments.title')}</h1>
-            <p className="text-muted-foreground mt-1">
-              {t('admin.payments.description')}
+            <h1 suppressHydrationWarning style={{
+              fontSize: 'var(--font-size-3xl)',
+              fontFamily: 'var(--font-family-heading)',
+              fontWeight: 'var(--font-weight-bold)',
+              color: 'hsl(var(--text-heading))'
+            }}>
+              <span suppressHydrationWarning>{t('admin.payments.title', 'Payments')}</span>
+            </h1>
+            <p suppressHydrationWarning style={{
+              color: 'hsl(var(--muted-foreground))',
+              fontSize: 'var(--font-size-sm)',
+              marginTop: '0.25rem'
+            }}>
+              {t('admin.payments.description', 'Manage payment plans, transactions, and financial reports')}
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link href="/admin/payments/reports">
-              <Button variant="outline">
-                <FileText className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                {t('admin.payments.reports')}
+          <div style={{
+            display: 'flex',
+            gap: '0.5rem',
+            width: isMobile ? '100%' : 'auto',
+            flexDirection: isMobile ? 'column' : 'row'
+          }}>
+            <Link href="/admin/payments/reports" style={{ width: isMobile ? '100%' : 'auto' }}>
+              <Button variant="outline" style={{ width: '100%' }}>
+                <FileText className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('admin.payments.reports', 'Reports')}</span>
               </Button>
             </Link>
-            <Link href="/admin/payments/plans">
-              <Button>
-                <Settings className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                {t('admin.payments.paymentPlans')}
+            <Link href="/admin/payments/plans" style={{ width: isMobile ? '100%' : 'auto' }}>
+              <Button style={{ width: '100%' }}>
+                <Settings className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('admin.payments.paymentPlans', 'Payment Plans')}</span>
               </Button>
             </Link>
           </div>
@@ -101,8 +131,8 @@ export default function PaymentsPage() {
           {/* Total Revenue */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {t('admin.payments.totalRevenue')}
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
+                {t('admin.payments.totalRevenue', 'Total Revenue')}
               </CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -113,18 +143,18 @@ export default function PaymentsPage() {
               <div className="flex items-center text-xs text-muted-foreground mt-1">
                 {stats.revenueGrowth > 0 ? (
                   <>
-                    <ArrowUpRight className="h-3 w-3 text-green-600 ltr:mr-1 rtl:ml-1" />
+                    <ArrowUpRight className={`h-3 w-3 text-green-600 ${isRtl ? 'ml-1' : 'mr-1'}`} />
                     <span className="text-green-600">+{stats.revenueGrowth}%</span>
                   </>
                 ) : stats.revenueGrowth < 0 ? (
                   <>
-                    <ArrowDownRight className="h-3 w-3 text-red-600 ltr:mr-1 rtl:ml-1" />
+                    <ArrowDownRight className={`h-3 w-3 text-red-600 ${isRtl ? 'ml-1' : 'mr-1'}`} />
                     <span className="text-red-600">{stats.revenueGrowth}%</span>
                   </>
                 ) : (
                   <span className="text-muted-foreground">0%</span>
                 )}
-                <span className="ltr:ml-1 rtl:mr-1">{t('admin.payments.fromLastMonth')}</span>
+                <span className={isRtl ? 'mr-1' : 'ml-1'} suppressHydrationWarning>{t('admin.payments.fromLastMonth', 'from last month')}</span>
               </div>
             </CardContent>
           </Card>
@@ -132,15 +162,15 @@ export default function PaymentsPage() {
           {/* Active Enrollments */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {t('admin.payments.activeEnrollments')}
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
+                {t('admin.payments.activeEnrollments', 'Active Enrollments')}
               </CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.activeEnrollments}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('admin.payments.withActivePayments')}
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.payments.withActivePayments', 'With active payments')}
               </p>
             </CardContent>
           </Card>
@@ -148,15 +178,15 @@ export default function PaymentsPage() {
           {/* Pending Payments */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {t('admin.payments.pendingPayments')}
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
+                {t('admin.payments.pendingPayments', 'Pending Payments')}
               </CardTitle>
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.pendingPayments}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('admin.payments.scheduledUpcoming')}
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.payments.scheduledUpcoming', 'Scheduled upcoming')}
               </p>
             </CardContent>
           </Card>
@@ -164,8 +194,8 @@ export default function PaymentsPage() {
           {/* Overdue Payments */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {t('admin.payments.overduePayments')}
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
+                {t('admin.payments.overduePayments', 'Overdue Payments')}
               </CardTitle>
               <AlertCircle className="h-4 w-4 text-destructive" />
             </CardHeader>
@@ -175,7 +205,7 @@ export default function PaymentsPage() {
               </div>
               <Link href="/admin/payments/schedules?status=overdue">
                 <Button variant="link" className="h-auto p-0 text-xs mt-1">
-                  {t('admin.payments.viewOverdue')}
+                  <span suppressHydrationWarning>{t('admin.payments.viewOverdue', 'View Overdue')}</span>
                 </Button>
               </Link>
             </CardContent>
@@ -185,16 +215,16 @@ export default function PaymentsPage() {
         {/* Pending Amount Card */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('admin.payments.pendingAmount')}</CardTitle>
-            <CardDescription>
-              {t('admin.payments.pendingAmount.description')}
+            <CardTitle suppressHydrationWarning>{t('admin.payments.pendingAmount', 'Pending Amount')}</CardTitle>
+            <CardDescription suppressHydrationWarning>
+              {t('admin.payments.pendingAmount.description', 'Total amount from pending and scheduled payments')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold text-primary">
               ${stats.pendingAmount.toLocaleString()}
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-muted-foreground mt-2" suppressHydrationWarning>
               {t('admin.payments.pendingAmount.fromPayments', `From ${stats.pendingPayments} scheduled payments`).replace('{count}', stats.pendingPayments.toString())}
             </p>
           </CardContent>
@@ -202,6 +232,24 @@ export default function PaymentsPage() {
 
         {/* Quick Actions */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Link href="/admin/payments/products">
+            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                    <Package className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  <div className="flex-1">
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.products.title', 'Products')}</CardTitle>
+                  </div>
+                </div>
+                <CardDescription className="mt-2" suppressHydrationWarning>
+                  {t('admin.payments.cards.products.description', 'Manage billable products and pricing')}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+
           <Link href="/admin/payments/plans">
             <Card className="hover:border-primary transition-colors cursor-pointer h-full">
               <CardHeader>
@@ -210,10 +258,10 @@ export default function PaymentsPage() {
                     <CreditCard className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{t('admin.payments.cards.paymentPlans.title', 'Payment Plans')}</CardTitle>
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.paymentPlans.title', 'Payment Plans')}</CardTitle>
                   </div>
                 </div>
-                <CardDescription className="mt-2">
+                <CardDescription className="mt-2" suppressHydrationWarning>
                   {t('admin.payments.cards.paymentPlans.description', 'Configure and manage payment plans')}
                 </CardDescription>
               </CardHeader>
@@ -228,10 +276,10 @@ export default function PaymentsPage() {
                     <Calendar className="h-5 w-5 text-blue-600" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{t('admin.payments.cards.schedules.title', 'Schedules')}</CardTitle>
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.schedules.title', 'Schedules')}</CardTitle>
                   </div>
                 </div>
-                <CardDescription className="mt-2">
+                <CardDescription className="mt-2" suppressHydrationWarning>
                   {t('admin.payments.cards.schedules.description', 'View and manage payment schedules')}
                 </CardDescription>
               </CardHeader>
@@ -246,10 +294,10 @@ export default function PaymentsPage() {
                     <Receipt className="h-5 w-5 text-green-600" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{t('admin.payments.cards.transactions.title', 'Transactions')}</CardTitle>
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.transactions.title', 'Transactions')}</CardTitle>
                   </div>
                 </div>
-                <CardDescription className="mt-2">
+                <CardDescription className="mt-2" suppressHydrationWarning>
                   {t('admin.payments.cards.transactions.description', 'View transaction history and refunds')}
                 </CardDescription>
               </CardHeader>
@@ -264,10 +312,10 @@ export default function PaymentsPage() {
                     <AlertTriangle className="h-5 w-5 text-orange-600" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{t('admin.payments.cards.disputes.title', 'Disputes')}</CardTitle>
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.disputes.title', 'Disputes')}</CardTitle>
                   </div>
                 </div>
-                <CardDescription className="mt-2">
+                <CardDescription className="mt-2" suppressHydrationWarning>
                   {t('admin.payments.cards.disputes.description', 'Handle payment disputes and chargebacks')}
                 </CardDescription>
               </CardHeader>
@@ -282,10 +330,10 @@ export default function PaymentsPage() {
                     <UserCheck className="h-5 w-5 text-purple-600" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{t('admin.payments.cards.enrollments.title', 'Enrollments')}</CardTitle>
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.enrollments.title', 'Enrollments')}</CardTitle>
                   </div>
                 </div>
-                <CardDescription className="mt-2">
+                <CardDescription className="mt-2" suppressHydrationWarning>
                   {t('admin.payments.cards.enrollments.description', 'Manage user enrollments and payments')}
                 </CardDescription>
               </CardHeader>
@@ -300,10 +348,10 @@ export default function PaymentsPage() {
                     <FileText className="h-5 w-5 text-slate-600" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{t('admin.payments.cards.reports.title', 'Reports')}</CardTitle>
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.reports.title', 'Reports')}</CardTitle>
                   </div>
                 </div>
-                <CardDescription className="mt-2">
+                <CardDescription className="mt-2" suppressHydrationWarning>
                   {t('admin.payments.cards.reports.description', 'View payment reports and analytics')}
                 </CardDescription>
               </CardHeader>
@@ -314,16 +362,16 @@ export default function PaymentsPage() {
         {/* Recent Activity */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('admin.payments.recentActivity')}</CardTitle>
-            <CardDescription>
-              {t('admin.payments.recentActivityDesc')}
+            <CardTitle suppressHydrationWarning>{t('admin.payments.recentActivity', 'Recent Activity')}</CardTitle>
+            <CardDescription suppressHydrationWarning>
+              {t('admin.payments.recentActivityDesc', 'Latest payment transactions and updates')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-center py-8 text-muted-foreground">
               <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">{t('admin.payments.noRecentActivity')}</p>
-              <p className="text-xs mt-1">{t('admin.payments.transactionsWillAppear')}</p>
+              <p className="text-sm" suppressHydrationWarning>{t('admin.payments.noRecentActivity', 'No recent activity')}</p>
+              <p className="text-xs mt-1" suppressHydrationWarning>{t('admin.payments.transactionsWillAppear', 'Payment transactions will appear here')}</p>
             </div>
           </CardContent>
         </Card>
@@ -331,42 +379,42 @@ export default function PaymentsPage() {
         {/* Coming Soon Notice */}
         <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900">
           <CardHeader>
-            <CardTitle className="text-blue-900 dark:text-blue-100">
-              {t('admin.payments.comingSoon.title')}
+            <CardTitle className="text-blue-900 dark:text-blue-100" suppressHydrationWarning>
+              {t('admin.payments.comingSoon.title', 'Coming Soon')}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-blue-800 dark:text-blue-200">
-            <p className="mb-4">
-              {t('admin.payments.comingSoon.description')}
+            <p className="mb-4" suppressHydrationWarning>
+              {t('admin.payments.comingSoon.description', 'The following features are currently in development:')}
             </p>
-            <ul className="list-disc ltr:ml-6 rtl:mr-6 space-y-2 text-sm">
-              <li>{t('admin.payments.comingSoon.feature1')}</li>
-              <li>{t('admin.payments.comingSoon.feature2')}</li>
-              <li>{t('admin.payments.comingSoon.feature3')}</li>
-              <li>{t('admin.payments.comingSoon.feature4')}</li>
-              <li>{t('admin.payments.comingSoon.feature5')}</li>
+            <ul className={`list-disc space-y-2 text-sm ${isRtl ? 'mr-6' : 'ml-6'}`}>
+              <li suppressHydrationWarning>{t('admin.payments.comingSoon.feature1', 'Automated payment reminders and notifications')}</li>
+              <li suppressHydrationWarning>{t('admin.payments.comingSoon.feature2', 'Advanced payment analytics and forecasting')}</li>
+              <li suppressHydrationWarning>{t('admin.payments.comingSoon.feature3', 'Multi-currency support')}</li>
+              <li suppressHydrationWarning>{t('admin.payments.comingSoon.feature4', 'Payment gateway integrations (PayPal, etc.)')}</li>
+              <li suppressHydrationWarning>{t('admin.payments.comingSoon.feature5', 'Subscription management and recurring billing')}</li>
             </ul>
             <div className="mt-4 space-y-2">
-              <p className="text-sm font-medium">{t('admin.payments.comingSoon.docsTitle')}</p>
-              <ul className="list-disc ltr:ml-6 rtl:mr-6 space-y-1 text-xs">
+              <p className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.comingSoon.docsTitle', 'Documentation:')}</p>
+              <ul className={`list-disc space-y-1 text-xs ${isRtl ? 'mr-6' : 'ml-6'}`}>
                 <li>
-                  <a href="/docs/PAYMENT_SYSTEM.md" className="underline hover:text-blue-600" target="_blank">
-                    {t('admin.payments.comingSoon.doc1')}
+                  <a href="/docs/PAYMENT_SYSTEM.md" className="underline hover:text-blue-600" target="_blank" suppressHydrationWarning>
+                    {t('admin.payments.comingSoon.doc1', 'Payment System Overview')}
                   </a>
                 </li>
                 <li>
-                  <a href="/docs/PAYMENT_SYSTEM_API.md" className="underline hover:text-blue-600" target="_blank">
-                    {t('admin.payments.comingSoon.doc2')}
+                  <a href="/docs/PAYMENT_SYSTEM_API.md" className="underline hover:text-blue-600" target="_blank" suppressHydrationWarning>
+                    {t('admin.payments.comingSoon.doc2', 'API Documentation')}
                   </a>
                 </li>
                 <li>
-                  <a href="/docs/PAYMENT_SYSTEM_ADMIN_GUIDE.md" className="underline hover:text-blue-600" target="_blank">
-                    {t('admin.payments.comingSoon.doc3')}
+                  <a href="/docs/PAYMENT_SYSTEM_ADMIN_GUIDE.md" className="underline hover:text-blue-600" target="_blank" suppressHydrationWarning>
+                    {t('admin.payments.comingSoon.doc3', 'Admin Guide')}
                   </a>
                 </li>
                 <li>
-                  <a href="/docs/PAYMENT_INTEGRATION_GUIDE.md" className="underline hover:text-blue-600" target="_blank">
-                    {t('admin.payments.comingSoon.doc4')}
+                  <a href="/docs/PAYMENT_INTEGRATION_GUIDE.md" className="underline hover:text-blue-600" target="_blank" suppressHydrationWarning>
+                    {t('admin.payments.comingSoon.doc4', 'Integration Guide')}
                   </a>
                 </li>
               </ul>

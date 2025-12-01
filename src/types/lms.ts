@@ -650,6 +650,7 @@ export interface AnnouncementUpdateInput {
 // ============================================================================
 
 // Extended Course type with LMS fields
+// NOTE: Course is now pure content - all payment logic moved to Product
 export interface Course {
   id: string;
   program_id: string;
@@ -662,14 +663,14 @@ export interface Course {
   end_date: string | null;
   is_active: boolean;
   image_url: string | null;
-  course_type: 'course' | 'lecture' | 'workshop' | 'webinar';
+  course_type: 'course' | 'lecture' | 'workshop' | 'webinar' | 'session' | 'session_pack' | 'bundle' | 'custom';
   is_standalone: boolean;
-  price: number | null;
-  currency: string | null;
-  payment_plan: 'one_time' | 'installments' | null;
-  installment_count: number | null;
+  is_published: boolean; // Whether course is published and visible to users
   created_at: string;
   updated_at: string;
+
+  // Product reference (if course is registered as a billable product)
+  product_id?: string | null;
 
   // Relations
   program?: Program;
@@ -679,6 +680,7 @@ export interface Course {
   enrollments?: Enrollment[];
   discussions?: Discussion[];
   announcements?: Announcement[];
+  product?: import('./product').Product; // Product contains all payment configuration
 }
 
 // Extended Lesson type with LMS fields
@@ -822,25 +824,25 @@ export interface LessonUpdateInput {
 }
 
 // Extended Program type
+// NOTE: Program is now pure content - all payment/signature logic moved to Product
 export interface Program {
   id: string;
   tenant_id: string;
   name: string;
   description: string | null;
-  price: number;
-  payment_plan: 'one_time' | 'installments';
-  installment_count: number | null;
-  docusign_template_id: string | null;
-  crm_tag: string;
-  require_signature: boolean;
+  image_url?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+
+  // Product reference (program gets registered as a product to become billable)
+  product_id?: string | null;
 
   // Relations
   courses?: Course[];
   enrollments?: Enrollment[];
   announcements?: Announcement[];
+  product?: import('./product').Product; // Product contains all payment/signature configuration
 }
 
 // Extended Enrollment type
@@ -902,6 +904,8 @@ export interface BulkOperationResult {
   failed_count: number;
   created_ids: string[];
   errors?: string[];
+  zoom_created_count?: number;
+  zoom_failed_count?: number;
 }
 
 // ============================================================================

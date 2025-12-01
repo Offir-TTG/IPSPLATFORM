@@ -248,7 +248,7 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
       amount: amount / 100,
       currency: currency.toUpperCase(),
       payment_method: 'stripe',
-      transaction_id: paymentIntent.charges?.data[0]?.id || id,
+      transaction_id: (paymentIntent as any).charges?.data?.[0]?.id || id,
       stripe_payment_intent_id: id,
       status: 'completed',
       metadata: {
@@ -297,7 +297,7 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
         paid_amount: paidAmount,
         payment_status: isFullyPaid ? 'paid' : 'partial',
         deposit_paid: isDeposit || undefined,
-        status: isFullyPaid ? 'active' : 'pending_payment',
+        status: isFullyPaid ? 'active' : 'pending', // If fully paid, activate; otherwise keep as pending for more payment
       })
       .eq('id', enrollment_id)
       .eq('tenant_id', tenant_id);

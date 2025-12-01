@@ -13,6 +13,7 @@ import {
   Trophy
 } from 'lucide-react';
 import Image from 'next/image';
+import { useUserLanguage } from '@/context/AppContext';
 
 // MOCKUP DATA
 const mockPrograms = [
@@ -82,6 +83,8 @@ const mockPrograms = [
 ];
 
 export default function ProgramsPage() {
+  const { t } = useUserLanguage();
+
   return (
     <div className="min-h-screen pb-12">
       {/* Header */}
@@ -92,7 +95,7 @@ export default function ProgramsPage() {
             fontFamily: 'var(--font-family-heading)',
             fontWeight: 'var(--font-weight-bold)',
             color: 'hsl(var(--text-heading))'
-          }}>My Programs</h1>
+          }}>{t('user.programs.title', 'My Programs')}</h1>
           <span style={{
             paddingInlineStart: '0.75rem',
             paddingInlineEnd: '0.75rem',
@@ -105,7 +108,7 @@ export default function ProgramsPage() {
             fontFamily: 'var(--font-family-primary)',
             fontWeight: 'var(--font-weight-medium)'
           }}>
-            {mockPrograms.length} Active Programs
+            {mockPrograms.length} {t('user.programs.activePrograms', 'Active Programs')}
           </span>
         </div>
         <p style={{
@@ -113,7 +116,7 @@ export default function ProgramsPage() {
           fontSize: 'var(--font-size-base)',
           fontFamily: 'var(--font-family-primary)'
         }}>
-          Track your learning journey across all enrolled programs
+          {t('user.programs.subtitle', 'Track your learning journey across all enrolled programs')}
         </p>
       </div>
 
@@ -129,7 +132,7 @@ export default function ProgramsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>Total Programs</p>
+              }}>{t('user.programs.stats.totalPrograms', 'Total Programs')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -150,7 +153,7 @@ export default function ProgramsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>Completed</p>
+              }}>{t('user.programs.stats.completed', 'Completed')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -173,7 +176,7 @@ export default function ProgramsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>In Progress</p>
+              }}>{t('user.programs.stats.inProgress', 'In Progress')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -196,7 +199,7 @@ export default function ProgramsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>Certificates</p>
+              }}>{t('user.programs.stats.certificates', 'Certificates')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -224,7 +227,7 @@ export default function ProgramsPage() {
                   className="object-cover"
                 />
                 {program.status === 'completed' && (
-                  <div className="absolute top-4 right-4">
+                  <div className="absolute top-4 ltr:right-4 rtl:left-4">
                     <span style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -241,7 +244,7 @@ export default function ProgramsPage() {
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
                       <CheckCircle2 className="h-3 w-3" />
-                      Completed
+                      {t('user.programs.card.completed', 'Completed')}
                     </span>
                   </div>
                 )}
@@ -274,16 +277,16 @@ export default function ProgramsPage() {
                       color: 'hsl(var(--text-muted))'
                     }}>
                       <div className="flex items-center gap-1">
-                        <GraduationCap className="h-4 w-4" />
+                        <GraduationCap className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
                         <span>{program.instructor}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
-                        <span>Started {new Date(program.enrolled_at).toLocaleDateString()}</span>
+                        <Calendar className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
+                        <span>{t('user.programs.card.started', 'Started')} {new Date(program.enrolled_at).toLocaleDateString()}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        <span>{program.hours_completed}/{program.total_hours} hours</span>
+                        <Clock className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
+                        <span>{program.hours_completed}/{program.total_hours} {t('user.programs.card.hours', 'hours')}</span>
                       </div>
                     </div>
                   </div>
@@ -306,7 +309,7 @@ export default function ProgramsPage() {
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
                       <Trophy className="h-3 w-3" />
-                      Certificate Ready
+                      {t('user.programs.card.certificateReady', 'Certificate Ready')}
                     </span>
                   )}
                 </div>
@@ -319,7 +322,7 @@ export default function ProgramsPage() {
                       fontFamily: 'var(--font-family-primary)',
                       fontWeight: 'var(--font-weight-medium)',
                       color: 'hsl(var(--text-body))'
-                    }}>Overall Progress</span>
+                    }}>{t('user.programs.card.overallProgress', 'Overall Progress')}</span>
                     <span style={{
                       fontSize: 'var(--font-size-sm)',
                       fontFamily: 'var(--font-family-primary)',
@@ -333,9 +336,9 @@ export default function ProgramsPage() {
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-muted))'
                   }}>
-                    <span>{program.completed_courses}/{program.total_courses} courses completed</span>
+                    <span>{program.completed_courses}/{program.total_courses} {t('user.programs.card.coursesCompleted', 'courses completed')}</span>
                     {program.status !== 'completed' && (
-                      <span>Est. completion: {new Date(program.estimated_completion).toLocaleDateString()}</span>
+                      <span>{t('user.programs.card.estCompletion', 'Est. completion')}: {new Date(program.estimated_completion).toLocaleDateString()}</span>
                     )}
                   </div>
                 </div>
@@ -381,7 +384,7 @@ export default function ProgramsPage() {
                       fontFamily: 'var(--font-family-primary)',
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
-                      +{program.courses.length - 4} more
+                      +{program.courses.length - 4} {t('user.programs.card.more', 'more')}
                     </span>
                   )}
                 </div>
@@ -411,8 +414,8 @@ export default function ProgramsPage() {
                     }}
                     className="hover:opacity-90"
                   >
-                    {program.status === 'completed' ? 'View Certificate' : 'Continue Learning'}
-                    <ArrowRight className="ltr:ml-2 rtl:mr-2 h-4 w-4" />
+                    {program.status === 'completed' ? t('user.programs.card.viewCertificate', 'View Certificate') : t('user.programs.card.continueLearning', 'Continue Learning')}
+                    <ArrowRight className="ltr:ml-2 rtl:mr-2 rtl:rotate-180 h-4 w-4" />
                   </button>
                   <button
                     style={{
@@ -431,7 +434,7 @@ export default function ProgramsPage() {
                     }}
                     className="hover:bg-accent"
                   >
-                    View Details
+                    {t('user.programs.card.viewDetails', 'View Details')}
                   </button>
                 </div>
               </div>
@@ -455,14 +458,14 @@ export default function ProgramsPage() {
               fontWeight: 'var(--font-weight-semibold)',
               color: 'hsl(var(--text-heading))',
               marginBottom: '0.5rem'
-            }}>No programs yet</h3>
+            }}>{t('user.programs.empty.title', 'No programs yet')}</h3>
             <p style={{
               color: 'hsl(var(--text-muted))',
               marginBottom: '1.5rem',
               fontSize: 'var(--font-size-base)',
               fontFamily: 'var(--font-family-primary)'
             }}>
-              Browse our catalog and enroll in programs to start your learning journey
+              {t('user.programs.empty.description', 'Browse our catalog and enroll in programs to start your learning journey')}
             </p>
             <button
               style={{
@@ -486,8 +489,8 @@ export default function ProgramsPage() {
               }}
               className="hover:opacity-90"
             >
-              Browse Programs
-              <ArrowRight className="h-4 w-4" />
+              {t('user.programs.empty.browseButton', 'Browse Programs')}
+              <ArrowRight className="h-4 w-4 rtl:rotate-180" />
             </button>
           </div>
         </Card>

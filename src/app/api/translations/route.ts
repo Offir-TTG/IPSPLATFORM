@@ -15,10 +15,14 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
 
     // Get tenant_id from authenticated user
+    // NOTE: This API is designed to work with or without authentication
+    // If no auth session exists, we serve global translations (no tenant filtering)
     let tenantId: string | null = null;
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError) {
+
+      // Only log auth errors if they're NOT the expected "session missing" error
+      if (authError && authError.message !== 'Auth session missing!') {
         console.log('[Translations API] Auth error:', authError);
       }
 
@@ -34,12 +38,13 @@ export async function GET(request: NextRequest) {
         }
 
         tenantId = userData?.tenant_id || null;
-        console.log('[Translations API] User tenant_id:', tenantId);
-      } else {
-        console.log('[Translations API] No user found in session');
       }
     } catch (error) {
-      console.log('[Translations API] Unexpected error getting user:', error);
+      // Only log unexpected errors (not auth session errors)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('Auth session missing')) {
+        console.log('[Translations API] Unexpected error getting user:', error);
+      }
     }
 
     // Create cache key including context and tenant_id

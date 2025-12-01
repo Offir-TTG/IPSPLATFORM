@@ -5,12 +5,25 @@ import { initializeTenantContext } from '@/lib/supabase/client';
 import type { Tenant } from '@/lib/tenant/types';
 
 // ============================================================================
-// TYPES
+// TYPES & CONSTANTS
 // ============================================================================
+
+// CACHE VERSION: Increment this number when you need to invalidate all translation caches
+// This forces all clients to fetch fresh translations from the API
+const TRANSLATION_CACHE_VERSION = 2;
+
+// Maximum cache age in milliseconds (1 hour)
+const MAX_CACHE_AGE = 60 * 60 * 1000;
 
 type Direction = 'rtl' | 'ltr';
 type Theme = 'light' | 'dark' | 'system';
 type LanguageContext = 'admin' | 'user';
+
+interface CachedTranslations {
+  version: number;
+  timestamp: number;
+  data: Record<string, string>;
+}
 
 interface LanguageInfo {
   code: string;
@@ -37,8 +50,9 @@ interface AppContextType {
   availableLanguages: LanguageInfo[];
   setAdminLanguage: (lang: string) => void;
   setUserLanguage: (lang: string) => void;
-  t: (key: string, fallback?: string, context?: LanguageContext) => string;
+  t: (key: string, params?: Record<string, any> | string, context?: LanguageContext) => string;
   loading: boolean;
+  clearTranslationCache: () => void;
 
   // Theme Management
   theme: Theme;
@@ -80,17 +94,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return rtlLanguages.includes(lang) ? 'rtl' : 'ltr';
   };
 
+  // Helper to load cached translations synchronously with version and age validation
+  const getInitialTranslations = (language: string, context: 'admin' | 'user'): Record<string, string> => {
+    if (typeof window !== 'undefined') {
+      const cacheKey = `translations_${context}_${language}`;
+      const cached = localStorage.getItem(cacheKey);
+
+      if (cached) {
+        try {
+          const parsedCache: CachedTranslations = JSON.parse(cached);
+
+          // Validate cache version
+          if (parsedCache.version !== TRANSLATION_CACHE_VERSION) {
+            console.log(`[Translations] Cache version mismatch (${parsedCache.version} vs ${TRANSLATION_CACHE_VERSION}), invalidating`);
+            localStorage.removeItem(cacheKey);
+            return {};
+          }
+
+          // Validate cache age
+          const cacheAge = Date.now() - parsedCache.timestamp;
+          if (cacheAge > MAX_CACHE_AGE) {
+            console.log(`[Translations] Cache expired (${Math.round(cacheAge / 1000 / 60)} minutes old), invalidating`);
+            localStorage.removeItem(cacheKey);
+            return {};
+          }
+
+          // Cache is valid
+          console.log(`[Translations] Using valid cache for ${context}/${language} (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+          return parsedCache.data;
+        } catch (e) {
+          console.error(`Failed to parse cached ${context} translations:`, e);
+          localStorage.removeItem(cacheKey);
+        }
+      }
+    }
+    return {};
+  };
+
   // State initialization
   const [adminLanguage, setAdminLanguageState] = useState<string>(() => getInitialLanguage('admin_language'));
   const [userLanguage, setUserLanguageState] = useState<string>(() => getInitialLanguage('user_language'));
   const [adminDirection, setAdminDirection] = useState<Direction>(() => getInitialDirection(getInitialLanguage('admin_language')));
   const [userDirection, setUserDirection] = useState<Direction>(() => getInitialDirection(getInitialLanguage('user_language')));
   const [availableLanguages, setAvailableLanguages] = useState<LanguageInfo[]>([]);
-  const [adminTranslations, setAdminTranslations] = useState<Record<string, string>>({});
-  const [userTranslations, setUserTranslations] = useState<Record<string, string>>({});
+  const [adminTranslations, setAdminTranslations] = useState<Record<string, string>>(() => {
+    const cached = getInitialTranslations(getInitialLanguage('admin_language'), 'admin');
+    return cached;
+  });
+  const [userTranslations, setUserTranslations] = useState<Record<string, string>>(() => {
+    const cached = getInitialTranslations(getInitialLanguage('user_language'), 'user');
+    return cached;
+  });
   const [loadingLanguages, setLoadingLanguages] = useState(true);
-  const [loadingAdminTranslations, setLoadingAdminTranslations] = useState(true);
-  const [loadingUserTranslations, setLoadingUserTranslations] = useState(true);
+  const [loadingAdminTranslations, setLoadingAdminTranslations] = useState(() => {
+    // If we have cached translations, we're not loading
+    const cached = getInitialTranslations(getInitialLanguage('admin_language'), 'admin');
+    return Object.keys(cached).length === 0;
+  });
+  const [loadingUserTranslations, setLoadingUserTranslations] = useState(() => {
+    // If we have cached translations, we're not loading
+    const cached = getInitialTranslations(getInitialLanguage('user_language'), 'user');
+    return Object.keys(cached).length === 0;
+  });
 
   // Theme state
   const [theme, setThemeState] = useState<Theme>(() => {
@@ -263,16 +328,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!adminLanguage) return;
 
     const loadTranslations = async () => {
+      const cacheKey = `translations_admin_${adminLanguage}`;
+
+      // ALWAYS set loading to true when fetching, even if we have cache
       setLoadingAdminTranslations(true);
+
+      // Fetch fresh translations from API
       try {
-        const response = await fetch(`/api/translations?language=${adminLanguage}&context=admin`);
+        const response = await fetch(`/api/translations?language=${adminLanguage}&context=admin`, {
+          // Prevent browser caching - always get fresh from server
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        });
         const data = await response.json();
 
-        if (data.success && data.data) {
+        // ONLY update if we got actual translations (non-empty)
+        if (data.success && data.data && Object.keys(data.data).length > 0) {
           setAdminTranslations(data.data);
+
+          // Cache the translations with version and timestamp
+          if (typeof window !== 'undefined') {
+            const cacheData: CachedTranslations = {
+              version: TRANSLATION_CACHE_VERSION,
+              timestamp: Date.now(),
+              data: data.data,
+            };
+            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+            console.log(`[Translations] Cached ${Object.keys(data.data).length} admin translations for ${adminLanguage}`);
+          }
+        } else if (data.success && data.data && Object.keys(data.data).length === 0) {
+          // API returned empty - this is suspicious, log warning
+          console.warn(`[Translations] API returned empty for ${adminLanguage}/admin - translations may be missing in database`);
+          // Keep whatever translations we have (from cache or initial state)
         }
       } catch (error) {
         console.error('Failed to load admin translations:', error);
+        // Keep cached translations on error
       } finally {
         setLoadingAdminTranslations(false);
       }
@@ -286,16 +380,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!userLanguage) return;
 
     const loadTranslations = async () => {
+      const cacheKey = `translations_user_${userLanguage}`;
+
+      // ALWAYS set loading to true when fetching, even if we have cache
       setLoadingUserTranslations(true);
+
+      // Fetch fresh translations from API
       try {
-        const response = await fetch(`/api/translations?language=${userLanguage}&context=user`);
+        const response = await fetch(`/api/translations?language=${userLanguage}&context=user`, {
+          // Prevent browser caching - always get fresh from server
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        });
         const data = await response.json();
 
-        if (data.success && data.data) {
+        // ONLY update if we got actual translations (non-empty)
+        if (data.success && data.data && Object.keys(data.data).length > 0) {
           setUserTranslations(data.data);
+
+          // Cache the translations with version and timestamp
+          if (typeof window !== 'undefined') {
+            const cacheData: CachedTranslations = {
+              version: TRANSLATION_CACHE_VERSION,
+              timestamp: Date.now(),
+              data: data.data,
+            };
+            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+            console.log(`[Translations] Cached ${Object.keys(data.data).length} user translations for ${userLanguage}`);
+          }
+        } else if (data.success && data.data && Object.keys(data.data).length === 0) {
+          // API returned empty - this is suspicious, log warning
+          console.warn(`[Translations] API returned empty for ${userLanguage}/user - translations may be missing in database`);
+          // Keep whatever translations we have (from cache or initial state)
         }
       } catch (error) {
         console.error('Failed to load user translations:', error);
+        // Keep cached translations on error
       } finally {
         setLoadingUserTranslations(false);
       }
@@ -332,10 +455,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.dir = langInfo.direction;
   };
 
-  // Translation function
-  const t = (key: string, fallback?: string, context: LanguageContext = 'user'): string => {
-    const translations = context === 'admin' ? adminTranslations : userTranslations;
-    return translations[key] || fallback || key;
+  // Translation function with parameter interpolation support
+  const t = (key: string, params?: Record<string, any> | string, context?: LanguageContext): string => {
+    // Handle legacy calls: t(key, fallback, context)
+    let fallback: string | undefined;
+    let actualParams: Record<string, any> | undefined;
+    let actualContext: LanguageContext = 'user';
+
+    if (typeof params === 'string') {
+      // Legacy signature: t(key, fallback, context)
+      fallback = params;
+      actualContext = (context as LanguageContext) || 'user';
+    } else if (typeof params === 'object') {
+      // New signature: t(key, params)
+      actualParams = params;
+      actualContext = 'user';
+    }
+
+    const translations = actualContext === 'admin' ? adminTranslations : userTranslations;
+    let translation = translations[key] || fallback || key;
+
+    // Replace parameters in translation (e.g., {count} with actual value)
+    if (actualParams) {
+      Object.keys(actualParams).forEach(paramKey => {
+        translation = translation.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(actualParams[paramKey]));
+      });
+    }
+
+    return translation;
+  };
+
+  // Utility function to manually clear translation caches
+  const clearTranslationCache = () => {
+    if (typeof window === 'undefined') return;
+
+    console.log('[Translations] Manually clearing all translation caches');
+
+    // Clear all translation cache keys from localStorage
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('translations_')) {
+        keysToRemove.push(key);
+      }
+    }
+
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    console.log(`[Translations] Removed ${keysToRemove.length} cache entries`);
+
+    // Force reload translations by setting loading state and re-fetching
+    setLoadingAdminTranslations(true);
+    setLoadingUserTranslations(true);
+
+    // Trigger re-fetch by toggling language state
+    setAdminLanguageState(prev => {
+      // Temporarily change then change back to trigger useEffect
+      setTimeout(() => setAdminLanguageState(prev), 0);
+      return prev;
+    });
+    setUserLanguageState(prev => {
+      setTimeout(() => setUserLanguageState(prev), 0);
+      return prev;
+    });
   };
 
   const loading = loadingLanguages || loadingAdminTranslations || loadingUserTranslations;
@@ -352,6 +533,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setUserLanguage,
         t,
         loading,
+        clearTranslationCache,
         theme,
         effectiveTheme,
         setTheme,
@@ -390,7 +572,10 @@ export function useAdminLanguage() {
     direction: context.adminDirection,
     availableLanguages: context.availableLanguages,
     setLanguage: context.setAdminLanguage,
-    t: (key: string, fallback?: string) => context.t(key, fallback, 'admin'),
+    t: (key: string, paramsOrFallback?: Record<string, any> | string) => {
+      // Always use context.t with 'admin' context
+      return context.t(key, paramsOrFallback, 'admin');
+    },
     loading: context.loading,
   };
 }

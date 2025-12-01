@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { SuperAdminLayout } from '@/components/admin/SuperAdminLayout';
 import { Button } from '@/components/ui/button';
-import { LoadingPage } from '@/components/ui/loading-spinner';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tenant } from '@/lib/tenant/types';
 
 export default function EditTenantPage() {
@@ -304,7 +304,9 @@ export default function EditTenantPage() {
   if (loading) {
     return (
       <SuperAdminLayout>
-        <LoadingPage message="Loading tenant details..." />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <LoadingSpinner size="lg" />
+        </div>
       </SuperAdminLayout>
     );
   }

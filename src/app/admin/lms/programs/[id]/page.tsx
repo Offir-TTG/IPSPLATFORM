@@ -512,8 +512,8 @@ export default function ProgramDetailPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-screen">
-          <Loader2 className="h-8 w-8 animate-spin" />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );

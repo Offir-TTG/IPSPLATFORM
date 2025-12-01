@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validate required fields
-    if (!body.program_id || !body.title || !body.start_date || !body.course_type) {
+    if (!body.title || !body.start_date || !body.course_type) {
       return NextResponse.json(
         {
           success: false,
@@ -96,21 +96,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate standalone pricing if applicable
-    if (body.is_standalone && (!body.price || !body.payment_plan)) {
+    // Validate program_id is required for non-standalone courses
+    if (!body.is_standalone && (!body.program_id || (typeof body.program_id === 'string' && body.program_id.trim() === ''))) {
       return NextResponse.json(
         {
           success: false,
-          error: 'lms.course.error_standalone_pricing_required',
-          message: 'Price and payment plan are required for standalone courses'
+          error: 'lms.courses.error.program_required',
+          message: 'Program is required for non-standalone courses'
         },
         { status: 400 }
       );
     }
 
+    // Validate standalone courses should not have a program
+    if (body.is_standalone && body.program_id && typeof body.program_id === 'string' && body.program_id.trim() !== '') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'lms.course.error_standalone_cannot_have_program',
+          message: 'Standalone courses cannot be part of a program'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate dates
+    if (body.end_date && body.start_date) {
+      const startDate = new Date(body.start_date);
+      const endDate = new Date(body.end_date);
+
+      if (endDate < startDate) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'lms.courses.error.end_date_invalid',
+            message: 'End date must be after start date'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create course
     const courseData: any = {
-      program_id: body.program_id,
+      program_id: body.is_standalone
+        ? null
+        : (body.program_id && typeof body.program_id === 'string' && body.program_id.trim() !== '' ? body.program_id : null),
       instructor_id: body.instructor_id || user.id,
       title: body.title,
       description: body.description,
@@ -120,17 +151,8 @@ export async function POST(request: NextRequest) {
       is_active: body.is_active ?? false,
       course_type: body.course_type,
       is_standalone: body.is_standalone ?? false,
+      image_url: body.image_url || null,
     };
-
-    // Only add pricing fields if standalone
-    if (body.is_standalone) {
-      courseData.price = body.price;
-      courseData.currency = body.currency || 'usd';
-      courseData.payment_plan = body.payment_plan;
-      if (body.payment_plan === 'installments' && body.installment_count) {
-        courseData.installment_count = body.installment_count;
-      }
-    }
 
     const result = await courseService.createCourse(courseData);
 

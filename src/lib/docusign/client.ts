@@ -250,7 +250,7 @@ export class DocuSignClient {
     await this.authenticate();
 
     try {
-      const templatesApi = new docusign.TemplatesApi(this.apiClient);
+      const templatesApi = new (docusign as any).TemplatesApi(this.apiClient);
       const templates = await templatesApi.listTemplates(this.accountId);
 
       return (templates.envelopeTemplates || []).map((template: any) => ({

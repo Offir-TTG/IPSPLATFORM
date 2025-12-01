@@ -80,30 +80,108 @@ export async function PATCH(
     // Get request body
     const body = await request.json();
 
+    // Validate standalone/program logic if those fields are being updated
+    if (body.is_standalone !== undefined || body.program_id !== undefined) {
+      // If is_standalone is being set to false, program_id is required
+      if (body.is_standalone === false && (!body.program_id || (typeof body.program_id === 'string' && body.program_id.trim() === ''))) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'lms.courses.error.program_required',
+            message: 'Program is required for non-standalone courses'
+          },
+          { status: 400 }
+        );
+      }
+
+      // If is_standalone is true, program_id should not have a value
+      if (body.is_standalone === true && body.program_id && typeof body.program_id === 'string' && body.program_id.trim() !== '') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'lms.course.error_standalone_cannot_have_program',
+            message: 'Standalone courses cannot be part of a program'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate dates if both are provided
+    if (body.start_date && body.end_date) {
+      const startDate = new Date(body.start_date);
+      const endDate = new Date(body.end_date);
+
+      if (endDate < startDate) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'lms.courses.error.end_date_invalid',
+            message: 'End date must be after start date'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Check if course dates are compatible with existing lessons
+    if (body.start_date || body.end_date) {
+      const { data: lessons } = await supabase
+        .from('lessons')
+        .select('id, title, start_time')
+        .eq('course_id', params.id)
+        .not('start_time', 'is', null);
+
+      if (lessons && lessons.length > 0) {
+        const courseStartDate = body.start_date ? new Date(body.start_date) : null;
+        const courseEndDate = body.end_date ? new Date(body.end_date) : null;
+
+        const lessonsOutsideRange = lessons.filter(lesson => {
+          const lessonDate = new Date(lesson.start_time);
+
+          if (courseStartDate && lessonDate < courseStartDate) {
+            return true;
+          }
+
+          if (courseEndDate && lessonDate > courseEndDate) {
+            return true;
+          }
+
+          return false;
+        });
+
+        if (lessonsOutsideRange.length > 0) {
+          const lessonTitles = lessonsOutsideRange.map(l => l.title).join(', ');
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'lms.courses.error.lessons_outside_range',
+              message: `Course dates conflict with existing lessons: ${lessonTitles}`,
+              details: {
+                count: lessonsOutsideRange.length,
+                lessons: lessonsOutsideRange
+              }
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Get old course data for audit
     const oldCourse = await courseService.getCourseById(params.id);
 
-    // Validate standalone pricing if changing to standalone
-    if (body.is_standalone && (!body.price || !body.payment_plan)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'lms.course.error_standalone_pricing_required',
-          message: 'Price and payment plan are required for standalone courses'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Build update data - only include pricing fields if standalone
+    // Build update data
     const updateData: any = { ...body };
 
-    // If switching to non-standalone, explicitly set pricing fields to null
-    if (body.is_standalone === false) {
-      updateData.price = null;
-      updateData.currency = null;
-      updateData.payment_plan = null;
-      updateData.installment_count = null;
+    // If setting to standalone, ensure program_id is null
+    if (body.is_standalone === true) {
+      updateData.program_id = null;
+    }
+
+    // If program_id is being updated and it's empty, set to null
+    if (updateData.program_id !== undefined && typeof updateData.program_id === 'string' && updateData.program_id.trim() === '') {
+      updateData.program_id = null;
     }
 
     // Update course

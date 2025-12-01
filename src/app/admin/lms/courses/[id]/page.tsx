@@ -49,7 +49,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Badge } from '@/components/ui/badge';
 
 // Dynamically import RichTextEditor to avoid SSR issues
-const RichTextEditor = dynamic(() => import('@/components/ui/rich-text-editor'), { ssr: false });
+const RichTextEditor = dynamic(() => import('@/components/ui/rich-text-editor').then(mod => mod.RichTextEditor), { ssr: false });
 import TokenInserter, { Token } from '@/components/ui/token-inserter';
 import { CourseMaterials } from '@/components/lms/CourseMaterials';
 import {
@@ -1382,10 +1382,8 @@ export default function CourseBuilderPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-96">
-          <div className="text-muted-foreground">
-            {t('common.loading', 'Loading...')}
-          </div>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );
@@ -1641,6 +1639,21 @@ export default function CourseBuilderPage() {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {t('lms.builder.total_duration', 'Total Duration')}
+                    </p>
+                  </div>
+                  <div className={isRtl ? 'text-right' : ''}>
+                    <div className="text-2xl font-bold">
+                      {(() => {
+                        const totalMinutes = modules.reduce((acc, m) => {
+                          const moduleLessonsDuration = m.lessons?.reduce((lessonAcc, lesson) => lessonAcc + (lesson.duration || 0), 0) || 0;
+                          return acc + moduleLessonsDuration;
+                        }, 0);
+                        const academicHours = Math.round((totalMinutes / 45) * 10) / 10;
+                        return academicHours;
+                      })()}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {t('lms.builder.academic_hours', 'Academic Hours')}
                     </p>
                   </div>
                   <div className={isRtl ? 'text-right' : ''}>

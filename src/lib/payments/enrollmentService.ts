@@ -98,7 +98,7 @@ export async function processEnrollment(
       paid_amount: 0,
       payment_status: 'pending',
       deposit_paid: false,
-      status: 'pending_payment',
+      status: 'draft', // Start as draft, will change to pending when email is sent, then active when user completes enrollment
       enrolled_at: enrollmentStartDate.toISOString(),
       payment_metadata: {
         ...metadata,

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar, DollarSign, CreditCard, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useUserLanguage } from '@/context/AppContext';
 
 interface PaymentDetails {
   enrollment: {
@@ -48,6 +49,7 @@ interface PaymentDetails {
 }
 
 export default function PaymentDetailsPage() {
+  const { t } = useUserLanguage();
   const params = useParams();
   const router = useRouter();
   const [details, setDetails] = useState<PaymentDetails | null>(null);
@@ -122,11 +124,11 @@ export default function PaymentDetailsPage() {
       <div className="container mx-auto py-8">
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <h3 className="text-lg font-semibold mb-2">Payment Details Not Found</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('user.payments.detail.notFound', 'Payment Details Not Found')}</h3>
             <Button asChild className="mt-4">
               <Link href="/payments">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Payments
+                <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
+                {t('user.payments.detail.backToPayments', 'Back to Payments')}
               </Link>
             </Button>
           </CardContent>
@@ -141,8 +143,8 @@ export default function PaymentDetailsPage() {
       <div className="mb-6">
         <Button variant="ghost" asChild className="mb-4">
           <Link href="/payments">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Payments
+            <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
+            {t('user.payments.detail.backToPayments', 'Back to Payments')}
           </Link>
         </Button>
         <h1 className="text-3xl font-bold">{details.product.product_name}</h1>
@@ -155,21 +157,21 @@ export default function PaymentDetailsPage() {
         {/* Total Amount Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('user.payments.detail.totalAmount', 'Total Amount')}</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCurrency(details.enrollment.total_amount, details.product.currency)}
             </div>
-            <p className="text-xs text-muted-foreground">Full course price</p>
+            <p className="text-xs text-muted-foreground">{t('user.payments.detail.fullPrice', 'Full course price')}</p>
           </CardContent>
         </Card>
 
         {/* Paid Amount Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Amount Paid</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('user.payments.detail.amountPaid', 'Amount Paid')}</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -177,7 +179,7 @@ export default function PaymentDetailsPage() {
               {formatCurrency(details.enrollment.paid_amount, details.product.currency)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {Math.round((details.enrollment.paid_amount / details.enrollment.total_amount) * 100)}% complete
+              {Math.round((details.enrollment.paid_amount / details.enrollment.total_amount) * 100)}% {t('user.payments.detail.complete', 'complete')}
             </p>
           </CardContent>
         </Card>
@@ -185,7 +187,7 @@ export default function PaymentDetailsPage() {
         {/* Remaining Amount Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Remaining</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('user.payments.detail.remaining', 'Remaining')}</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -195,7 +197,7 @@ export default function PaymentDetailsPage() {
                 details.product.currency
               )}
             </div>
-            <p className="text-xs text-muted-foreground">Still to pay</p>
+            <p className="text-xs text-muted-foreground">{t('user.payments.detail.stillToPay', 'Still to pay')}</p>
           </CardContent>
         </Card>
       </div>
@@ -203,8 +205,8 @@ export default function PaymentDetailsPage() {
       {/* Payment Schedule */}
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>Payment Schedule</CardTitle>
-          <CardDescription>Your scheduled payments for this enrollment</CardDescription>
+          <CardTitle>{t('user.payments.detail.paymentSchedule', 'Payment Schedule')}</CardTitle>
+          <CardDescription>{t('user.payments.detail.scheduledPayments', 'Your scheduled payments for this enrollment')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -217,7 +219,7 @@ export default function PaymentDetailsPage() {
                   {getStatusIcon(schedule.status)}
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-medium">Payment #{schedule.payment_number}</p>
+                      <p className="font-medium">{t('user.payments.detail.paymentNum', `Payment #${schedule.payment_number}`)}</p>
                       <Badge variant="outline" className="capitalize">
                         {schedule.payment_type}
                       </Badge>
@@ -225,21 +227,21 @@ export default function PaymentDetailsPage() {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {schedule.paid_date ? (
-                        <>Paid on {formatDate(schedule.paid_date)}</>
+                        <>{t('user.payments.detail.paidOn', 'Paid on')} {formatDate(schedule.paid_date)}</>
                       ) : (
-                        <>Due {formatDate(schedule.scheduled_date)}</>
+                        <>{t('user.payments.detail.due', 'Due')} {formatDate(schedule.scheduled_date)}</>
                       )}
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="ltr:text-right rtl:text-left">
                   <p className="text-lg font-bold">
                     {formatCurrency(schedule.amount, schedule.currency)}
                   </p>
                   {schedule.status === 'pending' && (
                     <Button asChild size="sm" className="mt-2">
                       <Link href={`/payments/${params.id}/pay?schedule=${schedule.id}`}>
-                        Pay Now
+                        {t('user.payments.detail.payNow', 'Pay Now')}
                       </Link>
                     </Button>
                   )}
@@ -254,8 +256,8 @@ export default function PaymentDetailsPage() {
       {details.payments.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Payment History</CardTitle>
-            <CardDescription>All payments made for this enrollment</CardDescription>
+            <CardTitle>{t('user.payments.detail.paymentHistory', 'Payment History')}</CardTitle>
+            <CardDescription>{t('user.payments.detail.allPayments', 'All payments made for this enrollment')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -273,7 +275,7 @@ export default function PaymentDetailsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="ltr:text-right rtl:text-left">
                     <p className="text-lg font-bold">
                       {formatCurrency(payment.amount, payment.currency)}
                     </p>

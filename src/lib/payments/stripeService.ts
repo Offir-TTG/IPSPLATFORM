@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-11-20.acacia',
+  apiVersion: '2023-10-16',
 });
 
 export interface PaymentIntentRequest {
@@ -51,12 +51,16 @@ export async function createPaymentIntent(
     throw new Error('Enrollment not found');
   }
 
+  // Get user data (Supabase returns it as an array due to the join)
+  const userData = Array.isArray(enrollment.users) ? enrollment.users[0] : enrollment.users;
+  const productData = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
+
   // Get or create Stripe customer
   const customer = await getOrCreateStripeCustomer(
     tenant_id,
     user_id,
-    enrollment.users.email,
-    `${enrollment.users.first_name} ${enrollment.users.last_name}`.trim()
+    userData.email,
+    `${userData.first_name} ${userData.last_name}`.trim()
   );
 
   // Create payment intent
@@ -69,10 +73,10 @@ export async function createPaymentIntent(
       enrollment_id: request.enrollment_id,
       payment_type: request.payment_type,
       schedule_id: request.schedule_id || '',
-      product_name: enrollment.products.product_name,
+      product_name: productData.product_name,
       ...request.metadata,
     },
-    description: `Payment for ${enrollment.products.product_name} - ${request.payment_type}`,
+    description: `Payment for ${productData.product_name} - ${request.payment_type}`,
     automatic_payment_methods: {
       enabled: true,
     },
@@ -160,6 +164,9 @@ export async function createSubscription(
     throw new Error('Enrollment not found');
   }
 
+  // Get product data (Supabase returns it as an array due to the join)
+  const productData = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
+
   // Create subscription
   const subscription = await stripe.subscriptions.create({
     customer: request.customer_id,
@@ -173,7 +180,7 @@ export async function createSubscription(
       enrollment_id: request.enrollment_id,
       payment_plan_id: request.payment_plan_id,
       schedule_ids: request.schedule_ids.join(','),
-      product_name: enrollment.products.product_name,
+      product_name: productData.product_name,
       ...request.metadata,
     },
     payment_behavior: 'default_incomplete',
@@ -205,7 +212,7 @@ export async function createSubscription(
 
   return {
     subscription_id: subscription.id,
-    client_secret: paymentIntent?.client_secret,
+    client_secret: paymentIntent?.client_secret || undefined,
   };
 }
 
@@ -239,6 +246,9 @@ export async function createInvoice(
     throw new Error('Enrollment not found');
   }
 
+  // Get product data (Supabase returns it as an array due to the join)
+  const productData = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
+
   // Create invoice item
   const invoiceItem = await stripe.invoiceItems.create({
     customer: customer_id,
@@ -249,7 +259,7 @@ export async function createInvoice(
       tenant_id,
       enrollment_id,
       schedule_id,
-      product_name: enrollment.products.product_name,
+      product_name: productData.product_name,
     },
   });
 
@@ -264,7 +274,7 @@ export async function createInvoice(
       tenant_id,
       enrollment_id,
       schedule_id,
-      product_name: enrollment.products.product_name,
+      product_name: productData.product_name,
     },
   });
 

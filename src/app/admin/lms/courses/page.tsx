@@ -67,7 +67,6 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import type { Course, CourseFilter } from '@/types/lms';
-import { CURRENCIES } from '@/lib/utils/currency';
 
 // ============================================================================
 // TYPES
@@ -81,11 +80,8 @@ interface CreateCourseData {
   end_date?: string;
   is_active?: boolean;
   is_standalone?: boolean;
-  price?: number;
-  currency?: string;
-  payment_plan?: 'one_time' | 'installments';
-  installment_count?: number;
-  course_type?: 'course' | 'lecture' | 'workshop' | 'webinar';
+  course_type?: 'course' | 'lecture' | 'workshop' | 'webinar' | 'session' | 'session_pack' | 'bundle' | 'custom';
+  is_published?: boolean;
 }
 
 // ============================================================================
@@ -94,7 +90,7 @@ interface CreateCourseData {
 
 export default function CoursesListPage() {
   const router = useRouter();
-  const { t, direction } = useAdminLanguage();
+  const { t, direction, language } = useAdminLanguage();
   const { toast } = useToast();
   const isRtl = direction === 'rtl';
   const [courses, setCourses] = useState<Course[]>([]);
@@ -140,11 +136,8 @@ export default function CoursesListPage() {
     end_date: '',
     is_active: true,
     is_standalone: false,
-    price: undefined,
-    currency: 'usd',
-    payment_plan: 'one_time',
-    installment_count: undefined,
     course_type: 'course',
+    is_published: false,
   });
 
   // Form state for edit dialog
@@ -156,11 +149,8 @@ export default function CoursesListPage() {
     end_date: '',
     is_active: true,
     is_standalone: false,
-    price: undefined,
-    currency: 'usd',
-    payment_plan: 'one_time',
-    installment_count: undefined,
     course_type: 'course',
+    is_published: false,
   });
 
   // Form state for duplicate dialog
@@ -172,19 +162,11 @@ export default function CoursesListPage() {
     end_date: '',
     is_active: true,
     is_standalone: false,
-    price: undefined,
-    currency: 'usd',
-    payment_plan: 'one_time',
-    installment_count: undefined,
     course_type: 'course',
+    is_published: false,
   });
 
-  // Load programs and courses
-  useEffect(() => {
-    loadPrograms();
-    loadCourses();
-  }, [statusFilter]);
-
+  // Load programs
   const loadPrograms = async () => {
     try {
       const response = await fetch('/api/programs');
@@ -197,6 +179,7 @@ export default function CoursesListPage() {
     }
   };
 
+  // Load courses
   const loadCourses = async () => {
     try {
       setLoading(true);
@@ -222,6 +205,13 @@ export default function CoursesListPage() {
       setLoading(false);
     }
   };
+
+  // Load programs and courses on mount and when filters change
+  useEffect(() => {
+    loadPrograms();
+    loadCourses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, searchQuery]);
 
   // Upload image through server-side API for proper authentication
   const uploadCourseImage = async (file: File, courseId?: string): Promise<string | null> => {
@@ -315,7 +305,7 @@ export default function CoursesListPage() {
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
-      setCreateError(t('common.required_fields', 'Please fill in all required fields correctly'));
+      // Don't set a generic error - the specific field errors will show
       return;
     }
 
@@ -330,19 +320,12 @@ export default function CoursesListPage() {
           uploadedImageUrl = await uploadCourseImage(imageFile);
           if (!uploadedImageUrl) {
             console.error('Image upload returned null');
-            toast({
-              title: t('common.error', 'Error'),
-              description: t('lms.courses.image_upload_error', 'Failed to upload image'),
-              variant: 'destructive',
-            });
+            setCreateError(t('lms.courses.image_upload_error', 'Failed to upload image. Creating course without image.'));
             // Continue without image
           }
         } catch (uploadError) {
           console.error('Image upload error:', uploadError);
-          toast({
-            title: t('common.warning', 'Warning'),
-            description: t('lms.courses.image_upload_error', 'Failed to upload image, creating course without image'),
-          });
+          setCreateError(t('lms.courses.image_upload_error', 'Failed to upload image. Creating course without image.'));
           // Continue without image
         }
       }
@@ -409,21 +392,11 @@ export default function CoursesListPage() {
           ? (result.error.startsWith('lms.') ? t(result.error, result.message || result.error) : result.error)
           : t('lms.courses.create_error', 'Failed to create course');
         setCreateError(errorMessage);
-        toast({
-          title: t('common.error', 'Error'),
-          description: errorMessage,
-          variant: 'destructive',
-        });
       }
     } catch (error) {
       console.error('Failed to create course:', error);
       const errorMessage = error instanceof Error ? error.message : t('lms.courses.create_error', 'Failed to create course');
       setCreateError(errorMessage);
-      toast({
-        title: t('common.error', 'Error'),
-        description: errorMessage,
-        variant: 'destructive',
-      });
     } finally {
       setCreateLoading(false);
     }
@@ -436,15 +409,12 @@ export default function CoursesListPage() {
       program_id: course.program_id,
       title: course.title,
       description: course.description || '',
-      start_date: course.start_date,
-      end_date: course.end_date || '',
+      start_date: course.start_date?.split('T')[0] || course.start_date,
+      end_date: course.end_date?.split('T')[0] || course.end_date || '',
       is_active: course.is_active,
       course_type: course.course_type || 'course',
       is_standalone: course.is_standalone || false,
-      price: course.price || undefined,
-      currency: course.currency || 'usd',
-      payment_plan: course.payment_plan || undefined,
-      installment_count: course.installment_count || undefined,
+      is_published: course.is_published || false,
     });
     setImagePreview(course.image_url);
     setImageFile(null);
@@ -482,7 +452,7 @@ export default function CoursesListPage() {
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
-      setEditError(t('common.required_fields', 'Please fill in all required fields correctly'));
+      // Don't set a generic error - the specific field errors will show
       return;
     }
 
@@ -511,10 +481,7 @@ export default function CoursesListPage() {
           }
         } catch (uploadError) {
           console.error('Image upload error:', uploadError);
-          toast({
-            title: t('common.warning', 'Warning'),
-            description: t('lms.courses.image_upload_error', 'Failed to upload image'),
-          });
+          setEditError(t('lms.courses.image_upload_error', 'Failed to upload image. Course updated without new image.'));
         }
       } else if (imagePreview === null && selectedCourse.image_url) {
         // Image was removed
@@ -553,21 +520,11 @@ export default function CoursesListPage() {
           ? (result.error.startsWith('lms.') ? t(result.error, result.message || result.error) : result.error)
           : t('lms.courses.update_error', 'Failed to update course');
         setEditError(errorMessage);
-        toast({
-          title: t('common.error', 'Error'),
-          description: errorMessage,
-          variant: 'destructive',
-        });
       }
     } catch (error) {
       console.error('Failed to update course:', error);
       const errorMessage = error instanceof Error ? error.message : t('lms.courses.update_error', 'Failed to update course');
       setEditError(errorMessage);
-      toast({
-        title: t('common.error', 'Error'),
-        description: errorMessage,
-        variant: 'destructive',
-      });
     } finally {
       setEditLoading(false);
     }
@@ -580,8 +537,8 @@ export default function CoursesListPage() {
       program_id: course.program_id,
       title: `${course.title} (Copy)`,
       description: course.description || '',
-      start_date: course.start_date,
-      end_date: course.end_date || '',
+      start_date: course.start_date?.split('T')[0] || course.start_date,
+      end_date: course.end_date?.split('T')[0] || course.end_date || '',
       is_active: course.is_active,
     });
     setDuplicateError(null);
@@ -618,7 +575,7 @@ export default function CoursesListPage() {
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
-      setDuplicateError(t('common.required_fields', 'Please fill in all required fields correctly'));
+      // Don't set a generic error - the specific field errors will show
       return;
     }
 
@@ -650,21 +607,11 @@ export default function CoursesListPage() {
       } else {
         const errorMessage = result.error || t('lms.courses.duplicate_error', 'Failed to duplicate course');
         setDuplicateError(errorMessage);
-        toast({
-          title: t('common.error', 'Error'),
-          description: errorMessage,
-          variant: 'destructive',
-        });
       }
     } catch (error) {
       console.error('Failed to duplicate course:', error);
       const errorMessage = error instanceof Error ? error.message : t('lms.courses.duplicate_error', 'Failed to duplicate course');
       setDuplicateError(errorMessage);
-      toast({
-        title: t('common.error', 'Error'),
-        description: errorMessage,
-        variant: 'destructive',
-      });
     } finally {
       setDuplicateLoading(false);
     }
@@ -745,7 +692,8 @@ export default function CoursesListPage() {
 
   // Format date
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const locale = language === 'he' ? 'he-IL' : 'en-US';
+    return new Date(dateString).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -764,15 +712,15 @@ export default function CoursesListPage() {
           gap: '1rem'
         }}>
           <div>
-            <h1 style={{
+            <h1 suppressHydrationWarning style={{
               fontSize: 'var(--font-size-3xl)',
               fontFamily: 'var(--font-family-heading)',
               fontWeight: 'var(--font-weight-bold)',
               color: 'hsl(var(--text-heading))'
             }}>
-              {t('lms.courses.title', 'Courses')}
+              <span suppressHydrationWarning>{t('lms.courses.title', 'Courses')}</span>
             </h1>
-            <p style={{
+            <p suppressHydrationWarning style={{
               color: 'hsl(var(--muted-foreground))',
               fontSize: 'var(--font-size-sm)',
               marginTop: '0.25rem'
@@ -787,7 +735,7 @@ export default function CoursesListPage() {
             }}
           >
             <Plus className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-            {t('lms.courses.create', 'Create Course')}
+            <span suppressHydrationWarning>{t('lms.courses.create', 'Create Course')}</span>
           </Button>
         </div>
 
@@ -828,9 +776,9 @@ export default function CoursesListPage() {
                   <SelectValue placeholder={t('lms.courses.filter_by_status', 'Filter by status')} />
                 </SelectTrigger>
                 <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectItem value="all" className={isRtl ? 'text-right' : 'text-left'}>{t('lms.courses.all_courses', 'All Courses')}</SelectItem>
-                  <SelectItem value="active" className={isRtl ? 'text-right' : 'text-left'}>{t('lms.courses.active', 'Active')}</SelectItem>
-                  <SelectItem value="inactive" className={isRtl ? 'text-right' : 'text-left'}>{t('lms.courses.inactive', 'Inactive')}</SelectItem>
+                  <SelectItem value="all" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('lms.courses.all_courses', 'All Courses')}</span></SelectItem>
+                  <SelectItem value="active" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('lms.courses.active', 'Active')}</span></SelectItem>
+                  <SelectItem value="inactive" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('lms.courses.inactive', 'Inactive')}</span></SelectItem>
                 </SelectContent>
               </Select>
 
@@ -863,7 +811,7 @@ export default function CoursesListPage() {
                   title={t('lms.courses.view_grid', 'Grid View')}
                 >
                   <LayoutGrid className="w-4 h-4" />
-                  {isMobile && <span>{t('lms.courses.view_grid', 'Grid')}</span>}
+                  {isMobile && <span suppressHydrationWarning>{t('lms.courses.view_grid', 'Grid')}</span>}
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
@@ -885,7 +833,7 @@ export default function CoursesListPage() {
                   title={t('lms.courses.view_list', 'List View')}
                 >
                   <List className="w-4 h-4" />
-                  {isMobile && <span>{t('lms.courses.view_list', 'List')}</span>}
+                  {isMobile && <span suppressHydrationWarning>{t('lms.courses.view_list', 'List')}</span>}
                 </button>
               </div>
             </div>
@@ -895,19 +843,19 @@ export default function CoursesListPage() {
         {/* Course List */}
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">{t('lms.courses.loading', 'Loading courses...')}</p>
+            <p className="text-muted-foreground" suppressHydrationWarning>{t('lms.courses.loading', 'Loading courses...')}</p>
           </div>
         ) : courses.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">{t('lms.courses.no_courses', 'No courses found')}</h3>
+              <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('lms.courses.no_courses', 'No courses found')}</h3>
               <p className="text-muted-foreground mb-4">
-                {t('lms.courses.get_started', 'Get started by creating your first course')}
+                <span suppressHydrationWarning>{t('lms.courses.get_started', 'Get started by creating your first course')}</span>
               </p>
               <Button onClick={() => setShowCreateDialog(true)}>
                 <Plus className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                {t('lms.courses.create', 'Create Course')}
+                <span suppressHydrationWarning>{t('lms.courses.create', 'Create Course')}</span>
               </Button>
             </CardContent>
           </Card>
@@ -946,14 +894,6 @@ export default function CoursesListPage() {
                           : t('lms.courses.inactive', 'Inactive')
                         }
                       </Badge>
-                      {course.is_standalone && (
-                        <Badge variant="outline" className="bg-purple-50 border-purple-300 text-purple-700">
-                          {t('lms.course.is_standalone', 'Standalone Course')}
-                        </Badge>
-                      )}
-                      <Badge variant="secondary">
-                        {t(`lms.course.type_${course.course_type}`, course.course_type)}
-                      </Badge>
                     </div>
                   </div>
                 </CardHeader>
@@ -961,9 +901,9 @@ export default function CoursesListPage() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">
+                      <span className="text-sm" suppressHydrationWarning>
                         {formatDate(course.start_date)}
-                        {course.end_date && ` - ${formatDate(course.end_date)}`}
+                        {course.end_date && ` ${t('lms.courses.date_separator', '-')} ${formatDate(course.end_date)}`}
                       </span>
                     </div>
                     {course.instructor && (
@@ -974,6 +914,25 @@ export default function CoursesListPage() {
                         </span>
                       </div>
                     )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="secondary" className="text-xs">
+                        <span suppressHydrationWarning>{t(`lms.course.type_${course.course_type}`, course.course_type)}</span>
+                      </Badge>
+                      {course.is_standalone && (
+                        <Badge variant="outline" className="bg-purple-50 border-purple-300 text-purple-700 text-xs">
+                          <span suppressHydrationWarning>{t('lms.course.is_standalone', 'Standalone Course')}</span>
+                        </Badge>
+                      )}
+                      {course.is_published ? (
+                        <Badge variant="outline" className="bg-green-50 border-green-300 text-green-700 text-xs">
+                          <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-gray-50 border-gray-300 text-gray-600 text-xs">
+                          <span suppressHydrationWarning>{t('lms.course.draft', 'Draft')}</span>
+                        </Badge>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mt-4">
@@ -984,7 +943,7 @@ export default function CoursesListPage() {
                       onClick={() => router.push(`/admin/lms/courses/${course.id}`)}
                     >
                       <BookOpen className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                      {t('lms.courses.manage', 'Manage Course')}
+                      <span suppressHydrationWarning>{t('lms.courses.manage', 'Manage Course')}</span>
                     </Button>
                     <div className="flex gap-2">
                       <Button
@@ -994,7 +953,7 @@ export default function CoursesListPage() {
                         onClick={() => handleEditCourse(course)}
                       >
                         <Edit className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                        {t('lms.courses.edit', 'Edit')}
+                        <span suppressHydrationWarning>{t('lms.courses.edit', 'Edit')}</span>
                       </Button>
                       <Button
                         variant="outline"
@@ -1006,7 +965,7 @@ export default function CoursesListPage() {
                         }}
                       >
                         <Trash2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                        {t('lms.courses.delete', 'Delete')}
+                        <span suppressHydrationWarning>{t('lms.courses.delete', 'Delete')}</span>
                       </Button>
                     </div>
                   </div>
@@ -1057,14 +1016,6 @@ export default function CoursesListPage() {
                             : t('lms.courses.inactive', 'Inactive')
                           }
                         </Badge>
-                        {course.is_standalone && (
-                          <Badge variant="outline" className="bg-purple-50 border-purple-300 text-purple-700">
-                            {t('lms.course.is_standalone', 'Standalone Course')}
-                          </Badge>
-                        )}
-                        <Badge variant="secondary">
-                          {t(`lms.course.type_${course.course_type}`, course.course_type)}
-                        </Badge>
                       </div>
 
                       {course.description && (
@@ -1091,9 +1042,9 @@ export default function CoursesListPage() {
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                           <Calendar className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                          <span>
+                          <span suppressHydrationWarning>
                             {formatDate(course.start_date)}
-                            {course.end_date && ` - ${formatDate(course.end_date)}`}
+                            {course.end_date && ` ${t('lms.courses.date_separator', '-')} ${formatDate(course.end_date)}`}
                           </span>
                         </div>
 
@@ -1105,6 +1056,26 @@ export default function CoursesListPage() {
                             </span>
                           </div>
                         )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <Badge variant="secondary" className="text-xs">
+                            <span suppressHydrationWarning>{t(`lms.course.type_${course.course_type}`, course.course_type)}</span>
+                          </Badge>
+                          {course.is_standalone && (
+                            <Badge variant="outline" className="bg-purple-50 border-purple-300 text-purple-700 text-xs">
+                              <span suppressHydrationWarning>{t('lms.course.is_standalone', 'Standalone Course')}</span>
+                            </Badge>
+                          )}
+                          {course.is_published ? (
+                            <Badge variant="outline" className="bg-green-50 border-green-300 text-green-700 text-xs">
+                              <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-gray-50 border-gray-300 text-gray-600 text-xs">
+                              <span suppressHydrationWarning>{t('lms.course.draft', 'Draft')}</span>
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1128,7 +1099,7 @@ export default function CoursesListPage() {
                         }}
                       >
                         <BookOpen className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                        {t('lms.courses.manage', 'Manage Course')}
+                        <span suppressHydrationWarning>{t('lms.courses.manage', 'Manage Course')}</span>
                       </Button>
 
                       <div style={{
@@ -1175,12 +1146,41 @@ export default function CoursesListPage() {
         )}
 
         {/* Create Course Dialog */}
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" dir={direction}>
+        <Dialog open={showCreateDialog} onOpenChange={(open) => {
+          // If trying to close the dialog (open === false), validate first
+          if (!open) {
+            if (!newCourse.start_date || !newCourse.start_date.trim()) {
+              // Show validation error and prevent closing
+              setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              return; // Prevent closing
+            }
+          }
+          // Allow the dialog to open/close and clear errors
+          if (open) {
+            setValidationErrors({});
+          }
+          setShowCreateDialog(open);
+        }}>
+          <DialogContent
+            className="max-w-2xl max-h-[90vh] flex flex-col"
+            dir={direction}
+            onPointerDownOutside={(e) => {
+              if (!newCourse.start_date || !newCourse.start_date.trim()) {
+                e.preventDefault();
+                setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              }
+            }}
+            onEscapeKeyDown={(e) => {
+              if (!newCourse.start_date || !newCourse.start_date.trim()) {
+                e.preventDefault();
+                setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              }
+            }}
+          >
             <DialogHeader>
-              <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>{t('lms.courses.create_dialog_title', 'Create New Course')}</DialogTitle>
+              <DialogTitle className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('lms.courses.create_dialog_title', 'Create New Course')}</span></DialogTitle>
               <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.courses.create_dialog_description', 'Enter the course details below. You can add modules and lessons after creating the course.')}
+                <span suppressHydrationWarning>{t('lms.courses.create_dialog_description', 'Enter the course details below. You can add modules and lessons after creating the course.')}</span>
               </DialogDescription>
             </DialogHeader>
 
@@ -1188,7 +1188,7 @@ export default function CoursesListPage() {
             {createError && (
               <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
                 <XCircle className="h-4 w-4" />
-                <AlertTitle>{t('common.error', 'Error')}</AlertTitle>
+                <AlertTitle suppressHydrationWarning>{t('common.error', 'Error')}</AlertTitle>
                 <AlertDescription>{createError}</AlertDescription>
               </Alert>
             )}
@@ -1196,7 +1196,7 @@ export default function CoursesListPage() {
             <div className="space-y-4 overflow-y-auto flex-1 pr-2">
               <div>
                 <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.courses.course_title', 'Course Title')} <span className="text-red-500">*</span>
+                  <span suppressHydrationWarning>{t('lms.courses.course_title', 'Course Title')}</span> <span className="text-red-500">*</span>
                 </label>
                 <Input
                   placeholder={t('lms.courses.course_title_placeholder', 'e.g., Introduction to Programming')}
@@ -1219,7 +1219,7 @@ export default function CoursesListPage() {
               {/* Image Upload */}
               <div>
                 <Label className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.courses.image', 'Course Image')}
+                  <span suppressHydrationWarning>{t('lms.courses.image', 'Course Image')}</span>
                 </Label>
                 <div className="flex gap-4 items-start mt-2">
                   {imagePreview && (
@@ -1258,10 +1258,10 @@ export default function CoursesListPage() {
                       <div className="border-2 border-dashed rounded-lg p-4 hover:bg-muted/50 transition-colors">
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="h-8 w-8 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-sm text-muted-foreground" suppressHydrationWarning>
                             {t('lms.courses.upload_image', 'Click to upload image')}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
                             {t('lms.courses.image_formats', 'PNG, JPG, GIF up to 5MB')}
                           </span>
                         </div>
@@ -1273,22 +1273,20 @@ export default function CoursesListPage() {
 
               <div>
                 <Label htmlFor="description" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.courses.description', 'Description')}
+                  <span suppressHydrationWarning>{t('lms.courses.description', 'Description')}</span>
                 </Label>
                 <RichTextEditor
-                  id="description"
-                  content={newCourse.description}
+                  value={newCourse.description || ''}
                   onChange={(content) => setNewCourse({ ...newCourse, description: content })}
                   placeholder={t('lms.courses.description_placeholder', 'Course description...')}
                   dir={direction}
-                  minHeight="120px"
                 />
               </div>
 
               {/* Course Type */}
               <div>
                 <label className={`text-sm font-medium block mb-2 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.course.type_label', 'Course Type')} <span className="text-red-500">*</span>
+                  <span suppressHydrationWarning>{t('lms.course.type_label', 'Course Type')}</span> <span className="text-red-500">*</span>
                 </label>
                 <Select
                   value={newCourse.course_type}
@@ -1300,18 +1298,22 @@ export default function CoursesListPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="course">{t('lms.course.type_course', 'Course')}</SelectItem>
-                    <SelectItem value="lecture">{t('lms.course.type_lecture', 'Lecture')}</SelectItem>
-                    <SelectItem value="workshop">{t('lms.course.type_workshop', 'Workshop')}</SelectItem>
-                    <SelectItem value="webinar">{t('lms.course.type_webinar', 'Webinar')}</SelectItem>
+                    <SelectItem value="course"><span suppressHydrationWarning>{t('lms.course.type_course', 'Course')}</span></SelectItem>
+                    <SelectItem value="lecture"><span suppressHydrationWarning>{t('lms.course.type_lecture', 'Lecture')}</span></SelectItem>
+                    <SelectItem value="workshop"><span suppressHydrationWarning>{t('lms.course.type_workshop', 'Workshop')}</span></SelectItem>
+                    <SelectItem value="webinar"><span suppressHydrationWarning>{t('lms.course.type_webinar', 'Webinar')}</span></SelectItem>
+                    <SelectItem value="session"><span suppressHydrationWarning>{t('lms.course.type_session', 'Session')}</span></SelectItem>
+                    <SelectItem value="session_pack"><span suppressHydrationWarning>{t('lms.course.type_session_pack', 'Session Pack')}</span></SelectItem>
+                    <SelectItem value="bundle"><span suppressHydrationWarning>{t('lms.course.type_bundle', 'Bundle')}</span></SelectItem>
+                    <SelectItem value="custom"><span suppressHydrationWarning>{t('lms.course.type_custom', 'Custom')}</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
                 <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.courses.program', 'Program')} {!newCourse.is_standalone && <span className="text-red-500">*</span>}
-                  {newCourse.is_standalone && <span className="text-xs text-muted-foreground ml-2">({t('lms.course.not_applicable_standalone', 'Not applicable for standalone courses')})</span>}
+                  <span suppressHydrationWarning>{t('lms.courses.program', 'Program')}</span> {!newCourse.is_standalone && <span className="text-red-500">*</span>}
+                  {newCourse.is_standalone && <span className="text-xs text-muted-foreground ml-2" suppressHydrationWarning>({t('lms.course.not_applicable_standalone', 'Not applicable for standalone courses')})</span>}
                 </label>
                 <Select
                   value={newCourse.program_id || undefined}
@@ -1331,12 +1333,12 @@ export default function CoursesListPage() {
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
                     {newCourse.program_id && (
                       <SelectItem value="_clear" className={`${isRtl ? 'text-right' : 'text-left'} text-muted-foreground italic`}>
-                        {t('common.clear_selection', 'Clear selection')}
+                        <span suppressHydrationWarning>{t('common.clear_selection', 'Clear selection')}</span>
                       </SelectItem>
                     )}
                     {programs.length === 0 ? (
                       <SelectItem value="_none" disabled className={isRtl ? 'text-right' : 'text-left'}>
-                        {t('lms.courses.no_programs', 'No programs available')}
+                        <span suppressHydrationWarning>{t('lms.courses.no_programs', 'No programs available')}</span>
                       </SelectItem>
                     ) : (
                       programs.map((program) => (
@@ -1352,7 +1354,7 @@ export default function CoursesListPage() {
                     {validationErrors.program_id}
                   </p>
                 ) : !newCourse.is_standalone ? (
-                  <p className={`text-xs text-muted-foreground mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                  <p className={`text-xs text-muted-foreground mt-1 ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
                     {t('lms.courses.program_help', 'Select the program this course belongs to')}
                   </p>
                 ) : null}
@@ -1361,7 +1363,7 @@ export default function CoursesListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.courses.start_date', 'Start Date')} <span className="text-red-500">*</span>
+                    <span suppressHydrationWarning>{t('lms.courses.start_date', 'Start Date')}</span> <span className="text-red-500">*</span>
                   </label>
                   <Input
                     type="date"
@@ -1373,6 +1375,7 @@ export default function CoursesListPage() {
                       }
                     }}
                     className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.start_date ? 'border-destructive' : ''}`}
+                    required
                   />
                   {validationErrors.start_date && (
                     <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
@@ -1381,7 +1384,7 @@ export default function CoursesListPage() {
                   )}
                 </div>
                 <div>
-                  <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>{t('lms.courses.end_date', 'End Date')}</label>
+                  <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}><span suppressHydrationWarning>{t('lms.courses.end_date', 'End Date')}</span></label>
                   <Input
                     type="date"
                     value={newCourse.end_date}
@@ -1408,7 +1411,7 @@ export default function CoursesListPage() {
                       htmlFor="is_active_create"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                     >
-                      {t('lms.courses.activate_immediately', 'Activate course immediately')}
+                      <span suppressHydrationWarning>{t('lms.courses.activate_immediately', 'Activate course immediately')}</span>
                     </Label>
                     <Switch
                       id="is_active_create"
@@ -1431,7 +1434,7 @@ export default function CoursesListPage() {
                       htmlFor="is_active_create"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                     >
-                      {t('lms.courses.activate_immediately', 'Activate course immediately')}
+                      <span suppressHydrationWarning>{t('lms.courses.activate_immediately', 'Activate course immediately')}</span>
                     </Label>
                   </>
                 )}
@@ -1443,10 +1446,10 @@ export default function CoursesListPage() {
                   <>
                     <div className="flex-1">
                       <Label htmlFor="is_standalone_create" className="text-sm font-medium cursor-pointer">
-                        {t('lms.course.standalone_label', 'Available as Standalone')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_label', 'Available as Standalone')}</span>
                       </Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}</span>
                       </p>
                     </div>
                     <Switch
@@ -1478,101 +1481,57 @@ export default function CoursesListPage() {
                     />
                     <div className="flex-1">
                       <Label htmlFor="is_standalone_create" className="text-sm font-medium cursor-pointer">
-                        {t('lms.course.standalone_label', 'Available as Standalone')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_label', 'Available as Standalone')}</span>
                       </Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}</span>
                       </p>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* Pricing Fields - Only show if standalone */}
-              {newCourse.is_standalone && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.price_label', 'Price')} <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={newCourse.price || ''}
-                        onChange={(e) => setNewCourse({ ...newCourse, price: parseFloat(e.target.value) || undefined })}
-                        className={isRtl ? 'text-right' : 'text-left'}
-                        placeholder="0.00"
-                      />
+              {/* Published Status */}
+              <div className={`flex items-center gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                {isRtl ? (
+                  <>
+                    <div className="flex-1">
+                      <Label htmlFor="is_published_create" className="text-sm font-medium cursor-pointer">
+                        <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span suppressHydrationWarning>{t('lms.course.published_description', 'Make this course visible to users in the user portal')}</span>
+                      </p>
                     </div>
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.currency_label', 'Currency')} <span className="text-red-500">*</span>
-                      </label>
-                      <Select
-                        value={newCourse.currency}
-                        onValueChange={(value) => setNewCourse({ ...newCourse, currency: value })}
-                        dir={direction}
-                        required
-                      >
-                        <SelectTrigger className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectValue placeholder={t('lms.course.select_currency', 'Select currency')} />
-                        </SelectTrigger>
-                        <SelectContent dir={direction}>
-                          {CURRENCIES.filter(c => c.is_active).map((currency) => (
-                            <SelectItem key={currency.code} value={currency.code.toLowerCase()}>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{currency.code}</span>
-                                <span className="text-muted-foreground">({currency.symbol})</span>
-                                <span className="text-sm text-muted-foreground hidden sm:inline">{currency.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <Switch
+                      id="is_published_create"
+                      checked={newCourse.is_published}
+                      onCheckedChange={(checked) =>
+                        setNewCourse({ ...newCourse, is_published: checked })
+                      }
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Switch
+                      id="is_published_create"
+                      checked={newCourse.is_published}
+                      onCheckedChange={(checked) =>
+                        setNewCourse({ ...newCourse, is_published: checked })
+                      }
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor="is_published_create" className="text-sm font-medium cursor-pointer">
+                        <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span suppressHydrationWarning>{t('lms.course.published_description', 'Make this course visible to users in the user portal')}</span>
+                      </p>
                     </div>
-                  </div>
+                  </>
+                )}
+              </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.payment_plan_label', 'Payment Plan')} <span className="text-red-500">*</span>
-                      </label>
-                      <Select
-                        value={newCourse.payment_plan}
-                        onValueChange={(value: any) => setNewCourse({ ...newCourse, payment_plan: value })}
-                        dir={direction}
-                        required
-                      >
-                        <SelectTrigger className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectValue placeholder={t('lms.course.select_payment_plan', 'Select payment plan')} />
-                        </SelectTrigger>
-                        <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectItem value="one_time">{t('lms.course.payment_plan_one_time', 'One-time Payment')}</SelectItem>
-                          <SelectItem value="installments">{t('lms.course.payment_plan_installments', 'Installments')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {newCourse.payment_plan === 'installments' && (
-                      <div>
-                        <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.course.installment_count_label', 'Number of Installments')}
-                        </label>
-                        <Input
-                          type="number"
-                          min="2"
-                          max="12"
-                          value={newCourse.installment_count || ''}
-                          onChange={(e) => setNewCourse({ ...newCourse, installment_count: parseInt(e.target.value) || undefined })}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          placeholder="2"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
             </div>
 
             <DialogFooter className={isRtl ? 'flex-row-reverse gap-3' : 'gap-3'}>
@@ -1581,7 +1540,7 @@ export default function CoursesListPage() {
                 onClick={() => setShowCreateDialog(false)}
                 disabled={createLoading}
               >
-                {t('lms.courses.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('lms.courses.cancel', 'Cancel')}</span>
               </Button>
               <Button onClick={handleCreateCourse} disabled={createLoading}>
                 {createLoading ? t('lms.courses.creating', 'Creating...') : t('lms.courses.create', 'Create Course')}
@@ -1591,12 +1550,41 @@ export default function CoursesListPage() {
         </Dialog>
 
         {/* Edit Course Dialog */}
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" dir={direction}>
+        <Dialog open={showEditDialog} onOpenChange={(open) => {
+          // If trying to close the dialog (open === false), validate first
+          if (!open) {
+            if (!editCourse.start_date || !editCourse.start_date.trim()) {
+              // Show validation error and prevent closing
+              setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              return; // Prevent closing
+            }
+          }
+          // Allow the dialog to open/close and clear errors
+          if (open) {
+            setValidationErrors({});
+          }
+          setShowEditDialog(open);
+        }}>
+          <DialogContent
+            className="max-w-2xl max-h-[90vh] flex flex-col"
+            dir={direction}
+            onPointerDownOutside={(e) => {
+              if (!editCourse.start_date || !editCourse.start_date.trim()) {
+                e.preventDefault();
+                setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              }
+            }}
+            onEscapeKeyDown={(e) => {
+              if (!editCourse.start_date || !editCourse.start_date.trim()) {
+                e.preventDefault();
+                setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              }
+            }}
+          >
             <DialogHeader>
-              <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>{t('lms.courses.edit_dialog_title', 'Edit Course')}</DialogTitle>
+              <DialogTitle className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('lms.courses.edit_dialog_title', 'Edit Course')}</span></DialogTitle>
               <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.courses.edit_dialog_description', 'Update the course details below.')}
+                <span suppressHydrationWarning>{t('lms.courses.edit_dialog_description', 'Update the course details below.')}</span>
               </DialogDescription>
             </DialogHeader>
 
@@ -1604,7 +1592,7 @@ export default function CoursesListPage() {
             {editError && (
               <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
                 <XCircle className="h-4 w-4" />
-                <AlertTitle>{t('common.error', 'Error')}</AlertTitle>
+                <AlertTitle suppressHydrationWarning>{t('common.error', 'Error')}</AlertTitle>
                 <AlertDescription>{editError}</AlertDescription>
               </Alert>
             )}
@@ -1612,7 +1600,7 @@ export default function CoursesListPage() {
             <div className="space-y-4 overflow-y-auto flex-1 pr-2">
               <div>
                 <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.courses.course_title', 'Course Title')} <span className="text-red-500">*</span>
+                  <span suppressHydrationWarning>{t('lms.courses.course_title', 'Course Title')}</span> <span className="text-red-500">*</span>
                 </label>
                 <Input
                   placeholder={t('lms.courses.course_title_placeholder', 'e.g., Introduction to Programming')}
@@ -1635,7 +1623,7 @@ export default function CoursesListPage() {
               {/* Image Upload */}
               <div>
                 <Label className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.courses.image', 'Course Image')}
+                  <span suppressHydrationWarning>{t('lms.courses.image', 'Course Image')}</span>
                 </Label>
                 <div className="flex gap-4 items-start mt-2">
                   {imagePreview && (
@@ -1674,10 +1662,10 @@ export default function CoursesListPage() {
                       <div className="border-2 border-dashed rounded-lg p-4 hover:bg-muted/50 transition-colors">
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="h-8 w-8 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-sm text-muted-foreground" suppressHydrationWarning>
                             {t('lms.courses.upload_image', 'Click to upload image')}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
                             {t('lms.courses.image_formats', 'PNG, JPG, GIF up to 5MB')}
                           </span>
                         </div>
@@ -1689,22 +1677,20 @@ export default function CoursesListPage() {
 
               <div>
                 <Label htmlFor="edit-description" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.courses.description', 'Description')}
+                  <span suppressHydrationWarning>{t('lms.courses.description', 'Description')}</span>
                 </Label>
                 <RichTextEditor
-                  id="edit-description"
-                  content={editCourse.description}
+                  value={editCourse.description || ''}
                   onChange={(content) => setEditCourse({ ...editCourse, description: content })}
                   placeholder={t('lms.courses.description_placeholder', 'Course description...')}
                   dir={direction}
-                  minHeight="120px"
                 />
               </div>
 
               {/* Course Type */}
               <div>
                 <label className={`text-sm font-medium block mb-2 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.course.type_label', 'Course Type')} <span className="text-red-500">*</span>
+                  <span suppressHydrationWarning>{t('lms.course.type_label', 'Course Type')}</span> <span className="text-red-500">*</span>
                 </label>
                 <Select
                   value={editCourse.course_type}
@@ -1716,18 +1702,22 @@ export default function CoursesListPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="course">{t('lms.course.type_course', 'Course')}</SelectItem>
-                    <SelectItem value="lecture">{t('lms.course.type_lecture', 'Lecture')}</SelectItem>
-                    <SelectItem value="workshop">{t('lms.course.type_workshop', 'Workshop')}</SelectItem>
-                    <SelectItem value="webinar">{t('lms.course.type_webinar', 'Webinar')}</SelectItem>
+                    <SelectItem value="course"><span suppressHydrationWarning>{t('lms.course.type_course', 'Course')}</span></SelectItem>
+                    <SelectItem value="lecture"><span suppressHydrationWarning>{t('lms.course.type_lecture', 'Lecture')}</span></SelectItem>
+                    <SelectItem value="workshop"><span suppressHydrationWarning>{t('lms.course.type_workshop', 'Workshop')}</span></SelectItem>
+                    <SelectItem value="webinar"><span suppressHydrationWarning>{t('lms.course.type_webinar', 'Webinar')}</span></SelectItem>
+                    <SelectItem value="session"><span suppressHydrationWarning>{t('lms.course.type_session', 'Session')}</span></SelectItem>
+                    <SelectItem value="session_pack"><span suppressHydrationWarning>{t('lms.course.type_session_pack', 'Session Pack')}</span></SelectItem>
+                    <SelectItem value="bundle"><span suppressHydrationWarning>{t('lms.course.type_bundle', 'Bundle')}</span></SelectItem>
+                    <SelectItem value="custom"><span suppressHydrationWarning>{t('lms.course.type_custom', 'Custom')}</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
                 <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.courses.program', 'Program')} {!editCourse.is_standalone && <span className="text-red-500">*</span>}
-                  {editCourse.is_standalone && <span className="text-xs text-muted-foreground ml-2">({t('lms.course.not_applicable_standalone', 'Not applicable for standalone courses')})</span>}
+                  <span suppressHydrationWarning>{t('lms.courses.program', 'Program')}</span> {!editCourse.is_standalone && <span className="text-red-500">*</span>}
+                  {editCourse.is_standalone && <span className="text-xs text-muted-foreground ml-2" suppressHydrationWarning>({t('lms.course.not_applicable_standalone', 'Not applicable for standalone courses')})</span>}
                 </label>
                 <Select
                   value={editCourse.program_id || undefined}
@@ -1747,12 +1737,12 @@ export default function CoursesListPage() {
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
                     {editCourse.program_id && (
                       <SelectItem value="_clear" className={`${isRtl ? 'text-right' : 'text-left'} text-muted-foreground italic`}>
-                        {t('common.clear_selection', 'Clear selection')}
+                        <span suppressHydrationWarning>{t('common.clear_selection', 'Clear selection')}</span>
                       </SelectItem>
                     )}
                     {programs.length === 0 ? (
                       <SelectItem value="_none" disabled className={isRtl ? 'text-right' : 'text-left'}>
-                        {t('lms.courses.no_programs', 'No programs available')}
+                        <span suppressHydrationWarning>{t('lms.courses.no_programs', 'No programs available')}</span>
                       </SelectItem>
                     ) : (
                       programs.map((program) => (
@@ -1768,7 +1758,7 @@ export default function CoursesListPage() {
                     {validationErrors.program_id}
                   </p>
                 ) : !editCourse.is_standalone ? (
-                  <p className={`text-xs text-muted-foreground mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                  <p className={`text-xs text-muted-foreground mt-1 ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
                     {t('lms.courses.program_help', 'Select the program this course belongs to')}
                   </p>
                 ) : null}
@@ -1777,7 +1767,7 @@ export default function CoursesListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.courses.start_date', 'Start Date')} <span className="text-red-500">*</span>
+                    <span suppressHydrationWarning>{t('lms.courses.start_date', 'Start Date')}</span> <span className="text-red-500">*</span>
                   </label>
                   <Input
                     type="date"
@@ -1789,6 +1779,7 @@ export default function CoursesListPage() {
                       }
                     }}
                     className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.start_date ? 'border-destructive' : ''}`}
+                    required
                   />
                   {validationErrors.start_date && (
                     <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
@@ -1797,7 +1788,7 @@ export default function CoursesListPage() {
                   )}
                 </div>
                 <div>
-                  <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>{t('lms.courses.end_date', 'End Date')}</label>
+                  <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}><span suppressHydrationWarning>{t('lms.courses.end_date', 'End Date')}</span></label>
                   <Input
                     type="date"
                     value={editCourse.end_date}
@@ -1824,7 +1815,7 @@ export default function CoursesListPage() {
                       htmlFor="is_active_edit"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                     >
-                      {t('lms.courses.course_active', 'Course is active')}
+                      <span suppressHydrationWarning>{t('lms.courses.course_active', 'Course is active')}</span>
                     </Label>
                     <Switch
                       id="is_active_edit"
@@ -1847,7 +1838,7 @@ export default function CoursesListPage() {
                       htmlFor="is_active_edit"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                     >
-                      {t('lms.courses.course_active', 'Course is active')}
+                      <span suppressHydrationWarning>{t('lms.courses.course_active', 'Course is active')}</span>
                     </Label>
                   </>
                 )}
@@ -1859,10 +1850,10 @@ export default function CoursesListPage() {
                   <>
                     <div className="flex-1">
                       <Label htmlFor="is_standalone_edit" className="text-sm font-medium cursor-pointer">
-                        {t('lms.course.standalone_label', 'Available as Standalone')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_label', 'Available as Standalone')}</span>
                       </Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}</span>
                       </p>
                     </div>
                     <Switch
@@ -1894,101 +1885,57 @@ export default function CoursesListPage() {
                     />
                     <div className="flex-1">
                       <Label htmlFor="is_standalone_edit" className="text-sm font-medium cursor-pointer">
-                        {t('lms.course.standalone_label', 'Available as Standalone')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_label', 'Available as Standalone')}</span>
                       </Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}</span>
                       </p>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* Pricing Fields - Only show if standalone */}
-              {editCourse.is_standalone && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.price_label', 'Price')} <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={editCourse.price || ''}
-                        onChange={(e) => setEditCourse({ ...editCourse, price: parseFloat(e.target.value) || undefined })}
-                        className={isRtl ? 'text-right' : 'text-left'}
-                        placeholder="0.00"
-                      />
+              {/* Published Status */}
+              <div className={`flex items-center gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                {isRtl ? (
+                  <>
+                    <div className="flex-1">
+                      <Label htmlFor="is_published_edit" className="text-sm font-medium cursor-pointer">
+                        <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span suppressHydrationWarning>{t('lms.course.published_description', 'Make this course visible to users in the user portal')}</span>
+                      </p>
                     </div>
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.currency_label', 'Currency')} <span className="text-red-500">*</span>
-                      </label>
-                      <Select
-                        value={editCourse.currency}
-                        onValueChange={(value) => setEditCourse({ ...editCourse, currency: value })}
-                        dir={direction}
-                        required
-                      >
-                        <SelectTrigger className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectValue placeholder={t('lms.course.select_currency', 'Select currency')} />
-                        </SelectTrigger>
-                        <SelectContent dir={direction}>
-                          {CURRENCIES.filter(c => c.is_active).map((currency) => (
-                            <SelectItem key={currency.code} value={currency.code.toLowerCase()}>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{currency.code}</span>
-                                <span className="text-muted-foreground">({currency.symbol})</span>
-                                <span className="text-sm text-muted-foreground hidden sm:inline">{currency.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <Switch
+                      id="is_published_edit"
+                      checked={editCourse.is_published}
+                      onCheckedChange={(checked) =>
+                        setEditCourse({ ...editCourse, is_published: checked })
+                      }
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Switch
+                      id="is_published_edit"
+                      checked={editCourse.is_published}
+                      onCheckedChange={(checked) =>
+                        setEditCourse({ ...editCourse, is_published: checked })
+                      }
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor="is_published_edit" className="text-sm font-medium cursor-pointer">
+                        <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span suppressHydrationWarning>{t('lms.course.published_description', 'Make this course visible to users in the user portal')}</span>
+                      </p>
                     </div>
-                  </div>
+                  </>
+                )}
+              </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.payment_plan_label', 'Payment Plan')} <span className="text-red-500">*</span>
-                      </label>
-                      <Select
-                        value={editCourse.payment_plan}
-                        onValueChange={(value: any) => setEditCourse({ ...editCourse, payment_plan: value })}
-                        dir={direction}
-                        required
-                      >
-                        <SelectTrigger className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectValue placeholder={t('lms.course.select_payment_plan', 'Select payment plan')} />
-                        </SelectTrigger>
-                        <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectItem value="one_time">{t('lms.course.payment_plan_one_time', 'One-time Payment')}</SelectItem>
-                          <SelectItem value="installments">{t('lms.course.payment_plan_installments', 'Installments')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {editCourse.payment_plan === 'installments' && (
-                      <div>
-                        <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.course.installment_count_label', 'Number of Installments')}
-                        </label>
-                        <Input
-                          type="number"
-                          min="2"
-                          max="12"
-                          value={editCourse.installment_count || ''}
-                          onChange={(e) => setEditCourse({ ...editCourse, installment_count: parseInt(e.target.value) || undefined })}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          placeholder="2"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
             </div>
 
             <DialogFooter className={isRtl ? 'flex-row-reverse gap-3' : 'gap-3'}>
@@ -1997,22 +1944,51 @@ export default function CoursesListPage() {
                 onClick={() => setShowEditDialog(false)}
                 disabled={editLoading}
               >
-                {t('lms.courses.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('lms.courses.cancel', 'Cancel')}</span>
               </Button>
               <Button onClick={handleUpdateCourse} disabled={editLoading}>
-                {editLoading ? t('lms.courses.updating', 'Updating...') : t('lms.courses.update', 'Update Course')}
+                <span suppressHydrationWarning>{editLoading ? t('lms.courses.updating', 'Updating...') : t('lms.courses.update', 'Update Course')}</span>
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* Duplicate Course Dialog */}
-        <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
-          <DialogContent className="max-w-2xl" dir={direction}>
+        <Dialog open={showDuplicateDialog} onOpenChange={(open) => {
+          // If trying to close the dialog (open === false), validate first
+          if (!open) {
+            if (!duplicateCourse.start_date || !duplicateCourse.start_date.trim()) {
+              // Show validation error and prevent closing
+              setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              return; // Prevent closing
+            }
+          }
+          // Allow the dialog to open/close and clear errors
+          if (open) {
+            setValidationErrors({});
+          }
+          setShowDuplicateDialog(open);
+        }}>
+          <DialogContent
+            className="max-w-2xl"
+            dir={direction}
+            onPointerDownOutside={(e) => {
+              if (!duplicateCourse.start_date || !duplicateCourse.start_date.trim()) {
+                e.preventDefault();
+                setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              }
+            }}
+            onEscapeKeyDown={(e) => {
+              if (!duplicateCourse.start_date || !duplicateCourse.start_date.trim()) {
+                e.preventDefault();
+                setValidationErrors(prev => ({ ...prev, start_date: t('lms.courses.error.start_date_required', 'Start date is required') }));
+              }
+            }}
+          >
             <DialogHeader>
-              <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>{t('lms.courses.duplicate_dialog_title', 'Duplicate Course')}</DialogTitle>
+              <DialogTitle className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('lms.courses.duplicate_dialog_title', 'Duplicate Course')}</span></DialogTitle>
               <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.courses.duplicate_dialog_description', 'Customize the details for the duplicated course.')}
+                <span suppressHydrationWarning>{t('lms.courses.duplicate_dialog_description', 'Customize the details for the duplicated course.')}</span>
               </DialogDescription>
             </DialogHeader>
 
@@ -2020,7 +1996,7 @@ export default function CoursesListPage() {
             {duplicateError && (
               <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
                 <XCircle className="h-4 w-4" />
-                <AlertTitle>{t('common.error', 'Error')}</AlertTitle>
+                <AlertTitle suppressHydrationWarning>{t('common.error', 'Error')}</AlertTitle>
                 <AlertDescription>{duplicateError}</AlertDescription>
               </Alert>
             )}
@@ -2028,7 +2004,7 @@ export default function CoursesListPage() {
             <div className="space-y-4">
               <div>
                 <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.courses.course_title', 'Course Title')} <span className="text-red-500">*</span>
+                  <span suppressHydrationWarning>{t('lms.courses.course_title', 'Course Title')}</span> <span className="text-red-500">*</span>
                 </label>
                 <Input
                   placeholder={t('lms.courses.course_title_placeholder', 'e.g., Introduction to Programming')}
@@ -2050,22 +2026,20 @@ export default function CoursesListPage() {
 
               <div>
                 <Label htmlFor="duplicate-description" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.courses.description', 'Description')}
+                  <span suppressHydrationWarning>{t('lms.courses.description', 'Description')}</span>
                 </Label>
                 <RichTextEditor
-                  id="duplicate-description"
-                  content={duplicateCourse.description}
+                  value={duplicateCourse.description || ''}
                   onChange={(content) => setDuplicateCourse({ ...duplicateCourse, description: content })}
                   placeholder={t('lms.courses.description_placeholder', 'Course description...')}
                   dir={direction}
-                  minHeight="120px"
                 />
               </div>
 
               {/* Course Type */}
               <div>
                 <label className={`text-sm font-medium block mb-2 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.course.type_label', 'Course Type')} <span className="text-red-500">*</span>
+                  <span suppressHydrationWarning>{t('lms.course.type_label', 'Course Type')}</span> <span className="text-red-500">*</span>
                 </label>
                 <Select
                   value={duplicateCourse.course_type}
@@ -2077,18 +2051,22 @@ export default function CoursesListPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="course">{t('lms.course.type_course', 'Course')}</SelectItem>
-                    <SelectItem value="lecture">{t('lms.course.type_lecture', 'Lecture')}</SelectItem>
-                    <SelectItem value="workshop">{t('lms.course.type_workshop', 'Workshop')}</SelectItem>
-                    <SelectItem value="webinar">{t('lms.course.type_webinar', 'Webinar')}</SelectItem>
+                    <SelectItem value="course"><span suppressHydrationWarning>{t('lms.course.type_course', 'Course')}</span></SelectItem>
+                    <SelectItem value="lecture"><span suppressHydrationWarning>{t('lms.course.type_lecture', 'Lecture')}</span></SelectItem>
+                    <SelectItem value="workshop"><span suppressHydrationWarning>{t('lms.course.type_workshop', 'Workshop')}</span></SelectItem>
+                    <SelectItem value="webinar"><span suppressHydrationWarning>{t('lms.course.type_webinar', 'Webinar')}</span></SelectItem>
+                    <SelectItem value="session"><span suppressHydrationWarning>{t('lms.course.type_session', 'Session')}</span></SelectItem>
+                    <SelectItem value="session_pack"><span suppressHydrationWarning>{t('lms.course.type_session_pack', 'Session Pack')}</span></SelectItem>
+                    <SelectItem value="bundle"><span suppressHydrationWarning>{t('lms.course.type_bundle', 'Bundle')}</span></SelectItem>
+                    <SelectItem value="custom"><span suppressHydrationWarning>{t('lms.course.type_custom', 'Custom')}</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
                 <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.courses.program', 'Program')} {!duplicateCourse.is_standalone && <span className="text-red-500">*</span>}
-                  {duplicateCourse.is_standalone && <span className="text-xs text-muted-foreground ml-2">({t('lms.course.not_applicable_standalone', 'Not applicable for standalone courses')})</span>}
+                  <span suppressHydrationWarning>{t('lms.courses.program', 'Program')}</span> {!duplicateCourse.is_standalone && <span className="text-red-500">*</span>}
+                  {duplicateCourse.is_standalone && <span className="text-xs text-muted-foreground ml-2" suppressHydrationWarning>({t('lms.course.not_applicable_standalone', 'Not applicable for standalone courses')})</span>}
                 </label>
                 <Select
                   value={duplicateCourse.program_id || undefined}
@@ -2108,12 +2086,12 @@ export default function CoursesListPage() {
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
                     {duplicateCourse.program_id && (
                       <SelectItem value="_clear" className={`${isRtl ? 'text-right' : 'text-left'} text-muted-foreground italic`}>
-                        {t('common.clear_selection', 'Clear selection')}
+                        <span suppressHydrationWarning>{t('common.clear_selection', 'Clear selection')}</span>
                       </SelectItem>
                     )}
                     {programs.length === 0 ? (
                       <SelectItem value="_none" disabled className={isRtl ? 'text-right' : 'text-left'}>
-                        {t('lms.courses.no_programs', 'No programs available')}
+                        <span suppressHydrationWarning>{t('lms.courses.no_programs', 'No programs available')}</span>
                       </SelectItem>
                     ) : (
                       programs.map((program) => (
@@ -2134,7 +2112,7 @@ export default function CoursesListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.courses.start_date', 'Start Date')} <span className="text-red-500">*</span>
+                    <span suppressHydrationWarning>{t('lms.courses.start_date', 'Start Date')}</span> <span className="text-red-500">*</span>
                   </label>
                   <Input
                     type="date"
@@ -2146,6 +2124,7 @@ export default function CoursesListPage() {
                       }
                     }}
                     className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.start_date ? 'border-destructive' : ''}`}
+                    required
                   />
                   {validationErrors.start_date && (
                     <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
@@ -2154,7 +2133,7 @@ export default function CoursesListPage() {
                   )}
                 </div>
                 <div>
-                  <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>{t('lms.courses.end_date', 'End Date')}</label>
+                  <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}><span suppressHydrationWarning>{t('lms.courses.end_date', 'End Date')}</span></label>
                   <Input
                     type="date"
                     value={duplicateCourse.end_date}
@@ -2181,7 +2160,7 @@ export default function CoursesListPage() {
                       htmlFor="is_active_duplicate"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                     >
-                      {t('lms.courses.activate_immediately', 'Activate course immediately')}
+                      <span suppressHydrationWarning>{t('lms.courses.activate_immediately', 'Activate course immediately')}</span>
                     </Label>
                     <Switch
                       id="is_active_duplicate"
@@ -2204,7 +2183,7 @@ export default function CoursesListPage() {
                       htmlFor="is_active_duplicate"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                     >
-                      {t('lms.courses.activate_immediately', 'Activate course immediately')}
+                      <span suppressHydrationWarning>{t('lms.courses.activate_immediately', 'Activate course immediately')}</span>
                     </Label>
                   </>
                 )}
@@ -2216,10 +2195,10 @@ export default function CoursesListPage() {
                   <>
                     <div className="flex-1">
                       <Label htmlFor="is_standalone_duplicate" className="text-sm font-medium cursor-pointer">
-                        {t('lms.course.standalone_label', 'Available as Standalone')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_label', 'Available as Standalone')}</span>
                       </Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}</span>
                       </p>
                     </div>
                     <Switch
@@ -2251,101 +2230,56 @@ export default function CoursesListPage() {
                     />
                     <div className="flex-1">
                       <Label htmlFor="is_standalone_duplicate" className="text-sm font-medium cursor-pointer">
-                        {t('lms.course.standalone_label', 'Available as Standalone')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_label', 'Available as Standalone')}</span>
                       </Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}
+                        <span suppressHydrationWarning>{t('lms.course.standalone_description', 'Allow this course to be purchased separately from programs')}</span>
                       </p>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* Pricing Fields - Only show if standalone */}
-              {duplicateCourse.is_standalone && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.price_label', 'Price')} <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={duplicateCourse.price || ''}
-                        onChange={(e) => setDuplicateCourse({ ...duplicateCourse, price: parseFloat(e.target.value) || undefined })}
-                        className={isRtl ? 'text-right' : 'text-left'}
-                        placeholder="0.00"
-                      />
+              {/* Published Status */}
+              <div className={`flex items-center gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                {isRtl ? (
+                  <>
+                    <div className="flex-1">
+                      <Label htmlFor="is_published_duplicate" className="text-sm font-medium cursor-pointer">
+                        <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span suppressHydrationWarning>{t('lms.course.published_description', 'Make this course visible to users in the user portal')}</span>
+                      </p>
                     </div>
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.currency_label', 'Currency')} <span className="text-red-500">*</span>
-                      </label>
-                      <Select
-                        value={duplicateCourse.currency}
-                        onValueChange={(value) => setDuplicateCourse({ ...duplicateCourse, currency: value })}
-                        dir={direction}
-                        required
-                      >
-                        <SelectTrigger className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectValue placeholder={t('lms.course.select_currency', 'Select currency')} />
-                        </SelectTrigger>
-                        <SelectContent dir={direction}>
-                          {CURRENCIES.filter(c => c.is_active).map((currency) => (
-                            <SelectItem key={currency.code} value={currency.code.toLowerCase()}>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{currency.code}</span>
-                                <span className="text-muted-foreground">({currency.symbol})</span>
-                                <span className="text-sm text-muted-foreground hidden sm:inline">{currency.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <Switch
+                      id="is_published_duplicate"
+                      checked={duplicateCourse.is_published}
+                      onCheckedChange={(checked) =>
+                        setDuplicateCourse({ ...duplicateCourse, is_published: checked })
+                      }
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Switch
+                      id="is_published_duplicate"
+                      checked={duplicateCourse.is_published}
+                      onCheckedChange={(checked) =>
+                        setDuplicateCourse({ ...duplicateCourse, is_published: checked })
+                      }
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor="is_published_duplicate" className="text-sm font-medium cursor-pointer">
+                        <span suppressHydrationWarning>{t('lms.course.published_label', 'Published')}</span>
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span suppressHydrationWarning>{t('lms.course.published_description', 'Make this course visible to users in the user portal')}</span>
+                      </p>
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.course.payment_plan_label', 'Payment Plan')} <span className="text-red-500">*</span>
-                      </label>
-                      <Select
-                        value={duplicateCourse.payment_plan}
-                        onValueChange={(value: any) => setDuplicateCourse({ ...duplicateCourse, payment_plan: value })}
-                        dir={direction}
-                        required
-                      >
-                        <SelectTrigger className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectValue placeholder={t('lms.course.select_payment_plan', 'Select payment plan')} />
-                        </SelectTrigger>
-                        <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                          <SelectItem value="one_time">{t('lms.course.payment_plan_one_time', 'One-time Payment')}</SelectItem>
-                          <SelectItem value="installments">{t('lms.course.payment_plan_installments', 'Installments')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {duplicateCourse.payment_plan === 'installments' && (
-                      <div>
-                        <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.course.installment_count_label', 'Number of Installments')}
-                        </label>
-                        <Input
-                          type="number"
-                          min="2"
-                          max="12"
-                          value={duplicateCourse.installment_count || ''}
-                          onChange={(e) => setDuplicateCourse({ ...duplicateCourse, installment_count: parseInt(e.target.value) || undefined })}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          placeholder="2"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             <DialogFooter className={isRtl ? 'flex-row-reverse gap-3' : 'gap-3'}>
@@ -2354,10 +2288,10 @@ export default function CoursesListPage() {
                 onClick={() => setShowDuplicateDialog(false)}
                 disabled={duplicateLoading}
               >
-                {t('lms.courses.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('lms.courses.cancel', 'Cancel')}</span>
               </Button>
               <Button onClick={handleSubmitDuplicate} disabled={duplicateLoading}>
-                {duplicateLoading ? t('lms.courses.duplicating', 'Duplicating...') : t('lms.courses.duplicate', 'Duplicate Course')}
+                <span suppressHydrationWarning>{duplicateLoading ? t('lms.courses.duplicating', 'Duplicating...') : t('lms.courses.duplicate', 'Duplicate Course')}</span>
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2374,13 +2308,13 @@ export default function CoursesListPage() {
             style={{ direction }}>
             <AlertDialogHeader>
               <AlertDialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.courses.delete_dialog_title', 'Delete Course')}
+                <span suppressHydrationWarning>{t('lms.courses.delete_dialog_title', 'Delete Course')}</span>
               </AlertDialogTitle>
               <AlertDialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t(
+                <span suppressHydrationWarning>{t(
                   'lms.courses.delete_dialog_description',
                   `Are you sure you want to delete "{title}"? This will also delete all modules, lessons, and student progress. This action cannot be undone.`
-                ).replace('{title}', selectedCourse?.title || '')}
+                ).replace('{title}', selectedCourse?.title || '')}</span>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className={`flex gap-3 mt-6 pt-6 border-t ${isRtl ? 'flex-row-reverse' : ''}`}>
@@ -2391,7 +2325,7 @@ export default function CoursesListPage() {
                 className={`flex-1 flex items-center justify-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}
               >
                 <X className="h-4 w-4" />
-                {t('lms.courses.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('lms.courses.cancel', 'Cancel')}</span>
               </Button>
               <Button
                 variant="destructive"
@@ -2402,12 +2336,12 @@ export default function CoursesListPage() {
                 {deleteLoading ? (
                   <>
                     <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    {t('lms.courses.deleting', 'Deleting...')}
+                    <span suppressHydrationWarning>{t('lms.courses.deleting', 'Deleting...')}</span>
                   </>
                 ) : (
                   <>
                     <Check className="h-4 w-4" />
-                    {t('lms.courses.delete', 'Delete')}
+                    <span suppressHydrationWarning>{t('lms.courses.delete', 'Delete')}</span>
                   </>
                 )}
               </Button>

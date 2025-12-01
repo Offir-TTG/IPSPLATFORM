@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
-import { toast } from 'sonner';
+import { useToast } from '@/components/ui/use-toast';
 import {
   CreditCard,
   Filter,
@@ -55,9 +55,13 @@ interface TransactionFilters {
 }
 
 export default function TransactionsPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
+  const { toast } = useToast();
+  const isRtl = direction === 'rtl';
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const isMobile = windowWidth <= 640;
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -67,9 +71,15 @@ export default function TransactionsPage() {
     fetchTransactions();
   }, [filters]);
 
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const fetchTransactions = async () => {
     try {
-      setLoading(true);
+      setLoadingTransactions(true);
       const params = new URLSearchParams();
       if (filters.status) params.append('status', filters.status);
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
@@ -83,9 +93,13 @@ export default function TransactionsPage() {
       setTransactions(data.transactions || []);
     } catch (error) {
       console.error('Error fetching transactions:', error);
-      toast.error('Failed to load transactions');
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.transactions.loadError', 'Failed to load transactions'),
+        variant: 'destructive',
+      });
     } finally {
-      setLoading(false);
+      setLoadingTransactions(false);
     }
   };
 
@@ -102,12 +116,19 @@ export default function TransactionsPage() {
         throw new Error(error.error || 'Failed to process refund');
       }
 
-      toast.success('Refund processed successfully');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.transactions.refund.success', 'Refund processed successfully'),
+      });
       setRefundDialogOpen(false);
       fetchTransactions();
     } catch (error: any) {
       console.error('Error processing refund:', error);
-      toast.error(error.message || 'Failed to process refund');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.transactions.refund.error', 'Failed to process refund'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -131,10 +152,17 @@ export default function TransactionsPage() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success('Transactions exported successfully');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.transactions.exportSuccess', 'Transactions exported successfully'),
+      });
     } catch (error: any) {
       console.error('Error exporting transactions:', error);
-      toast.error(error.message || 'Failed to export transactions');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.transactions.exportError', 'Failed to export transactions'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -167,49 +195,87 @@ export default function TransactionsPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return new Date(dateString).toLocaleDateString(
+      language === 'he' ? 'he-IL' : 'en-US',
+      {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }
+    );
   };
 
   const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-    }).format(amount);
+    return new Intl.NumberFormat(
+      language === 'he' ? 'he-IL' : 'en-US',
+      {
+        style: 'currency',
+        currency: currency || 'USD',
+      }
+    ).format(amount);
   };
+
+  // Show loading state while translations are loading
+  if (translationsLoading) {
+    return (
+      <AdminLayout>
+        <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '400px'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p style={{ color: 'hsl(var(--muted-foreground))' }}>Loading...</p>
+            </div>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
           <div className="flex items-center gap-4">
             <Link href="/admin/payments">
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                {t('common.back', 'Back')}
+                <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
               </Button>
             </Link>
             <div>
-              <h1 className="text-3xl font-bold">Payment Transactions</h1>
-              <p className="text-muted-foreground mt-1">
-                View and manage all payment transactions
+              <h1 suppressHydrationWarning style={{
+                fontSize: 'var(--font-size-3xl)',
+                fontFamily: 'var(--font-family-heading)',
+                fontWeight: 'var(--font-weight-bold)',
+                color: 'hsl(var(--text-heading))'
+              }}>{t('admin.payments.transactions.title', 'Transactions')}</h1>
+              <p className="text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.payments.transactions.description', 'View and manage all payment transactions')}
               </p>
             </div>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={exportTransactions}>
-              <Download className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              Export
+              <Download className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+              <span suppressHydrationWarning>{t('admin.payments.transactions.export', 'Export')}</span>
             </Button>
             <Button variant="outline" onClick={() => fetchTransactions()}>
-              <RefreshCw className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              Refresh
+              <RefreshCw className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+              <span suppressHydrationWarning>{t('admin.payments.transactions.refresh', 'Refresh')}</span>
             </Button>
           </div>
         </div>
@@ -218,21 +284,21 @@ export default function TransactionsPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.transactions.totalTransactions', 'Total Transactions')}</CardTitle>
               <CreditCard className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{transactions.length}</div>
+              <div className="text-2xl font-bold" suppressHydrationWarning>{transactions.length}</div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.transactions.totalAmount', 'Total Amount')}</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold" suppressHydrationWarning>
                 {formatCurrency(
                   transactions.reduce((sum, t) => sum + t.amount, 0),
                   transactions[0]?.currency || 'USD'
@@ -243,11 +309,11 @@ export default function TransactionsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Completed</CardTitle>
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.transactions.completed', 'Completed')}</CardTitle>
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold" suppressHydrationWarning>
                 {transactions.filter(t => t.status === 'completed').length}
               </div>
             </CardContent>
@@ -255,11 +321,11 @@ export default function TransactionsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Refunded</CardTitle>
+              <CardTitle className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.transactions.refunded', 'Refunded')}</CardTitle>
               <RotateCcw className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold" suppressHydrationWarning>
                 {transactions.filter(t => t.status === 'refunded' || t.status === 'partially_refunded').length}
               </div>
             </CardContent>
@@ -271,22 +337,22 @@ export default function TransactionsPage() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Filter className="h-4 w-4" />
-              Filters
+              <span suppressHydrationWarning>{t('admin.payments.transactions.filters', 'Filters')}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-5">
               <div>
-                <Label>Search</Label>
+                <Label suppressHydrationWarning>{t('admin.payments.transactions.search', 'Search')}</Label>
                 <Input
-                  placeholder="User name, email, or transaction ID"
+                  placeholder={t('admin.payments.transactions.searchPlaceholder', 'Search by user, email, or transaction ID...')}
                   value={filters.search || ''}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                 />
               </div>
 
               <div>
-                <Label>Status</Label>
+                <Label suppressHydrationWarning>{t('common.status', 'Status')}</Label>
                 <Select
                   value={filters.status || 'all'}
                   onValueChange={(value) => setFilters({ ...filters, status: value === 'all' ? undefined : value })}
@@ -294,18 +360,18 @@ export default function TransactionsPage() {
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="failed">Failed</SelectItem>
-                    <SelectItem value="refunded">Refunded</SelectItem>
+                  <SelectContent dir={direction}>
+                    <SelectItem value="all" suppressHydrationWarning>{t('admin.payments.transactions.allStatuses', 'All Statuses')}</SelectItem>
+                    <SelectItem value="completed" suppressHydrationWarning>{t('admin.payments.transactions.status.completed', 'Completed')}</SelectItem>
+                    <SelectItem value="pending" suppressHydrationWarning>{t('admin.payments.transactions.status.pending', 'Pending')}</SelectItem>
+                    <SelectItem value="failed" suppressHydrationWarning>{t('admin.payments.transactions.status.failed', 'Failed')}</SelectItem>
+                    <SelectItem value="refunded" suppressHydrationWarning>{t('admin.payments.transactions.status.refunded', 'Refunded')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <Label>Date From</Label>
+                <Label suppressHydrationWarning>{t('common.dateFrom', 'Date From')}</Label>
                 <Input
                   type="date"
                   value={filters.dateFrom || ''}
@@ -314,7 +380,7 @@ export default function TransactionsPage() {
               </div>
 
               <div>
-                <Label>Date To</Label>
+                <Label suppressHydrationWarning>{t('common.dateTo', 'Date To')}</Label>
                 <Input
                   type="date"
                   value={filters.dateTo || ''}
@@ -328,7 +394,7 @@ export default function TransactionsPage() {
                   onClick={() => setFilters({})}
                   className="w-full"
                 >
-                  Clear Filters
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.clearFilters', 'Clear Filters')}</span>
                 </Button>
               </div>
             </div>
@@ -342,13 +408,13 @@ export default function TransactionsPage() {
               <table className="w-full">
                 <thead className="border-b">
                   <tr className="text-left">
-                    <th className="p-4 font-medium">Date</th>
-                    <th className="p-4 font-medium">User</th>
-                    <th className="p-4 font-medium">Product</th>
-                    <th className="p-4 font-medium">Amount</th>
-                    <th className="p-4 font-medium">Method</th>
-                    <th className="p-4 font-medium">Status</th>
-                    <th className="p-4 font-medium">Actions</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.user', 'User')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.product', 'Product')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.amount', 'Amount')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.method', 'Payment Method')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.status', 'Status')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -367,11 +433,11 @@ export default function TransactionsPage() {
                         <div className="font-medium">{transaction.product_name}</div>
                       </td>
                       <td className="p-4">
-                        <div className="font-medium">
+                        <div className="font-medium" suppressHydrationWarning>
                           {formatCurrency(transaction.amount, transaction.currency)}
                           {transaction.refund_amount && (
-                            <div className="text-xs text-muted-foreground">
-                              Refunded: {formatCurrency(transaction.refund_amount, transaction.currency)}
+                            <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                              {t('admin.payments.transactions.refundedAmount', 'Refunded')}: {formatCurrency(transaction.refund_amount, transaction.currency)}
                             </div>
                           )}
                         </div>
@@ -419,12 +485,12 @@ export default function TransactionsPage() {
               </table>
             </div>
 
-            {transactions.length === 0 && !loading && (
+            {transactions.length === 0 && !loadingTransactions && (
               <div className="py-12 text-center">
                 <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No Transactions Found</h3>
-                <p className="text-muted-foreground">
-                  No payment transactions match your current filters
+                <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('admin.payments.transactions.noTransactionsFound', 'No Transactions Found')}</h3>
+                <p className="text-muted-foreground" suppressHydrationWarning>
+                  {t('admin.payments.transactions.noTransactionsMatch', 'No transactions match your current filters')}
                 </p>
               </div>
             )}
@@ -437,6 +503,8 @@ export default function TransactionsPage() {
           transaction={selectedTransaction}
           onClose={() => setRefundDialogOpen(false)}
           onRefund={handleRefund}
+          direction={direction}
+          language={language}
         />
 
         {/* Details Dialog */}
@@ -444,6 +512,7 @@ export default function TransactionsPage() {
           open={detailsDialogOpen}
           transaction={selectedTransaction}
           onClose={() => setDetailsDialogOpen(false)}
+          direction={direction}
         />
       </div>
     </AdminLayout>
@@ -456,12 +525,17 @@ function RefundDialog({
   transaction,
   onClose,
   onRefund,
+  direction,
+  language,
 }: {
   open: boolean;
   transaction: Transaction | null;
   onClose: () => void;
   onRefund: (transactionId: string, amount: number, reason: string, isFull: boolean) => void;
+  direction: 'ltr' | 'rtl';
+  language: string;
 }) {
+  const { t } = useAdminLanguage();
   const [refundType, setRefundType] = useState<'full' | 'partial'>('full');
   const [amount, setAmount] = useState(0);
   const [reason, setReason] = useState('');
@@ -485,16 +559,16 @@ function RefundDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent dir={direction}>
         <DialogHeader>
-          <DialogTitle>Process Refund</DialogTitle>
-          <DialogDescription>
-            Refund payment for {transaction.user_name} - {transaction.product_name}
+          <DialogTitle suppressHydrationWarning>{t('admin.payments.transactions.refund.title', 'Process Refund')}</DialogTitle>
+          <DialogDescription suppressHydrationWarning>
+            {`${t('admin.payments.transactions.refund.description', 'Refund transaction for')} - ${transaction.user_name} / ${transaction.product_name}`}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>Refund Type</Label>
+            <Label suppressHydrationWarning>{t('admin.payments.transactions.refund.type', 'Refund Type')}</Label>
             <Select
               value={refundType}
               onValueChange={(value: any) => setRefundType(value)}
@@ -502,16 +576,16 @@ function RefundDialog({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="full">Full Refund</SelectItem>
-                <SelectItem value="partial">Partial Refund</SelectItem>
+              <SelectContent dir={direction}>
+                <SelectItem value="full" suppressHydrationWarning>{t('admin.payments.transactions.refund.fullRefund', 'Full Refund')}</SelectItem>
+                <SelectItem value="partial" suppressHydrationWarning>{t('admin.payments.transactions.refund.partialRefund', 'Partial Refund')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {refundType === 'partial' && (
             <div>
-              <Label>Refund Amount</Label>
+              <Label suppressHydrationWarning>{t('admin.payments.transactions.refund.amount', 'Refund Amount')}</Label>
               <Input
                 type="number"
                 min="0.01"
@@ -521,36 +595,36 @@ function RefundDialog({
                 onChange={(e) => setAmount(Number(e.target.value))}
                 required
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Maximum: {new Intl.NumberFormat('en-US', { style: 'currency', currency: transaction.currency }).format(transaction.amount)}
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.payments.transactions.refund.maximum', 'Maximum')}: {new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', { style: 'currency', currency: transaction.currency }).format(transaction.amount)}
               </p>
             </div>
           )}
 
           <div>
-            <Label>Reason</Label>
+            <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g., User requested refund"
+              placeholder={t('admin.payments.transactions.refund.reasonPlaceholder', 'Enter reason for refund...')}
               required
             />
           </div>
 
           <Alert>
-            <AlertDescription>
+            <AlertDescription suppressHydrationWarning>
               {refundType === 'full'
-                ? 'This will refund the full payment amount to the user.'
-                : 'This will refund only the specified amount to the user.'}
+                ? t('admin.payments.transactions.refund.fullAlert', 'This will refund the full amount to the customer')
+                : t('admin.payments.transactions.refund.partialAlert', 'This will refund the specified amount to the customer')}
             </AlertDescription>
           </Alert>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
             </Button>
             <Button type="submit" variant="destructive">
-              Process Refund
+              <span suppressHydrationWarning>{t('admin.payments.transactions.refund.processButton', 'Process Refund')}</span>
             </Button>
           </DialogFooter>
         </form>
@@ -564,71 +638,74 @@ function TransactionDetailsDialog({
   open,
   transaction,
   onClose,
+  direction,
 }: {
   open: boolean;
   transaction: Transaction | null;
   onClose: () => void;
+  direction: 'ltr' | 'rtl';
 }) {
+  const { t, language } = useAdminLanguage();
   if (!transaction) return null;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" dir={direction}>
         <DialogHeader>
-          <DialogTitle>Transaction Details</DialogTitle>
+          <DialogTitle suppressHydrationWarning>{t('admin.payments.transactions.details.title', 'Transaction Details')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-muted-foreground">Transaction ID</Label>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.details.transactionId', 'Transaction ID')}</Label>
               <div className="font-mono text-sm">{transaction.transaction_id}</div>
             </div>
             <div>
-              <Label className="text-muted-foreground">Status</Label>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('common.status', 'Status')}</Label>
               <div className="flex items-center gap-2 mt-1">
                 <Badge>{transaction.status}</Badge>
               </div>
             </div>
             <div>
-              <Label className="text-muted-foreground">User</Label>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.user', 'User')}</Label>
               <div>{transaction.user_name}</div>
               <div className="text-sm text-muted-foreground">{transaction.user_email}</div>
             </div>
             <div>
-              <Label className="text-muted-foreground">Product</Label>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.product', 'Product')}</Label>
               <div>{transaction.product_name}</div>
             </div>
             <div>
-              <Label className="text-muted-foreground">Amount</Label>
-              <div className="text-lg font-bold">
-                {new Intl.NumberFormat('en-US', { style: 'currency', currency: transaction.currency }).format(transaction.amount)}
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.amount', 'Amount')}</Label>
+              <div className="text-lg font-bold" suppressHydrationWarning>
+                {new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', { style: 'currency', currency: transaction.currency }).format(transaction.amount)}
               </div>
             </div>
             <div>
-              <Label className="text-muted-foreground">Payment Method</Label>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.method', 'Payment Method')}</Label>
               <div className="capitalize">{transaction.payment_method}</div>
             </div>
             <div>
-              <Label className="text-muted-foreground">Date</Label>
-              <div>{new Date(transaction.created_at).toLocaleString()}</div>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</Label>
+              <div suppressHydrationWarning>{new Date(transaction.created_at).toLocaleString(language === 'he' ? 'he-IL' : 'en-US')}</div>
             </div>
             {transaction.stripe_payment_intent_id && (
               <div>
-                <Label className="text-muted-foreground">Stripe Payment Intent</Label>
+                <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.details.stripePaymentIntent', 'Stripe Payment Intent')}</Label>
                 <div className="font-mono text-sm">{transaction.stripe_payment_intent_id}</div>
               </div>
             )}
             {transaction.refund_amount && (
               <div>
-                <Label className="text-muted-foreground">Refund Amount</Label>
-                <div className="text-lg font-bold text-red-500">
-                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: transaction.currency }).format(transaction.refund_amount)}
+                <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.refund.amount', 'Refund Amount')}</Label>
+                <div className="text-lg font-bold text-red-500" suppressHydrationWarning>
+                  {new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', { style: 'currency', currency: transaction.currency }).format(transaction.refund_amount)}
                 </div>
               </div>
             )}
             {transaction.failure_reason && (
               <div className="col-span-2">
-                <Label className="text-muted-foreground">Failure Reason</Label>
+                <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.details.failureReason', 'Failure Reason')}</Label>
                 <div className="text-red-500">{transaction.failure_reason}</div>
               </div>
             )}
@@ -636,7 +713,7 @@ function TransactionDetailsDialog({
 
           {transaction.metadata && Object.keys(transaction.metadata).length > 0 && (
             <div>
-              <Label className="text-muted-foreground">Metadata</Label>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.details.metadata', 'Metadata')}</Label>
               <pre className="mt-2 p-4 bg-muted rounded-md text-xs overflow-auto">
                 {JSON.stringify(transaction.metadata, null, 2)}
               </pre>
@@ -645,7 +722,7 @@ function TransactionDetailsDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Close
+            <span suppressHydrationWarning>{t('admin.payments.transactions.details.close', 'Close')}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

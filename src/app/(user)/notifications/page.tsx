@@ -18,6 +18,7 @@ import {
   Trophy,
   MessageSquare
 } from 'lucide-react';
+import { useUserLanguage } from '@/context/AppContext';
 
 // MOCKUP DATA
 const mockNotifications = [
@@ -30,7 +31,7 @@ const mockNotifications = [
     time: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     read: false,
     priority: 'high',
-    actionLabel: 'Join Meeting',
+    actionLabel: 'user.notifications.actions.joinMeeting',
     actionUrl: 'https://zoom.us/j/123456789',
     metadata: {
       meeting_id: '123 456 789',
@@ -46,7 +47,7 @@ const mockNotifications = [
     time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     read: false,
     priority: 'medium',
-    actionLabel: 'View Details',
+    actionLabel: 'user.notifications.actions.viewDetails',
     actionUrl: '#',
     metadata: {
       meeting_id: '987 654 321',
@@ -62,7 +63,7 @@ const mockNotifications = [
     time: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
     read: false,
     priority: 'high',
-    actionLabel: 'Start Assignment',
+    actionLabel: 'user.notifications.actions.startAssignment',
     actionUrl: '#'
   },
   {
@@ -74,7 +75,7 @@ const mockNotifications = [
     time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     read: true,
     priority: 'low',
-    actionLabel: 'View Achievements',
+    actionLabel: 'user.notifications.actions.viewAchievements',
     actionUrl: '#'
   },
   {
@@ -86,7 +87,7 @@ const mockNotifications = [
     time: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
     read: true,
     priority: 'low',
-    actionLabel: 'View Course',
+    actionLabel: 'user.notifications.actions.viewCourse',
     actionUrl: '#'
   },
   {
@@ -98,7 +99,7 @@ const mockNotifications = [
     time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     read: false,
     priority: 'medium',
-    actionLabel: 'Watch Recording',
+    actionLabel: 'user.notifications.actions.watchRecording',
     actionUrl: '#'
   },
   {
@@ -110,7 +111,7 @@ const mockNotifications = [
     time: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     read: true,
     priority: 'medium',
-    actionLabel: 'View Message',
+    actionLabel: 'user.notifications.actions.viewMessage',
     actionUrl: '#'
   },
   {
@@ -122,7 +123,7 @@ const mockNotifications = [
     time: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
     read: false,
     priority: 'high',
-    actionLabel: 'Download Certificate',
+    actionLabel: 'user.notifications.actions.downloadCertificate',
     actionUrl: '#'
   }
 ];
@@ -168,7 +169,7 @@ const getNotificationColor = (type: string) => {
   }
 };
 
-const getTimeAgo = (dateString: string) => {
+const getTimeAgo = (dateString: string, t: (key: string, fallback?: string) => string) => {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();
@@ -178,10 +179,10 @@ const getTimeAgo = (dateString: string) => {
 
   // Future dates
   if (diffMs > 0) {
-    if (diffMins < 60) return `in ${diffMins} minutes`;
-    if (diffHours < 24) return `in ${diffHours} hours`;
-    if (diffDays === 1) return 'tomorrow';
-    return `in ${diffDays} days`;
+    if (diffMins < 60) return `${t('user.notifications.time.in', 'In')} ${diffMins} ${t('user.notifications.time.minutes', 'minutes')}`;
+    if (diffHours < 24) return `${t('user.notifications.time.in', 'In')} ${diffHours} ${t('user.notifications.time.hours', 'hours')}`;
+    if (diffDays === 1) return t('user.notifications.time.tomorrow', 'Tomorrow');
+    return `${t('user.notifications.time.in', 'In')} ${diffDays} ${t('user.notifications.time.days', 'days')}`;
   }
 
   // Past dates
@@ -189,13 +190,14 @@ const getTimeAgo = (dateString: string) => {
   const absDiffHours = Math.abs(diffHours);
   const absDiffDays = Math.abs(diffDays);
 
-  if (absDiffMins < 60) return `${absDiffMins} minutes ago`;
-  if (absDiffHours < 24) return `${absDiffHours} hours ago`;
-  if (absDiffDays === 1) return 'yesterday';
-  return `${absDiffDays} days ago`;
+  if (absDiffMins < 60) return `${absDiffMins} ${t('user.notifications.time.minutesAgo', 'minutes ago')}`;
+  if (absDiffHours < 24) return `${absDiffHours} ${t('user.notifications.time.hoursAgo', 'hours ago')}`;
+  if (absDiffDays === 1) return t('user.notifications.time.yesterday', 'Yesterday');
+  return `${absDiffDays} ${t('user.notifications.time.daysAgo', 'days ago')}`;
 };
 
 export default function NotificationsPage() {
+  const { t } = useUserLanguage();
   const [notifications, setNotifications] = useState(mockNotifications);
   const [activeTab, setActiveTab] = useState('all');
 
@@ -234,13 +236,13 @@ export default function NotificationsPage() {
             fontWeight: 'var(--font-weight-bold)',
             color: 'hsl(var(--text-heading))',
             marginBottom: '0.5rem'
-          }}>Notifications</h1>
+          }}>{t('user.notifications.title')}</h1>
           <p style={{
             color: 'hsl(var(--text-muted))',
             fontSize: 'var(--font-size-base)',
             fontFamily: 'var(--font-family-primary)'
           }}>
-            Stay updated with your learning activities and upcoming events
+            {t('user.notifications.subtitle')}
           </p>
         </div>
 
@@ -266,8 +268,8 @@ export default function NotificationsPage() {
             }}
             className="hover:bg-accent"
           >
-            <Check className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-            Mark All as Read
+            <Check className="h-4 w-4" />
+            {t('user.notifications.markAllRead')}
           </button>
         )}
       </div>
@@ -284,7 +286,7 @@ export default function NotificationsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>Total Notifications</p>
+              }}>{t('user.notifications.stats.total')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -305,7 +307,7 @@ export default function NotificationsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>Unread</p>
+              }}>{t('user.notifications.stats.unread')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -326,7 +328,7 @@ export default function NotificationsPage() {
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))'
-              }}>Zoom Sessions</p>
+              }}>{t('user.notifications.stats.zoom')}</p>
               <p style={{
                 fontSize: 'var(--font-size-2xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -342,13 +344,13 @@ export default function NotificationsPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full max-w-md grid-cols-3">
           <TabsTrigger value="all">
-            All ({notifications.length})
+            {t('user.notifications.tabs.all')} ({notifications.length})
           </TabsTrigger>
           <TabsTrigger value="unread">
-            Unread ({unreadCount})
+            {t('user.notifications.tabs.unread')} ({unreadCount})
           </TabsTrigger>
           <TabsTrigger value="zoom">
-            Zoom ({zoomCount})
+            {t('user.notifications.tabs.zoom')} ({zoomCount})
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -359,7 +361,7 @@ export default function NotificationsPage() {
           <Card
             key={notification.id}
             className={`p-5 transition-all hover:shadow-md ${
-              !notification.read ? 'bg-blue-50/50 dark:bg-blue-950/20 border-l-4 border-l-blue-500' : ''
+              !notification.read ? 'bg-blue-50/50 dark:bg-blue-950/20 ltr:border-l-4 ltr:border-l-blue-500 rtl:border-r-4 rtl:border-r-blue-500' : ''
             }`}
           >
             <div className="flex gap-4">
@@ -393,7 +395,7 @@ export default function NotificationsPage() {
                           fontSize: 'var(--font-size-xs)',
                           fontFamily: 'var(--font-family-primary)',
                           fontWeight: 'var(--font-weight-medium)'
-                        }}>New</span>
+                        }}>{t('user.notifications.badge.new')}</span>
                       )}
                       {notification.priority === 'high' && (
                         <span style={{
@@ -409,7 +411,7 @@ export default function NotificationsPage() {
                           fontSize: 'var(--font-size-xs)',
                           fontFamily: 'var(--font-family-primary)',
                           fontWeight: 'var(--font-weight-medium)'
-                        }}>Urgent</span>
+                        }}>{t('user.notifications.badge.urgent')}</span>
                       )}
                     </div>
                     <p style={{
@@ -445,7 +447,7 @@ export default function NotificationsPage() {
                     {!notification.read && (
                       <button
                         onClick={() => markAsRead(notification.id)}
-                        title="Mark as read"
+                        title={t('user.notifications.actions.markRead')}
                         style={{
                           padding: '0.25rem',
                           backgroundColor: 'transparent',
@@ -462,7 +464,7 @@ export default function NotificationsPage() {
                     )}
                     <button
                       onClick={() => deleteNotification(notification.id)}
-                      title="Delete"
+                      title={t('user.notifications.actions.delete')}
                       style={{
                         padding: '0.25rem',
                         backgroundColor: 'transparent',
@@ -507,7 +509,7 @@ export default function NotificationsPage() {
                     color: 'hsl(var(--text-muted))'
                   }}>
                     <Clock className="h-3 w-3" />
-                    <span>{getTimeAgo(notification.time)}</span>
+                    <span>{getTimeAgo(notification.time, t)}</span>
                   </div>
 
                   {notification.priority === 'high' ? (
@@ -533,9 +535,9 @@ export default function NotificationsPage() {
                       }}
                       className="hover:opacity-90"
                     >
-                      {notification.actionLabel}
+                      {t(notification.actionLabel)}
                       {notification.type === 'zoom_meeting' && (
-                        <ExternalLink className="ltr:ml-1 rtl:mr-1 h-3 w-3" />
+                        <ExternalLink className="h-3 w-3 ltr:ml-1 rtl:mr-1" />
                       )}
                     </button>
                   ) : (
@@ -556,9 +558,9 @@ export default function NotificationsPage() {
                       }}
                       className="hover:bg-accent"
                     >
-                      {notification.actionLabel}
+                      {t(notification.actionLabel)}
                       {notification.type === 'zoom_meeting' && (
-                        <ExternalLink className="ltr:ml-1 rtl:mr-1 h-3 w-3" />
+                        <ExternalLink className="h-3 w-3 ltr:ml-1 rtl:mr-1" />
                       )}
                     </button>
                   )}
@@ -584,15 +586,15 @@ export default function NotificationsPage() {
               fontWeight: 'var(--font-weight-semibold)',
               color: 'hsl(var(--text-heading))',
               marginBottom: '0.5rem'
-            }}>No notifications</h3>
+            }}>{t('user.notifications.empty.title')}</h3>
             <p style={{
               color: 'hsl(var(--text-muted))',
               fontSize: 'var(--font-size-base)',
               fontFamily: 'var(--font-family-primary)'
             }}>
               {activeTab === 'all'
-                ? 'You\'re all caught up!'
-                : `No ${activeTab} notifications`
+                ? t('user.notifications.empty.allCaughtUp')
+                : `${t('user.notifications.empty.noFilteredNotifications')} (${activeTab})`
               }
             </p>
           </div>

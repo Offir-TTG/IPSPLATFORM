@@ -39,8 +39,13 @@ export default function KeapTagsPage() {
 
   const ITEMS_PER_PAGE = 20;
 
+  // Remove automatic fetch on page load
+  // Tags will only be fetched when:
+  // 1. Admin clicks the Refresh button
+  // 2. A new tag is created
   useEffect(() => {
-    fetchTags();
+    // Just set loading to false on mount
+    setLoading(false);
   }, []);
 
   const fetchTags = async () => {

@@ -645,13 +645,8 @@ export default function IntegrationsPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '16rem'
-        }}>
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'hsl(var(--primary))' }} />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );

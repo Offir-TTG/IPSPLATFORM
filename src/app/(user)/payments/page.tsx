@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CreditCard, Calendar, DollarSign, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useUserLanguage } from '@/context/AppContext';
 
 interface Enrollment {
   id: string;
@@ -32,6 +33,7 @@ interface PaymentSchedule {
 }
 
 export default function PaymentsPage() {
+  const { t } = useUserLanguage();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [upcomingPayments, setUpcomingPayments] = useState<PaymentSchedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,10 +95,10 @@ export default function PaymentsPage() {
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: any; label: string; icon: any }> = {
-      paid: { variant: 'default', label: 'Paid', icon: CheckCircle2 },
-      partial: { variant: 'secondary', label: 'Partial', icon: Clock },
-      pending: { variant: 'outline', label: 'Pending', icon: AlertCircle },
-      overdue: { variant: 'destructive', label: 'Overdue', icon: AlertCircle },
+      paid: { variant: 'default', label: t('user.payments.statusPaid', 'Paid'), icon: CheckCircle2 },
+      partial: { variant: 'secondary', label: t('user.payments.statusPartial', 'Partial'), icon: Clock },
+      pending: { variant: 'outline', label: t('user.payments.statusPending', 'Pending'), icon: AlertCircle },
+      overdue: { variant: 'destructive', label: t('user.payments.statusOverdue', 'Overdue'), icon: AlertCircle },
     };
 
     const config = statusConfig[status] || statusConfig.pending;
@@ -131,7 +133,7 @@ export default function PaymentsPage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-            <p className="mt-4 text-muted-foreground">Loading your payments...</p>
+            <p className="mt-4 text-muted-foreground">{t('user.payments.loading', 'Loading your payments...')}</p>
           </div>
         </div>
       </div>
@@ -141,15 +143,15 @@ export default function PaymentsPage() {
   return (
     <div className="container mx-auto py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold">My Payments</h1>
-        <p className="text-muted-foreground">Manage your enrollments and payments</p>
+        <h1 className="text-3xl font-bold">{t('user.payments.title', 'My Payments')}</h1>
+        <p className="text-muted-foreground">{t('user.payments.subtitle', 'Manage your enrollments and payments')}</p>
       </div>
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Outstanding</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('user.payments.totalOutstanding', 'Total Outstanding')}</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -160,27 +162,27 @@ export default function PaymentsPage() {
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Across {enrollments.length} enrollment{enrollments.length !== 1 ? 's' : ''}
+              {t('user.payments.acrossEnrollments', `Across ${enrollments.length} enrollment${enrollments.length !== 1 ? 's' : ''}`)}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming Payments</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('user.payments.upcomingPayments', 'Upcoming Payments')}</CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{upcomingPayments.length}</div>
             <p className="text-xs text-muted-foreground">
-              {upcomingPayments.length > 0 && `Next: ${formatDate(upcomingPayments[0].scheduled_date)}`}
+              {upcomingPayments.length > 0 && `${t('user.payments.next', 'Next')}: ${formatDate(upcomingPayments[0].scheduled_date)}`}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Enrollments</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('user.payments.activeEnrollments', 'Active Enrollments')}</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -188,7 +190,7 @@ export default function PaymentsPage() {
               {enrollments.filter(e => e.payment_status === 'paid').length}
             </div>
             <p className="text-xs text-muted-foreground">
-              Fully paid enrollments
+              {t('user.payments.fullyPaid', 'Fully paid enrollments')}
             </p>
           </CardContent>
         </Card>
@@ -196,8 +198,8 @@ export default function PaymentsPage() {
 
       <Tabs defaultValue="enrollments" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="enrollments">My Enrollments</TabsTrigger>
-          <TabsTrigger value="upcoming">Upcoming Payments</TabsTrigger>
+          <TabsTrigger value="enrollments">{t('user.payments.myEnrollments', 'My Enrollments')}</TabsTrigger>
+          <TabsTrigger value="upcoming">{t('user.payments.upcomingPayments', 'Upcoming Payments')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="enrollments" className="space-y-4">
@@ -205,9 +207,9 @@ export default function PaymentsPage() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <CreditCard className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Enrollments Yet</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('user.payments.noEnrollments', 'No Enrollments Yet')}</h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  You haven't enrolled in any courses or programs yet.
+                  {t('user.payments.noEnrollmentsDesc', "You haven't enrolled in any courses or programs yet.")}
                 </p>
               </CardContent>
             </Card>
@@ -230,14 +232,14 @@ export default function PaymentsPage() {
                     {/* Payment Progress */}
                     <div>
                       <div className="flex justify-between text-sm mb-2">
-                        <span>Payment Progress</span>
+                        <span>{t('user.payments.paymentProgress', 'Payment Progress')}</span>
                         <span className="font-medium">
                           {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
                         </span>
                       </div>
                       <div className="w-full bg-secondary rounded-full h-2">
                         <div
-                          className="bg-primary h-2 rounded-full transition-all"
+                          className="bg-primary h-2 rounded-full transition-all ltr:rounded-l-full rtl:rounded-r-full"
                           style={{
                             width: `${(enrollment.paid_amount / enrollment.total_amount) * 100}%`,
                           }}
@@ -250,7 +252,7 @@ export default function PaymentsPage() {
                       <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">Next Payment Due</span>
+                          <span className="text-sm">{t('user.payments.nextPaymentDue', 'Next Payment Due')}</span>
                         </div>
                         <span className="text-sm font-medium">
                           {formatDate(enrollment.next_payment_date)}
@@ -262,13 +264,13 @@ export default function PaymentsPage() {
                     <div className="flex gap-2">
                       <Button asChild variant="outline" size="sm">
                         <Link href={`/payments/${enrollment.id}`}>
-                          View Details
+                          {t('user.payments.viewDetails', 'View Details')}
                         </Link>
                       </Button>
                       {enrollment.payment_status !== 'paid' && (
                         <Button asChild size="sm">
                           <Link href={`/payments/${enrollment.id}/pay`}>
-                            Make Payment
+                            {t('user.payments.makePayment', 'Make Payment')}
                           </Link>
                         </Button>
                       )}
@@ -285,9 +287,9 @@ export default function PaymentsPage() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Upcoming Payments</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('user.payments.noUpcoming', 'No Upcoming Payments')}</h3>
                 <p className="text-muted-foreground text-center">
-                  You're all caught up! No payments are currently scheduled.
+                  {t('user.payments.noUpcomingDesc', "You're all caught up! No payments are currently scheduled.")}
                 </p>
               </CardContent>
             </Card>
@@ -304,16 +306,16 @@ export default function PaymentsPage() {
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Payment #{schedule.payment_number} • Due {formatDate(schedule.scheduled_date)}
+                        {t('user.payments.paymentNumber', `Payment #${schedule.payment_number}`)} • {t('user.payments.due', 'Due')} {formatDate(schedule.scheduled_date)}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="ltr:text-right rtl:text-left">
                       <p className="text-2xl font-bold">
                         {formatCurrency(schedule.amount, schedule.currency)}
                       </p>
                       <Button asChild size="sm" className="mt-2">
                         <Link href={`/payments/${(schedule as any).enrollment_id}/pay`}>
-                          Pay Now
+                          {t('user.payments.payNow', 'Pay Now')}
                         </Link>
                       </Button>
                     </div>

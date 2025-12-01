@@ -1,81 +1,153 @@
 /**
  * Email sending utility
- * Uses nodemailer for development and can be swapped for production email service
+ * Uses nodemailer with SMTP for sending emails
  */
 
-interface SendEmailOptions {
-  to: string;
+import nodemailer from 'nodemailer';
+import type { Transporter, SentMessageInfo } from 'nodemailer';
+
+export interface SendEmailOptions {
+  to: string | string[];
   subject: string;
   html: string;
   text: string;
+  from?: string;
+  replyTo?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+  attachments?: Array<{
+    filename: string;
+    content?: Buffer | string;
+    path?: string;
+    contentType?: string;
+  }>;
+}
+
+export interface EmailResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
+}
+
+// Singleton transporter instance
+let transporter: Transporter | null = null;
+
+/**
+ * Get or create nodemailer transporter with SMTP configuration
+ */
+function getTransporter(): Transporter {
+  if (transporter) {
+    return transporter;
+  }
+
+  // SMTP configuration from environment variables
+  const smtpConfig = {
+    host: process.env.SMTP_HOST || 'localhost',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+    auth: process.env.SMTP_USER && process.env.SMTP_PASSWORD ? {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD,
+    } : undefined,
+    // Connection timeout
+    connectionTimeout: 10000,
+    // Greeting timeout
+    greetingTimeout: 5000,
+    // Socket timeout
+    socketTimeout: 20000,
+  };
+
+  transporter = nodemailer.createTransport(smtpConfig);
+
+  return transporter;
 }
 
 /**
- * Send an email using configured email service
- * Currently logs to console for development
- * In production, integrate with Resend, SendGrid, AWS SES, etc.
+ * Verify SMTP connection
  */
-export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
+export async function verifyEmailConnection(): Promise<boolean> {
   try {
-    // For development: Log email to console
-    if (process.env.NODE_ENV === 'development') {
+    const transporter = getTransporter();
+    await transporter.verify();
+    console.log('✅ SMTP connection verified successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ SMTP connection verification failed:', error);
+    return false;
+  }
+}
+
+/**
+ * Send an email using SMTP via nodemailer
+ * Returns messageId on success for tracking
+ */
+export async function sendEmail(options: SendEmailOptions): Promise<EmailResult> {
+  try {
+    // If SMTP not configured and in development, log to console
+    if (!process.env.SMTP_HOST && process.env.NODE_ENV === 'development') {
       console.log('\n' + '='.repeat(80));
-      console.log('📧 EMAIL WOULD BE SENT (Development Mode)');
+      console.log('📧 EMAIL WOULD BE SENT (Development Mode - SMTP Not Configured)');
       console.log('='.repeat(80));
-      console.log(`To: ${options.to}`);
+      console.log(`To: ${Array.isArray(options.to) ? options.to.join(', ') : options.to}`);
       console.log(`Subject: ${options.subject}`);
       console.log('\nText Version:');
       console.log('-'.repeat(80));
       console.log(options.text);
       console.log('='.repeat(80) + '\n');
 
-      // In development, we consider this successful
-      return true;
+      return {
+        success: true,
+        messageId: `dev-${Date.now()}@localhost`,
+      };
     }
 
-    // For production: Integrate with real email service
-    // Example with Resend:
-    /*
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    // Get configured transporter
+    const transporter = getTransporter();
 
-    const { error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@yourplatform.com',
+    // Prepare email options
+    const mailOptions = {
+      from: options.from || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@platform.com',
       to: options.to,
       subject: options.subject,
       html: options.html,
       text: options.text,
-    });
+      replyTo: options.replyTo,
+      cc: options.cc,
+      bcc: options.bcc,
+      attachments: options.attachments,
+    };
 
-    if (error) {
-      console.error('Email sending error:', error);
-      return false;
-    }
+    // Send email
+    const info: SentMessageInfo = await transporter.sendMail(mailOptions);
 
-    return true;
-    */
-
-    // Example with SendGrid:
-    /*
-    const sgMail = require('@sendgrid/mail');
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
-    await sgMail.send({
-      from: process.env.EMAIL_FROM || 'noreply@yourplatform.com',
+    console.log('✅ Email sent successfully:', {
+      messageId: info.messageId,
       to: options.to,
       subject: options.subject,
-      html: options.html,
-      text: options.text,
     });
 
-    return true;
-    */
-
-    // Placeholder: Return false for production until email service is configured
-    console.error('Email service not configured for production. Please set up Resend, SendGrid, or AWS SES.');
-    return false;
+    return {
+      success: true,
+      messageId: info.messageId,
+    };
   } catch (error) {
-    console.error('Error sending email:', error);
-    return false;
+    console.error('❌ Error sending email:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Close the transporter connection
+ * Call this when shutting down the application
+ */
+export async function closeEmailConnection(): Promise<void> {
+  if (transporter) {
+    transporter.close();
+    transporter = null;
+    console.log('SMTP connection closed');
   }
 }
 
@@ -88,7 +160,7 @@ export async function sendVerificationEmail(options: {
   organizationName: string;
   verificationUrl: string;
   trialEndsAt: string;
-}): Promise<boolean> {
+}): Promise<EmailResult> {
   const { getVerificationEmailHtml, getVerificationEmailText } = await import('./templates');
 
   const html = getVerificationEmailHtml({

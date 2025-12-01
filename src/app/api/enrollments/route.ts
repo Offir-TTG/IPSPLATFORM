@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', enrollUserId)
       .eq('product_id', product_id)
       .eq('tenant_id', userData.tenant_id)
-      .in('status', ['active', 'pending_payment', 'pending'])
+      .in('status', ['draft', 'pending', 'active', 'suspended'])
       .single();
 
     if (existingEnrollment) {

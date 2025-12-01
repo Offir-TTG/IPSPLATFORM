@@ -74,15 +74,9 @@ export const POST = withAuth(async (request: NextRequest, user: any) => {
         name: body.name,
         description: body.description || null,
         is_active: body.is_active ?? true,
-        price: body.price || 0, // Default to 0 if not provided
-        currency: body.currency || 'USD', // Default to USD
-        payment_plan: body.payment_plan || 'one_time', // Default payment plan (one_time or installments)
         crm_tag: body.crm_tag || 'general', // Default CRM tag
         duration_weeks: body.duration_weeks || null,
         max_students: body.max_students || null,
-        docusign_template_id: body.docusign_template_id || null,
-        installment_count: body.installment_count || null,
-        require_signature: body.require_signature ?? false,
         image_url: body.image_url || null, // Store image URL
       })
       .select()

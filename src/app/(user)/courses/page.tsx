@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { useDashboard, type Enrollment } from '@/hooks/useDashboard';
+import { useUserLanguage } from '@/context/AppContext';
 
 type CourseStatus = 'all' | 'in_progress' | 'completed' | 'not_started';
 
@@ -41,6 +42,7 @@ function getDefaultImage(courseName: string): string {
 }
 
 export default function CoursesPage() {
+  const { t } = useUserLanguage();
   const [activeTab, setActiveTab] = useState<CourseStatus>('all');
   const { data, isLoading, error } = useDashboard();
 
@@ -53,7 +55,7 @@ export default function CoursesPage() {
             color: 'hsl(var(--text-muted))',
             fontSize: 'var(--font-size-base)',
             fontFamily: 'var(--font-family-primary)'
-          }}>Loading courses...</p>
+          }}>{t('user.courses.loading', 'Loading courses...')}</p>
         </div>
       </div>
     );
@@ -74,13 +76,13 @@ export default function CoursesPage() {
             fontWeight: 'var(--font-weight-semibold)',
             color: 'hsl(var(--text-heading))',
             marginBottom: '0.5rem'
-          }}>Failed to load courses</h3>
+          }}>{t('user.courses.errorTitle', 'Failed to load courses')}</h3>
           <p style={{
             color: 'hsl(var(--text-muted))',
             fontSize: 'var(--font-size-base)',
             fontFamily: 'var(--font-family-primary)'
           }}>
-            {error instanceof Error ? error.message : 'An error occurred while loading your courses'}
+            {error instanceof Error ? error.message : t('user.courses.errorMessage', 'An error occurred while loading your courses')}
           </p>
         </Card>
       </div>
@@ -112,19 +114,19 @@ export default function CoursesPage() {
           fontWeight: 'var(--font-weight-bold)',
           color: 'hsl(var(--text-heading))',
           marginBottom: '0.5rem'
-        }}>My Courses</h1>
+        }}>{t('user.courses.title', 'My Courses')}</h1>
         <p style={{
           color: 'hsl(var(--text-muted))',
           fontSize: 'var(--font-size-base)',
           fontFamily: 'var(--font-family-primary)'
         }}>
-          Continue learning and track your progress across all courses
+          {t('user.courses.subtitle', 'Continue learning and track your progress across all courses')}
         </p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4 mb-8">
-        <Card className="p-4" style={{ borderLeft: '4px solid hsl(var(--primary))' }}>
+        <Card className="p-4 ltr:border-l-4 rtl:border-r-4" style={{ borderColor: 'hsl(var(--primary))' }}>
           <div className="flex items-center justify-between">
             <div>
               <p style={{
@@ -132,7 +134,7 @@ export default function CoursesPage() {
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))',
                 marginBottom: '0.25rem'
-              }}>Total Courses</p>
+              }}>{t('user.courses.stats.total', 'Total Courses')}</p>
               <p style={{
                 fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -144,7 +146,7 @@ export default function CoursesPage() {
           </div>
         </Card>
 
-        <Card className="p-4" style={{ borderLeft: '4px solid hsl(var(--warning))' }}>
+        <Card className="p-4 ltr:border-l-4 rtl:border-r-4" style={{ borderColor: 'hsl(var(--warning))' }}>
           <div className="flex items-center justify-between">
             <div>
               <p style={{
@@ -152,7 +154,7 @@ export default function CoursesPage() {
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))',
                 marginBottom: '0.25rem'
-              }}>In Progress</p>
+              }}>{t('user.courses.stats.inProgress', 'In Progress')}</p>
               <p style={{
                 fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -164,7 +166,7 @@ export default function CoursesPage() {
           </div>
         </Card>
 
-        <Card className="p-4" style={{ borderLeft: '4px solid hsl(var(--success))' }}>
+        <Card className="p-4 ltr:border-l-4 rtl:border-r-4" style={{ borderColor: 'hsl(var(--success))' }}>
           <div className="flex items-center justify-between">
             <div>
               <p style={{
@@ -172,7 +174,7 @@ export default function CoursesPage() {
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))',
                 marginBottom: '0.25rem'
-              }}>Completed</p>
+              }}>{t('user.courses.stats.completed', 'Completed')}</p>
               <p style={{
                 fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -184,7 +186,7 @@ export default function CoursesPage() {
           </div>
         </Card>
 
-        <Card className="p-4" style={{ borderLeft: '4px solid hsl(var(--primary))' }}>
+        <Card className="p-4 ltr:border-l-4 rtl:border-r-4" style={{ borderColor: 'hsl(var(--primary))' }}>
           <div className="flex items-center justify-between">
             <div>
               <p style={{
@@ -192,7 +194,7 @@ export default function CoursesPage() {
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-muted))',
                 marginBottom: '0.25rem'
-              }}>Not Started</p>
+              }}>{t('user.courses.stats.notStarted', 'Not Started')}</p>
               <p style={{
                 fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
@@ -208,10 +210,10 @@ export default function CoursesPage() {
       {/* Tabs Filter */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CourseStatus)} className="mb-6">
         <TabsList className="grid w-full max-w-md grid-cols-4">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="in_progress">In Progress</TabsTrigger>
-          <TabsTrigger value="completed">Completed</TabsTrigger>
-          <TabsTrigger value="not_started">Not Started</TabsTrigger>
+          <TabsTrigger value="all">{t('user.courses.tabs.all', 'All')}</TabsTrigger>
+          <TabsTrigger value="in_progress">{t('user.courses.tabs.inProgress', 'In Progress')}</TabsTrigger>
+          <TabsTrigger value="completed">{t('user.courses.tabs.completed', 'Completed')}</TabsTrigger>
+          <TabsTrigger value="not_started">{t('user.courses.tabs.notStarted', 'Not Started')}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -233,7 +235,7 @@ export default function CoursesPage() {
                 />
 
                 {/* Status Badge */}
-                <div className="absolute top-4 right-4">
+                <div className="absolute top-4 ltr:right-4 rtl:left-4">
                   {status === 'completed' && (
                     <span style={{
                       display: 'inline-flex',
@@ -251,7 +253,7 @@ export default function CoursesPage() {
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
                       <CheckCircle2 className="h-3 w-3" />
-                      Completed
+                      {t('user.courses.status.completed', 'Completed')}
                     </span>
                   )}
                   {status === 'in_progress' && (
@@ -271,7 +273,7 @@ export default function CoursesPage() {
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
                       <PlayCircle className="h-3 w-3" />
-                      In Progress
+                      {t('user.courses.status.inProgress', 'In Progress')}
                     </span>
                   )}
                   {status === 'not_started' && (
@@ -289,14 +291,14 @@ export default function CoursesPage() {
                       fontFamily: 'var(--font-family-primary)',
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
-                      Not Started
+                      {t('user.courses.status.notStarted', 'Not Started')}
                     </span>
                   )}
                 </div>
 
                 {/* Certificate Badge */}
                 {status === 'completed' && (
-                  <div className="absolute top-4 left-4">
+                  <div className="absolute top-4 ltr:left-4 rtl:right-4">
                     <span style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -313,7 +315,7 @@ export default function CoursesPage() {
                       fontWeight: 'var(--font-weight-medium)'
                     }}>
                       <Award className="h-3 w-3" />
-                      Certificate
+                      {t('user.courses.certificate', 'Certificate')}
                     </span>
                   </div>
                 )}
@@ -372,7 +374,7 @@ export default function CoursesPage() {
                         fontFamily: 'var(--font-family-primary)',
                         fontWeight: 'var(--font-weight-medium)',
                         color: 'hsl(var(--text-body))'
-                      }}>Progress</span>
+                      }}>{t('user.courses.progress', 'Progress')}</span>
                       <span style={{
                         fontSize: 'var(--font-size-sm)',
                         fontFamily: 'var(--font-family-primary)',
@@ -386,7 +388,7 @@ export default function CoursesPage() {
                       fontFamily: 'var(--font-family-primary)',
                       color: 'hsl(var(--text-muted))'
                     }}>
-                      <span>{enrollment.completed_lessons}/{enrollment.total_lessons} lessons</span>
+                      <span>{enrollment.completed_lessons}/{enrollment.total_lessons} {t('user.courses.lessons', 'lessons')}</span>
                     </div>
                   </div>
                 )}
@@ -399,11 +401,11 @@ export default function CoursesPage() {
                 }}>
                   <div className="flex items-center gap-1">
                     <Video className="h-3 w-3" />
-                    <span>{enrollment.total_lessons} lessons</span>
+                    <span>{enrollment.total_lessons} {t('user.courses.lessonsCount', 'lessons')}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    <span>Enrolled {new Date(enrollment.enrolled_at).toLocaleDateString()}</span>
+                    <span>{t('user.courses.enrolled', 'Enrolled')} {new Date(enrollment.enrolled_at).toLocaleDateString()}</span>
                   </div>
                 </div>
 
@@ -414,7 +416,7 @@ export default function CoursesPage() {
                   color: 'hsl(var(--text-muted))',
                   marginBottom: '1rem'
                 }}>
-                  Enrolled on {new Date(enrollment.enrolled_at).toLocaleDateString()}
+                  {t('user.courses.enrolledOn', 'Enrolled on')} {new Date(enrollment.enrolled_at).toLocaleDateString()}
                 </p>
 
                 {/* Actions */}
@@ -440,7 +442,7 @@ export default function CoursesPage() {
                         }}
                         className="hover:bg-accent"
                       >
-                        Review Course
+                        {t('user.courses.actions.review', 'Review Course')}
                       </button>
                       <button
                         style={{
@@ -466,7 +468,7 @@ export default function CoursesPage() {
                         className="hover:opacity-90"
                       >
                         <Award className="h-4 w-4" />
-                        Get Certificate
+                        {t('user.courses.actions.getCertificate', 'Get Certificate')}
                       </button>
                     </>
                   ) : status === 'not_started' ? (
@@ -493,8 +495,8 @@ export default function CoursesPage() {
                       }}
                       className="hover:opacity-90"
                     >
-                      Start Learning
-                      <ChevronRight className="h-4 w-4" />
+                      {t('user.courses.actions.startLearning', 'Start Learning')}
+                      <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
                     </button>
                   ) : (
                     <button
@@ -520,8 +522,8 @@ export default function CoursesPage() {
                       }}
                       className="hover:opacity-90"
                     >
-                      Continue Learning
-                      <ChevronRight className="h-4 w-4" />
+                      {t('user.courses.actions.continueLearning', 'Continue Learning')}
+                      <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
                     </button>
                   )}
                 </div>
@@ -546,7 +548,7 @@ export default function CoursesPage() {
               fontWeight: 'var(--font-weight-semibold)',
               color: 'hsl(var(--text-heading))',
               marginBottom: '0.5rem'
-            }}>No courses found</h3>
+            }}>{t('user.courses.empty.title', 'No courses found')}</h3>
             <p style={{
               color: 'hsl(var(--text-muted))',
               marginBottom: '1.5rem',
@@ -554,8 +556,8 @@ export default function CoursesPage() {
               fontFamily: 'var(--font-family-primary)'
             }}>
               {activeTab === 'all'
-                ? 'You haven\'t enrolled in any courses yet'
-                : `No ${activeTab.replace('_', ' ')} courses`
+                ? t('user.courses.empty.noEnrollments', 'You haven\'t enrolled in any courses yet')
+                : t('user.courses.empty.noFilteredCourses', `No ${activeTab.replace('_', ' ')} courses`)
               }
             </p>
             <button
@@ -580,8 +582,8 @@ export default function CoursesPage() {
               }}
               className="hover:opacity-90"
             >
-              Browse Courses
-              <ChevronRight className="h-4 w-4" />
+              {t('user.courses.empty.browseCourses', 'Browse Courses')}
+              <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
             </button>
           </div>
         </Card>

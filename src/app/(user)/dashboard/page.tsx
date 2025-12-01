@@ -12,8 +12,10 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
+import { useUserLanguage } from '@/context/AppContext';
 
 export default function DashboardPage() {
+  const { t } = useUserLanguage();
   const { data, isLoading, error, refetch } = useDashboard();
   const [userName, setUserName] = useState('there');
 
@@ -77,12 +79,12 @@ export default function DashboardPage() {
       <div className="min-h-[60vh] flex items-center justify-center">
         <Alert variant="destructive" className="max-w-2xl">
           <AlertCircle className="h-5 w-5" />
-          <AlertTitle className="text-lg font-semibold">Error loading dashboard</AlertTitle>
+          <AlertTitle className="text-lg font-semibold">{t('user.dashboard.errorTitle', 'Error loading dashboard')}</AlertTitle>
           <AlertDescription className="mt-2">
-            <p className="mb-4">Failed to load your dashboard data. Please try again.</p>
+            <p className="mb-4">{t('user.dashboard.errorMessage', 'Failed to load your dashboard data. Please try again.')}</p>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              Retry
+              {t('user.dashboard.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>

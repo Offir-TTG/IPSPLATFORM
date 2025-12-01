@@ -248,8 +248,8 @@ export default function TranslationsPage() {
   if (loading && initialLoad) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'hsl(var(--primary))' }} />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );
@@ -268,7 +268,7 @@ export default function TranslationsPage() {
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem'
-          }}>
+          }} suppressHydrationWarning>
             <Languages className="h-8 w-8" style={{ color: 'hsl(var(--primary))' }} />
             {t('admin.translations.title', 'Translation Management')}
           </h1>
@@ -277,7 +277,7 @@ export default function TranslationsPage() {
             marginTop: '0.5rem',
             fontSize: 'var(--font-size-sm)',
             fontFamily: 'var(--font-family-primary)'
-          }}>
+          }} suppressHydrationWarning>
             {t('admin.translations.subtitle', 'Edit translations for all languages')}
           </p>
         </div>
@@ -300,7 +300,7 @@ export default function TranslationsPage() {
               fontSize: 'var(--font-size-sm)',
               color: 'hsl(var(--text-muted))',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.translations.totalKeys', 'Translation Keys')}
             </div>
           </div>
@@ -320,7 +320,7 @@ export default function TranslationsPage() {
               fontSize: 'var(--font-size-sm)',
               color: 'hsl(var(--text-muted))',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.translations.languages', 'Languages')}
             </div>
           </div>
@@ -340,7 +340,7 @@ export default function TranslationsPage() {
               fontSize: 'var(--font-size-sm)',
               color: 'hsl(var(--text-muted))',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.translations.modules', 'Modules')}
             </div>
           </div>
@@ -362,7 +362,7 @@ export default function TranslationsPage() {
               fontSize: 'var(--font-size-sm)',
               color: 'hsl(var(--text-muted))',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.translations.totalTranslations', 'Total Translations')}
             </div>
           </div>
@@ -461,7 +461,7 @@ export default function TranslationsPage() {
                 className="focus:outline-none focus:ring-2"
                 onFocus={(e) => e.target.style.setProperty('--tw-ring-color', 'hsl(var(--primary))')}
               >
-                <option value="all">{t('admin.translations.allModules', 'All Modules (Admin, User, etc.)')}</option>
+                <option value="all" suppressHydrationWarning>{t('admin.translations.allModules', 'All Modules (Admin, User, etc.)')}</option>
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
@@ -490,7 +490,7 @@ export default function TranslationsPage() {
                 className="focus:outline-none focus:ring-2"
                 onFocus={(e) => e.target.style.setProperty('--tw-ring-color', 'hsl(var(--primary))')}
               >
-                <option value="all">{t('admin.translations.allLanguages', 'All Languages')}</option>
+                <option value="all" suppressHydrationWarning>{t('admin.translations.allLanguages', 'All Languages')}</option>
                 {availableLanguages.map(lang => (
                   <option key={lang.code} value={lang.code}>
                     {lang.name} ({lang.code})
@@ -504,7 +504,7 @@ export default function TranslationsPage() {
             fontSize: 'var(--font-size-sm)',
             color: 'hsl(var(--text-muted))',
             fontFamily: 'var(--font-family-primary)'
-          }}>
+          }} suppressHydrationWarning>
             {t('admin.translations.showing', 'Showing')} {groupedTranslations.length} {t('admin.translations.of', 'of')} {pagination.total} {t('admin.translations.keys', 'keys')}
             {pagination.totalPages > 1 && ` (${t('admin.translations.page', 'Page')} ${currentPage}/${pagination.totalPages})`}
           </div>
@@ -531,7 +531,7 @@ export default function TranslationsPage() {
                     fontSize: 'var(--font-size-sm)',
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-heading))'
-                  }}>
+                  }} suppressHydrationWarning>
                     {t('admin.translations.key', 'Key')}
                   </th>
                   <th style={{
@@ -541,7 +541,7 @@ export default function TranslationsPage() {
                     fontSize: 'var(--font-size-sm)',
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-heading))'
-                  }}>
+                  }} suppressHydrationWarning>
                     {t('admin.translations.module', 'Module')}
                   </th>
                   {/* English baseline - always show first */}
@@ -587,7 +587,7 @@ export default function TranslationsPage() {
                     fontSize: 'var(--font-size-sm)',
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-heading))'
-                  }}>
+                  }} suppressHydrationWarning>
                     {t('admin.translations.actions', 'Actions')}
                   </th>
                 </tr>
@@ -702,7 +702,7 @@ export default function TranslationsPage() {
                                   <span style={{
                                     color: 'hsl(var(--text-muted))',
                                     fontStyle: 'italic'
-                                  }}>
+                                  }} suppressHydrationWarning>
                                     Not set
                                   </span>
                                 )}
@@ -759,7 +759,7 @@ export default function TranslationsPage() {
                                   <span style={{
                                     color: 'hsl(var(--text-muted))',
                                     fontStyle: 'italic'
-                                  }}>
+                                  }} suppressHydrationWarning>
                                     {t('admin.translations.missing', 'Missing')}
                                   </span>
                                 )}
@@ -776,12 +776,12 @@ export default function TranslationsPage() {
                               disabled={saving}
                               style={{
                                 padding: '0.5rem',
-                                color: 'hsl(var(--success-foreground))',
+                                color: '#22c55e',
                                 backgroundColor: 'transparent',
                                 borderRadius: 'var(--radius)',
                                 cursor: saving ? 'not-allowed' : 'pointer',
                                 opacity: saving ? 0.5 : 1,
-                                border: 'none'
+                                border: '1px solid #22c55e'
                               }}
                               className="hover:bg-accent transition-colors"
                               title={t('common.save', 'Save')}
@@ -797,12 +797,12 @@ export default function TranslationsPage() {
                               disabled={saving}
                               style={{
                                 padding: '0.5rem',
-                                color: 'hsl(var(--text-muted))',
+                                color: '#ef4444',
                                 backgroundColor: 'transparent',
                                 borderRadius: 'var(--radius)',
                                 cursor: saving ? 'not-allowed' : 'pointer',
                                 opacity: saving ? 0.5 : 1,
-                                border: 'none'
+                                border: '1px solid #ef4444'
                               }}
                               className="hover:bg-accent transition-colors"
                               title={t('common.cancel', 'Cancel')}
@@ -845,7 +845,7 @@ export default function TranslationsPage() {
               <p style={{
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)'
-              }}>
+              }} suppressHydrationWarning>
                 {t('admin.translations.noResults', 'No translations found')}
               </p>
             </div>
@@ -867,7 +867,7 @@ export default function TranslationsPage() {
               fontSize: 'var(--font-size-sm)',
               color: 'hsl(var(--text-muted))',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.translations.page', 'Page')} {currentPage} {t('admin.translations.of', 'of')} {pagination.totalPages}
             </div>
             <div className="flex items-center gap-2">
@@ -891,7 +891,7 @@ export default function TranslationsPage() {
                 className="hover:opacity-90 transition-opacity"
               >
                 <ChevronLeft className="h-4 w-4" />
-                {t('common.previous', 'Previous')}
+                <span suppressHydrationWarning>{t('common.previous', 'Previous')}</span>
               </button>
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
@@ -912,7 +912,7 @@ export default function TranslationsPage() {
                 }}
                 className="hover:opacity-90 transition-opacity"
               >
-                {t('common.next', 'Next')}
+                <span suppressHydrationWarning>{t('common.next', 'Next')}</span>
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -933,7 +933,7 @@ export default function TranslationsPage() {
           gap: '0.5rem'
         }}>
           <AlertCircle className="h-5 w-5" style={{ color: 'hsl(var(--primary))', flexShrink: 0 }} />
-          <span>
+          <span suppressHydrationWarning>
             <strong style={{ color: 'hsl(var(--text-heading))' }}>{t('admin.translations.info.title', 'Note')}:</strong>{' '}
             {t('admin.translations.info.message', 'Changes take effect immediately. Translations are cached for 5 minutes for performance.')}
           </span>

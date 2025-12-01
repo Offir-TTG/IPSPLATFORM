@@ -1,7 +1,7 @@
 /**
  * Script to test Zoom meeting creation
  */
-import { zoomService } from '@/lib/zoom/zoomService';
+import { ZoomService } from '@/lib/zoom/zoomService';
 
 async function testZoomMeeting() {
   console.log('Testing Zoom meeting creation...\n');
@@ -10,6 +10,9 @@ async function testZoomMeeting() {
   const lessonId = '89b67cb3-fa8e-45ea-ae8f-77c84431b7ff';
 
   try {
+    // Replace with your tenant ID
+    const tenantId = 'your-tenant-id-here';
+    const zoomService = new ZoomService(tenantId);
     const result = await zoomService.createMeetingForLesson(
       lessonId,
       {

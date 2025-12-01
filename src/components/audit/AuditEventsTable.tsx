@@ -105,6 +105,10 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   };
 
   const formatActionName = (action: string) => {
+    // Check if this is a translation key
+    if (action.startsWith('audit.')) {
+      return t(action, action);
+    }
     // Normalize action names for better readability
     return action
       .replace(/^Updated\s+/i, 'Updated ')
@@ -116,6 +120,23 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
         index === 0 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase()
       )
       .join(' ');
+  };
+
+  const formatDescription = (event: AuditEvent): string => {
+    // Check if this is a translation key
+    if (event.description?.startsWith('audit.')) {
+      let translated = t(event.description, event.description);
+
+      // Replace placeholders with values from new_values
+      if (event.new_values) {
+        Object.entries(event.new_values).forEach(([key, value]) => {
+          translated = translated.replace(`{${key}}`, String(value));
+        });
+      }
+
+      return translated;
+    }
+    return event.description || '';
   };
 
   const getChangedFieldsSummary = (event: AuditEvent): string | null => {
@@ -413,7 +434,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                       }}>
                         {t('admin.audit.table.changed', 'Changed')}: {getChangedFieldsSummary(event)}
                       </div>
-                    ) : event.description && (
+                    ) : formatDescription(event) && (
                       <div style={{
                         fontSize: 'var(--font-size-xs)',
                         color: 'hsl(var(--text-muted))',
@@ -423,7 +444,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                         textOverflow: 'ellipsis',
                         maxWidth: '250px'
                       }}>
-                        {event.description}
+                        {formatDescription(event)}
                       </div>
                     )}
                   </td>

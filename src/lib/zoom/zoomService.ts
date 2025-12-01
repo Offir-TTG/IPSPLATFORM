@@ -40,7 +40,7 @@ export interface BridgeLesson {
 
 export interface CreateMeetingOptions {
   topic: string;
-  type?: 2 | 8; // 2 = scheduled, 8 = recurring
+  type: 2 | 8; // 2 = scheduled, 8 = recurring
   agenda?: string;
   start_time: string;
   duration: number;
@@ -201,9 +201,10 @@ export class ZoomService {
       }
 
       // Create Zoom meeting with provided options or defaults
+      const meetingType: 2 | 8 = (options?.type ?? 2) as 2 | 8; // 2 = scheduled meeting
       const meetingOptions: CreateMeetingOptions = {
         topic,
-        type: options?.type ?? 2, // 2 = scheduled meeting
+        type: meetingType,
         agenda: options?.agenda,
         start_time: options?.start_time || lesson.start_time,
         duration: options?.duration || lesson.duration || 60,
@@ -355,7 +356,7 @@ export class ZoomService {
         return { success: false, error: 'No active or upcoming lesson found' };
       }
 
-      return { success: true, data };
+      return { success: true, data: data as BridgeLesson };
     } catch (error) {
       console.error('Error getting current lesson for bridge:', error);
       return { success: false, error: 'Internal server error' };

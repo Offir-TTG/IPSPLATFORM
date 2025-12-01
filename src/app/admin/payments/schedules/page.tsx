@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
-import { toast } from 'sonner';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Calendar,
   Filter,
@@ -65,9 +65,13 @@ interface ScheduleFilters {
 }
 
 export default function SchedulesPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
+  const { toast } = useToast();
+  const isRtl = direction === 'rtl';
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const isMobile = windowWidth <= 640;
   const [schedules, setSchedules] = useState<PaymentSchedule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingSchedules, setLoadingSchedules] = useState(true);
   const [filters, setFilters] = useState<ScheduleFilters>({});
   const [selectedSchedules, setSelectedSchedules] = useState<Set<string>>(new Set());
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -78,9 +82,16 @@ export default function SchedulesPage() {
     fetchSchedules();
   }, [filters]);
 
+  // Window resize listener for mobile responsiveness
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const fetchSchedules = async () => {
     try {
-      setLoading(true);
+      setLoadingSchedules(true);
       const params = new URLSearchParams();
       if (filters.status) params.append('status', filters.status);
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
@@ -95,9 +106,13 @@ export default function SchedulesPage() {
       setSchedules(data.schedules || []);
     } catch (error) {
       console.error('Error fetching schedules:', error);
-      toast.error('Failed to load payment schedules');
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.loadError', 'Failed to load payment schedules'),
+        variant: 'destructive',
+      });
     } finally {
-      setLoading(false);
+      setLoadingSchedules(false);
     }
   };
 
@@ -110,12 +125,19 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to adjust date');
-      toast.success('Payment date adjusted successfully');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.adjustSuccess', 'Payment date adjusted successfully'),
+      });
       setAdjustDialogOpen(false);
       fetchSchedules();
     } catch (error: any) {
       console.error('Error adjusting date:', error);
-      toast.error(error.message || 'Failed to adjust payment date');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.adjustError', 'Failed to adjust payment date'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -126,11 +148,18 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to retry payment');
-      toast.success('Payment retry initiated');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.retrySuccess', 'Payment retry initiated'),
+      });
       fetchSchedules();
     } catch (error: any) {
       console.error('Error retrying payment:', error);
-      toast.error(error.message || 'Failed to retry payment');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.retryError', 'Failed to retry payment'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -143,11 +172,18 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to pause payment');
-      toast.success('Payment paused successfully');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.pauseSuccess', 'Payment paused successfully'),
+      });
       fetchSchedules();
     } catch (error: any) {
       console.error('Error pausing payment:', error);
-      toast.error(error.message || 'Failed to pause payment');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.pauseError', 'Failed to pause payment'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -158,11 +194,18 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to resume payment');
-      toast.success('Payment resumed successfully');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.resumeSuccess', 'Payment resumed successfully'),
+      });
       fetchSchedules();
     } catch (error: any) {
       console.error('Error resuming payment:', error);
-      toast.error(error.message || 'Failed to resume payment');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.resumeError', 'Failed to resume payment'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -176,13 +219,20 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to delay payments');
-      toast.success(`${scheduleIds.length} payments delayed successfully`);
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.bulkDelaySuccess', '{count} payments delayed successfully').replace('{count}', scheduleIds.length.toString()),
+      });
       setBulkActionDialog(null);
       setSelectedSchedules(new Set());
       fetchSchedules();
     } catch (error: any) {
       console.error('Error delaying payments:', error);
-      toast.error(error.message || 'Failed to delay payments');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.bulkDelayError', 'Failed to delay payments'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -236,42 +286,80 @@ export default function SchedulesPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    return new Date(dateString).toLocaleDateString(
+      language === 'he' ? 'he-IL' : 'en-US',
+      {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      }
+    );
   };
 
   const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-    }).format(amount);
+    return new Intl.NumberFormat(
+      language === 'he' ? 'he-IL' : 'en-US',
+      {
+        style: 'currency',
+        currency: currency || 'USD',
+      }
+    ).format(amount);
   };
+
+  // Show loading state while translations are loading
+  if (translationsLoading) {
+    return (
+      <AdminLayout>
+        <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '400px'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p style={{ color: 'hsl(var(--muted-foreground))' }}>Loading...</p>
+            </div>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div className="flex items-center gap-4 flex-wrap">
             <Link href="/admin/payments">
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                {t('common.back', 'Back')}
+                <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
               </Button>
             </Link>
             <div>
-              <h1 className="text-3xl font-bold">{t('admin.payments.schedules.title', 'Payment Schedules')}</h1>
-              <p className="text-muted-foreground mt-1">
+              <h1 suppressHydrationWarning style={{
+                fontSize: 'var(--font-size-3xl)',
+                fontFamily: 'var(--font-family-heading)',
+                fontWeight: 'var(--font-weight-bold)',
+                color: 'hsl(var(--text-heading))'
+              }}>{t('admin.payments.schedules.title', 'Payment Schedules')}</h1>
+              <p className="text-muted-foreground mt-1" suppressHydrationWarning>
                 {t('admin.payments.schedules.description', 'Manage all payment schedules across all enrollments')}
               </p>
             </div>
           </div>
           <Button variant="outline" onClick={() => fetchSchedules()}>
-            <RefreshCw className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-            {t('common.refresh', 'Refresh')}
+            <RefreshCw className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+            <span suppressHydrationWarning>{t('common.refresh', 'Refresh')}</span>
           </Button>
         </div>
 
@@ -280,13 +368,13 @@ export default function SchedulesPage() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Filter className="h-4 w-4" />
-              {t('common.filters', 'Filters')}
+              <span suppressHydrationWarning>{t('common.filters', 'Filters')}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-4">
               <div>
-                <Label>{t('common.status', 'Status')}</Label>
+                <Label suppressHydrationWarning>{t('common.status', 'Status')}</Label>
                 <Select
                   value={filters.status || 'all'}
                   onValueChange={(value) => setFilters({ ...filters, status: value === 'all' ? undefined : value })}
@@ -294,19 +382,19 @@ export default function SchedulesPage() {
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('common.allStatuses', 'All Statuses')}</SelectItem>
-                    <SelectItem value="pending">{t('common.pending', 'Pending')}</SelectItem>
-                    <SelectItem value="paid">{t('common.paid', 'Paid')}</SelectItem>
-                    <SelectItem value="overdue">{t('common.overdue', 'Overdue')}</SelectItem>
-                    <SelectItem value="failed">{t('common.failed', 'Failed')}</SelectItem>
-                    <SelectItem value="paused">{t('common.paused', 'Paused')}</SelectItem>
+                  <SelectContent dir={direction}>
+                    <SelectItem value="all" suppressHydrationWarning>{t('common.allStatuses', 'All Statuses')}</SelectItem>
+                    <SelectItem value="pending" suppressHydrationWarning>{t('common.pending', 'Pending')}</SelectItem>
+                    <SelectItem value="paid" suppressHydrationWarning>{t('common.paid', 'Paid')}</SelectItem>
+                    <SelectItem value="overdue" suppressHydrationWarning>{t('common.overdue', 'Overdue')}</SelectItem>
+                    <SelectItem value="failed" suppressHydrationWarning>{t('common.failed', 'Failed')}</SelectItem>
+                    <SelectItem value="paused" suppressHydrationWarning>{t('common.paused', 'Paused')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <Label>{t('common.dateFrom', 'Date From')}</Label>
+                <Label suppressHydrationWarning>{t('common.dateFrom', 'Date From')}</Label>
                 <Input
                   type="date"
                   value={filters.dateFrom || ''}
@@ -315,7 +403,7 @@ export default function SchedulesPage() {
               </div>
 
               <div>
-                <Label>{t('common.dateTo', 'Date To')}</Label>
+                <Label suppressHydrationWarning>{t('common.dateTo', 'Date To')}</Label>
                 <Input
                   type="date"
                   value={filters.dateTo || ''}
@@ -329,7 +417,7 @@ export default function SchedulesPage() {
                   onClick={() => setFilters({})}
                   className="w-full"
                 >
-                  {t('common.clearFilters', 'Clear Filters')}
+                  <span suppressHydrationWarning>{t('common.clearFilters', 'Clear Filters')}</span>
                 </Button>
               </div>
             </div>
@@ -339,20 +427,20 @@ export default function SchedulesPage() {
         {/* Bulk Actions */}
         {selectedSchedules.size > 0 && (
           <Alert>
-            <AlertDescription className="flex items-center justify-between">
-              <span>{t('admin.payments.schedules.schedulesSelected', '{count} schedule(s) selected').replace('{count}', selectedSchedules.size.toString())}</span>
-              <div className="flex gap-2">
+            <AlertDescription className="flex items-center justify-between flex-wrap gap-2">
+              <span suppressHydrationWarning>{t('admin.payments.schedules.schedulesSelected', '{count} schedule(s) selected').replace('{count}', selectedSchedules.size.toString())}</span>
+              <div className="flex gap-2 flex-wrap">
                 <Button size="sm" variant="outline" onClick={() => setBulkActionDialog('delay')}>
-                  {t('admin.payments.schedules.delayPayments', 'Delay Payments')}
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</span>
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setBulkActionDialog('pause')}>
-                  {t('admin.payments.schedules.pausePayments', 'Pause Payments')}
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayments', 'Pause Payments')}</span>
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setBulkActionDialog('cancel')}>
-                  {t('admin.payments.schedules.cancelPayments', 'Cancel Payments')}
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.cancelPayments', 'Cancel Payments')}</span>
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSelectedSchedules(new Set())}>
-                  {t('common.clear', 'Clear')}
+                  <span suppressHydrationWarning>{t('common.clear', 'Clear')}</span>
                 </Button>
               </div>
             </AlertDescription>
@@ -372,13 +460,13 @@ export default function SchedulesPage() {
                         onCheckedChange={toggleAllSchedules}
                       />
                     </th>
-                    <th className="p-4 font-medium">{t('common.user', 'User')}</th>
-                    <th className="p-4 font-medium">{t('common.product', 'Product')}</th>
-                    <th className="p-4 font-medium">{t('admin.payments.schedules.paymentNumber', 'Payment #')}</th>
-                    <th className="p-4 font-medium">{t('common.amount', 'Amount')}</th>
-                    <th className="p-4 font-medium">{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</th>
-                    <th className="p-4 font-medium">{t('common.status', 'Status')}</th>
-                    <th className="p-4 font-medium">{t('common.actions', 'Actions')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.user', 'User')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.product', 'Product')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.schedules.paymentNumber', 'Payment #')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.amount', 'Amount')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.status', 'Status')}</th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -414,7 +502,7 @@ export default function SchedulesPage() {
                         <div>
                           <div>{formatDate(schedule.scheduled_date)}</div>
                           {schedule.scheduled_date !== schedule.original_due_date && (
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground" suppressHydrationWarning>
                               {t('admin.payments.schedules.original', 'Original')}: {formatDate(schedule.original_due_date)}
                             </div>
                           )}
@@ -444,11 +532,11 @@ export default function SchedulesPage() {
               </table>
             </div>
 
-            {schedules.length === 0 && !loading && (
+            {schedules.length === 0 && !loadingSchedules && (
               <div className="py-12 text-center">
                 <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">{t('admin.payments.schedules.noSchedulesFound', 'No Schedules Found')}</h3>
-                <p className="text-muted-foreground">
+                <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('admin.payments.schedules.noSchedulesFound', 'No Schedules Found')}</h3>
+                <p className="text-muted-foreground" suppressHydrationWarning>
                   {t('admin.payments.schedules.noSchedulesMatch', 'No payment schedules match your current filters')}
                 </p>
               </div>
@@ -462,6 +550,7 @@ export default function SchedulesPage() {
           schedule={selectedSchedule}
           onClose={() => setAdjustDialogOpen(false)}
           onAdjust={handleAdjustDate}
+          direction={direction}
         />
 
         {/* Bulk Delay Dialog */}
@@ -470,6 +559,7 @@ export default function SchedulesPage() {
           count={selectedSchedules.size}
           onClose={() => setBulkActionDialog(null)}
           onDelay={handleBulkDelay}
+          direction={direction}
         />
       </div>
     </AdminLayout>
@@ -515,7 +605,7 @@ function ScheduleActionsMenu({
                 }}
               >
                 <Calendar className="h-4 w-4" />
-                {t('admin.payments.schedules.adjustDate', 'Adjust Date')}
+                <span suppressHydrationWarning>{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</span>
               </button>
             )}
             {schedule.status === 'failed' && (
@@ -527,7 +617,7 @@ function ScheduleActionsMenu({
                 }}
               >
                 <RefreshCw className="h-4 w-4" />
-                {t('admin.payments.schedules.retryPayment', 'Retry Payment')}
+                <span suppressHydrationWarning>{t('admin.payments.schedules.retryPayment', 'Retry Payment')}</span>
               </button>
             )}
             {schedule.status === 'pending' && (
@@ -539,7 +629,7 @@ function ScheduleActionsMenu({
                 }}
               >
                 <Pause className="h-4 w-4" />
-                {t('admin.payments.schedules.pausePayment', 'Pause Payment')}
+                <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
               </button>
             )}
             {schedule.status === 'paused' && (
@@ -551,7 +641,7 @@ function ScheduleActionsMenu({
                 }}
               >
                 <Play className="h-4 w-4" />
-                {t('admin.payments.schedules.resumePayment', 'Resume Payment')}
+                <span suppressHydrationWarning>{t('admin.payments.schedules.resumePayment', 'Resume Payment')}</span>
               </button>
             )}
           </div>
@@ -567,11 +657,13 @@ function AdjustDateDialog({
   schedule,
   onClose,
   onAdjust,
+  direction,
 }: {
   open: boolean;
   schedule: PaymentSchedule | null;
   onClose: () => void;
   onAdjust: (scheduleId: string, newDate: string, reason: string) => void;
+  direction: 'ltr' | 'rtl';
 }) {
   const { t } = useAdminLanguage();
   const [newDate, setNewDate] = useState('');
@@ -595,10 +687,10 @@ function AdjustDateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent dir={direction}>
         <DialogHeader>
-          <DialogTitle>{t('admin.payments.schedules.adjustPaymentDate', 'Adjust Payment Date')}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle suppressHydrationWarning>{t('admin.payments.schedules.adjustPaymentDate', 'Adjust Payment Date')}</DialogTitle>
+          <DialogDescription suppressHydrationWarning>
             {t('admin.payments.schedules.changeScheduledDate', "Change the scheduled date for {name}'s payment #{number}")
               .replace('{name}', schedule.user_name)
               .replace('{number}', schedule.payment_number.toString())}
@@ -606,7 +698,7 @@ function AdjustDateDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>{t('admin.payments.schedules.newDate', 'New Date')}</Label>
+            <Label suppressHydrationWarning>{t('admin.payments.schedules.newDate', 'New Date')}</Label>
             <Input
               type="date"
               value={newDate}
@@ -615,7 +707,7 @@ function AdjustDateDialog({
             />
           </div>
           <div>
-            <Label>{t('common.reason', 'Reason')}</Label>
+            <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -625,9 +717,11 @@ function AdjustDateDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              {t('common.cancel', 'Cancel')}
+              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
             </Button>
-            <Button type="submit">{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</Button>
+            <Button type="submit">
+              <span suppressHydrationWarning>{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</span>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -641,11 +735,13 @@ function BulkDelayDialog({
   count,
   onClose,
   onDelay,
+  direction,
 }: {
   open: boolean;
   count: number;
   onClose: () => void;
   onDelay: (days: number, reason: string) => void;
+  direction: 'ltr' | 'rtl';
 }) {
   const { t } = useAdminLanguage();
   const [days, setDays] = useState(30);
@@ -658,17 +754,17 @@ function BulkDelayDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent dir={direction}>
         <DialogHeader>
-          <DialogTitle>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</DialogTitle>
+          <DialogDescription suppressHydrationWarning>
             {t('admin.payments.schedules.delaySelectedPayments', 'Delay {count} selected payment(s) by a specified number of days')
               .replace('{count}', count.toString())}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>{t('admin.payments.schedules.daysToDelay', 'Days to Delay')}</Label>
+            <Label suppressHydrationWarning>{t('admin.payments.schedules.daysToDelay', 'Days to Delay')}</Label>
             <Input
               type="number"
               min="1"
@@ -678,7 +774,7 @@ function BulkDelayDialog({
             />
           </div>
           <div>
-            <Label>{t('common.reason', 'Reason')}</Label>
+            <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -688,9 +784,11 @@ function BulkDelayDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              {t('common.cancel', 'Cancel')}
+              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
             </Button>
-            <Button type="submit">{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</Button>
+            <Button type="submit">
+              <span suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</span>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

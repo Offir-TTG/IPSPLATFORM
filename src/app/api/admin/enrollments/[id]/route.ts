@@ -74,7 +74,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/admin/enrollments/[id] - Update enrollment
+// PATCH /api/admin/enrollments/[id] - Update enrollment (only for draft status)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -98,59 +98,83 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const enrollmentId = params.id;
     const body = await request.json();
-    const {
-      enrollment_status,
-      expires_at,
-      completed_at,
-      payment_plan_id,
-      contract_id
-    } = body;
+    const { product_id, expires_at } = body;
 
-    const updates: any = {};
-    if (enrollment_status !== undefined) {
-      updates.enrollment_status = enrollment_status;
+    // Get current enrollment to check status
+    const { data: currentEnrollment, error: fetchError } = await supabase
+      .from('enrollments')
+      .select('status')
+      .eq('id', enrollmentId)
+      .single();
 
-      // Auto-set completed_at when status changes to completed
-      if (enrollment_status === 'completed' && !completed_at) {
-        updates.completed_at = new Date().toISOString();
-      }
-    }
-    if (expires_at !== undefined) updates.expires_at = expires_at;
-    if (completed_at !== undefined) updates.completed_at = completed_at;
-    if (payment_plan_id !== undefined) updates.payment_plan_id = payment_plan_id;
-    if (contract_id !== undefined) updates.contract_id = contract_id;
-
-    if (Object.keys(updates).length === 0) {
+    if (fetchError || !currentEnrollment) {
       return NextResponse.json(
-        { error: 'No valid fields to update' },
+        { error: 'Enrollment not found' },
+        { status: 404 }
+      );
+    }
+
+    // Only allow editing draft enrollments
+    if (currentEnrollment.status !== 'draft') {
+      return NextResponse.json(
+        { error: 'Can only edit enrollments in draft status' },
         { status: 400 }
       );
     }
 
+    // Fetch product to get pricing information
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('id, price, currency, payment_model')
+      .eq('id', product_id)
+      .single();
+
+    if (productError || !product) {
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 404 }
+      );
+    }
+
+    // Determine total amount based on payment model
+    let totalAmount = 0;
+    let currency = product.currency || 'USD';
+
+    if (product.payment_model !== 'free') {
+      totalAmount = product.price || 0;
+    }
+
+    // Update enrollment
+    const updateData: any = {
+      product_id,
+      total_amount: totalAmount,
+      currency,
+      payment_status: totalAmount === 0 ? 'paid' : 'pending',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (expires_at) {
+      updateData.expires_at = expires_at;
+    }
+
     const { data, error } = await supabase
-      .from('user_programs')
-      .update(updates)
-      .eq('id', params.id)
-      .select(`
-        id,
-        enrollment_status,
-        enrolled_at,
-        completed_at,
-        expires_at,
-        updated_at
-      `)
+      .from('enrollments')
+      .update(updateData)
+      .eq('id', enrollmentId)
+      .select()
       .single();
 
     if (error) {
       console.error('Error updating enrollment:', error);
       return NextResponse.json(
-        { error: 'Failed to update enrollment' },
+        { error: error.message || 'Failed to update enrollment' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: 200 });
 
   } catch (error) {
     console.error('Error in PATCH /api/admin/enrollments/[id]:', error);

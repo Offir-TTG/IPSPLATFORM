@@ -8,7 +8,17 @@ export interface User {
   first_name: string;
   last_name: string;
   phone?: string;
+  is_whatsapp?: boolean;
   crm_contact_id?: string;
+  avatar_url?: string;
+  contact_email?: string;
+  bio?: string;
+  location?: string;
+  timezone?: string;
+  website?: string;
+  linkedin_url?: string;
+  facebook_url?: string;
+  instagram_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -17,13 +27,11 @@ export interface Program {
   id: string;
   name: string;
   description: string;
-  price: number;
-  payment_plan: 'one_time' | 'installments';
-  installment_count?: number;
-  docusign_template_id?: string;
   crm_tag: string;
-  require_signature: boolean;
   is_active: boolean;
+  duration_weeks?: number;
+  max_students?: number;
+  image_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -164,9 +172,6 @@ export interface ApiResponse<T = any> {
 export interface CourseGeneratorForm {
   programName: string;
   programDescription: string;
-  price: number;
-  paymentPlan: 'one_time' | 'installments';
-  installmentCount?: number;
   courseTitle: string;
   courseDescription: string;
   instructorId: string;
@@ -176,8 +181,6 @@ export interface CourseGeneratorForm {
   sessionFrequency: 'daily' | 'weekly' | 'biweekly' | 'monthly';
   sessionTime: string;
   crmTag: string;
-  requireSignature: boolean;
-  docusignTemplateId?: string;
   enableRecording: boolean;
   sendReminders: boolean;
 }

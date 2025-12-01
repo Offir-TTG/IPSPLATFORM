@@ -109,24 +109,30 @@ export async function pauseEnrollmentPayments(
   };
 
   // Update all schedules to paused
-  const { data: updatedSchedules, error } = await supabase
-    .from('payment_schedules')
-    .update({
-      status: 'paused',
-      paused_at: now,
-      paused_by: adminId,
-      paused_reason: reason,
-      adjustment_history: supabase.raw(`adjustment_history || ?::jsonb`, [JSON.stringify(adjustmentRecord)]),
-      updated_at: now,
-    })
-    .eq('enrollment_id', enrollmentId)
-    .eq('tenant_id', tenantId)
-    .in('status', ['pending', 'adjusted'])
-    .select();
+  const updatedSchedules = [];
+  for (const schedule of schedules) {
+    const existingHistory = (schedule.adjustment_history as any[]) || [];
+    const { data, error } = await supabase
+      .from('payment_schedules')
+      .update({
+        status: 'paused',
+        paused_at: now,
+        paused_by: adminId,
+        paused_reason: reason,
+        adjustment_history: [...existingHistory, adjustmentRecord],
+        updated_at: now,
+      })
+      .eq('id', schedule.id)
+      .select()
+      .single();
 
-  if (error) {
-    console.error('Error pausing schedules:', error);
-    throw new Error(`Failed to pause schedules: ${error.message}`);
+    if (error) {
+      console.error('Error pausing schedule:', error);
+      throw new Error(`Failed to pause schedule: ${error.message}`);
+    }
+    if (data) {
+      updatedSchedules.push(data);
+    }
   }
 
   console.log(`[ScheduleManager] Paused ${updatedSchedules?.length || 0} schedules for enrollment ${enrollmentId}`);
@@ -189,6 +195,8 @@ export async function resumeEnrollmentPayments(
 
     // Update each schedule
     for (const update of updates) {
+      const schedule = schedules.find(s => s.id === update.id);
+      const existingHistory = (schedule?.adjustment_history as any[]) || [];
       await supabase
         .from('payment_schedules')
         .update({
@@ -196,26 +204,28 @@ export async function resumeEnrollmentPayments(
           scheduled_date: update.scheduled_date,
           resumed_at: now,
           resumed_by: adminId,
-          adjustment_history: supabase.raw(`adjustment_history || ?::jsonb`, [JSON.stringify(adjustmentRecord)]),
+          adjustment_history: [...existingHistory, adjustmentRecord],
           updated_at: now,
         })
         .eq('id', update.id)
         .eq('tenant_id', tenantId);
     }
   } else {
-    // Just resume with existing dates
-    await supabase
-      .from('payment_schedules')
-      .update({
-        status: 'pending',
-        resumed_at: now,
-        resumed_by: adminId,
-        adjustment_history: supabase.raw(`adjustment_history || ?::jsonb`, [JSON.stringify(adjustmentRecord)]),
-        updated_at: now,
-      })
-      .eq('enrollment_id', enrollmentId)
-      .eq('tenant_id', tenantId)
-      .eq('status', 'paused');
+    // Just resume with existing dates - need to update each schedule individually to append to history
+    for (const schedule of schedules) {
+      const existingHistory = (schedule.adjustment_history as any[]) || [];
+      await supabase
+        .from('payment_schedules')
+        .update({
+          status: 'pending',
+          resumed_at: now,
+          resumed_by: adminId,
+          adjustment_history: [...existingHistory, adjustmentRecord],
+          updated_at: now,
+        })
+        .eq('id', schedule.id)
+        .eq('tenant_id', tenantId);
+    }
   }
 
   // Fetch updated schedules

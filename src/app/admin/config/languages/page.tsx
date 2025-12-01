@@ -313,13 +313,8 @@ export default function LanguagesPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '16rem'
-        }}>
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'hsl(var(--primary))' }} />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );
@@ -342,7 +337,7 @@ export default function LanguagesPage() {
               fontFamily: 'var(--font-family-heading)',
               fontWeight: 'var(--font-weight-bold)',
               color: 'hsl(var(--text-heading))'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.languages.title', 'Languages')}
             </h1>
             <p style={{
@@ -350,7 +345,7 @@ export default function LanguagesPage() {
               marginTop: '0.25rem',
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.languages.subtitle', 'Manage platform languages and translations')}
             </p>
           </div>
@@ -379,7 +374,7 @@ export default function LanguagesPage() {
             className="hover:opacity-90"
           >
             <Plus className="h-5 w-5" />
-            {t('admin.languages.add', 'Add Language')}
+            <span suppressHydrationWarning>{t('admin.languages.add', 'Add Language')}</span>
           </button>
         </div>
 
@@ -517,7 +512,7 @@ export default function LanguagesPage() {
                   fontFamily: 'var(--font-family-primary)'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'hsl(var(--text-muted))' }}>
+                    <span style={{ color: 'hsl(var(--text-muted))' }} suppressHydrationWarning>
                       {t('admin.languages.code', 'Code')}:
                     </span>
                     <span style={{
@@ -527,13 +522,13 @@ export default function LanguagesPage() {
                     }}>{language.code.toUpperCase()}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'hsl(var(--text-muted))' }}>
+                    <span style={{ color: 'hsl(var(--text-muted))' }} suppressHydrationWarning>
                       {t('admin.languages.direction', 'Direction')}:
                     </span>
                     <span style={{
                       fontWeight: 'var(--font-weight-semibold)',
                       color: 'hsl(var(--text-body))'
-                    }}>
+                    }} suppressHydrationWarning>
                       {language.direction === 'rtl'
                         ? t('admin.languages.directionRtl', 'RTL ←')
                         : t('admin.languages.directionLtr', 'LTR →')}
@@ -541,7 +536,7 @@ export default function LanguagesPage() {
                   </div>
                   {language.currency_code && (
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'hsl(var(--text-muted))' }}>
+                      <span style={{ color: 'hsl(var(--text-muted))' }} suppressHydrationWarning>
                         {t('admin.languages.currency', 'Currency')}:
                       </span>
                       <span style={{
@@ -588,7 +583,7 @@ export default function LanguagesPage() {
                       marginInlineEnd: '0.25rem',
                       verticalAlign: 'middle'
                     }} />
-                    {t('admin.languages.setDefault', 'Default')}
+                    <span suppressHydrationWarning>{t('admin.languages.setDefault', 'Default')}</span>
                   </button>
                 )}
 
@@ -619,7 +614,7 @@ export default function LanguagesPage() {
                         marginInlineEnd: '0.25rem',
                         verticalAlign: 'middle'
                       }} />
-                      {t('admin.languages.hide', 'Hide')}
+                      <span suppressHydrationWarning>{t('admin.languages.hide', 'Hide')}</span>
                     </>
                   ) : (
                     <>
@@ -628,7 +623,7 @@ export default function LanguagesPage() {
                         marginInlineEnd: '0.25rem',
                         verticalAlign: 'middle'
                       }} />
-                      {t('admin.languages.show', 'Show')}
+                      <span suppressHydrationWarning>{t('admin.languages.show', 'Show')}</span>
                     </>
                   )}
                 </button>
@@ -694,7 +689,7 @@ export default function LanguagesPage() {
                 fontFamily: 'var(--font-family-heading)',
                 color: 'hsl(var(--text-heading))',
                 marginBottom: '0.5rem'
-              }}>
+              }} suppressHydrationWarning>
                 {t('admin.languages.empty', 'No languages yet')}
               </h3>
               <p style={{
@@ -702,7 +697,7 @@ export default function LanguagesPage() {
                 marginBottom: '1rem',
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)'
-              }}>
+              }} suppressHydrationWarning>
                 {t('admin.languages.emptyDesc', 'Add your first language to get started')}
               </p>
               <button
@@ -727,7 +722,7 @@ export default function LanguagesPage() {
                 className="hover:opacity-90"
               >
                 <Plus className="h-5 w-5" />
-                {t('admin.languages.add', 'Add Language')}
+                <span suppressHydrationWarning>{t('admin.languages.add', 'Add Language')}</span>
               </button>
             </div>
           )}
@@ -775,7 +770,7 @@ export default function LanguagesPage() {
                 color: 'hsl(var(--text-heading))',
                 marginBottom: '1rem',
                 textAlign: isRtl ? 'right' : 'left'
-              }}>
+              }} suppressHydrationWarning>
                 {editingLanguage
                   ? t('admin.languages.edit', 'Edit Language')
                   : t('admin.languages.add', 'Add Language')}
@@ -806,7 +801,7 @@ export default function LanguagesPage() {
                     marginBottom: '0.5rem',
                     textAlign: isRtl ? 'right' : 'left'
                   }}>
-                    {t('admin.languages.form.code', 'Language Code')} *
+                    <span suppressHydrationWarning>{t('admin.languages.form.code', 'Language Code')} *</span>
                   </label>
                   {editingLanguage ? (
                     <input
@@ -923,7 +918,7 @@ export default function LanguagesPage() {
                                     color: 'hsl(var(--text-muted))',
                                     fontFamily: 'var(--font-family-primary)',
                                     textAlign: 'center'
-                                  }}>
+                                  }} suppressHydrationWarning>
                                     {t('admin.languages.form.noResults', 'No languages found')}
                                   </div>
                                 );
@@ -942,7 +937,7 @@ export default function LanguagesPage() {
                                         backgroundColor: 'hsl(var(--muted) / 0.5)',
                                         textTransform: 'uppercase',
                                         letterSpacing: '0.05em'
-                                      }}>
+                                      }} suppressHydrationWarning>
                                         {t('admin.languages.form.popularLanguages', 'Popular Languages')}
                                       </div>
                                       {filteredPopular.map(lang => (
@@ -986,7 +981,7 @@ export default function LanguagesPage() {
                                         textTransform: 'uppercase',
                                         letterSpacing: '0.05em',
                                         marginTop: filteredPopular.length > 0 ? '0.25rem' : '0'
-                                      }}>
+                                      }} suppressHydrationWarning>
                                         {t('admin.languages.form.otherLanguages', 'Other Languages')}
                                       </div>
                                       {filteredOther.map(lang => (
@@ -1030,7 +1025,7 @@ export default function LanguagesPage() {
                     color: 'hsl(var(--text-muted))',
                     fontFamily: 'var(--font-family-primary)',
                     marginTop: '0.25rem'
-                  }}>
+                  }} suppressHydrationWarning>
                     {editingLanguage
                       ? t('admin.languages.form.codeHint', '2-letter ISO 639-1 code')
                       : t('admin.languages.form.selectHint', 'Selecting a language will auto-fill the form')}
@@ -1046,7 +1041,7 @@ export default function LanguagesPage() {
                     display: 'block',
                     marginBottom: '0.5rem'
                   }}>
-                    {t('admin.languages.form.name', 'English Name')} *
+                    <span suppressHydrationWarning>{t('admin.languages.form.name', 'English Name')} *</span>
                   </label>
                   <input
                     type="text"
@@ -1080,7 +1075,7 @@ export default function LanguagesPage() {
                     display: 'block',
                     marginBottom: '0.5rem'
                   }}>
-                    {t('admin.languages.form.nativeName', 'Native Name')} *
+                    <span suppressHydrationWarning>{t('admin.languages.form.nativeName', 'Native Name')} *</span>
                   </label>
                   <input
                     type="text"
@@ -1114,7 +1109,7 @@ export default function LanguagesPage() {
                     display: 'block',
                     marginBottom: '0.5rem'
                   }}>
-                    {t('admin.languages.form.direction', 'Text Direction')}
+                    <span suppressHydrationWarning>{t('admin.languages.form.direction', 'Text Direction')}</span>
                   </label>
                   <select
                     value={formData.direction}
@@ -1138,8 +1133,8 @@ export default function LanguagesPage() {
                     className="focus:outline-none focus:ring-2"
                     onFocus={(e) => e.target.style.setProperty('--tw-ring-color', 'hsl(var(--primary))')}
                   >
-                    <option value="ltr">{t('admin.languages.form.directionLtr', 'Left to Right (LTR)')}</option>
-                    <option value="rtl">{t('admin.languages.form.directionRtl', 'Right to Left (RTL)')}</option>
+                    <option value="ltr" suppressHydrationWarning>{t('admin.languages.form.directionLtr', 'Left to Right (LTR)')}</option>
+                    <option value="rtl" suppressHydrationWarning>{t('admin.languages.form.directionRtl', 'Right to Left (RTL)')}</option>
                   </select>
                   {!editingLanguage && !formData.code && (
                     <p style={{
@@ -1147,7 +1142,7 @@ export default function LanguagesPage() {
                       color: 'hsl(var(--text-muted))',
                       fontFamily: 'var(--font-family-primary)',
                       marginTop: '0.25rem'
-                    }}>
+                    }} suppressHydrationWarning>
                       {t('admin.languages.form.directionHint', 'Will be auto-filled when you select a language')}
                     </p>
                   )}
@@ -1162,7 +1157,7 @@ export default function LanguagesPage() {
                     display: 'block',
                     marginBottom: '0.5rem'
                   }}>
-                    {t('admin.languages.form.currency', 'Currency')}
+                    <span suppressHydrationWarning>{t('admin.languages.form.currency', 'Currency')}</span>
                   </label>
                   <select
                     value={formData.currency_code}
@@ -1204,7 +1199,7 @@ export default function LanguagesPage() {
                     color: 'hsl(var(--text-muted))',
                     fontFamily: 'var(--font-family-primary)',
                     marginTop: '0.25rem'
-                  }}>
+                  }} suppressHydrationWarning>
                     {!editingLanguage && !formData.code
                       ? t('admin.languages.form.currencyAutoFill', 'Will be auto-filled when you select a language')
                       : t('admin.languages.form.currencyHint', 'Default currency for this language')}
@@ -1231,7 +1226,7 @@ export default function LanguagesPage() {
                       fontSize: 'var(--font-size-sm)',
                       fontFamily: 'var(--font-family-primary)',
                       color: 'hsl(var(--text-body))'
-                    }}>
+                    }} suppressHydrationWarning>
                       {t('admin.languages.form.active', 'Active')}
                     </span>
                   </label>
@@ -1255,7 +1250,7 @@ export default function LanguagesPage() {
                       fontSize: 'var(--font-size-sm)',
                       fontFamily: 'var(--font-family-primary)',
                       color: 'hsl(var(--text-body))'
-                    }}>
+                    }} suppressHydrationWarning>
                       {t('admin.languages.form.default', 'Default Language')}
                     </span>
                   </label>
@@ -1296,7 +1291,7 @@ export default function LanguagesPage() {
                   className="hover:bg-accent"
                 >
                   <X className="h-4 w-4" />
-                  {t('common.cancel', 'Cancel')}
+                  <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
                 </button>
                 <button
                   onClick={handleSave}
@@ -1329,12 +1324,12 @@ export default function LanguagesPage() {
                   {saving ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      {t('common.saving', 'Saving...')}
+                      <span suppressHydrationWarning>{t('common.saving', 'Saving...')}</span>
                     </>
                   ) : (
                     <>
                       <Check className="h-4 w-4" />
-                      {t('common.save', 'Save')}
+                      <span suppressHydrationWarning>{t('common.save', 'Save')}</span>
                     </>
                   )}
                 </button>
@@ -1386,7 +1381,7 @@ export default function LanguagesPage() {
                 color: 'hsl(var(--text-heading))',
                 marginBottom: '0.75rem',
                 textAlign: isRtl ? 'right' : 'left'
-              }}>
+              }} suppressHydrationWarning>
                 {t('admin.languages.confirmDelete.title', 'Delete Language')}
               </h2>
 
@@ -1395,7 +1390,7 @@ export default function LanguagesPage() {
                 fontFamily: 'var(--font-family-primary)',
                 color: 'hsl(var(--text-body))',
                 marginBottom: '1.5rem'
-              }}>
+              }} suppressHydrationWarning>
                 {t('admin.languages.confirmDelete.message', 'Are you sure you want to delete')} <strong>{deletingLanguage.name}</strong> ({deletingLanguage.native_name})?
               </p>
 
@@ -1407,7 +1402,7 @@ export default function LanguagesPage() {
                 padding: '0.75rem',
                 backgroundColor: 'hsl(var(--destructive) / 0.1)',
                 borderRadius: 'calc(var(--radius) * 1.5)'
-              }}>
+              }} suppressHydrationWarning>
                 {t('admin.languages.confirmDelete.warning', 'This action cannot be undone. All translations for this language will be deleted.')}
               </p>
 
@@ -1442,7 +1437,7 @@ export default function LanguagesPage() {
                   className="hover:bg-accent"
                 >
                   <X className="h-4 w-4" />
-                  {t('common.cancel', 'Cancel')}
+                  <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
                 </button>
                 <button
                   onClick={handleDeleteConfirm}
@@ -1471,7 +1466,7 @@ export default function LanguagesPage() {
                   className="hover:opacity-90"
                 >
                   <Trash2 className="h-4 w-4" />
-                  {t('admin.languages.confirmDelete.confirm', 'Delete')}
+                  <span suppressHydrationWarning>{t('admin.languages.confirmDelete.confirm', 'Delete')}</span>
                 </button>
               </div>
             </div>

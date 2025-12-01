@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit2, Trash2, Users, BookOpen, DollarSign, Search, X, XCircle, Check, Loader2, Upload, ImageIcon, Eye, LayoutGrid, List } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, BookOpen, Search, X, XCircle, Check, Loader2, Upload, ImageIcon, Eye, LayoutGrid, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -49,7 +49,6 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAdminLanguage } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Badge } from '@/components/ui/badge';
-import { CURRENCIES } from '@/lib/utils/currency';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 // Image upload will be handled through API endpoints for proper authentication
 
@@ -60,11 +59,8 @@ interface Program {
   description: string | null;
   image_url: string | null;
   is_active: boolean;
-  price: number | null;
-  currency: string | null;
   duration_weeks: number | null;
   max_students: number | null;
-  docusign_template_id: string | null;
   created_at: string;
   updated_at: string;
   course_count?: number;
@@ -104,11 +100,8 @@ export default function ProgramsPage() {
     description: '',
     image_url: '',
     is_active: true,
-    price: '',
-    currency: 'USD',
     duration_weeks: '',
-    max_students: '',
-    docusign_template_id: ''
+    max_students: ''
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -116,8 +109,6 @@ export default function ProgramsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  const [docusignTemplates, setDocusignTemplates] = useState<Array<{ templateId: string; name: string }>>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -127,7 +118,6 @@ export default function ProgramsPage() {
 
   useEffect(() => {
     loadPrograms();
-    loadDocuSignTemplates();
   }, [statusFilter]);
 
   const loadPrograms = async () => {
@@ -156,28 +146,6 @@ export default function ProgramsPage() {
     }
   };
 
-  const loadDocuSignTemplates = async () => {
-    try {
-      setLoadingTemplates(true);
-      const response = await fetch('/api/admin/docusign/templates');
-      const result = await response.json();
-
-      console.log('DocuSign templates response:', result);
-
-      if (result.success) {
-        setDocusignTemplates(result.templates || []);
-      } else {
-        console.warn('DocuSign not configured or failed:', result.message || result.error);
-        setDocusignTemplates([]);
-      }
-    } catch (error) {
-      console.error('Failed to load DocuSign templates:', error);
-      // Silent fail - DocuSign might not be configured
-      setDocusignTemplates([]);
-    } finally {
-      setLoadingTemplates(false);
-    }
-  };
 
   // Upload image through server-side API for proper authentication
   const uploadProgramImage = async (file: File, programId?: string): Promise<string | null> => {
@@ -243,11 +211,8 @@ export default function ProgramsPage() {
       description: '',
       image_url: '',
       is_active: true,
-      price: '',
-      currency: 'USD',
       duration_weeks: '',
-      max_students: '',
-      docusign_template_id: ''
+      max_students: ''
     });
     setImageFile(null);
     setImagePreview(null);
@@ -263,11 +228,8 @@ export default function ProgramsPage() {
       description: program.description || '',
       image_url: program.image_url || '',
       is_active: program.is_active,
-      price: program.price?.toString() || '',
-      currency: program.currency || 'USD',
       duration_weeks: program.duration_weeks?.toString() || '',
-      max_students: program.max_students?.toString() || '',
-      docusign_template_id: program.docusign_template_id || ''
+      max_students: program.max_students?.toString() || ''
     });
     setImagePreview(program.image_url);
     setImageFile(null);
@@ -335,7 +297,6 @@ export default function ProgramsPage() {
         body: JSON.stringify({
           ...formData,
           image_url: uploadedImageUrl || formData.image_url || null,
-          price: formData.price ? parseFloat(formData.price) : null,
           duration_weeks: formData.duration_weeks ? parseInt(formData.duration_weeks) : null,
           max_students: formData.max_students ? parseInt(formData.max_students) : null,
         }),
@@ -359,11 +320,8 @@ export default function ProgramsPage() {
           description: '',
           image_url: '',
           is_active: true,
-          price: '',
-          currency: 'USD',
           duration_weeks: '',
-          max_students: '',
-          docusign_template_id: ''
+          max_students: ''
         });
         setImageFile(null);
         setImagePreview(null);
@@ -461,7 +419,6 @@ export default function ProgramsPage() {
         body: JSON.stringify({
           ...formData,
           image_url: uploadedImageUrl || null,
-          price: formData.price ? parseFloat(formData.price) : null,
           duration_weeks: formData.duration_weeks ? parseInt(formData.duration_weeks) : null,
           max_students: formData.max_students ? parseInt(formData.max_students) : null,
         }),
@@ -553,10 +510,10 @@ export default function ProgramsPage() {
     <AdminLayout>
       <div className="max-w-6xl p-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">
+          <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>
             {t('lms.programs.title', 'Programs')}
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground" suppressHydrationWarning>
             {t('lms.programs.subtitle', 'Manage your learning programs')}
           </p>
         </div>
@@ -582,9 +539,9 @@ export default function ProgramsPage() {
                   <SelectValue placeholder={t('lms.programs.filter_status', 'Filter by status')} />
                 </SelectTrigger>
                 <SelectContent dir={direction}>
-                  <SelectItem value="all">{t('lms.programs.all_statuses', 'All')}</SelectItem>
-                  <SelectItem value="active">{t('lms.programs.active', 'Active')}</SelectItem>
-                  <SelectItem value="inactive">{t('lms.programs.inactive', 'Inactive')}</SelectItem>
+                  <SelectItem value="all"><span suppressHydrationWarning>{t('lms.programs.all_statuses', 'All')}</span></SelectItem>
+                  <SelectItem value="active"><span suppressHydrationWarning>{t('lms.programs.active', 'Active')}</span></SelectItem>
+                  <SelectItem value="inactive"><span suppressHydrationWarning>{t('lms.programs.inactive', 'Inactive')}</span></SelectItem>
                 </SelectContent>
               </Select>
 
@@ -616,7 +573,7 @@ export default function ProgramsPage() {
                   title={t('lms.programs.view_grid', 'Grid View')}
                 >
                   <LayoutGrid className="w-4 h-4" />
-                  {isMobile && <span>{t('lms.programs.view_grid', 'Grid')}</span>}
+                  {isMobile && <span suppressHydrationWarning>{t('lms.programs.view_grid', 'Grid')}</span>}
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
@@ -637,27 +594,27 @@ export default function ProgramsPage() {
                   title={t('lms.programs.view_list', 'List View')}
                 >
                   <List className="w-4 h-4" />
-                  {isMobile && <span>{t('lms.programs.view_list', 'List')}</span>}
+                  {isMobile && <span suppressHydrationWarning>{t('lms.programs.view_list', 'List')}</span>}
                 </button>
               </div>
 
               {/* Create Button */}
               <Button onClick={handleCreate} className="w-full sm:w-auto">
                 <Plus className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4`} />
-                {t('lms.programs.create', 'Create Program')}
+                <span suppressHydrationWarning>{t('lms.programs.create', 'Create Program')}</span>
               </Button>
             </div>
           </CardContent>
         </Card>
 
         {loading ? (
-          <div className="text-center py-8 text-muted-foreground">
+          <div className="text-center py-8 text-muted-foreground" suppressHydrationWarning>
             {t('lms.programs.loading', 'Loading programs...')}
           </div>
         ) : filteredPrograms.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
-              <p className="text-muted-foreground mb-4">
+              <p className="text-muted-foreground mb-4" suppressHydrationWarning>
                 {searchTerm
                   ? t('lms.programs.no_results', 'No programs found matching your search')
                   : t('lms.programs.no_programs', 'No programs created yet')}
@@ -665,7 +622,7 @@ export default function ProgramsPage() {
               {!searchTerm && (
                 <Button onClick={handleCreate}>
                   <Plus className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4`} />
-                  {t('lms.programs.create_first', 'Create Your First Program')}
+                  <span suppressHydrationWarning>{t('lms.programs.create_first', 'Create Your First Program')}</span>
                 </Button>
               )}
             </CardContent>
@@ -700,27 +657,20 @@ export default function ProgramsPage() {
                       )}
                     </div>
                     <Badge variant={program.is_active ? 'default' : 'secondary'}>
-                      {program.is_active
-                        ? t('lms.programs.active', 'Active')
-                        : t('lms.programs.inactive', 'Inactive')}
+                      <span suppressHydrationWarning>
+                        {program.is_active
+                          ? t('lms.programs.active', 'Active')
+                          : t('lms.programs.inactive', 'Inactive')}
+                      </span>
                     </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {program.price && (
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
-                          {program.currency} {program.price}
-                        </span>
-                      </div>
-                    )}
-
                     {program.duration_weeks && (
                       <div className="flex items-center gap-2">
                         <BookOpen className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
+                        <span className="text-sm" suppressHydrationWarning>
                           {program.duration_weeks} {t('lms.programs.weeks', 'weeks')}
                         </span>
                       </div>
@@ -729,18 +679,18 @@ export default function ProgramsPage() {
                     {program.max_students && (
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
+                        <span className="text-sm" suppressHydrationWarning>
                           {t('lms.programs.max_students_label', 'Max')}: {program.max_students} {t('lms.programs.students', 'students')}
                         </span>
                       </div>
                     )}
 
                     <div className="flex items-center gap-2 pt-2 border-t">
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-sm text-muted-foreground" suppressHydrationWarning>
                         {program.course_count || 0} {t('lms.programs.courses', 'courses')}
                       </span>
                       <span className="text-sm text-muted-foreground">•</span>
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-sm text-muted-foreground" suppressHydrationWarning>
                         {program.student_count || 0} {t('lms.programs.students', 'students')}
                       </span>
                     </div>
@@ -754,7 +704,7 @@ export default function ProgramsPage() {
                       onClick={() => router.push(`/admin/lms/programs/${program.id}`)}
                     >
                       <Eye className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                      {t('lms.programs.manage', 'Manage Program')}
+                      <span suppressHydrationWarning>{t('lms.programs.manage', 'Manage Program')}</span>
                     </Button>
                     <div className="flex gap-2">
                       <Button
@@ -764,7 +714,7 @@ export default function ProgramsPage() {
                         onClick={() => handleEdit(program)}
                       >
                         <Edit2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                        {t('common.edit', 'Edit')}
+                        <span suppressHydrationWarning>{t('common.edit', 'Edit')}</span>
                       </Button>
                       <Button
                         variant="outline"
@@ -773,7 +723,7 @@ export default function ProgramsPage() {
                         onClick={() => handleDelete(program)}
                       >
                         <Trash2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                        {t('common.delete', 'Delete')}
+                        <span suppressHydrationWarning>{t('common.delete', 'Delete')}</span>
                       </Button>
                     </div>
                   </div>
@@ -816,10 +766,12 @@ export default function ProgramsPage() {
                           {program.name}
                         </h3>
                         <Badge variant={program.is_active ? 'default' : 'secondary'}>
-                          {program.is_active
-                            ? t('lms.programs.active', 'Active')
-                            : t('lms.programs.inactive', 'Inactive')
-                          }
+                          <span suppressHydrationWarning>
+                            {program.is_active
+                              ? t('lms.programs.active', 'Active')
+                              : t('lms.programs.inactive', 'Inactive')
+                            }
+                          </span>
                         </Badge>
                       </div>
 
@@ -846,31 +798,24 @@ export default function ProgramsPage() {
                         fontSize: 'var(--font-size-sm)',
                         color: 'hsl(var(--muted-foreground))'
                       }}>
-                        {program.price && (
-                          <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <DollarSign className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                            <span>{program.currency} {program.price}</span>
-                          </div>
-                        )}
-
                         {program.duration_weeks && (
                           <div style={{ display: 'flex', alignItems: 'center' }}>
                             <BookOpen className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                            <span>{program.duration_weeks} {t('lms.programs.weeks', 'weeks')}</span>
+                            <span suppressHydrationWarning>{program.duration_weeks} {t('lms.programs.weeks', 'weeks')}</span>
                           </div>
                         )}
 
                         {program.max_students && (
                           <div style={{ display: 'flex', alignItems: 'center' }}>
                             <Users className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                            <span>{t('lms.programs.max_students_label', 'Max')}: {program.max_students}</span>
+                            <span suppressHydrationWarning>{t('lms.programs.max_students_label', 'Max')}: {program.max_students}</span>
                           </div>
                         )}
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span>{program.course_count || 0} {t('lms.programs.courses', 'courses')}</span>
+                          <span suppressHydrationWarning>{program.course_count || 0} {t('lms.programs.courses', 'courses')}</span>
                           <span>•</span>
-                          <span>{program.student_count || 0} {t('lms.programs.students', 'students')}</span>
+                          <span suppressHydrationWarning>{program.student_count || 0} {t('lms.programs.students', 'students')}</span>
                         </div>
                       </div>
                     </div>
@@ -895,7 +840,7 @@ export default function ProgramsPage() {
                         }}
                       >
                         <Eye className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                        {t('lms.programs.manage', 'Manage Program')}
+                        <span suppressHydrationWarning>{t('lms.programs.manage', 'Manage Program')}</span>
                       </Button>
 
                       <div style={{
@@ -914,7 +859,7 @@ export default function ProgramsPage() {
                           }}
                         >
                           <Edit2 className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                          {!isMobile && t('common.edit', 'Edit')}
+                          {!isMobile && <span suppressHydrationWarning>{t('common.edit', 'Edit')}</span>}
                         </Button>
                         <Button
                           variant="outline"
@@ -927,7 +872,7 @@ export default function ProgramsPage() {
                           }}
                         >
                           <Trash2 className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                          {!isMobile && t('common.delete', 'Delete')}
+                          {!isMobile && <span suppressHydrationWarning>{t('common.delete', 'Delete')}</span>}
                         </Button>
                       </div>
                     </div>
@@ -945,10 +890,10 @@ export default function ProgramsPage() {
             dir={direction}>
             <DialogHeader>
               <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.programs.create_dialog_title', 'Create New Program')}
+                <span suppressHydrationWarning>{t('lms.programs.create_dialog_title', 'Create New Program')}</span>
               </DialogTitle>
               <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.programs.create_dialog_description', 'Enter the details for the new program.')}
+                <span suppressHydrationWarning>{t('lms.programs.create_dialog_description', 'Enter the details for the new program.')}</span>
               </DialogDescription>
             </DialogHeader>
 
@@ -956,7 +901,7 @@ export default function ProgramsPage() {
             {createError && (
               <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
                 <XCircle className="h-4 w-4" />
-                <AlertTitle>{t('common.error', 'Error')}</AlertTitle>
+                <AlertTitle><span suppressHydrationWarning>{t('common.error', 'Error')}</span></AlertTitle>
                 <AlertDescription>{createError}</AlertDescription>
               </Alert>
             )}
@@ -964,7 +909,7 @@ export default function ProgramsPage() {
             <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-2">
               <div className="grid gap-2">
                 <Label htmlFor="name" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.name', 'Program Name')} *
+                  <span suppressHydrationWarning>{t('lms.programs.name', 'Program Name')} *</span>
                 </Label>
                 <Input
                   id="name"
@@ -987,7 +932,7 @@ export default function ProgramsPage() {
               </div>
               <div className="grid gap-2">
                 <Label className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.image', 'Program Image')}
+                  <span suppressHydrationWarning>{t('lms.programs.image', 'Program Image')}</span>
                 </Label>
                 <div className="flex items-center gap-4">
                   {imagePreview && (
@@ -1027,10 +972,10 @@ export default function ProgramsPage() {
                       <div className="border-2 border-dashed rounded-lg p-4 hover:bg-muted/50 transition-colors">
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="h-8 w-8 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-sm text-muted-foreground" suppressHydrationWarning>
                             {t('lms.programs.upload_image', 'Click to upload image')}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
                             {t('lms.programs.image_formats', 'PNG, JPG, GIF up to 5MB')}
                           </span>
                         </div>
@@ -1041,61 +986,19 @@ export default function ProgramsPage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="description" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.description', 'Description')}
+                  <span suppressHydrationWarning>{t('lms.programs.description', 'Description')}</span>
                 </Label>
                 <RichTextEditor
-                  id="description"
-                  content={formData.description}
+                  value={formData.description || ''}
                   onChange={(content) => setFormData({ ...formData, description: content })}
                   placeholder={t('lms.programs.description_placeholder', 'Program description...')}
                   dir={direction}
-                  minHeight="120px"
                 />
               </div>
               <div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="price" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.price', 'Price')}
-                  </Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    placeholder="0.00"
-                    dir="ltr"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="currency" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.currency', 'Currency')}
-                  </Label>
-                  <Select
-                    value={formData.currency}
-                    onValueChange={(value) => setFormData({ ...formData, currency: value })}
-                    dir={direction}
-                  >
-                    <SelectTrigger id="currency">
-                      <SelectValue placeholder={t('lms.programs.select_currency', 'Select currency')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CURRENCIES.filter(c => c.is_active).map((currency) => (
-                        <SelectItem key={currency.code} value={currency.code}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{currency.code}</span>
-                            <span className="text-muted-foreground">({currency.symbol})</span>
-                            <span className="text-sm text-muted-foreground hidden sm:inline">{currency.name}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
-                <div className="grid gap-2">
                   <Label htmlFor="duration" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.duration', 'Duration (weeks)')}
+                    <span suppressHydrationWarning>{t('lms.programs.duration', 'Duration (weeks)')}</span>
                   </Label>
                   <Input
                     id="duration"
@@ -1108,7 +1011,7 @@ export default function ProgramsPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="max_students" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.max_students', 'Max Students')}
+                    <span suppressHydrationWarning>{t('lms.programs.max_students', 'Max Students')}</span>
                   </Label>
                   <Input
                     id="max_students"
@@ -1120,29 +1023,6 @@ export default function ProgramsPage() {
                   />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="docusign" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.docusign_template', 'DocuSign Template')}
-                </Label>
-                <Select
-                  value={formData.docusign_template_id}
-                  onValueChange={(value) => setFormData({ ...formData, docusign_template_id: value })}
-                  dir={direction}
-                  disabled={loadingTemplates}
-                >
-                  <SelectTrigger id="docusign">
-                    <SelectValue placeholder={loadingTemplates ? t('common.loading', 'Loading...') : t('lms.programs.docusign_placeholder', 'Select template (optional)')} />
-                  </SelectTrigger>
-                  <SelectContent dir={direction}>
-                    <SelectItem value="none">{t('common.none', 'None')}</SelectItem>
-                    {docusignTemplates.map((template) => (
-                      <SelectItem key={template.templateId} value={template.templateId}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className={`flex items-center gap-3 ${isRtl ? 'flex-row-reverse justify-end' : ''}`}>
                 <Switch
                   id="active"
@@ -1153,7 +1033,7 @@ export default function ProgramsPage() {
                   htmlFor="active"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                 >
-                  {t('lms.programs.activate_immediately', 'Activate immediately')}
+                  <span suppressHydrationWarning>{t('lms.programs.activate_immediately', 'Activate immediately')}</span>
                 </Label>
               </div>
             </div>
@@ -1163,7 +1043,7 @@ export default function ProgramsPage() {
                 onClick={() => setShowCreateDialog(false)}
                 disabled={saving}
               >
-                {t('common.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
               </Button>
               <Button
                 onClick={handleSaveCreate}
@@ -1172,12 +1052,12 @@ export default function ProgramsPage() {
                 {saving ? (
                   <>
                     <Loader2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4 animate-spin`} />
-                    {t('common.creating', 'Creating...')}
+                    <span suppressHydrationWarning>{t('common.creating', 'Creating...')}</span>
                   </>
                 ) : (
                   <>
                     <Check className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4`} />
-                    {t('common.create', 'Create')}
+                    <span suppressHydrationWarning>{t('common.create', 'Create')}</span>
                   </>
                 )}
               </Button>
@@ -1192,10 +1072,10 @@ export default function ProgramsPage() {
             dir={direction}>
             <DialogHeader>
               <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.programs.edit_dialog_title', 'Edit Program')}
+                <span suppressHydrationWarning>{t('lms.programs.edit_dialog_title', 'Edit Program')}</span>
               </DialogTitle>
               <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.programs.edit_dialog_description', 'Update the program details.')}
+                <span suppressHydrationWarning>{t('lms.programs.edit_dialog_description', 'Update the program details.')}</span>
               </DialogDescription>
             </DialogHeader>
 
@@ -1203,7 +1083,7 @@ export default function ProgramsPage() {
             {editError && (
               <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
                 <XCircle className="h-4 w-4" />
-                <AlertTitle>{t('common.error', 'Error')}</AlertTitle>
+                <AlertTitle><span suppressHydrationWarning>{t('common.error', 'Error')}</span></AlertTitle>
                 <AlertDescription>{editError}</AlertDescription>
               </Alert>
             )}
@@ -1211,7 +1091,7 @@ export default function ProgramsPage() {
             <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-2">
               <div className="grid gap-2">
                 <Label htmlFor="edit-name" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.name', 'Program Name')} *
+                  <span suppressHydrationWarning>{t('lms.programs.name', 'Program Name')} *</span>
                 </Label>
                 <Input
                   id="edit-name"
@@ -1233,7 +1113,7 @@ export default function ProgramsPage() {
               </div>
               <div className="grid gap-2">
                 <Label className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.image', 'Program Image')}
+                  <span suppressHydrationWarning>{t('lms.programs.image', 'Program Image')}</span>
                 </Label>
                 <div className="flex items-center gap-4">
                   {imagePreview && (
@@ -1273,10 +1153,10 @@ export default function ProgramsPage() {
                       <div className="border-2 border-dashed rounded-lg p-4 hover:bg-muted/50 transition-colors">
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="h-8 w-8 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-sm text-muted-foreground" suppressHydrationWarning>
                             {t('lms.programs.upload_image', 'Click to upload image')}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
                             {t('lms.programs.image_formats', 'PNG, JPG, GIF up to 5MB')}
                           </span>
                         </div>
@@ -1287,60 +1167,19 @@ export default function ProgramsPage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-description" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.description', 'Description')}
+                  <span suppressHydrationWarning>{t('lms.programs.description', 'Description')}</span>
                 </Label>
                 <RichTextEditor
-                  id="description"
-                  content={formData.description}
+                  value={formData.description || ''}
                   onChange={(content) => setFormData({ ...formData, description: content })}
                   placeholder={t('lms.programs.description_placeholder', 'Program description...')}
                   dir={direction}
-                  minHeight="120px"
                 />
               </div>
               <div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-price" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.price', 'Price')}
-                  </Label>
-                  <Input
-                    id="edit-price"
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    dir="ltr"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-currency" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.currency', 'Currency')}
-                  </Label>
-                  <Select
-                    value={formData.currency}
-                    onValueChange={(value) => setFormData({ ...formData, currency: value })}
-                    dir={direction}
-                  >
-                    <SelectTrigger id="edit-currency">
-                      <SelectValue placeholder={t('lms.programs.select_currency', 'Select currency')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CURRENCIES.filter(c => c.is_active).map((currency) => (
-                        <SelectItem key={currency.code} value={currency.code}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{currency.code}</span>
-                            <span className="text-muted-foreground">({currency.symbol})</span>
-                            <span className="text-sm text-muted-foreground hidden sm:inline">{currency.name}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
-                <div className="grid gap-2">
                   <Label htmlFor="edit-duration" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.duration', 'Duration (weeks)')}
+                    <span suppressHydrationWarning>{t('lms.programs.duration', 'Duration (weeks)')}</span>
                   </Label>
                   <Input
                     id="edit-duration"
@@ -1352,7 +1191,7 @@ export default function ProgramsPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="edit-max_students" className={isRtl ? 'text-right' : 'text-left'}>
-                    {t('lms.programs.max_students', 'Max Students')}
+                    <span suppressHydrationWarning>{t('lms.programs.max_students', 'Max Students')}</span>
                   </Label>
                   <Input
                     id="edit-max_students"
@@ -1362,29 +1201,6 @@ export default function ProgramsPage() {
                     dir="ltr"
                   />
                 </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-docusign" className={isRtl ? 'text-right' : 'text-left'}>
-                  {t('lms.programs.docusign_template', 'DocuSign Template')}
-                </Label>
-                <Select
-                  value={formData.docusign_template_id}
-                  onValueChange={(value) => setFormData({ ...formData, docusign_template_id: value })}
-                  dir={direction}
-                  disabled={loadingTemplates}
-                >
-                  <SelectTrigger id="edit-docusign">
-                    <SelectValue placeholder={loadingTemplates ? t('common.loading', 'Loading...') : t('lms.programs.docusign_placeholder', 'Select template (optional)')} />
-                  </SelectTrigger>
-                  <SelectContent dir={direction}>
-                    <SelectItem value="none">{t('common.none', 'None')}</SelectItem>
-                    {docusignTemplates.map((template) => (
-                      <SelectItem key={template.templateId} value={template.templateId}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className={`flex items-center gap-3 ${isRtl ? 'flex-row-reverse justify-end' : ''}`}>
                 <Switch
@@ -1396,7 +1212,7 @@ export default function ProgramsPage() {
                   htmlFor="edit-active"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                 >
-                  {t('lms.programs.is_active', 'Active')}
+                  <span suppressHydrationWarning>{t('lms.programs.is_active', 'Active')}</span>
                 </Label>
               </div>
             </div>
@@ -1406,7 +1222,7 @@ export default function ProgramsPage() {
                 onClick={() => setShowEditDialog(false)}
                 disabled={saving}
               >
-                {t('common.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
               </Button>
               <Button
                 onClick={handleSaveEdit}
@@ -1415,12 +1231,12 @@ export default function ProgramsPage() {
                 {saving ? (
                   <>
                     <Loader2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4 animate-spin`} />
-                    {t('common.saving', 'Saving...')}
+                    <span suppressHydrationWarning>{t('common.saving', 'Saving...')}</span>
                   </>
                 ) : (
                   <>
                     <Check className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4`} />
-                    {t('common.save', 'Save')}
+                    <span suppressHydrationWarning>{t('common.save', 'Save')}</span>
                   </>
                 )}
               </Button>
@@ -1435,13 +1251,15 @@ export default function ProgramsPage() {
             className="max-w-[90vw] sm:max-w-[500px]">
             <AlertDialogHeader>
               <AlertDialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-                {t('lms.programs.delete_dialog_title', 'Delete Program')}
+                <span suppressHydrationWarning>{t('lms.programs.delete_dialog_title', 'Delete Program')}</span>
               </AlertDialogTitle>
               <AlertDialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                {t(
-                  'lms.programs.delete_dialog_description',
-                  'Are you sure you want to delete "{name}"? This will also delete all associated courses, modules, lessons, and student progress. This action cannot be undone.'
-                ).replace('{name}', selectedProgram?.name || '')}
+                <span suppressHydrationWarning>
+                  {t(
+                    'lms.programs.delete_dialog_description',
+                    'Are you sure you want to delete "{name}"? This will also delete all associated courses, modules, lessons, and student progress. This action cannot be undone.'
+                  ).replace('{name}', selectedProgram?.name || '')}
+                </span>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className={`flex gap-3 mt-6 pt-6 border-t ${isRtl ? 'flex-row-reverse' : ''}`}>
@@ -1452,7 +1270,7 @@ export default function ProgramsPage() {
                 className={`flex-1 flex items-center justify-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}
               >
                 <X className="h-4 w-4" />
-                {t('common.cancel', 'Cancel')}
+                <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
               </Button>
               <Button
                 variant="destructive"
@@ -1463,12 +1281,12 @@ export default function ProgramsPage() {
                 {deleting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    {t('common.deleting', 'Deleting...')}
+                    <span suppressHydrationWarning>{t('common.deleting', 'Deleting...')}</span>
                   </>
                 ) : (
                   <>
                     <Trash2 className="h-4 w-4" />
-                    {t('common.delete', 'Delete')}
+                    <span suppressHydrationWarning>{t('common.delete', 'Delete')}</span>
                   </>
                 )}
               </Button>

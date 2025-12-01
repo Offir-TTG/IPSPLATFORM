@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { syncStudentToKeap, isKeapEnabled } from '@/lib/keap/syncService';
 
 // POST /api/admin/keap/sync/bulk - Bulk sync all students to Keap
@@ -16,8 +16,29 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
+    // Verify admin access
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Use admin client to bypass RLS for admin operations
+    const adminSupabase = createAdminClient();
+    const { data: userData } = await adminSupabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (!userData || !['admin', 'super_admin'].includes(userData.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // Get all users (students)
-    const { data: users, error } = await supabase
+    const { data: users, error } = await adminSupabase
       .from('users')
       .select('id, email, first_name, last_name, phone')
       .order('created_at', { ascending: false });
@@ -63,23 +84,45 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Log audit event
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase.from('audit_events').insert({
-        user_id: user.id,
-        event_type: 'SYNC',
-        event_category: 'INTEGRATION',
-        resource_type: 'keap_sync',
-        action: 'Bulk sync students to Keap',
-        description: `Synced ${results.synced} students, ${results.failed} failed`,
-        new_values: {
-          synced: results.synced,
-          failed: results.failed,
-          total: results.total
-        },
-        risk_level: 'low',
-      });
+    // Log audit event using admin client
+    console.log('[BULK SYNC] Attempting to log audit event...');
+
+    // Get user's tenant_id
+    const { data: userTenantData } = await adminSupabase
+      .from('users')
+      .select('tenant_id')
+      .eq('id', user.id)
+      .single();
+
+    const auditData = {
+      user_id: user.id,
+      user_email: user.email || 'unknown',
+      tenant_id: userTenantData?.tenant_id || null,
+      event_type: 'SYNC',
+      event_category: 'SYSTEM',
+      resource_type: 'keap_sync',
+      action: 'audit.keap.bulk_sync',
+      description: 'audit.keap.bulk_sync_desc',
+      new_values: {
+        synced: results.synced,
+        failed: results.failed,
+        total: results.total
+      },
+      status: 'success',
+      risk_level: 'low',
+    };
+    console.log('[BULK SYNC] Audit data:', JSON.stringify(auditData, null, 2));
+
+    const { data: auditResult, error: auditError } = await adminSupabase
+      .from('audit_events')
+      .insert(auditData)
+      .select();
+
+    if (auditError) {
+      console.error('[BULK SYNC] Failed to log audit event:', auditError);
+      // Don't fail the request, just log the error
+    } else {
+      console.log('[BULK SYNC] Audit event logged successfully:', auditResult);
     }
 
     return NextResponse.json({

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAdminLanguage } from '@/context/AppContext';
 import {
   TrendingUp,
@@ -46,20 +46,31 @@ import {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
+type TranslationFunction = (key: string, params?: Record<string, any> | string, context?: 'admin' | 'user') => string;
+
 export default function ReportsPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction, language } = useAdminLanguage();
   const [dateRange, setDateRange] = useState('last_30_days');
   const [reportType, setReportType] = useState('revenue');
+  const isRtl = direction === 'rtl';
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const isMobile = windowWidth <= 640;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold">{t('admin.payments.reports.title')}</h1>
-            <p className="text-muted-foreground mt-1">
-              {t('admin.payments.reports.description')}
+            <h1 className="text-3xl font-bold" suppressHydrationWarning>{t('admin.payments.reports.title', 'Payment Reports')}</h1>
+            <p className="text-muted-foreground mt-1" suppressHydrationWarning>
+              {t('admin.payments.reports.description', 'Comprehensive payment analytics and insights')}
             </p>
           </div>
           <div className="flex gap-2">
@@ -67,18 +78,18 @@ export default function ReportsPage() {
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">{t('admin.payments.reports.today')}</SelectItem>
-                <SelectItem value="last_7_days">{t('admin.payments.reports.last7Days')}</SelectItem>
-                <SelectItem value="last_30_days">{t('admin.payments.reports.last30Days')}</SelectItem>
-                <SelectItem value="last_90_days">{t('admin.payments.reports.last90Days')}</SelectItem>
-                <SelectItem value="this_year">{t('admin.payments.reports.thisYear')}</SelectItem>
-                <SelectItem value="custom">{t('admin.payments.reports.customRange')}</SelectItem>
+              <SelectContent dir={direction}>
+                <SelectItem value="today"><span suppressHydrationWarning>{t('admin.payments.reports.today', 'Today')}</span></SelectItem>
+                <SelectItem value="last_7_days"><span suppressHydrationWarning>{t('admin.payments.reports.last7Days', 'Last 7 Days')}</span></SelectItem>
+                <SelectItem value="last_30_days"><span suppressHydrationWarning>{t('admin.payments.reports.last30Days', 'Last 30 Days')}</span></SelectItem>
+                <SelectItem value="last_90_days"><span suppressHydrationWarning>{t('admin.payments.reports.last90Days', 'Last 90 Days')}</span></SelectItem>
+                <SelectItem value="this_year"><span suppressHydrationWarning>{t('admin.payments.reports.thisYear', 'This Year')}</span></SelectItem>
+                <SelectItem value="custom"><span suppressHydrationWarning>{t('admin.payments.reports.customRange', 'Custom Range')}</span></SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline">
-              <Download className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              {t('admin.payments.reports.export')}
+              <Download className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+              <span suppressHydrationWarning>{t('admin.payments.reports.export', 'Export')}</span>
             </Button>
           </div>
         </div>
@@ -86,48 +97,48 @@ export default function ReportsPage() {
         {/* Report Tabs */}
         <Tabs value={reportType} onValueChange={setReportType}>
           <TabsList className="grid w-full grid-cols-7">
-            <TabsTrigger value="revenue">{t('admin.payments.reports.tabs.revenue')}</TabsTrigger>
-            <TabsTrigger value="status">{t('admin.payments.reports.tabs.status')}</TabsTrigger>
-            <TabsTrigger value="cashflow">{t('admin.payments.reports.tabs.cashflow')}</TabsTrigger>
-            <TabsTrigger value="products">{t('admin.payments.reports.tabs.products')}</TabsTrigger>
-            <TabsTrigger value="users">{t('admin.payments.reports.tabs.users')}</TabsTrigger>
-            <TabsTrigger value="plans">{t('admin.payments.reports.tabs.plans')}</TabsTrigger>
-            <TabsTrigger value="operational">{t('admin.payments.reports.tabs.operational')}</TabsTrigger>
+            <TabsTrigger value="revenue"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.revenue', 'Revenue')}</span></TabsTrigger>
+            <TabsTrigger value="status"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.status', 'Status')}</span></TabsTrigger>
+            <TabsTrigger value="cashflow"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.cashflow', 'Cash Flow')}</span></TabsTrigger>
+            <TabsTrigger value="products"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.products', 'Products')}</span></TabsTrigger>
+            <TabsTrigger value="users"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.users', 'Users')}</span></TabsTrigger>
+            <TabsTrigger value="plans"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.plans', 'Plans')}</span></TabsTrigger>
+            <TabsTrigger value="operational"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.operational', 'Operational')}</span></TabsTrigger>
           </TabsList>
 
           {/* Revenue Dashboard */}
           <TabsContent value="revenue" className="space-y-6">
-            <RevenueReport t={t} />
+            <RevenueReport t={t} isRtl={isRtl} />
           </TabsContent>
 
           {/* Payment Status Report */}
           <TabsContent value="status" className="space-y-6">
-            <PaymentStatusReport t={t} />
+            <PaymentStatusReport t={t} isRtl={isRtl} />
           </TabsContent>
 
           {/* Cash Flow Report */}
           <TabsContent value="cashflow" className="space-y-6">
-            <CashFlowReport t={t} />
+            <CashFlowReport t={t} isRtl={isRtl} />
           </TabsContent>
 
           {/* Product Performance */}
           <TabsContent value="products" className="space-y-6">
-            <ProductPerformanceReport t={t} />
+            <ProductPerformanceReport t={t} isRtl={isRtl} />
           </TabsContent>
 
           {/* User Analysis */}
           <TabsContent value="users" className="space-y-6">
-            <UserAnalysisReport t={t} />
+            <UserAnalysisReport t={t} isRtl={isRtl} />
           </TabsContent>
 
           {/* Payment Plans Analysis */}
           <TabsContent value="plans" className="space-y-6">
-            <PaymentPlansReport t={t} />
+            <PaymentPlansReport t={t} isRtl={isRtl} />
           </TabsContent>
 
           {/* Operational Report */}
           <TabsContent value="operational" className="space-y-6">
-            <OperationalReport t={t} />
+            <OperationalReport t={t} isRtl={isRtl} />
           </TabsContent>
         </Tabs>
       </div>
@@ -136,7 +147,7 @@ export default function ReportsPage() {
 }
 
 // Revenue Report Component
-function RevenueReport({ t }: { t: (key: string) => string }) {
+function RevenueReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   const revenueData = [
     { date: 'Jan 1', revenue: 4200, transactions: 12 },
     { date: 'Jan 8', revenue: 5100, transactions: 15 },
@@ -146,18 +157,18 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
   ];
 
   const revenueByType = [
-    { name: t('admin.payments.plans.types.oneTime'), value: 18500, percentage: 45 },
-    { name: t('admin.payments.plans.types.deposit'), value: 12300, percentage: 30 },
-    { name: t('admin.payments.plans.types.installments'), value: 8200, percentage: 20 },
-    { name: t('admin.payments.plans.types.subscription'), value: 2050, percentage: 5 },
+    { name: t('admin.payments.plans.types.oneTime', 'One-Time Payment'), value: 18500, percentage: 45 },
+    { name: t('admin.payments.plans.types.deposit', 'Deposit Payment'), value: 12300, percentage: 30 },
+    { name: t('admin.payments.plans.types.installments', 'Installments'), value: 8200, percentage: 20 },
+    { name: t('admin.payments.plans.types.subscription', 'Subscription'), value: 2050, percentage: 5 },
   ];
 
   const mrrData = [
-    { month: 'Aug', mrr: 7200, new: 1200, expansion: 300, churn: -200 },
-    { month: 'Sep', mrr: 7800, new: 1500, expansion: 400, churn: -300 },
-    { month: 'Oct', mrr: 8100, new: 1000, expansion: 500, churn: -200 },
-    { month: 'Nov', mrr: 8500, new: 1300, expansion: 300, churn: -200 },
-    { month: 'Dec', mrr: 8900, new: 1600, expansion: 400, churn: -600 },
+    { month: t('common.months.aug', 'Aug'), mrr: 7200, new: 1200, expansion: 300, churn: -200 },
+    { month: t('common.months.sep', 'Sep'), mrr: 7800, new: 1500, expansion: 400, churn: -300 },
+    { month: t('common.months.oct', 'Oct'), mrr: 8100, new: 1000, expansion: 500, churn: -200 },
+    { month: t('common.months.nov', 'Nov'), mrr: 8500, new: 1300, expansion: 300, churn: -200 },
+    { month: t('common.months.dec', 'Dec'), mrr: 8900, new: 1600, expansion: 400, churn: -600 },
   ];
 
   return (
@@ -166,8 +177,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('admin.payments.totalRevenue')}
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.totalRevenue', 'Total Revenue')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -181,8 +192,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('admin.payments.reports.avgTransaction')}
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.avgTransaction', 'Avg Transaction')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -196,8 +207,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('admin.payments.mrr')}
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.mrr', 'MRR')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -211,14 +222,14 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('admin.payments.arr')}
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.arr', 'ARR')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">$106,800</div>
-            <p className="text-xs text-muted-foreground mt-2">
-              {t('admin.payments.reports.arrDescription')}
+            <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
+              {t('admin.payments.reports.arrDescription', 'Annual Recurring Revenue')}
             </p>
           </CardContent>
         </Card>
@@ -227,8 +238,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
       {/* Revenue Over Time */}
       <Card>
         <CardHeader>
-          <CardTitle>{t('admin.payments.reports.revenueTrend')}</CardTitle>
-          <CardDescription>{t('admin.payments.reports.revenueTrendDescription')}</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueTrend', 'Revenue Trend')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueTrendDescription', 'Revenue performance over time')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -246,6 +257,7 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
                 stroke="#3b82f6"
                 strokeWidth={2}
                 dot={{ r: 4 }}
+                name={t('admin.payments.reports.charts.revenue', 'Revenue')}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -256,8 +268,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{t('admin.payments.reports.revenueByType')}</CardTitle>
-            <CardDescription>{t('admin.payments.reports.revenueByTypeDescription')}</CardDescription>
+            <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueByType', 'Revenue by Type')}</CardTitle>
+            <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueByTypeDescription', 'Revenue breakdown by payment type')}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -284,8 +296,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t('admin.payments.reports.revenueDistribution')}</CardTitle>
-            <CardDescription>{t('admin.payments.reports.revenueDistributionDescription')}</CardDescription>
+            <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueDistribution', 'Revenue Distribution')}</CardTitle>
+            <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueDistributionDescription', 'Detailed revenue distribution breakdown')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -297,7 +309,7 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
                         className="h-3 w-3 rounded-full"
                         style={{ backgroundColor: COLORS[index] }}
                       />
-                      <span className="font-medium">{item.name}</span>
+                      <span className="font-medium" suppressHydrationWarning>{item.name}</span>
                     </div>
                     <span className="font-bold">${item.value.toLocaleString()}</span>
                   </div>
@@ -320,8 +332,8 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
       {/* MRR Growth */}
       <Card>
         <CardHeader>
-          <CardTitle>{t('admin.payments.reports.mrrGrowth')}</CardTitle>
-          <CardDescription>{t('admin.payments.reports.mrrGrowthDescription')}</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.mrrGrowth', 'MRR Growth')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.mrrGrowthDescription', 'Monthly recurring revenue growth analysis')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -331,9 +343,9 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="new" stackId="a" fill="#10b981" name="New MRR" />
-              <Bar dataKey="expansion" stackId="a" fill="#3b82f6" name="Expansion" />
-              <Bar dataKey="churn" stackId="a" fill="#ef4444" name="Churn" />
+              <Bar dataKey="new" stackId="a" fill="#10b981" name={t('admin.payments.reports.charts.newMrr', 'New MRR')} />
+              <Bar dataKey="expansion" stackId="a" fill="#3b82f6" name={t('admin.payments.reports.charts.expansion', 'Expansion')} />
+              <Bar dataKey="churn" stackId="a" fill="#ef4444" name={t('admin.payments.reports.charts.churn', 'Churn')} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -343,19 +355,19 @@ function RevenueReport({ t }: { t: (key: string) => string }) {
 }
 
 // Payment Status Report Component
-function PaymentStatusReport({ t }: { t: (key: string) => string }) {
+function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   const statusData = [
-    { status: t('admin.payments.schedules.statuses.paid'), count: 152, amount: 45280, percentage: 65 },
-    { status: t('admin.payments.schedules.statuses.partial'), count: 28, amount: 8950, percentage: 15 },
-    { status: t('admin.payments.schedules.statuses.pending'), count: 42, amount: 12600, percentage: 18 },
-    { status: t('admin.payments.schedules.statuses.overdue'), count: 5, amount: 1450, percentage: 2 },
+    { status: t('admin.payments.schedules.statuses.paid', 'Paid'), count: 152, amount: 45280, percentage: 65 },
+    { status: t('admin.payments.schedules.statuses.partial', 'Partial'), count: 28, amount: 8950, percentage: 15 },
+    { status: t('admin.payments.schedules.statuses.pending', 'Pending'), count: 42, amount: 12600, percentage: 18 },
+    { status: t('admin.payments.schedules.statuses.overdue', 'Overdue'), count: 5, amount: 1450, percentage: 2 },
   ];
 
   const overdueAging = [
-    { bucket: '0-7 days', count: 2, amount: 580 },
-    { bucket: '8-30 days', count: 2, amount: 670 },
-    { bucket: '31-60 days', count: 1, amount: 200 },
-    { bucket: '60+ days', count: 0, amount: 0 },
+    { bucket: t('common.dayRanges.0-7', '0-7 days'), count: 2, amount: 580 },
+    { bucket: t('common.dayRanges.8-30', '8-30 days'), count: 2, amount: 670 },
+    { bucket: t('common.dayRanges.31-60', '31-60 days'), count: 1, amount: 200 },
+    { bucket: t('common.dayRanges.60plus', '60+ days'), count: 0, amount: 0 },
   ];
 
   const getStatusColor = (status: string) => {
@@ -386,7 +398,7 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
           <Card key={item.status}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
                   {item.status}
                 </CardTitle>
                 {getStatusIcon(item.status)}
@@ -406,8 +418,8 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Payment Status Distribution</CardTitle>
-            <CardDescription>By enrollment count</CardDescription>
+            <CardTitle suppressHydrationWarning>{t('admin.payments.reports.statusDistribution', 'Status Distribution')}</CardTitle>
+            <CardDescription suppressHydrationWarning>{t('admin.payments.reports.statusDistributionDescription', 'Payment status breakdown')}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -434,13 +446,13 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Payment Completion Rate</CardTitle>
-            <CardDescription>Overall payment health</CardDescription>
+            <CardTitle suppressHydrationWarning>{t('admin.payments.reports.completionRate', 'Completion Rate')}</CardTitle>
+            <CardDescription suppressHydrationWarning>{t('admin.payments.reports.completionRateDescription', 'Payment completion analysis')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">On-Time</span>
+                <span className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.reports.onTime', 'On Time')}</span>
                 <span className="text-2xl font-bold text-green-600">87.5%</span>
               </div>
               <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -450,7 +462,7 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Late</span>
+                <span className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.reports.late', 'Late')}</span>
                 <span className="text-2xl font-bold text-amber-600">10.2%</span>
               </div>
               <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -460,7 +472,7 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Default</span>
+                <span className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.reports.default', 'Default')}</span>
                 <span className="text-2xl font-bold text-red-600">2.3%</span>
               </div>
               <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -474,8 +486,8 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
       {/* Overdue Aging */}
       <Card>
         <CardHeader>
-          <CardTitle>Overdue Payment Aging</CardTitle>
-          <CardDescription>Days overdue distribution</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.overdueAging', 'Overdue Aging')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.overdueAgingDescription', 'Age analysis of overdue payments')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={250}>
@@ -484,7 +496,7 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
               <XAxis dataKey="bucket" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="count" fill="#ef4444" name="Payments" />
+              <Bar dataKey="count" fill="#ef4444" name={t('admin.payments.reports.charts.payments', 'Payments')} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -493,8 +505,8 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
       {/* Overdue Details Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Overdue Payments</CardTitle>
-          <CardDescription>Payments requiring attention</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.overduePayments', 'Overdue Payments')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.overduePaymentsDescription', 'List of overdue payment details')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -513,7 +525,7 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
                 </div>
                 <div className="text-right">
                   <p className="font-bold">${item.amount}</p>
-                  <p className="text-sm text-red-600">{item.days} days overdue</p>
+                  <p className="text-sm text-red-600">{item.days} <span suppressHydrationWarning>{t('admin.payments.reports.daysOverdue', 'days overdue')}</span></p>
                 </div>
               </div>
             ))}
@@ -525,14 +537,14 @@ function PaymentStatusReport({ t }: { t: (key: string) => string }) {
 }
 
 // Cash Flow Report Component
-function CashFlowReport({ t }: { t: (key: string) => string }) {
+function CashFlowReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   const forecastData = [
-    { month: 'Jan', expected: 45000, scheduled: 38000, subscription: 8900 },
-    { month: 'Feb', expected: 48000, scheduled: 40000, subscription: 8900 },
-    { month: 'Mar', expected: 52000, scheduled: 43000, subscription: 8900 },
-    { month: 'Apr', expected: 49000, scheduled: 41000, subscription: 8900 },
-    { month: 'May', expected: 55000, scheduled: 46000, subscription: 8900 },
-    { month: 'Jun', expected: 58000, scheduled: 49000, subscription: 8900 },
+    { month: t('common.months.jan', 'Jan'), expected: 45000, scheduled: 38000, subscription: 8900 },
+    { month: t('common.months.feb', 'Feb'), expected: 48000, scheduled: 40000, subscription: 8900 },
+    { month: t('common.months.mar', 'Mar'), expected: 52000, scheduled: 43000, subscription: 8900 },
+    { month: t('common.months.apr', 'Apr'), expected: 49000, scheduled: 41000, subscription: 8900 },
+    { month: t('common.months.may', 'May'), expected: 55000, scheduled: 46000, subscription: 8900 },
+    { month: t('common.months.jun', 'Jun'), expected: 58000, scheduled: 49000, subscription: 8900 },
   ];
 
   return (
@@ -541,37 +553,37 @@ function CashFlowReport({ t }: { t: (key: string) => string }) {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Expected This Month
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.expectedThisMonth', 'Expected This Month')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">$45,000</div>
-            <p className="text-sm text-muted-foreground mt-1">From all sources</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.fromAllSources', 'From all sources')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Received
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.received', 'Received')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-600">$32,400</div>
-            <p className="text-sm text-muted-foreground mt-1">72% of expected</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.ofExpected', 'Of expected')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pending
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('common.pending', 'Pending')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-amber-600">$12,600</div>
-            <p className="text-sm text-muted-foreground mt-1">28% remaining</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.remaining', 'Remaining')}</p>
           </CardContent>
         </Card>
       </div>
@@ -579,8 +591,8 @@ function CashFlowReport({ t }: { t: (key: string) => string }) {
       {/* Cash Flow Forecast */}
       <Card>
         <CardHeader>
-          <CardTitle>6-Month Cash Flow Forecast</CardTitle>
-          <CardDescription>Expected revenue projections</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.cashFlowForecast', 'Cash Flow Forecast')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.cashFlowForecastDescription', 'Projected cash flow for upcoming months')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
@@ -602,7 +614,7 @@ function CashFlowReport({ t }: { t: (key: string) => string }) {
                 stroke="#3b82f6"
                 fillOpacity={1}
                 fill="url(#colorExpected)"
-                name="Expected Revenue"
+                name={t('admin.payments.reports.charts.expectedRevenue', 'Expected Revenue')}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -612,8 +624,8 @@ function CashFlowReport({ t }: { t: (key: string) => string }) {
       {/* Revenue Sources */}
       <Card>
         <CardHeader>
-          <CardTitle>Revenue Sources Breakdown</CardTitle>
-          <CardDescription>Scheduled vs subscription revenue</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueSourcesBreakdown', 'Revenue Sources Breakdown')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueSourcesDescription', 'Revenue by source type')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -623,8 +635,8 @@ function CashFlowReport({ t }: { t: (key: string) => string }) {
               <YAxis />
               <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
               <Legend />
-              <Bar dataKey="scheduled" fill="#3b82f6" name="Scheduled Payments" />
-              <Bar dataKey="subscription" fill="#10b981" name="Subscription Revenue" />
+              <Bar dataKey="scheduled" fill="#3b82f6" name={t('admin.payments.reports.charts.scheduledPayments', 'Scheduled Payments')} />
+              <Bar dataKey="subscription" fill="#10b981" name={t('admin.payments.reports.charts.subscriptionRevenue', 'Subscription Revenue')} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -634,7 +646,7 @@ function CashFlowReport({ t }: { t: (key: string) => string }) {
 }
 
 // Product Performance Report
-function ProductPerformanceReport({ t }: { t: (key: string) => string }) {
+function ProductPerformanceReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   const productData = [
     { name: 'Advanced React', revenue: 18500, enrollments: 62, completion: 94, plan: 'One-Time' },
     { name: 'Full Stack Program', revenue: 24800, enrollments: 28, completion: 89, plan: 'Deposit' },
@@ -647,8 +659,8 @@ function ProductPerformanceReport({ t }: { t: (key: string) => string }) {
       {/* Top Products by Revenue */}
       <Card>
         <CardHeader>
-          <CardTitle>Revenue by Product</CardTitle>
-          <CardDescription>Top performing courses and programs</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueByProduct', 'Revenue by Product')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueByProductDescription', 'Top products by revenue generation')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -657,7 +669,7 @@ function ProductPerformanceReport({ t }: { t: (key: string) => string }) {
               <XAxis type="number" />
               <YAxis dataKey="name" type="category" width={150} />
               <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
-              <Bar dataKey="revenue" fill="#3b82f6" />
+              <Bar dataKey="revenue" fill="#3b82f6" name={t('admin.payments.reports.charts.revenue', 'Revenue')} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -666,8 +678,8 @@ function ProductPerformanceReport({ t }: { t: (key: string) => string }) {
       {/* Product Details Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Product Performance Details</CardTitle>
-          <CardDescription>Complete breakdown by product</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.productPerformanceDetails', 'Product Performance Details')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.productPerformanceDescription', 'Detailed product performance metrics')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -677,19 +689,19 @@ function ProductPerformanceReport({ t }: { t: (key: string) => string }) {
                   <div>
                     <h4 className="font-semibold">{product.name}</h4>
                     <p className="text-sm text-muted-foreground">
-                      Preferred Plan: {product.plan}
+                      <span suppressHydrationWarning>{t('admin.payments.reports.preferredPlan', 'Preferred plan')}</span>: {product.plan}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-bold">${product.revenue.toLocaleString()}</p>
                     <p className="text-sm text-muted-foreground">
-                      {product.enrollments} enrollments
+                      {product.enrollments} <span suppressHydrationWarning>{t('admin.payments.reports.enrollments', 'enrollments')}</span>
                     </p>
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span>Payment Completion Rate</span>
+                    <span suppressHydrationWarning>{t('admin.payments.reports.paymentCompletionRate', 'Payment completion rate')}</span>
                     <span className="font-semibold">{product.completion}%</span>
                   </div>
                   <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -709,11 +721,11 @@ function ProductPerformanceReport({ t }: { t: (key: string) => string }) {
 }
 
 // User Analysis Report
-function UserAnalysisReport({ t }: { t: (key: string) => string }) {
+function UserAnalysisReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   const userSegments = [
-    { segment: 'Students', users: 85, revenue: 28500, avg: 335 },
-    { segment: 'Parents', users: 42, revenue: 18900, avg: 450 },
-    { segment: 'Professionals', users: 25, revenue: 22650, avg: 906 },
+    { segment: t('admin.payments.reports.segments.students', 'Students'), users: 85, revenue: 28500, avg: 335 },
+    { segment: t('admin.payments.reports.segments.parents', 'Parents'), users: 42, revenue: 18900, avg: 450 },
+    { segment: t('admin.payments.reports.segments.professionals', 'Professionals'), users: 25, revenue: 22650, avg: 906 },
   ];
 
   return (
@@ -723,17 +735,17 @@ function UserAnalysisReport({ t }: { t: (key: string) => string }) {
         {userSegments.map((segment) => (
           <Card key={segment.segment}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
                 {segment.segment}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{segment.users}</div>
               <p className="text-sm text-muted-foreground mt-1">
-                ${segment.revenue.toLocaleString()} total
+                ${segment.revenue.toLocaleString()} <span suppressHydrationWarning>{t('common.total', 'total')}</span>
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Avg: ${segment.avg}
+                <span suppressHydrationWarning>{t('admin.payments.reports.avg', 'Avg')}</span>: ${segment.avg}
               </p>
             </CardContent>
           </Card>
@@ -743,8 +755,8 @@ function UserAnalysisReport({ t }: { t: (key: string) => string }) {
       {/* Segment Revenue Distribution */}
       <Card>
         <CardHeader>
-          <CardTitle>Revenue by User Segment</CardTitle>
-          <CardDescription>Distribution across user types</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueByUserSegment', 'Revenue by User Segment')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueByUserSegmentDescription', 'Revenue distribution across user segments')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -773,20 +785,20 @@ function UserAnalysisReport({ t }: { t: (key: string) => string }) {
 }
 
 // Payment Plans Report (NEW - Per Your Request)
-function PaymentPlansReport({ t }: { t: (key: string) => string }) {
+function PaymentPlansReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   const planPerformance = [
-    { plan: 'Full Payment', enrollments: 85, revenue: 28500, avg: 335, completion: 98 },
-    { plan: '30% Deposit + 6 Months', enrollments: 45, revenue: 22650, avg: 503, completion: 92 },
-    { plan: '12 Monthly Installments', enrollments: 28, revenue: 18900, avg: 675, completion: 87 },
-    { plan: 'Monthly Subscription', enrollments: 14, revenue: 1890, avg: 135, completion: 95 },
+    { plan: t('admin.payments.reports.planNames.fullPayment', 'Full Payment'), enrollments: 85, revenue: 28500, avg: 335, completion: 98 },
+    { plan: t('admin.payments.reports.planNames.depositSixMonths', 'Deposit + 6 Months'), enrollments: 45, revenue: 22650, avg: 503, completion: 92 },
+    { plan: t('admin.payments.reports.planNames.twelveMonthly', '12 Monthly Payments'), enrollments: 28, revenue: 18900, avg: 675, completion: 87 },
+    { plan: t('admin.payments.reports.planNames.monthlySubscription', 'Monthly Subscription'), enrollments: 14, revenue: 1890, avg: 135, completion: 95 },
   ];
 
   const planTrend = [
-    { month: 'Aug', oneTime: 18, deposit: 12, installments: 8, subscription: 3 },
-    { month: 'Sep', oneTime: 22, deposit: 15, installments: 10, subscription: 4 },
-    { month: 'Oct', oneTime: 20, deposit: 18, installments: 12, subscription: 5 },
-    { month: 'Nov', oneTime: 25, deposit: 20, installments: 14, subscription: 6 },
-    { month: 'Dec', oneTime: 28, deposit: 22, installments: 16, subscription: 8 },
+    { month: t('common.months.aug', 'Aug'), oneTime: 18, deposit: 12, installments: 8, subscription: 3 },
+    { month: t('common.months.sep', 'Sep'), oneTime: 22, deposit: 15, installments: 10, subscription: 4 },
+    { month: t('common.months.oct', 'Oct'), oneTime: 20, deposit: 18, installments: 12, subscription: 5 },
+    { month: t('common.months.nov', 'Nov'), oneTime: 25, deposit: 20, installments: 14, subscription: 6 },
+    { month: t('common.months.dec', 'Dec'), oneTime: 28, deposit: 22, installments: 16, subscription: 8 },
   ];
 
   return (
@@ -796,7 +808,7 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
         {planPerformance.map((plan, index) => (
           <Card key={index}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
                 {plan.plan}
               </CardTitle>
             </CardHeader>
@@ -806,7 +818,7 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
                 ${plan.revenue.toLocaleString()}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Avg: ${plan.avg} • {plan.completion}% complete
+                <span suppressHydrationWarning>{t('admin.payments.reports.avg', 'Avg')}</span>: ${plan.avg} • {plan.completion}% <span suppressHydrationWarning>{t('common.complete', 'complete')}</span>
               </p>
             </CardContent>
           </Card>
@@ -816,8 +828,8 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
       {/* Plan Usage Trend */}
       <Card>
         <CardHeader>
-          <CardTitle>Payment Plan Selection Trends</CardTitle>
-          <CardDescription>How users choose payment plans over time</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.planSelectionTrends', 'Plan Selection Trends')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.planSelectionTrendsDescription', 'How users select payment plans over time')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
@@ -827,10 +839,10 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Area type="monotone" dataKey="oneTime" stackId="1" stroke="#3b82f6" fill="#3b82f6" name="One-Time" />
-              <Area type="monotone" dataKey="deposit" stackId="1" stroke="#10b981" fill="#10b981" name="Deposit" />
-              <Area type="monotone" dataKey="installments" stackId="1" stroke="#f59e0b" fill="#f59e0b" name="Installments" />
-              <Area type="monotone" dataKey="subscription" stackId="1" stroke="#8b5cf6" fill="#8b5cf6" name="Subscription" />
+              <Area type="monotone" dataKey="oneTime" stackId="1" stroke="#3b82f6" fill="#3b82f6" name={t('admin.payments.plans.types.oneTime', 'One-Time Payment')} />
+              <Area type="monotone" dataKey="deposit" stackId="1" stroke="#10b981" fill="#10b981" name={t('admin.payments.plans.types.deposit', 'Deposit Payment')} />
+              <Area type="monotone" dataKey="installments" stackId="1" stroke="#f59e0b" fill="#f59e0b" name={t('admin.payments.plans.types.installments', 'Installments')} />
+              <Area type="monotone" dataKey="subscription" stackId="1" stroke="#8b5cf6" fill="#8b5cf6" name={t('admin.payments.plans.types.subscription', 'Subscription')} />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
@@ -839,8 +851,8 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
       {/* Plan Comparison */}
       <Card>
         <CardHeader>
-          <CardTitle>Payment Plan Comparison</CardTitle>
-          <CardDescription>Revenue and completion rates by plan</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.planComparison', 'Plan Comparison')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.planComparisonDescription', 'Side-by-side payment plan comparison')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
@@ -848,14 +860,14 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
               <div key={index} className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-semibold">{plan.plan}</h4>
+                    <h4 className="font-semibold" suppressHydrationWarning>{plan.plan}</h4>
                     <p className="text-sm text-muted-foreground">
-                      {plan.enrollments} enrollments • Avg ${plan.avg}
+                      {plan.enrollments} <span suppressHydrationWarning>{t('admin.payments.reports.enrollments', 'enrollments')}</span> • <span suppressHydrationWarning>{t('admin.payments.reports.avg', 'Avg')}</span> ${plan.avg}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-bold">${plan.revenue.toLocaleString()}</p>
-                    <p className="text-sm text-green-600">{plan.completion}% paid</p>
+                    <p className="text-sm text-green-600">{plan.completion}% <span suppressHydrationWarning>{t('common.paid', 'paid')}</span></p>
                   </div>
                 </div>
                 <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -874,56 +886,56 @@ function PaymentPlansReport({ t }: { t: (key: string) => string }) {
 }
 
 // Operational Report
-function OperationalReport({ t }: { t: (key: string) => string }) {
+function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
   return (
     <>
       {/* Pending Actions */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Overdue Payments
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.overduePayments', 'Overdue Payments')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-red-600">5</div>
-            <p className="text-sm text-muted-foreground mt-1">Requires action</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.requiresAction', 'Requires action')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Failed Payments
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.failedPayments', 'Failed Payments')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-amber-600">3</div>
-            <p className="text-sm text-muted-foreground mt-1">To retry</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.toRetry', 'To retry')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Paused Schedules
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.pausedSchedules', 'Paused Schedules')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">2</div>
-            <p className="text-sm text-muted-foreground mt-1">Temporarily on hold</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.temporarilyOnHold', 'Temporarily on hold')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ending Soon
+            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+              {t('admin.payments.reports.endingSoon', 'Ending Soon')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">7</div>
-            <p className="text-sm text-muted-foreground mt-1">Subscriptions this month</p>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.subscriptionsThisMonth', 'Subscriptions this month')}</p>
           </CardContent>
         </Card>
       </div>
@@ -931,8 +943,8 @@ function OperationalReport({ t }: { t: (key: string) => string }) {
       {/* Recent Admin Actions */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Admin Actions</CardTitle>
-          <CardDescription>Last 7 days of schedule adjustments</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.recentAdminActions', 'Recent Admin Actions')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.recentAdminActionsDescription', 'Recent administrative actions on payments')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -961,26 +973,26 @@ function OperationalReport({ t }: { t: (key: string) => string }) {
       {/* System Health */}
       <Card>
         <CardHeader>
-          <CardTitle>System Health</CardTitle>
-          <CardDescription>Payment system status</CardDescription>
+          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.systemHealth', 'System Health')}</CardTitle>
+          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.systemHealthDescription', 'Payment system health metrics')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span>Webhook Success Rate</span>
+              <span suppressHydrationWarning>{t('admin.payments.reports.webhookSuccessRate', 'Webhook Success Rate')}</span>
               <span className="font-bold text-green-600">99.5%</span>
             </div>
             <div className="flex items-center justify-between">
-              <span>Avg Processing Time</span>
+              <span suppressHydrationWarning>{t('admin.payments.reports.avgProcessingTime', 'Avg Processing Time')}</span>
               <span className="font-bold">2.3s</span>
             </div>
             <div className="flex items-center justify-between">
-              <span>Failed Webhooks</span>
+              <span suppressHydrationWarning>{t('admin.payments.reports.failedWebhooks', 'Failed Webhooks')}</span>
               <span className="font-bold">2</span>
             </div>
             <div className="flex items-center justify-between">
-              <span>Last Reconciliation</span>
-              <span className="font-bold">2 hours ago</span>
+              <span suppressHydrationWarning>{t('admin.payments.reports.lastReconciliation', 'Last Reconciliation')}</span>
+              <span className="font-bold">2 <span suppressHydrationWarning>{t('admin.payments.reports.hoursAgo', 'hours ago')}</span></span>
             </div>
           </div>
         </CardContent>

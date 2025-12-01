@@ -63,11 +63,8 @@ export const PATCH = withAuth(async (
     if (body.name !== undefined) updateData.name = body.name;
     if (body.description !== undefined) updateData.description = body.description;
     if (body.is_active !== undefined) updateData.is_active = body.is_active;
-    if (body.price !== undefined) updateData.price = body.price;
-    if (body.currency !== undefined) updateData.currency = body.currency;
     if (body.duration_weeks !== undefined) updateData.duration_weeks = body.duration_weeks;
     if (body.max_students !== undefined) updateData.max_students = body.max_students;
-    if (body.docusign_template_id !== undefined) updateData.docusign_template_id = body.docusign_template_id;
     if (body.image_url !== undefined) updateData.image_url = body.image_url;
 
     const { data: program, error } = await supabase

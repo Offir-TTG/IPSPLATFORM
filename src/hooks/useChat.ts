@@ -206,7 +206,7 @@ export function useChat(conversationId?: string) {
             .single();
 
           if (newMessage) {
-            setMessages((prev) => [...prev, newMessage as Message]);
+            setMessages((prev) => [...prev, newMessage as unknown as Message]);
           }
         }
       )

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { useAdminLanguage } from '@/context/AppContext';
+import { useAdminLanguage, useApp } from '@/context/AppContext';
 import {
   Settings,
   Save,
@@ -16,6 +16,7 @@ import {
   Building,
   DollarSign,
   Image as ImageIcon,
+  RefreshCw,
 } from 'lucide-react';
 
 interface PlatformSetting {
@@ -35,10 +36,12 @@ interface SettingsByCategory {
 
 export default function SettingsPage() {
   const { t } = useAdminLanguage();
+  const { clearTranslationCache } = useApp();
   const [settings, setSettings] = useState<PlatformSetting[]>([]);
   const [settingsByCategory, setSettingsByCategory] = useState<SettingsByCategory>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -147,6 +150,36 @@ export default function SettingsPage() {
       setError('Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleClearCache = async () => {
+    try {
+      setClearingCache(true);
+      setError('');
+
+      // Clear client-side translation cache
+      clearTranslationCache();
+
+      // Clear server-side translation cache
+      const response = await fetch('/api/translations', {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSuccess('Translation cache cleared successfully. Page will reload...');
+        // Reload page after 1.5 seconds to fetch fresh translations
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setError(result.error || 'Failed to clear server cache');
+      }
+    } catch (err) {
+      console.error('Clear cache error:', err);
+      setError('Failed to clear cache');
+    } finally {
+      setClearingCache(false);
     }
   };
 
@@ -399,13 +432,8 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '24rem'
-        }}>
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'hsl(var(--primary))' }} />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );
@@ -431,7 +459,7 @@ export default function SettingsPage() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem'
-            }}>
+            }} suppressHydrationWarning>
               <Settings className="h-8 w-8" style={{ color: 'hsl(var(--primary))' }} />
               {t('admin.settings.title', 'Platform Settings')}
             </h1>
@@ -440,49 +468,96 @@ export default function SettingsPage() {
               marginTop: '0.5rem',
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-family-primary)'
-            }}>
+            }} suppressHydrationWarning>
               {t('admin.settings.subtitle', 'Configure platform-wide settings')}
             </p>
           </div>
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              paddingInlineStart: '1.5rem',
-              paddingInlineEnd: '1.5rem',
-              paddingTop: '0.75rem',
-              paddingBottom: '0.75rem',
-              backgroundColor: 'hsl(var(--primary))',
-              color: 'hsl(var(--primary-foreground))',
-              borderRadius: 'calc(var(--radius) * 1.5)',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              opacity: saving ? 0.5 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              border: 'none',
-              fontSize: 'var(--font-size-sm)',
-              fontFamily: 'var(--font-family-primary)',
-              fontWeight: 'var(--font-weight-medium)',
-              transition: 'opacity 0.2s',
-              width: isMobile ? '100%' : 'auto'
-            }}
-            className="hover:opacity-90"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t('common.saving', 'Saving...')}
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4" />
-                {t('common.saveAll', 'Save All Changes')}
-              </>
-            )}
-          </button>
+          <div style={{
+            display: 'flex',
+            gap: '0.75rem',
+            flexWrap: 'wrap',
+            width: isMobile ? '100%' : 'auto'
+          }}>
+            <button
+              onClick={handleClearCache}
+              disabled={clearingCache}
+              style={{
+                paddingInlineStart: '1.5rem',
+                paddingInlineEnd: '1.5rem',
+                paddingTop: '0.75rem',
+                paddingBottom: '0.75rem',
+                backgroundColor: 'hsl(var(--muted))',
+                color: 'hsl(var(--foreground))',
+                borderRadius: 'calc(var(--radius) * 1.5)',
+                cursor: clearingCache ? 'not-allowed' : 'pointer',
+                opacity: clearingCache ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                border: '1px solid hsl(var(--border))',
+                fontSize: 'var(--font-size-sm)',
+                fontFamily: 'var(--font-family-primary)',
+                fontWeight: 'var(--font-weight-medium)',
+                transition: 'opacity 0.2s',
+                flex: isMobile ? '1' : '0 0 auto'
+              }}
+              className="hover:opacity-90"
+              title={t('admin.settings.clearCache.tooltip', 'Clear translation cache and reload fresh from database')}
+            >
+              {clearingCache ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span suppressHydrationWarning>{t('admin.settings.clearCache.clearing', 'Clearing...')}</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.settings.clearCache.button', 'Clear Cache')}</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                paddingInlineStart: '1.5rem',
+                paddingInlineEnd: '1.5rem',
+                paddingTop: '0.75rem',
+                paddingBottom: '0.75rem',
+                backgroundColor: 'hsl(var(--primary))',
+                color: 'hsl(var(--primary-foreground))',
+                borderRadius: 'calc(var(--radius) * 1.5)',
+                cursor: saving ? 'not-allowed' : 'pointer',
+                opacity: saving ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                border: 'none',
+                fontSize: 'var(--font-size-sm)',
+                fontFamily: 'var(--font-family-primary)',
+                fontWeight: 'var(--font-weight-medium)',
+                transition: 'opacity 0.2s',
+                flex: isMobile ? '1' : '0 0 auto'
+              }}
+              className="hover:opacity-90"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span suppressHydrationWarning>{t('common.saving', 'Saving...')}</span>
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('common.saveAll', 'Save All Changes')}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Notifications */}
@@ -555,14 +630,14 @@ export default function SettingsPage() {
                   fontFamily: 'var(--font-family-heading)',
                   color: 'hsl(var(--text-heading))',
                   textTransform: 'capitalize'
-                }}>
+                }} suppressHydrationWarning>
                   {t(`admin.settings.category.${category}`, category)}
                 </h2>
                 <p style={{
                   fontSize: 'var(--font-size-sm)',
                   color: 'hsl(var(--text-muted))',
                   fontFamily: 'var(--font-family-primary)'
-                }}>
+                }} suppressHydrationWarning>
                   {t(`admin.settings.category.${category}.description`, `Configure ${category} settings`)}
                 </p>
               </div>
@@ -603,7 +678,7 @@ export default function SettingsPage() {
             <p style={{
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-family-primary)'
-            }}>{t('admin.settings.empty', 'No settings configured yet')}</p>
+            }} suppressHydrationWarning>{t('admin.settings.empty', 'No settings configured yet')}</p>
           </div>
         )}
 
@@ -621,7 +696,7 @@ export default function SettingsPage() {
           gap: '0.5rem'
         }}>
           <AlertCircle className="h-5 w-5" style={{ color: 'hsl(var(--primary))', flexShrink: 0 }} />
-          <span>
+          <span suppressHydrationWarning>
             <strong style={{ color: 'hsl(var(--text-heading))' }}>{t('admin.settings.info.title', 'Note')}:</strong>{' '}
             {t('admin.settings.info.message', 'Changes take effect immediately across the platform.')}
           </span>

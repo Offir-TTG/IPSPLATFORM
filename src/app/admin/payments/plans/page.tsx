@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
-import { toast } from 'sonner';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Plus,
   Edit,
@@ -35,6 +35,7 @@ interface PaymentPlan {
   plan_name: string;
   plan_description: string;
   plan_type: 'one_time' | 'deposit' | 'installments' | 'subscription';
+  deposit_type?: 'percentage' | 'fixed';
   deposit_percentage?: number;
   deposit_amount?: number;
   installment_count?: number;
@@ -48,31 +49,46 @@ interface PaymentPlan {
 }
 
 export default function PaymentPlansPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
+  const { toast } = useToast();
+  const isRtl = direction === 'rtl';
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const isMobile = windowWidth <= 640;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PaymentPlan | null>(null);
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingPlans, setLoadingPlans] = useState(true);
 
   // Fetch payment plans from API
   const fetchPlans = async () => {
     try {
-      setLoading(true);
+      setLoadingPlans(true);
       const response = await fetch('/api/admin/payments/plans');
       if (!response.ok) throw new Error('Failed to fetch plans');
       const data = await response.json();
       setPlans(data);
     } catch (error) {
       console.error('Error fetching payment plans:', error);
-      toast.error('Failed to load payment plans');
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.plans.loadError', 'Failed to load payment plans'),
+        variant: 'destructive',
+      });
     } finally {
-      setLoading(false);
+      setLoadingPlans(false);
     }
   };
 
   // Load plans on mount
   useEffect(() => {
     fetchPlans();
+  }, []);
+
+  // Window resize listener for mobile responsiveness
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const handleCreatePlan = () => {
@@ -86,7 +102,7 @@ export default function PaymentPlansPage() {
   };
 
   const handleDeletePlan = async (planId: string) => {
-    if (!confirm(t('admin.payments.plans.deleteConfirm'))) return;
+    if (!confirm(t('admin.payments.plans.deleteConfirm', 'Are you sure you want to delete this payment plan?'))) return;
 
     try {
       const response = await fetch(`/api/admin/payments/plans/${planId}`, {
@@ -98,11 +114,18 @@ export default function PaymentPlansPage() {
         throw new Error(error.error || 'Failed to delete plan');
       }
 
-      toast.success('Payment plan deleted successfully');
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.plans.deleteSuccess', 'Payment plan deleted successfully'),
+      });
       fetchPlans();
     } catch (error: any) {
       console.error('Error deleting payment plan:', error);
-      toast.error(error.message || 'Failed to delete payment plan');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.plans.deleteError', 'Failed to delete payment plan'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -124,12 +147,21 @@ export default function PaymentPlansPage() {
         throw new Error(error.error || `Failed to ${isEditing ? 'update' : 'create'} plan`);
       }
 
-      toast.success(`Payment plan ${isEditing ? 'updated' : 'created'} successfully`);
+      toast({
+        title: t('common.success', 'Success'),
+        description: isEditing
+          ? t('admin.payments.plans.updateSuccess', 'Payment plan updated successfully')
+          : t('admin.payments.plans.createSuccess', 'Payment plan created successfully'),
+      });
       setIsDialogOpen(false);
       fetchPlans();
     } catch (error: any) {
       console.error('Error saving payment plan:', error);
-      toast.error(error.message || 'Failed to save payment plan');
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.plans.saveError', 'Failed to save payment plan'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -145,58 +177,124 @@ export default function PaymentPlansPage() {
 
   const getPlanTypeLabel = (type: string) => {
     switch (type) {
-      case 'one_time': return t('admin.payments.plans.types.oneTime');
-      case 'deposit': return t('admin.payments.plans.types.deposit');
-      case 'installments': return t('admin.payments.plans.types.installments');
-      case 'subscription': return t('admin.payments.plans.types.subscription');
+      case 'one_time': return t('admin.payments.plans.types.oneTime', 'One-Time');
+      case 'deposit': return t('admin.payments.plans.types.deposit', 'Deposit');
+      case 'installments': return t('admin.payments.plans.types.installments', 'Installments');
+      case 'subscription': return t('admin.payments.plans.types.subscription', 'Subscription');
       default: return type;
     }
   };
 
   const getPlanDetails = (plan: PaymentPlan) => {
+    // Helper function to translate frequency
+    const translateFrequency = (freq: string | undefined) => {
+      if (!freq) return '';
+      return t(`admin.payments.plans.frequency.${freq.toLowerCase()}`, freq);
+    };
+
     switch (plan.plan_type) {
       case 'deposit':
-        return `${plan.deposit_percentage}% deposit, ${plan.installment_count} ${plan.installment_frequency} payments`;
+        const depositTemplate = plan.deposit_type === 'fixed'
+          ? t('admin.payments.plans.details.fixedDeposit', `$${plan.deposit_amount} deposit`)
+          : t('admin.payments.plans.details.percentDeposit', `${plan.deposit_percentage}% deposit`);
+        const depositText = depositTemplate
+          .replace('{amount}', String(plan.deposit_amount))
+          .replace('{percentage}', String(plan.deposit_percentage));
+
+        const translatedFrequency = translateFrequency(plan.installment_frequency);
+        const paymentsTemplate = t('admin.payments.plans.details.payments', `${plan.installment_count} ${plan.installment_frequency} payments`);
+        const paymentsText = paymentsTemplate
+          .replace('{count}', String(plan.installment_count))
+          .replace('{frequency}', translatedFrequency);
+
+        return `${depositText}, ${paymentsText}`;
       case 'installments':
-        return `${plan.installment_count} ${plan.installment_frequency} payments`;
+        const installmentsFrequency = translateFrequency(plan.installment_frequency);
+        const installmentsTemplate = t('admin.payments.plans.details.installments', `${plan.installment_count} ${plan.installment_frequency} payments`);
+        return installmentsTemplate
+          .replace('{count}', String(plan.installment_count))
+          .replace('{frequency}', installmentsFrequency);
       case 'subscription':
-        return `${plan.subscription_frequency} recurring billing`;
+        const subscriptionFrequency = translateFrequency(plan.subscription_frequency);
+        const subscriptionTemplate = t('admin.payments.plans.details.subscription', `${plan.subscription_frequency} recurring billing`);
+        return subscriptionTemplate
+          .replace('{frequency}', subscriptionFrequency);
       default:
-        return 'Pay full amount upfront';
+        return t('admin.payments.plans.details.fullPayment', 'Pay full amount upfront');
     }
   };
 
+  // Show loading state while translations are loading
+  if (translationsLoading) {
+    return (
+      <AdminLayout>
+        <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '400px'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p style={{ color: 'hsl(var(--muted-foreground))' }}>Loading...</p>
+            </div>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div className="flex items-center gap-4 flex-wrap">
             <Link href="/admin/payments">
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                {t('common.back', 'Back')}
+                <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
               </Button>
             </Link>
             <div>
-              <h1 className="text-3xl font-bold">{t('admin.payments.plans.title')}</h1>
-              <p className="text-muted-foreground mt-1">
-                {t('admin.payments.plans.description')}
+              <h1 suppressHydrationWarning style={{
+                fontSize: 'var(--font-size-3xl)',
+                fontFamily: 'var(--font-family-heading)',
+                fontWeight: 'var(--font-weight-bold)',
+                color: 'hsl(var(--text-heading))'
+              }}>
+                {t('admin.payments.plans.title', 'Payment Plans')}
+              </h1>
+              <p suppressHydrationWarning style={{
+                color: 'hsl(var(--muted-foreground))',
+                fontSize: 'var(--font-size-sm)',
+                marginTop: '0.25rem'
+              }}>
+                {t('admin.payments.plans.description', 'Configure and manage payment plans')}
               </p>
             </div>
           </div>
-          <Button onClick={handleCreatePlan}>
-            <Plus className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-            {t('admin.payments.plans.createPlan')}
+          <Button onClick={handleCreatePlan} style={{
+            width: isMobile ? '100%' : 'auto'
+          }}>
+            <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+            <span suppressHydrationWarning>{t('admin.payments.plans.createPlan', 'Create Plan')}</span>
           </Button>
         </div>
 
         {/* Info Alert */}
         <Alert>
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{t('admin.payments.plans.autoDetection')}</AlertTitle>
-          <AlertDescription>
-            {t('admin.payments.plans.autoDetectionDesc')}
+          <AlertTitle suppressHydrationWarning>{t('admin.payments.plans.autoDetection', 'Auto-Detection')}</AlertTitle>
+          <AlertDescription suppressHydrationWarning>
+            {t('admin.payments.plans.autoDetectionDesc', 'Payment plans with auto-detection enabled will be automatically assigned to enrollments based on priority.')}
           </AlertDescription>
         </Alert>
 
@@ -209,37 +307,37 @@ export default function PaymentPlansPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <CardTitle>{plan.plan_name}</CardTitle>
-                      <Badge className={getPlanTypeColor(plan.plan_type)}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <CardTitle suppressHydrationWarning>{plan.plan_name}</CardTitle>
+                      <Badge className={getPlanTypeColor(plan.plan_type)} suppressHydrationWarning>
                         {getPlanTypeLabel(plan.plan_type)}
                       </Badge>
                       {plan.is_default && (
-                        <Badge variant="outline" className="border-primary text-primary">
-                          {t('admin.payments.plans.default')}
+                        <Badge variant="outline" className="border-primary text-primary" suppressHydrationWarning>
+                          {t('admin.payments.plans.default', 'Default')}
                         </Badge>
                       )}
                       {plan.auto_detect_enabled && (
                         <Badge variant="outline">
-                          <TrendingUp className="ltr:mr-1 rtl:ml-1 h-3 w-3" />
-                          {t('admin.payments.plans.autoDetect')}
+                          <TrendingUp className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
+                          <span suppressHydrationWarning>{t('admin.payments.plans.autoDetect', 'Auto-Detect')}</span>
                         </Badge>
                       )}
                       {!plan.is_active && (
-                        <Badge variant="outline" className="border-gray-400 text-gray-600">
-                          {t('admin.payments.plans.inactive')}
+                        <Badge variant="outline" className="border-gray-400 text-gray-600" suppressHydrationWarning>
+                          {t('admin.payments.plans.inactive', 'Inactive')}
                         </Badge>
                       )}
                     </div>
-                    <CardDescription>{plan.plan_description}</CardDescription>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>{t('admin.payments.plans.priority')}: {plan.priority}</span>
+                    <CardDescription suppressHydrationWarning>{plan.plan_description}</CardDescription>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                      <span suppressHydrationWarning>{t('admin.payments.plans.priority', 'Priority')}: {plan.priority}</span>
                       <span>•</span>
-                      <span>{getPlanDetails(plan)}</span>
+                      <span suppressHydrationWarning>{getPlanDetails(plan)}</span>
                       {plan.usage_count !== undefined && (
                         <>
                           <span>•</span>
-                          <span>{plan.usage_count} {t('admin.payments.plans.enrollments')}</span>
+                          <span suppressHydrationWarning>{plan.usage_count} {t('admin.payments.plans.enrollments', 'enrollments')}</span>
                         </>
                       )}
                     </div>
@@ -268,17 +366,17 @@ export default function PaymentPlansPage() {
         </div>
 
         {/* Empty State */}
-        {plans.length === 0 && (
+        {plans.length === 0 && !loadingPlans && (
           <Card>
             <CardContent className="py-12 text-center">
               <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-semibold mb-2">{t('admin.payments.plans.noPlans')}</h3>
-              <p className="text-muted-foreground mb-4">
-                {t('admin.payments.plans.noPlansDesc')}
+              <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('admin.payments.plans.noPlans', 'No Payment Plans')}</h3>
+              <p className="text-muted-foreground mb-4" suppressHydrationWarning>
+                {t('admin.payments.plans.noPlansDesc', 'Get started by creating your first payment plan.')}
               </p>
               <Button onClick={handleCreatePlan}>
-                <Plus className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                {t('admin.payments.plans.createPlan')}
+                <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('admin.payments.plans.createPlan', 'Create Plan')}</span>
               </Button>
             </CardContent>
           </Card>
@@ -286,13 +384,13 @@ export default function PaymentPlansPage() {
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir={direction}>
             <DialogHeader>
-              <DialogTitle>
-                {editingPlan ? t('admin.payments.plans.form.editTitle') : t('admin.payments.plans.form.createTitle')}
+              <DialogTitle suppressHydrationWarning>
+                {editingPlan ? t('admin.payments.plans.form.editTitle', 'Edit Payment Plan') : t('admin.payments.plans.form.createTitle', 'Create Payment Plan')}
               </DialogTitle>
-              <DialogDescription>
-                {t('admin.payments.plans.form.description')}
+              <DialogDescription suppressHydrationWarning>
+                {t('admin.payments.plans.form.description', 'Configure payment plan details and settings.')}
               </DialogDescription>
             </DialogHeader>
             <PaymentPlanForm
@@ -300,6 +398,8 @@ export default function PaymentPlansPage() {
               onSave={handleSavePlan}
               onCancel={() => setIsDialogOpen(false)}
               t={t}
+              direction={direction}
+              isRtl={isRtl}
             />
           </DialogContent>
         </Dialog>
@@ -309,11 +409,13 @@ export default function PaymentPlansPage() {
 }
 
 // Payment Plan Form Component
-function PaymentPlanForm({ plan, onSave, onCancel, t }: {
+function PaymentPlanForm({ plan, onSave, onCancel, t, direction, isRtl }: {
   plan: PaymentPlan | null;
   onSave: (plan: PaymentPlan) => void;
   onCancel: () => void;
-  t: (key: string) => string;
+  t: (key: string, fallback?: string) => string;
+  direction: 'ltr' | 'rtl';
+  isRtl: boolean;
 }) {
   const [formData, setFormData] = useState<Partial<PaymentPlan>>({
     plan_name: '',
@@ -352,40 +454,48 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
       {/* Basic Info */}
       <div className="space-y-4">
         <div>
-          <Label htmlFor="plan_name">{t('admin.payments.plans.form.planName')} *</Label>
+          <Label htmlFor="plan_name" suppressHydrationWarning>{t('admin.payments.plans.form.planName', 'Plan Name')} *</Label>
           <Input
             id="plan_name"
             value={formData.plan_name}
             onChange={(e) => setFormData({ ...formData, plan_name: e.target.value })}
-            placeholder={t('admin.payments.plans.form.planNamePlaceholder')}
+            placeholder={t('admin.payments.plans.form.planNamePlaceholder', 'e.g., Monthly Installments')}
             required
           />
         </div>
 
         <div>
-          <Label htmlFor="plan_description">{t('admin.payments.plans.form.planDescription')}</Label>
+          <Label htmlFor="plan_description" suppressHydrationWarning>{t('admin.payments.plans.form.planDescription', 'Description')}</Label>
           <Textarea
             id="plan_description"
             value={formData.plan_description}
             onChange={(e) => setFormData({ ...formData, plan_description: e.target.value })}
-            placeholder={t('admin.payments.plans.form.planDescriptionPlaceholder')}
+            placeholder={t('admin.payments.plans.form.planDescriptionPlaceholder', 'Describe this payment plan...')}
           />
         </div>
 
         <div>
-          <Label htmlFor="plan_type">{t('admin.payments.plans.form.planType')} *</Label>
+          <Label htmlFor="plan_type" suppressHydrationWarning>{t('admin.payments.plans.form.planType', 'Payment Type')} *</Label>
           <Select
-            value={formData.plan_type}
+            key={`plan-type-${plan?.id || 'new'}-${formData.plan_type || 'one_time'}`}
+            value={formData.plan_type || 'one_time'}
             onValueChange={(value: any) => setFormData({ ...formData, plan_type: value })}
           >
             <SelectTrigger>
-              <SelectValue />
+              <SelectValue>
+                <span suppressHydrationWarning>
+                  {formData.plan_type === 'one_time' && t('admin.payments.plans.form.oneTimePayment', 'One-Time Payment')}
+                  {formData.plan_type === 'deposit' && t('admin.payments.plans.form.depositInstallments', 'Deposit + Installments')}
+                  {formData.plan_type === 'installments' && t('admin.payments.plans.form.installmentsOnly', 'Installments Only')}
+                  {formData.plan_type === 'subscription' && t('admin.payments.plans.form.subscription', 'Subscription')}
+                </span>
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="one_time">{t('admin.payments.plans.form.oneTimePayment')}</SelectItem>
-              <SelectItem value="deposit">{t('admin.payments.plans.form.depositInstallments')}</SelectItem>
-              <SelectItem value="installments">{t('admin.payments.plans.form.installmentsOnly')}</SelectItem>
-              <SelectItem value="subscription">{t('admin.payments.plans.form.subscription')}</SelectItem>
+            <SelectContent dir={direction}>
+              <SelectItem value="one_time" suppressHydrationWarning>{t('admin.payments.plans.form.oneTimePayment', 'One-Time Payment')}</SelectItem>
+              <SelectItem value="deposit" suppressHydrationWarning>{t('admin.payments.plans.form.depositInstallments', 'Deposit + Installments')}</SelectItem>
+              <SelectItem value="installments" suppressHydrationWarning>{t('admin.payments.plans.form.installmentsOnly', 'Installments Only')}</SelectItem>
+              <SelectItem value="subscription" suppressHydrationWarning>{t('admin.payments.plans.form.subscription', 'Subscription')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -395,24 +505,63 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
       {formData.plan_type === 'deposit' && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t('admin.payments.plans.form.depositConfig')}</CardTitle>
+            <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.depositConfig', 'Deposit Configuration')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="deposit_percentage">{t('admin.payments.plans.form.depositPercentage')} *</Label>
-              <Input
-                id="deposit_percentage"
-                type="number"
-                min="1"
-                max="100"
-                value={formData.deposit_percentage || ''}
-                onChange={(e) => setFormData({ ...formData, deposit_percentage: Number(e.target.value) })}
-                placeholder="30"
-                required
-              />
+              <Label htmlFor="deposit_type" suppressHydrationWarning>{t('admin.payments.plans.form.depositType', 'Deposit Type')} *</Label>
+              <Select
+                key={`deposit-type-${formData.deposit_type || 'percentage'}`}
+                value={formData.deposit_type || 'percentage'}
+                onValueChange={(value: 'percentage' | 'fixed') => setFormData({
+                  ...formData,
+                  deposit_type: value,
+                  // Clear the other field when switching types
+                  deposit_percentage: value === 'percentage' ? formData.deposit_percentage : undefined,
+                  deposit_amount: value === 'fixed' ? formData.deposit_amount : undefined
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('admin.payments.plans.form.percentage', 'Percentage')} />
+                </SelectTrigger>
+                <SelectContent dir={direction}>
+                  <SelectItem value="percentage" suppressHydrationWarning>{t('admin.payments.plans.form.percentage', 'Percentage')}</SelectItem>
+                  <SelectItem value="fixed" suppressHydrationWarning>{t('admin.payments.plans.form.fixedAmount', 'Fixed Amount')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {formData.deposit_type === 'percentage' ? (
+              <div>
+                <Label htmlFor="deposit_percentage" suppressHydrationWarning>{t('admin.payments.plans.form.depositPercentage', 'Deposit Percentage')} *</Label>
+                <Input
+                  id="deposit_percentage"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={formData.deposit_percentage || ''}
+                  onChange={(e) => setFormData({ ...formData, deposit_percentage: Number(e.target.value) })}
+                  placeholder="30"
+                  required
+                />
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="deposit_amount" suppressHydrationWarning>{t('admin.payments.plans.form.depositAmount', 'Deposit Amount')} *</Label>
+                <Input
+                  id="deposit_amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.deposit_amount || ''}
+                  onChange={(e) => setFormData({ ...formData, deposit_amount: Number(e.target.value) })}
+                  placeholder="1000"
+                  required
+                />
+              </div>
+            )}
             <div>
-              <Label htmlFor="installment_count">{t('admin.payments.plans.form.numberOfInstallments')} *</Label>
+              <Label htmlFor="installment_count" suppressHydrationWarning>{t('admin.payments.plans.form.numberOfInstallments', 'Number of Installments')} *</Label>
               <Input
                 id="installment_count"
                 type="number"
@@ -424,18 +573,18 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
               />
             </div>
             <div>
-              <Label htmlFor="installment_frequency">{t('admin.payments.plans.form.frequency')} *</Label>
+              <Label htmlFor="installment_frequency" suppressHydrationWarning>{t('admin.payments.plans.form.frequency', 'Frequency')} *</Label>
               <Select
                 value={formData.installment_frequency}
                 onValueChange={(value) => setFormData({ ...formData, installment_frequency: value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency')} />
+                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency', 'Select frequency')} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="weekly">{t('admin.payments.plans.form.weekly')}</SelectItem>
-                  <SelectItem value="biweekly">{t('admin.payments.plans.form.biweekly')}</SelectItem>
-                  <SelectItem value="monthly">{t('admin.payments.plans.form.monthly')}</SelectItem>
+                <SelectContent dir={direction}>
+                  <SelectItem value="weekly" suppressHydrationWarning>{t('admin.payments.plans.form.weekly', 'Weekly')}</SelectItem>
+                  <SelectItem value="biweekly" suppressHydrationWarning>{t('admin.payments.plans.form.biweekly', 'Bi-weekly')}</SelectItem>
+                  <SelectItem value="monthly" suppressHydrationWarning>{t('admin.payments.plans.form.monthly', 'Monthly')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -447,11 +596,11 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
       {formData.plan_type === 'installments' && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t('admin.payments.plans.form.installmentsConfig')}</CardTitle>
+            <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.installmentsConfig', 'Installments Configuration')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="installment_count">{t('admin.payments.plans.form.numberOfInstallments')} *</Label>
+              <Label htmlFor="installment_count" suppressHydrationWarning>{t('admin.payments.plans.form.numberOfInstallments', 'Number of Installments')} *</Label>
               <Input
                 id="installment_count"
                 type="number"
@@ -463,18 +612,18 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
               />
             </div>
             <div>
-              <Label htmlFor="installment_frequency">{t('admin.payments.plans.form.frequency')} *</Label>
+              <Label htmlFor="installment_frequency" suppressHydrationWarning>{t('admin.payments.plans.form.frequency', 'Frequency')} *</Label>
               <Select
                 value={formData.installment_frequency}
                 onValueChange={(value) => setFormData({ ...formData, installment_frequency: value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency')} />
+                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency', 'Select frequency')} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="weekly">{t('admin.payments.plans.form.weekly')}</SelectItem>
-                  <SelectItem value="biweekly">{t('admin.payments.plans.form.biweekly')}</SelectItem>
-                  <SelectItem value="monthly">{t('admin.payments.plans.form.monthly')}</SelectItem>
+                <SelectContent dir={direction}>
+                  <SelectItem value="weekly" suppressHydrationWarning>{t('admin.payments.plans.form.weekly', 'Weekly')}</SelectItem>
+                  <SelectItem value="biweekly" suppressHydrationWarning>{t('admin.payments.plans.form.biweekly', 'Bi-weekly')}</SelectItem>
+                  <SelectItem value="monthly" suppressHydrationWarning>{t('admin.payments.plans.form.monthly', 'Monthly')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -486,23 +635,23 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
       {formData.plan_type === 'subscription' && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t('admin.payments.plans.form.subscriptionConfig')}</CardTitle>
+            <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.subscriptionConfig', 'Subscription Configuration')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="subscription_frequency">{t('admin.payments.plans.form.billingFrequency')} *</Label>
+              <Label htmlFor="subscription_frequency" suppressHydrationWarning>{t('admin.payments.plans.form.billingFrequency', 'Billing Frequency')} *</Label>
               <Select
                 value={formData.subscription_frequency}
                 onValueChange={(value) => setFormData({ ...formData, subscription_frequency: value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency')} />
+                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency', 'Select frequency')} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="weekly">{t('admin.payments.plans.form.weekly')}</SelectItem>
-                  <SelectItem value="monthly">{t('admin.payments.plans.form.monthly')}</SelectItem>
-                  <SelectItem value="quarterly">{t('admin.payments.plans.form.quarterly')}</SelectItem>
-                  <SelectItem value="annually">{t('admin.payments.plans.form.annually')}</SelectItem>
+                <SelectContent dir={direction}>
+                  <SelectItem value="weekly" suppressHydrationWarning>{t('admin.payments.plans.form.weekly', 'Weekly')}</SelectItem>
+                  <SelectItem value="monthly" suppressHydrationWarning>{t('admin.payments.plans.form.monthly', 'Monthly')}</SelectItem>
+                  <SelectItem value="quarterly" suppressHydrationWarning>{t('admin.payments.plans.form.quarterly', 'Quarterly')}</SelectItem>
+                  <SelectItem value="annually" suppressHydrationWarning>{t('admin.payments.plans.form.annually', 'Annually')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -513,11 +662,11 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
       {/* Settings */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('admin.payments.plans.form.settings')}</CardTitle>
+          <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.settings', 'Settings')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="priority">{t('admin.payments.plans.priority')}</Label>
+            <Label htmlFor="priority" suppressHydrationWarning>{t('admin.payments.plans.priority', 'Priority')}</Label>
             <Input
               id="priority"
               type="number"
@@ -525,16 +674,16 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
               onChange={(e) => setFormData({ ...formData, priority: Number(e.target.value) })}
               placeholder="10"
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('admin.payments.plans.form.priorityDesc')}
+            <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+              {t('admin.payments.plans.form.priorityDesc', 'Higher priority plans are selected first during auto-detection')}
             </p>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <Label htmlFor="auto_detect_enabled">{t('admin.payments.plans.form.autoDetectionEnabled')}</Label>
-              <p className="text-xs text-muted-foreground">
-                {t('admin.payments.plans.form.autoDetectionDesc')}
+              <Label htmlFor="auto_detect_enabled" suppressHydrationWarning>{t('admin.payments.plans.form.autoDetectionEnabled', 'Auto-Detection Enabled')}</Label>
+              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                {t('admin.payments.plans.form.autoDetectionDesc', 'Automatically assign this plan to eligible enrollments')}
               </p>
             </div>
             <Switch
@@ -546,9 +695,9 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
 
           <div className="flex items-center justify-between">
             <div>
-              <Label htmlFor="is_active">{t('admin.payments.plans.form.active')}</Label>
-              <p className="text-xs text-muted-foreground">
-                {t('admin.payments.plans.form.activeDesc')}
+              <Label htmlFor="is_active" suppressHydrationWarning>{t('admin.payments.plans.form.active', 'Active')}</Label>
+              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                {t('admin.payments.plans.form.activeDesc', 'Inactive plans cannot be assigned to new enrollments')}
               </p>
             </div>
             <Switch
@@ -560,9 +709,9 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
 
           <div className="flex items-center justify-between">
             <div>
-              <Label htmlFor="is_default">{t('admin.payments.plans.form.defaultPlan')}</Label>
-              <p className="text-xs text-muted-foreground">
-                {t('admin.payments.plans.form.defaultPlanDesc')}
+              <Label htmlFor="is_default" suppressHydrationWarning>{t('admin.payments.plans.form.defaultPlan', 'Default Plan')}</Label>
+              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                {t('admin.payments.plans.form.defaultPlanDesc', 'Use this plan when no other plan matches')}
               </p>
             </div>
             <Switch
@@ -576,10 +725,10 @@ function PaymentPlanForm({ plan, onSave, onCancel, t }: {
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
-          {t('admin.payments.plans.form.cancel')}
+          <span suppressHydrationWarning>{t('admin.payments.plans.form.cancel', 'Cancel')}</span>
         </Button>
         <Button type="submit">
-          {plan ? t('admin.payments.plans.form.saveChanges') : t('admin.payments.plans.form.createPlan')}
+          <span suppressHydrationWarning>{plan ? t('admin.payments.plans.form.saveChanges', 'Save Changes') : t('admin.payments.plans.form.createPlan', 'Create Plan')}</span>
         </Button>
       </DialogFooter>
     </form>

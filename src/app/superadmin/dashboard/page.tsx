@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { SuperAdminLayout } from '@/components/admin/SuperAdminLayout';
 import { Button } from '@/components/ui/button';
-import { LoadingPage } from '@/components/ui/loading-spinner';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface Stats {
   overview: {
@@ -49,7 +49,9 @@ export default function SuperAdminDashboard() {
   if (loading) {
     return (
       <SuperAdminLayout>
-        <LoadingPage message="Loading platform statistics..." />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <LoadingSpinner size="lg" />
+        </div>
       </SuperAdminLayout>
     );
   }

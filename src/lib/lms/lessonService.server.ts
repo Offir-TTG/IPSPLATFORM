@@ -49,7 +49,7 @@ export const lessonService = {
 
       return {
         success: true,
-        data: data as Lesson[],
+        data: data as unknown as Lesson[],
       };
     } catch (error) {
       return {
@@ -90,7 +90,7 @@ export const lessonService = {
 
       return {
         success: true,
-        data: data as Lesson | LessonWithTopics,
+        data: data as unknown as (Lesson | LessonWithTopics),
       };
     } catch (error) {
       return {
@@ -125,7 +125,7 @@ export const lessonService = {
 
       return {
         success: true,
-        data: data as Lesson,
+        data: data as unknown as Lesson,
         message: 'Lesson created successfully',
       };
     } catch (error) {
@@ -171,7 +171,7 @@ export const lessonService = {
           duration: config.duration || 60,
           materials: config.materials || [],
           is_published: config.is_published || false,
-          status: config.status || 'scheduled',
+          status: (config.status || 'scheduled') as 'scheduled' | 'live' | 'completed' | 'cancelled',
         });
       }
 
@@ -335,7 +335,7 @@ export const lessonService = {
 
       return {
         success: true,
-        data: data as Lesson,
+        data: data as unknown as Lesson,
         message: `Lesson updated successfully${zoomSyncMessage}`,
       };
     } catch (error) {

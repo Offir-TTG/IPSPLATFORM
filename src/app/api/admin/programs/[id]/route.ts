@@ -79,8 +79,6 @@ export async function PATCH(
       name,
       description,
       is_active,
-      price,
-      currency,
       duration_weeks,
       start_date,
       end_date
@@ -90,8 +88,6 @@ export async function PATCH(
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (is_active !== undefined) updates.is_active = is_active;
-    if (price !== undefined) updates.price = price;
-    if (currency !== undefined) updates.currency = currency;
     if (duration_weeks !== undefined) updates.duration_weeks = duration_weeks;
     if (start_date !== undefined) updates.start_date = start_date;
     if (end_date !== undefined) updates.end_date = end_date;

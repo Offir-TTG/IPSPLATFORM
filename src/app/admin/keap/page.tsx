@@ -36,16 +36,13 @@ export default function KeapDashboardPage() {
 
   const fetchStats = async () => {
     try {
-      // Fetch tags count
-      const tagsResponse = await fetch('/api/admin/keap/tags');
-      const tagsResult = await tagsResponse.json();
-
-      // Fetch recent sync activity from audit events
+      // Only fetch recent sync activity from audit events (local database)
+      // Do NOT fetch tags from Keap API automatically
       const activityResponse = await fetch('/api/admin/keap/sync/activity');
       const activityResult = await activityResponse.json();
 
       setStats({
-        totalTags: tagsResult.success ? (tagsResult.data.tags?.length || 0) : 0,
+        totalTags: 0, // Will be updated when tags are manually fetched
         syncedStudents: 0, // You can implement this later
         lastSyncDate: activityResult.success && activityResult.data.length > 0
           ? activityResult.data[0].event_timestamp

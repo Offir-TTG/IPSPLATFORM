@@ -360,7 +360,7 @@ export default function ThemeSettingsPage() {
     return (
       <AdminLayout>
         <div className="flex items-center justify-center min-h-[400px]">
-          <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       </AdminLayout>
     );
@@ -371,7 +371,7 @@ export default function ThemeSettingsPage() {
       <AdminLayout>
         <div className="max-w-6xl">
           <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-            <p className="text-destructive">{t('admin.theme.errorNoConfig', 'No theme configuration found. Please run the database migration.')}</p>
+            <p className="text-destructive" suppressHydrationWarning>{t('admin.theme.errorNoConfig', 'No theme configuration found. Please run the database migration.')}</p>
           </div>
         </div>
       </AdminLayout>
@@ -423,11 +423,11 @@ export default function ThemeSettingsPage() {
         {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-bold flex items-center gap-2" suppressHydrationWarning>
               <Palette className="h-6 w-6 text-primary" />
               {t('admin.theme.title', 'Theme & Design')}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
               {t('admin.theme.subtitle', 'Customize colors and visual appearance')}
             </p>
           </div>
@@ -438,7 +438,7 @@ export default function ThemeSettingsPage() {
             className="bg-primary text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
           >
             {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? t('admin.theme.saving', 'Saving...') : t('admin.theme.save', 'Save Changes')}
+            <span suppressHydrationWarning>{saving ? t('admin.theme.saving', 'Saving...') : t('admin.theme.save', 'Save Changes')}</span>
           </button>
         </div>
 
@@ -460,7 +460,7 @@ export default function ThemeSettingsPage() {
             }`}
           >
             <Palette className="h-4 w-4" />
-            {t('admin.theme.colorsTab', 'Colors')}
+            <span suppressHydrationWarning>{t('admin.theme.colorsTab', 'Colors')}</span>
           </button>
           <button
             onClick={() => handleTabChange('typography')}
@@ -471,7 +471,7 @@ export default function ThemeSettingsPage() {
             }`}
           >
             <Type className="h-4 w-4" />
-            {t('admin.theme.typographyTab', 'Typography')}
+            <span suppressHydrationWarning>{t('admin.theme.typographyTab', 'Typography')}</span>
           </button>
         </div>
 
@@ -482,8 +482,8 @@ export default function ThemeSettingsPage() {
             <div className="bg-gradient-to-br from-card to-muted/20 border border-border rounded-xl p-6 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">{t('admin.theme.editMode', 'Edit Mode')}</h3>
-                  <p className="text-xs text-muted-foreground">{t('admin.theme.editModeHelp', 'Choose which color scheme to customize')}</p>
+                  <h3 className="text-sm font-semibold mb-1" suppressHydrationWarning>{t('admin.theme.editMode', 'Edit Mode')}</h3>
+                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>{t('admin.theme.editModeHelp', 'Choose which color scheme to customize')}</p>
                 </div>
                 <div className="flex gap-2 bg-background rounded-lg p-1 shadow-inner">
                   <button
@@ -495,7 +495,7 @@ export default function ThemeSettingsPage() {
                     }`}
                   >
                     <Sun className="h-4 w-4" />
-                    {t('admin.theme.lightMode', 'Light')}
+                    <span suppressHydrationWarning>{t('admin.theme.lightMode', 'Light')}</span>
                   </button>
                   <button
                     onClick={() => setMode('dark')}
@@ -506,7 +506,7 @@ export default function ThemeSettingsPage() {
                     }`}
                   >
                     <Moon className="h-4 w-4" />
-                    {t('admin.theme.darkMode', 'Dark')}
+                    <span suppressHydrationWarning>{t('admin.theme.darkMode', 'Dark')}</span>
                   </button>
                 </div>
               </div>
@@ -552,7 +552,7 @@ export default function ThemeSettingsPage() {
                             </div>
                           </div>
                           <div className="flex-1">
-                            <div className="text-xs text-muted-foreground mb-1.5 font-semibold uppercase tracking-wide">{t('admin.theme.colorBackground', 'Background')}</div>
+                            <div className="text-xs text-muted-foreground mb-1.5 font-semibold uppercase tracking-wide" suppressHydrationWarning>{t('admin.theme.colorBackground', 'Background')}</div>
                             <input
                               type="text"
                               value={bgValue}
@@ -582,7 +582,7 @@ export default function ThemeSettingsPage() {
                               </div>
                             </div>
                             <div className="flex-1">
-                              <div className="text-xs text-muted-foreground mb-1.5 font-semibold uppercase tracking-wide">{t('admin.theme.colorForeground', 'Foreground')}</div>
+                              <div className="text-xs text-muted-foreground mb-1.5 font-semibold uppercase tracking-wide" suppressHydrationWarning>{t('admin.theme.colorForeground', 'Foreground')}</div>
                               <input
                                 type="text"
                                 value={fgValue}
@@ -604,7 +604,7 @@ export default function ThemeSettingsPage() {
                         }}
                       >
                         <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        <span className="relative z-10">{t('admin.theme.preview', 'Preview')}</span>
+                        <span className="relative z-10" suppressHydrationWarning>{t('admin.theme.preview', 'Preview')}</span>
                       </div>
                     </div>
                   );
@@ -615,7 +615,7 @@ export default function ThemeSettingsPage() {
 
           {/* Border Radius - Modern Card */}
           <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2" suppressHydrationWarning>
               <div className="h-1 w-1 rounded-full bg-primary"></div>
               {t('admin.theme.borderRadius', 'Border Radius')}
             </h2>
@@ -633,11 +633,12 @@ export default function ThemeSettingsPage() {
                 <div
                   className="w-16 h-16 bg-primary/20 border-2 border-primary flex items-center justify-center text-xs font-mono text-primary"
                   style={{ borderRadius: theme.border_radius }}
+                  suppressHydrationWarning
                 >
                   {t('admin.theme.preview', 'Preview')}
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground px-1">
+              <p className="text-xs text-muted-foreground px-1" suppressHydrationWarning>
                 {t('admin.theme.borderRadiusHelp', 'Controls corner rounding (e.g., 0.5rem, 8px)')}
               </p>
             </div>
@@ -652,7 +653,7 @@ export default function ThemeSettingsPage() {
                 className="bg-primary text-primary-foreground px-6 py-3 rounded-lg flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? t('admin.theme.saving', 'Saving...') : t('admin.theme.saveChanges', 'Save Changes')}
+                <span suppressHydrationWarning>{saving ? t('admin.theme.saving', 'Saving...') : t('admin.theme.saveChanges', 'Save Changes')}</span>
               </button>
             </div>
           </>
@@ -663,14 +664,14 @@ export default function ThemeSettingsPage() {
           <div className="space-y-6">
             {/* Font Families - Modern Card */}
             <div className="bg-card border border-border rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <h2 className="text-lg font-bold mb-6 flex items-center gap-2" suppressHydrationWarning>
                 <div className="h-1 w-1 rounded-full bg-primary"></div>
                 {t('admin.theme.fontFamilies', 'Font Families')}
               </h2>
               <div className="space-y-6">
                 {/* Primary Font */}
                 <div className="p-4 bg-muted/30 rounded-lg border border-border/50 hover:border-border transition-colors">
-                  <label className="text-sm font-semibold mb-3 block flex items-center gap-2">
+                  <label className="text-sm font-semibold mb-3 block flex items-center gap-2" suppressHydrationWarning>
                     <Type className="h-4 w-4 text-primary" />
                     {t('admin.theme.fontPrimary', 'Primary Font (Body Text)')}
                   </label>
@@ -702,7 +703,7 @@ export default function ThemeSettingsPage() {
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all mt-2"
                     placeholder="-apple-system, sans-serif"
                   />
-                  <p className="text-xs text-muted-foreground px-1 mt-2">
+                  <p className="text-xs text-muted-foreground px-1 mt-2" suppressHydrationWarning>
                     {t('admin.theme.fontPrimaryHelp', 'Used for all body text and paragraphs')}
                   </p>
                   <div className="mt-3 p-3 bg-background rounded-md border border-border" style={{ fontFamily: theme.font_family_primary }}>
@@ -712,7 +713,7 @@ export default function ThemeSettingsPage() {
 
                 {/* Heading Font */}
                 <div className="p-4 bg-muted/30 rounded-lg border border-border/50 hover:border-border transition-colors">
-                  <label className="text-sm font-semibold mb-3 block flex items-center gap-2">
+                  <label className="text-sm font-semibold mb-3 block flex items-center gap-2" suppressHydrationWarning>
                     <Type className="h-4 w-4 text-primary" />
                     {t('admin.theme.fontHeading', 'Heading Font')}
                   </label>
@@ -744,7 +745,7 @@ export default function ThemeSettingsPage() {
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all mt-2"
                     placeholder="-apple-system, sans-serif"
                   />
-                  <p className="text-xs text-muted-foreground px-1 mt-2">
+                  <p className="text-xs text-muted-foreground px-1 mt-2" suppressHydrationWarning>
                     {t('admin.theme.fontHeadingHelp', 'Used for headings and titles')}
                   </p>
                   <div className="mt-3 p-3 bg-background rounded-md border border-border" style={{ fontFamily: theme.font_family_heading }}>
@@ -754,7 +755,7 @@ export default function ThemeSettingsPage() {
 
                 {/* Monospace Font */}
                 <div className="p-4 bg-muted/30 rounded-lg border border-border/50 hover:border-border transition-colors">
-                  <label className="text-sm font-semibold mb-3 block flex items-center gap-2">
+                  <label className="text-sm font-semibold mb-3 block flex items-center gap-2" suppressHydrationWarning>
                     <Type className="h-4 w-4 text-primary" />
                     {t('admin.theme.fontMono', 'Monospace Font (Code)')}
                   </label>
@@ -780,7 +781,7 @@ export default function ThemeSettingsPage() {
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all mt-2"
                     placeholder="Monaco, Consolas, monospace"
                   />
-                  <p className="text-xs text-muted-foreground px-1 mt-2">
+                  <p className="text-xs text-muted-foreground px-1 mt-2" suppressHydrationWarning>
                     {t('admin.theme.fontMonoHelp', 'Used for code blocks and technical text')}
                   </p>
                   <div className="mt-3 p-3 bg-background rounded-md border border-border" style={{ fontFamily: theme.font_family_mono }}>
@@ -792,7 +793,7 @@ export default function ThemeSettingsPage() {
 
             {/* Font Sizes */}
             <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <h2 className="text-lg font-bold mb-6 flex items-center gap-2" suppressHydrationWarning>
                 <div className="h-1 w-1 rounded-full bg-primary"></div>
                 {t('admin.theme.fontSizes', 'Font Sizes')}
               </h2>
@@ -843,7 +844,7 @@ export default function ThemeSettingsPage() {
 
             {/* Font Weights */}
             <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <h2 className="text-lg font-bold mb-6 flex items-center gap-2" suppressHydrationWarning>
                 <div className="h-1 w-1 rounded-full bg-primary"></div>
                 {t('admin.theme.fontWeights', 'Font Weights')}
               </h2>
@@ -855,7 +856,7 @@ export default function ThemeSettingsPage() {
                   { key: 'bold', field: 'font_weight_bold', labelKey: 'admin.theme.weightBold', label: 'Bold', value: theme.font_weight_bold, placeholder: '700', step: 100 },
                 ].map(({ key, field, labelKey, label, value, placeholder, step }) => (
                   <div key={key} className="p-3 bg-muted/30 rounded-lg border border-border/50">
-                    <label className="text-xs font-semibold mb-2 block text-muted-foreground">{t(labelKey, label)}</label>
+                    <label className="text-xs font-semibold mb-2 block text-muted-foreground" suppressHydrationWarning>{t(labelKey, label)}</label>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setTheme({ ...theme, [field]: Math.max(100, parseInt(value) - step).toString() })}
@@ -891,7 +892,7 @@ export default function ThemeSettingsPage() {
             <div className="grid md:grid-cols-2 gap-6">
               {/* Line Heights */}
               <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-                <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+                <h2 className="text-lg font-bold mb-6 flex items-center gap-2" suppressHydrationWarning>
                   <div className="h-1 w-1 rounded-full bg-primary"></div>
                   {t('admin.theme.lineHeights', 'Line Heights')}
                 </h2>
@@ -902,7 +903,7 @@ export default function ThemeSettingsPage() {
                     { key: 'relaxed', field: 'line_height_relaxed', labelKey: 'admin.theme.lineHeightRelaxed', label: 'Relaxed', value: theme.line_height_relaxed, placeholder: '1.75' },
                   ].map(({ key, field, labelKey, label, value, placeholder }) => (
                     <div key={key} className="p-3 bg-muted/30 rounded-lg border border-border/50">
-                      <label className="text-xs font-semibold mb-2 block text-muted-foreground">{t(labelKey, label)}</label>
+                      <label className="text-xs font-semibold mb-2 block text-muted-foreground" suppressHydrationWarning>{t(labelKey, label)}</label>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => setTheme({ ...theme, [field]: Math.max(0.5, parseFloat(value) - 0.1).toFixed(2) })}
@@ -933,7 +934,7 @@ export default function ThemeSettingsPage() {
 
               {/* Letter Spacing */}
               <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-                <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+                <h2 className="text-lg font-bold mb-6 flex items-center gap-2" suppressHydrationWarning>
                   <div className="h-1 w-1 rounded-full bg-primary"></div>
                   {t('admin.theme.letterSpacing', 'Letter Spacing')}
                 </h2>
@@ -944,7 +945,7 @@ export default function ThemeSettingsPage() {
                     { key: 'wide', field: 'letter_spacing_wide', labelKey: 'admin.theme.letterSpacingWide', label: 'Wide', value: theme.letter_spacing_wide, placeholder: '0.025em' },
                   ].map(({ key, field, labelKey, label, value, placeholder }) => (
                     <div key={key} className="p-3 bg-muted/30 rounded-lg border border-border/50">
-                      <label className="text-xs font-semibold mb-2 block text-muted-foreground">{t(labelKey, label)}</label>
+                      <label className="text-xs font-semibold mb-2 block text-muted-foreground" suppressHydrationWarning>{t(labelKey, label)}</label>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => setTheme({ ...theme, [field]: adjustValue(value, -1, 0.005) })}
@@ -976,7 +977,7 @@ export default function ThemeSettingsPage() {
 
             {/* Text Colors */}
             <div className="bg-card border border-border rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <h2 className="text-lg font-bold mb-6 flex items-center gap-2" suppressHydrationWarning>
                 <div className="h-1 w-1 rounded-full bg-primary"></div>
                 {t('admin.theme.textColors', 'Text Colors')}
               </h2>
@@ -984,7 +985,7 @@ export default function ThemeSettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Light Mode Text Colors */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
+                  <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground" suppressHydrationWarning>
                     <Sun className="h-4 w-4" />
                     {t('admin.theme.lightMode', 'Light Mode')}
                   </h3>
@@ -996,7 +997,7 @@ export default function ThemeSettingsPage() {
                     { key: 'link', field: 'light_text_link', labelKey: 'admin.theme.textLink', label: 'Link Text' },
                   ].map(({ key, field, labelKey, label }) => (
                     <div key={key} className="p-4 bg-muted/20 rounded-lg border border-border/50 hover:border-primary/30 transition-all group">
-                      <label className="text-xs font-semibold mb-2 block text-muted-foreground group-hover:text-foreground transition-colors">
+                      <label className="text-xs font-semibold mb-2 block text-muted-foreground group-hover:text-foreground transition-colors" suppressHydrationWarning>
                         {t(labelKey, label)}
                       </label>
                       <div className="flex items-center gap-3">
@@ -1033,7 +1034,7 @@ export default function ThemeSettingsPage() {
 
                 {/* Dark Mode Text Colors */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
+                  <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground" suppressHydrationWarning>
                     <Moon className="h-4 w-4" />
                     {t('admin.theme.darkMode', 'Dark Mode')}
                   </h3>
@@ -1045,7 +1046,7 @@ export default function ThemeSettingsPage() {
                     { key: 'link', field: 'dark_text_link', labelKey: 'admin.theme.textLink', label: 'Link Text' },
                   ].map(({ key, field, labelKey, label }) => (
                     <div key={key} className="p-4 bg-muted/20 rounded-lg border border-border/50 hover:border-primary/30 transition-all group">
-                      <label className="text-xs font-semibold mb-2 block text-muted-foreground group-hover:text-foreground transition-colors">
+                      <label className="text-xs font-semibold mb-2 block text-muted-foreground group-hover:text-foreground transition-colors" suppressHydrationWarning>
                         {t(labelKey, label)}
                       </label>
                       <div className="flex items-center gap-3">
@@ -1090,7 +1091,7 @@ export default function ThemeSettingsPage() {
                 className="bg-primary text-primary-foreground px-6 py-3 rounded-lg flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? t('admin.theme.saving', 'Saving...') : t('admin.theme.saveChanges', 'Save Changes')}
+                <span suppressHydrationWarning>{saving ? t('admin.theme.saving', 'Saving...') : t('admin.theme.saveChanges', 'Save Changes')}</span>
               </button>
             </div>
           </div>

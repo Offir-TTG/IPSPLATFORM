@@ -178,6 +178,7 @@ export interface RegisterProductRequest {
   auto_assign_payment_plan?: boolean;
   default_payment_plan_id?: string;
   forced_payment_plan_id?: string;
+  is_active?: boolean;
   metadata?: Record<string, any>;
 }
 
