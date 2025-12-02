@@ -26,7 +26,21 @@ import {
   LogOut,
   Shield,
   UserPlus,
+  User,
+  TrendingUp,
+  BarChart3,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { supabase } from '@/lib/supabase/client';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -53,6 +67,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [hydrated, setHydrated] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<{
+    id: string;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    role?: string;
+  } | null>(null);
 
   useEffect(() => {
     // Mark as mounted (client-side only)
@@ -61,11 +82,71 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     setHydrated(true);
   }, []);
 
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !authUser) {
+          console.error('No authenticated user:', authError);
+          return;
+        }
+
+        // Get user profile data
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, email, first_name, last_name, role')
+          .eq('id', authUser.id)
+          .single();
+
+        if (userError || !userData) {
+          console.error('Failed to load user data:', userError);
+          return;
+        }
+
+        setUser(userData);
+      } catch (error) {
+        console.error('Error loading user:', error);
+      }
+    }
+
+    loadUser();
+  }, []);
+
   // Don't render translated content until mounted and translations loaded
   // This prevents hydration mismatch
   if (!mounted) {
     return null;
   }
+
+  const getInitials = () => {
+    if (!user) return '?';
+    if (user.first_name && user.last_name) {
+      return (user.first_name.charAt(0) + user.last_name.charAt(0)).toUpperCase();
+    }
+    if (user.first_name) {
+      return user.first_name.charAt(0).toUpperCase();
+    }
+    return user.email.charAt(0).toUpperCase();
+  };
+
+  const getDisplayName = () => {
+    if (!user) return '';
+    if (user.first_name && user.last_name) {
+      return `${user.first_name} ${user.last_name}`;
+    }
+    if (user.first_name) {
+      return user.first_name;
+    }
+    return user.email;
+  };
+
+  const getRoleBadge = () => {
+    if (!user?.role) return 'User';
+    if (user.role === 'super_admin') return 'Super Admin';
+    if (user.role === 'admin') return 'Admin';
+    return user.role;
+  };
 
   const handleLogout = async () => {
     try {
@@ -162,7 +243,136 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           color: 'hsl(var(--text-heading))'
         }}>{t('admin.title', 'Admin Panel')}</h1>
 
-        <LanguageSwitcher context="admin" />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher context="admin" />
+
+          {/* Mobile User Gear Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.25rem',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  borderRadius: '9999px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                className="hover:bg-accent"
+              >
+                <Avatar className="h-8 w-8 ring-2 ring-primary/20">
+                  <AvatarFallback
+                    className="font-semibold text-sm"
+                    style={{
+                      background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 100%)',
+                      color: 'hsl(var(--primary-foreground))'
+                    }}
+                  >
+                    {getInitials()}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 p-2">
+              {/* Modern User Info Card */}
+              <div className="px-3 py-4 mb-2 rounded-lg bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/10">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-12 w-12 ring-2 ring-primary/30 shadow-lg">
+                    <AvatarFallback
+                      className="font-bold text-base"
+                      style={{
+                        background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.8) 100%)',
+                        color: 'hsl(var(--primary-foreground))'
+                      }}
+                    >
+                      {getInitials()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 overflow-hidden">
+                    <p className="font-semibold text-sm truncate">{getDisplayName()}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                    <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                      <Shield className="h-3 w-3" />
+                      <span className="text-[10px] font-semibold">{getRoleBadge()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <DropdownMenuSeparator className="my-2" />
+
+              {/* Modern Menu Items with Icons */}
+              <div className="space-y-0.5">
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/profile"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{t('admin.nav.profile', 'Profile & Settings')}</p>
+                      <p className="text-xs text-muted-foreground">{t('admin.nav.manageAccount', 'Manage your account')}</p>
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/admin/settings/organization"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                      <Settings className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{t('admin.nav.organization', 'Organization')}</p>
+                      <p className="text-xs text-muted-foreground">{t('admin.nav.organizationSettings', 'Manage organization')}</p>
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/admin/audit"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
+                      <BarChart3 className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{t('admin.nav.auditLog', 'Audit Log')}</p>
+                      <p className="text-xs text-muted-foreground">{t('admin.nav.viewActivity', 'View activity logs')}</p>
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+              </div>
+
+              <DropdownMenuSeparator className="my-2" />
+
+              {/* Logout Button */}
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="px-3 py-2.5 rounded-lg text-destructive hover:bg-destructive/10 cursor-pointer transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive group-hover:scale-110 transition-transform">
+                    <LogOut className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{t('nav.logout', 'Log out')}</p>
+                    <p className="text-xs text-muted-foreground">{t('nav.signOut', 'Sign out of your account')}</p>
+                  </div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Sidebar */}
@@ -320,9 +530,136 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             </h1>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <ThemeToggle />
             <LanguageSwitcher context="admin" />
+
+            {/* User Gear Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.25rem',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '9999px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  className="hover:bg-accent"
+                >
+                  <Avatar className="h-8 w-8 ring-2 ring-primary/20">
+                    <AvatarFallback
+                      className="font-semibold text-sm"
+                      style={{
+                        background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 100%)',
+                        color: 'hsl(var(--primary-foreground))'
+                      }}
+                    >
+                      {getInitials()}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72 p-2">
+                {/* Modern User Info Card */}
+                <div className="px-3 py-4 mb-2 rounded-lg bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/10">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-12 w-12 ring-2 ring-primary/30 shadow-lg">
+                      <AvatarFallback
+                        className="font-bold text-base"
+                        style={{
+                          background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.8) 100%)',
+                          color: 'hsl(var(--primary-foreground))'
+                        }}
+                      >
+                        {getInitials()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 overflow-hidden">
+                      <p className="font-semibold text-sm truncate">{getDisplayName()}</p>
+                      <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                      <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <Shield className="h-3 w-3" />
+                        <span className="text-[10px] font-semibold">{getRoleBadge()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <DropdownMenuSeparator className="my-2" />
+
+                {/* Modern Menu Items with Icons */}
+                <div className="space-y-0.5">
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/profile"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{t('admin.nav.profile', 'Profile & Settings')}</p>
+                        <p className="text-xs text-muted-foreground">{t('admin.nav.manageAccount', 'Manage your account')}</p>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/admin/settings/organization"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                        <Settings className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{t('admin.nav.organization', 'Organization')}</p>
+                        <p className="text-xs text-muted-foreground">{t('admin.nav.organizationSettings', 'Manage organization')}</p>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/admin/audit"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
+                        <BarChart3 className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{t('admin.nav.auditLog', 'Audit Log')}</p>
+                        <p className="text-xs text-muted-foreground">{t('admin.nav.viewActivity', 'View activity logs')}</p>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+                </div>
+
+                <DropdownMenuSeparator className="my-2" />
+
+                {/* Logout Button */}
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="px-3 py-2.5 rounded-lg text-destructive hover:bg-destructive/10 cursor-pointer transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive group-hover:scale-110 transition-transform">
+                      <LogOut className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{t('nav.logout', 'Log out')}</p>
+                      <p className="text-xs text-muted-foreground">{t('nav.signOut', 'Sign out of your account')}</p>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 

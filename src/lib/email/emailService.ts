@@ -278,7 +278,7 @@ export async function sendTemplateEmail(
     // Scheduled email - marked as pending
     return {
       success: true,
-      messageId: queueResult.id,
+      message_id: queueResult.id,
     };
   } catch (error) {
     console.error('Error sending template email:', error);

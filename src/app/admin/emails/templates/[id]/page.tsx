@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAdminLanguage, useTenant } from '@/context/AppContext';
@@ -16,6 +18,8 @@ import { supabase } from '@/lib/supabase/client';
 import { ArrowLeft, Save, Eye, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { RichTextEditor } from '@/components/admin/RichTextEditor';
+import { PlainTextEditor } from '@/components/admin/PlainTextEditor';
 
 interface EmailTemplate {
   id: string;
@@ -281,6 +285,11 @@ export default function EditEmailTemplatePage() {
     return t(`email_template.${key}.name`, template.template_name);
   };
 
+  const getTemplateDescription = (template: EmailTemplate) => {
+    const key = template.template_key.replace('.', '_');
+    return t(`email_template.${key}.description`, template.description);
+  };
+
   if (loading) {
     return (
       <AdminLayout>
@@ -313,17 +322,17 @@ export default function EditEmailTemplatePage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+      <div className={`max-w-6xl space-y-6 ${isMobile ? 'p-4' : 'p-6'}`} dir={direction}>
         {/* Header */}
         <div style={{
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
+          flexDirection: isMobile ? 'column' : 'row',
           gap: '1rem'
         }}>
-          <div style={{ flex: 1 }}>
-            <div className="flex items-center gap-2 mb-2">
+          <div style={{ flex: 1, width: '100%' }}>
+            <div className={`flex items-center gap-2 mb-2 ${isMobile ? 'flex-wrap' : ''}`}>
               <Link href="/admin/emails/templates">
                 <Button variant="ghost" size="sm">
                   <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
@@ -335,29 +344,31 @@ export default function EditEmailTemplatePage() {
               </Badge>
             </div>
             <h1 suppressHydrationWarning style={{
-              fontSize: isMobile ? 'var(--font-size-2xl)' : 'var(--font-size-3xl)',
+              fontSize: isMobile ? 'var(--font-size-xl)' : 'var(--font-size-3xl)',
               fontFamily: 'var(--font-family-heading)',
               fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))'
+              color: 'hsl(var(--text-heading))',
+              lineHeight: '1.2'
             }}>
               {getTemplateName(template)}
             </h1>
             <p suppressHydrationWarning style={{
               marginTop: '0.5rem',
               color: 'hsl(var(--muted-foreground))',
-              fontSize: 'var(--font-size-sm)'
+              fontSize: isMobile ? 'var(--font-size-xs)' : 'var(--font-size-sm)'
             }}>
-              {template.description}
+              {getTemplateDescription(template)}
             </p>
             <p className="text-xs text-muted-foreground mt-2">
-              <code className="bg-muted px-2 py-1 rounded">{template.template_key}</code>
+              <code className="bg-muted px-2 py-1 rounded text-[10px] sm:text-xs">{template.template_key}</code>
             </p>
           </div>
           <div style={{
             display: 'flex',
             gap: '0.5rem',
             width: isMobile ? '100%' : 'auto',
-            flexDirection: isMobile ? 'column' : 'row'
+            flexDirection: isMobile ? 'column' : 'row',
+            flexShrink: 0
           }}>
             <Button variant="outline" onClick={() => setShowPreview(true)} style={{ width: isMobile ? '100%' : 'auto' }}>
               <Eye className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
@@ -479,9 +490,13 @@ export default function EditEmailTemplatePage() {
 
         {/* Language Tabs */}
         <Tabs value={activeLanguage} onValueChange={(v) => setActiveLanguage(v as 'en' | 'he')}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="en">{t('emails.editor.language.en', 'English')}</TabsTrigger>
-            <TabsTrigger value="he">{t('emails.editor.language.he', 'עברית')}</TabsTrigger>
+          <TabsList className={`grid w-full grid-cols-2 ${isMobile ? 'h-auto' : ''}`}>
+            <TabsTrigger value="en" className={isMobile ? 'text-xs py-2' : ''}>
+              {t('emails.editor.language.en', 'English')}
+            </TabsTrigger>
+            <TabsTrigger value="he" className={isMobile ? 'text-xs py-2' : ''}>
+              {t('emails.editor.language.he', 'עברית')}
+            </TabsTrigger>
           </TabsList>
 
           {(['en', 'he'] as const).map((lang) => (
@@ -508,50 +523,42 @@ export default function EditEmailTemplatePage() {
 
               {/* HTML Body */}
               <Card>
-                <CardHeader>
-                  <CardTitle>{t('emails.editor.html', 'HTML Version')}</CardTitle>
-                  <CardDescription>
-                    {t('emails.editor.html_desc', 'Rich HTML email content')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
+                <CardContent className="pt-6">
+                  <RichTextEditor
                     value={formData[lang].body_html}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        [lang]: { ...formData[lang], body_html: e.target.value },
+                        [lang]: { ...formData[lang], body_html: value },
                       })
                     }
+                    label={t('emails.editor.html', 'HTML Version')}
+                    description={t('emails.editor.html_desc', 'Rich HTML email content')}
                     placeholder={t('emails.editor.html_placeholder', 'Enter HTML content')}
-                    rows={15}
-                    className="font-mono text-sm"
+                    height={500}
                     dir={lang === 'he' ? 'rtl' : 'ltr'}
+                    variables={template?.variables || []}
                   />
                 </CardContent>
               </Card>
 
               {/* Plain Text Body */}
               <Card>
-                <CardHeader>
-                  <CardTitle>{t('emails.editor.text', 'Plain Text Version')}</CardTitle>
-                  <CardDescription>
-                    {t('emails.editor.text_desc', 'Fallback for email clients that don\'t support HTML')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
+                <CardContent className="pt-6">
+                  <PlainTextEditor
                     value={formData[lang].body_text}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       setFormData({
                         ...formData,
-                        [lang]: { ...formData[lang], body_text: e.target.value },
+                        [lang]: { ...formData[lang], body_text: value },
                       })
                     }
+                    label={t('emails.editor.text', 'Plain Text Version')}
+                    description={t('emails.editor.text_desc', 'Fallback for email clients that don\'t support HTML')}
                     placeholder={t('emails.editor.text_placeholder', 'Enter plain text content')}
-                    rows={10}
-                    className="font-mono text-sm"
+                    rows={12}
                     dir={lang === 'he' ? 'rtl' : 'ltr'}
+                    variables={template?.variables || []}
                   />
                 </CardContent>
               </Card>
@@ -580,7 +587,7 @@ export default function EditEmailTemplatePage() {
 
       {/* Preview Dialog */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" dir={direction}>
+        <DialogContent className={`${isMobile ? 'max-w-[95vw] w-[95vw]' : 'max-w-4xl'} max-h-[90vh] overflow-y-auto`} dir={direction}>
           <DialogHeader>
             <DialogTitle suppressHydrationWarning style={{
               fontFamily: 'var(--font-family-heading)',

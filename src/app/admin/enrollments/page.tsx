@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,6 +33,7 @@ import {
   Plus,
   UserPlus,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface Enrollment {
@@ -77,6 +80,8 @@ export default function EnrollmentsPage() {
   const [sendLinkEnrollment, setSendLinkEnrollment] = useState<Enrollment | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [sendingLink, setSendingLink] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
   // Responsive breakpoints
@@ -190,6 +195,45 @@ export default function EnrollmentsPage() {
       toast.error(error.message || t('admin.enrollments.sendLink.error', 'Failed to send enrollment link'));
     } finally {
       setSendingLink(false);
+    }
+  };
+
+  const handleResetEnrollment = async (resetSignature: boolean, resetPayment: boolean) => {
+    if (!selectedEnrollment) return;
+
+    setResetting(true);
+    try {
+      const params = new URLSearchParams();
+      if (resetSignature) params.append('reset_signature', 'true');
+      if (resetPayment) params.append('reset_payment', 'true');
+      params.append('reset_profile', 'true'); // Always reset profile for complete restart
+
+      const response = await fetch(`/api/admin/enrollments/${selectedEnrollment.id}/reset?${params.toString()}`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to reset enrollment');
+      }
+
+      const data = await response.json();
+      toast.success(t('admin.enrollments.reset.success', 'Enrollment reset successfully'));
+
+      // Show wizard URL to admin
+      toast.info(
+        t('admin.enrollments.reset.wizardInfo', 'User can now restart at: ') + data.wizard_url,
+        { duration: 5000 }
+      );
+
+      setResetDialogOpen(false);
+      setSelectedEnrollment(null);
+      fetchEnrollments();
+    } catch (error: any) {
+      console.error('Error resetting enrollment:', error);
+      toast.error(error.message || t('admin.enrollments.reset.error', 'Failed to reset enrollment'));
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -340,61 +384,107 @@ export default function EnrollmentsPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          {/* Total Enrollments Card */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.totalEnrollments', 'Total Enrollments')}
+              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
+                {t('admin.enrollments.stats.total', 'Total')}
               </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Users className="h-3.5 w-3.5 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{enrollments.length}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.active', 'Active')}
-              </CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {enrollments.filter(e => e.status === 'active').length}
+              <div className="text-xl font-bold">
+                {enrollments.length}
               </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.enrollments.stats.totalDesc', 'All enrollments')}
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.pendingPayment', 'Pending Payment')}
+              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
+                {t('admin.enrollments.stats.draft', 'Draft')}
               </CardTitle>
-              <Clock className="h-4 w-4 text-yellow-500" />
+              <Edit className="h-3.5 w-3.5 text-gray-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-xl font-bold">
+                {enrollments.filter(e => e.status === 'draft').length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.enrollments.stats.draftDesc', 'Not sent yet')}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
+                {t('admin.enrollments.stats.pending', 'Pending')}
+              </CardTitle>
+              <Clock className="h-3.5 w-3.5 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">
                 {enrollments.filter(e => e.status === 'pending').length}
               </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.enrollments.stats.pendingDesc', 'Awaiting completion')}
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.totalRevenue', 'Total Revenue')}
+              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
+                {t('admin.enrollments.stats.active', 'Active')}
               </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(
-                  enrollments.reduce((sum, e) => sum + e.paid_amount, 0),
-                  enrollments[0]?.currency || 'USD'
-                )}
+              <div className="text-xl font-bold">
+                {enrollments.filter(e => e.status === 'active').length}
               </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.enrollments.stats.activeDesc', 'Currently enrolled')}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
+                {t('admin.enrollments.stats.completed', 'Completed')}
+              </CardTitle>
+              <CheckCircle2 className="h-3.5 w-3.5 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">
+                {enrollments.filter(e => e.status === 'completed').length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.enrollments.stats.completedDesc', 'Finished')}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
+                {t('admin.enrollments.stats.cancelled', 'Cancelled')}
+              </CardTitle>
+              <X className="h-3.5 w-3.5 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">
+                {enrollments.filter(e => e.status === 'cancelled').length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.enrollments.stats.cancelledDesc', 'Cancelled')}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -512,32 +602,49 @@ export default function EnrollmentsPage() {
                       </span>
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSendLinkEnrollment(enrollment);
-                          setSelectedLanguage(language || 'en');
-                          setSendLinkDialogOpen(true);
-                        }}
-                        title={t('admin.enrollments.sendLink', 'Send enrollment link')}
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedEnrollment(enrollment);
-                          setOverrideDialogOpen(true);
-                        }}
-                        title={t('admin.enrollments.edit', 'Edit enrollment')}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                    <div className="flex gap-2 pt-2 flex-wrap">
+                      {enrollment.status !== 'cancelled' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSendLinkEnrollment(enrollment);
+                            setSelectedLanguage(language || 'en');
+                            setSendLinkDialogOpen(true);
+                          }}
+                          title={t('admin.enrollments.sendLink', 'Send enrollment link')}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </Button>
+                      )}
+                      {(enrollment.status === 'pending' || enrollment.status === 'active') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedEnrollment(enrollment);
+                            setResetDialogOpen(true);
+                          }}
+                          title={t('admin.enrollments.reset', 'Reset enrollment wizard')}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {enrollment.status === 'draft' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedEnrollment(enrollment);
+                            setOverrideDialogOpen(true);
+                          }}
+                          title={t('admin.enrollments.edit', 'Edit enrollment')}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
                       {enrollment.status !== 'cancelled' && (
                         <Button
                           variant="outline"
@@ -628,20 +735,35 @@ export default function EnrollmentsPage() {
                         </td>
                         <td className="p-4">
                           <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setSendLinkEnrollment(enrollment);
-                                setSelectedLanguage(language || 'en');
-                                setSendLinkDialogOpen(true);
-                              }}
-                              title={t('admin.enrollments.sendLink', 'Send enrollment link')}
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                            </Button>
+                            {enrollment.status !== 'cancelled' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSendLinkEnrollment(enrollment);
+                                  setSelectedLanguage(language || 'en');
+                                  setSendLinkDialogOpen(true);
+                                }}
+                                title={t('admin.enrollments.sendLink', 'Send enrollment link')}
+                              >
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                              </Button>
+                            )}
+                            {(enrollment.status === 'pending' || enrollment.status === 'active') && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedEnrollment(enrollment);
+                                  setResetDialogOpen(true);
+                                }}
+                                title={t('admin.enrollments.reset', 'Reset enrollment wizard')}
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            )}
                             {enrollment.status === 'draft' && (
                               <Button
                                 variant="ghost"
@@ -745,6 +867,18 @@ export default function EnrollmentsPage() {
           }}
           onSend={handleSendEnrollmentLink}
           sending={sendingLink}
+        />
+
+        {/* Reset Enrollment Dialog */}
+        <ResetEnrollmentDialog
+          open={resetDialogOpen}
+          enrollment={selectedEnrollment}
+          onClose={() => {
+            setResetDialogOpen(false);
+            setSelectedEnrollment(null);
+          }}
+          onReset={handleResetEnrollment}
+          resetting={resetting}
         />
       </div>
       )}
@@ -939,6 +1073,125 @@ function ManualPaymentDialog({
             </Button>
             <Button type="submit">
               {t('admin.enrollments.manualPayment.recordButton', 'Record Payment')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Reset Enrollment Dialog
+function ResetEnrollmentDialog({
+  open,
+  enrollment,
+  onClose,
+  onReset,
+  resetting,
+}: {
+  open: boolean;
+  enrollment: Enrollment | null;
+  onClose: () => void;
+  onReset: (resetSignature: boolean, resetPayment: boolean) => void;
+  resetting: boolean;
+}) {
+  const { t, direction } = useAdminLanguage();
+  const [resetSignature, setResetSignature] = useState(true);
+  const [resetPayment, setResetPayment] = useState(true);
+
+  useEffect(() => {
+    if (enrollment) {
+      setResetSignature(true);
+      setResetPayment(true);
+    }
+  }, [enrollment]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onReset(resetSignature, resetPayment);
+  };
+
+  if (!enrollment) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent dir={direction}>
+        <DialogHeader>
+          <DialogTitle suppressHydrationWarning>
+            {t('admin.enrollments.reset.title', 'Reset Enrollment Wizard')}
+          </DialogTitle>
+          <DialogDescription suppressHydrationWarning>
+            {t('admin.enrollments.reset.description', 'Reset the enrollment wizard for {user} to allow them to go through the steps again')
+              .replace('{user}', enrollment.user_name)}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Alert>
+            <AlertDescription suppressHydrationWarning>
+              {t('admin.enrollments.reset.info', 'This will reset the enrollment status to "pending" and allow the user to restart the enrollment wizard.')}
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="reset_signature"
+                checked={resetSignature}
+                onChange={(e) => setResetSignature(e.target.checked)}
+                className="rounded"
+              />
+              <Label htmlFor="reset_signature" className="cursor-pointer" suppressHydrationWarning>
+                {t('admin.enrollments.reset.resetSignature', 'Reset DocuSign signature status')}
+              </Label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="reset_payment"
+                checked={resetPayment}
+                onChange={(e) => setResetPayment(e.target.checked)}
+                className="rounded"
+              />
+              <Label htmlFor="reset_payment" className="cursor-pointer" suppressHydrationWarning>
+                {t('admin.enrollments.reset.resetPayment', 'Reset payment status (paid amount to 0)')}
+              </Label>
+            </div>
+
+            <div className="flex items-center gap-2 opacity-50">
+              <input
+                type="checkbox"
+                id="reset_profile"
+                checked={true}
+                disabled
+                className="rounded"
+              />
+              <Label htmlFor="reset_profile" suppressHydrationWarning>
+                {t('admin.enrollments.reset.resetProfile', 'Reset profile onboarding flags')} ({t('admin.enrollments.reset.always', 'always enabled')})
+              </Label>
+            </div>
+          </div>
+
+          <Alert variant="destructive">
+            <AlertDescription suppressHydrationWarning>
+              {resetPayment && t('admin.enrollments.reset.warning', 'Warning: Resetting payment will set paid_amount to 0. This cannot be undone!')}
+            </AlertDescription>
+          </Alert>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={resetting}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button type="submit" disabled={resetting} suppressHydrationWarning>
+              {resetting ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  {t('admin.enrollments.reset.resetting', 'Resetting...')}
+                </>
+              ) : (
+                t('admin.enrollments.reset.button', 'Reset Enrollment')
+              )}
             </Button>
           </DialogFooter>
         </form>

@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useAdminLanguage, useTenant } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';

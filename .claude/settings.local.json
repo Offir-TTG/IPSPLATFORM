@@ -15,7 +15,9 @@
       "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")",
       "Bash(ls:*)",
       "Bash(curl:*)",
-      "Bash(npx supabase:*)"
+      "Bash(npx supabase:*)",
+      "Bash(node add-dynamic-to-all.js:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []

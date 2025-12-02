@@ -53,6 +53,7 @@ export async function POST(
         status,
         total_amount,
         currency,
+        expires_at,
         user:users!enrollments_user_id_fkey (
           id,
           email,
@@ -83,8 +84,15 @@ export async function POST(
 
     // Generate secure token (32 bytes, base64url encoded)
     const token = crypto.randomBytes(32).toString('base64url');
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+
+    // Use enrollment's expires_at if set, otherwise default to 7 days from now
+    const expiresAt = enrollment.expires_at
+      ? new Date(enrollment.expires_at)
+      : (() => {
+          const date = new Date();
+          date.setDate(date.getDate() + 7);
+          return date;
+        })();
 
     // Update enrollment with token and status
     const { error: updateError } = await supabase

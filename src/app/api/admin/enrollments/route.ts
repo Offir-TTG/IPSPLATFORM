@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { randomUUID } from 'crypto';
 
 // GET /api/admin/enrollments - List all enrollments (with filters)
 export async function GET(request: NextRequest) {
@@ -206,6 +207,7 @@ export async function POST(request: NextRequest) {
       payment_plan_id,
       status = 'draft',
       waive_payment = false, // Admin override to waive payment requirement
+      expires_at = null, // Optional expiration date for the enrollment
       // Legacy fields (kept for backwards compatibility)
       email,
       first_name,
@@ -234,10 +236,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get tenant_id from the admin user
+    // Get tenant_id and verify admin user exists in users table
     const { data: adminData } = await supabase
       .from('users')
-      .select('tenant_id')
+      .select('id, tenant_id')
       .eq('id', user.id)
       .single();
 
@@ -248,56 +250,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine the final user_id (either provided or create invited user)
-    let finalUserId: string;
-
-    if (user_id) {
-      // User selected from dropdown (existing user)
-      finalUserId = user_id;
-    } else {
-      // New user - create invited user record
-      // First, double-check user doesn't already exist
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', userEmail.toLowerCase())
-        .eq('tenant_id', adminData.tenant_id)
-        .single();
-
-      if (existingUser) {
-        // User exists - use their ID
-        finalUserId = existingUser.id;
-      } else {
-        // Create invited user
-        const { data: newUser, error: createError } = await supabase
-          .from('users')
-          .insert({
-            email: userEmail.toLowerCase(),
-            first_name: userFirstName,
-            last_name: userLastName,
-            phone: userPhone || null,
-            status: 'invited',
-            invited_at: new Date().toISOString(),
-            invited_by: user.id,
-            tenant_id: adminData.tenant_id,
-            role: 'student', // Default role
-          })
-          .select('id')
-          .single();
-
-        if (createError || !newUser) {
-          console.error('Error creating invited user:', createError);
-          return NextResponse.json(
-            { error: 'Failed to create user invitation' },
-            { status: 500 }
-          );
-        }
-
-        finalUserId = newUser.id;
-      }
-    }
-
-    // Fetch the product to get pricing information
+    // Fetch the product to get pricing information FIRST (validate before creating user)
     const { data: product, error: productError } = await supabase
       .from('products')
       .select('id, title, type, price, currency, payment_model, payment_plan')
@@ -329,7 +282,67 @@ export async function POST(request: NextRequest) {
       paymentStatus = 'paid';
     }
 
-    // Check for existing enrollment
+    // NOW handle user creation/lookup AFTER validating the product exists
+    // This prevents orphaned user records if product validation fails
+    let finalUserId: string;
+
+    if (user_id) {
+      // Using existing user - verify they exist
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', user_id)
+        .eq('tenant_id', adminData.tenant_id)
+        .single();
+
+      if (!existingUser) {
+        return NextResponse.json(
+          { error: 'User not found' },
+          { status: 404 }
+        );
+      }
+      finalUserId = user_id;
+    } else {
+      // Creating new user - check if email already exists first
+      const { data: existingUsers } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('email', userEmail.toLowerCase())
+        .eq('tenant_id', adminData.tenant_id);
+
+      if (existingUsers && existingUsers.length > 0) {
+        return NextResponse.json(
+          { error: `A user with email ${userEmail} already exists in this tenant` },
+          { status: 409 }
+        );
+      }
+
+      // Create new user - this happens AFTER all validation
+      const newUserId = randomUUID();
+      const { error: userError } = await supabase.from('users').insert({
+        id: newUserId,
+        tenant_id: adminData.tenant_id,
+        email: userEmail.toLowerCase(),
+        first_name: userFirstName,
+        last_name: userLastName,
+        phone: userPhone || null,
+        role: 'student',
+        invited_by: user.id,
+        status: 'invited',
+      });
+
+      if (userError) {
+        console.error('Error creating user:', userError);
+        return NextResponse.json(
+          { error: userError.message || 'Failed to create user' },
+          { status: 500 }
+        );
+      }
+
+      finalUserId = newUserId;
+    }
+
+    // Check for existing enrollment (now that we have finalUserId)
     const { data: existingEnrollment } = await supabase
       .from('enrollments')
       .select('id')
@@ -339,6 +352,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (existingEnrollment) {
+      // If we just created a user and enrollment already exists, clean up the orphaned user
+      if (!user_id) {
+        console.log('Cleaning up orphaned user created during failed enrollment:', finalUserId);
+        await supabase.from('users').delete().eq('id', finalUserId);
+      }
       return NextResponse.json(
         { error: 'User is already enrolled in this product' },
         { status: 409 }
@@ -361,6 +379,7 @@ export async function POST(request: NextRequest) {
         payment_waived: waive_payment,
         enrollment_type: 'admin_assigned',
         created_by: user.id,
+        expires_at: expires_at || null,
       })
       .select(`
         id,

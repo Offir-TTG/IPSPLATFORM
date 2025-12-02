@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { useAdminLanguage, useTenant } from '@/context/AppContext';
 import { Button } from '@/components/ui/button';

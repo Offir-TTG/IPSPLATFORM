@@ -1,8 +1,10 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 import {
   DndContext,
   closestCenter,
@@ -49,7 +51,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Badge } from '@/components/ui/badge';
 
 // Dynamically import RichTextEditor to avoid SSR issues
-const RichTextEditor = dynamic(() => import('@/components/ui/rich-text-editor').then(mod => mod.RichTextEditor), { ssr: false });
+const RichTextEditor = dynamicImport(() => import('@/components/ui/rich-text-editor').then(mod => mod.RichTextEditor), { ssr: false });
 import TokenInserter, { Token } from '@/components/ui/token-inserter';
 import { CourseMaterials } from '@/components/lms/CourseMaterials';
 import {
@@ -367,6 +369,18 @@ export default function CourseBuilderPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [creatingZoomFor, setCreatingZoomFor] = useState<string | null>(null);
 
+  // Enrollment statistics
+  const [enrollmentStats, setEnrollmentStats] = useState({
+    totalEnrollments: 0,
+    lifetimeSales: 0,
+    completedCount: 0,
+    completedPercent: 0,
+    inProgressCount: 0,
+    inProgressPercent: 0,
+    notStartedCount: 0,
+    notStartedPercent: 0,
+  });
+
   // Dialog states
   const [showModuleDialog, setShowModuleDialog] = useState(false);
   const [showLessonDialog, setShowLessonDialog] = useState(false);
@@ -562,11 +576,52 @@ export default function CourseBuilderPage() {
       } else {
         setModules([]);
       }
+
+      // Load enrollment statistics
+      loadEnrollmentStats();
     } catch (error) {
       console.error('Failed to load course:', error);
       showMessage('error', t('lms.builder.load_failed', 'Failed to load course data'), 5000);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEnrollmentStats = async () => {
+    try {
+      // Load enrollments for this course
+      const response = await fetch(`/api/enrollments?course_id=${params.id}`);
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        const enrollments = data.data;
+        const total = enrollments.length;
+
+        // Calculate lifetime sales (sum of all payment amounts)
+        const lifetimeSales = enrollments.reduce((sum: number, enrollment: any) => {
+          return sum + (enrollment.total_amount || 0);
+        }, 0);
+
+        // Calculate progress percentages
+        const completed = enrollments.filter((e: any) => e.status === 'completed').length;
+        const inProgress = enrollments.filter((e: any) => e.status === 'active').length;
+        const notStarted = enrollments.filter((e: any) =>
+          e.status === 'pending' || e.status === 'draft'
+        ).length;
+
+        setEnrollmentStats({
+          totalEnrollments: total,
+          lifetimeSales: lifetimeSales,
+          completedCount: completed,
+          completedPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
+          inProgressCount: inProgress,
+          inProgressPercent: total > 0 ? Math.round((inProgress / total) * 100) : 0,
+          notStartedCount: notStarted,
+          notStartedPercent: total > 0 ? Math.round((notStarted / total) * 100) : 0,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load enrollment stats:', error);
     }
   };
 
@@ -1405,7 +1460,19 @@ export default function CourseBuilderPage() {
                 {t('lms.builder.back', 'Back')}
               </Button>
               <div>
-                <h1 className="text-2xl font-bold">{course?.title}</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold">{course?.title}</h1>
+                  {course?.is_active ? (
+                    <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 flex items-center gap-1.5">
+                      <CheckCircle className="h-3 w-3" />
+                      {t('lms.builder.published', 'Published')}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      {t('lms.builder.draft', 'Draft')}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {t('lms.builder.title', 'Course Builder')} - {t('lms.builder.subtitle', 'Drag & Drop Canvas')}
                 </p>
@@ -1447,7 +1514,7 @@ export default function CourseBuilderPage() {
         <div className="flex-1 overflow-auto px-6 py-4">
           <div className="space-y-6">
             {/* Course Structure Section */}
-            <div className="flex gap-6 min-h-[calc(100vh-300px)]">
+            <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-300px)]">
                 {/* Module Builder with Drag & Drop */}
                 <div className="flex-1">
               <Card className="h-full">
@@ -1608,7 +1675,7 @@ export default function CourseBuilderPage() {
             </div>
 
             {/* Course Stats */}
-            <div className="w-80">
+            <div className="w-full lg:w-80">
               <Card>
                 <CardHeader>
                   <CardTitle className={isRtl ? 'text-right' : ''}>
@@ -1664,6 +1731,100 @@ export default function CourseBuilderPage() {
                       {t('lms.builder.published_modules', 'Published Modules')}
                     </p>
                   </div>
+
+                  {/* Divider */}
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className={`font-semibold mb-3 ${isRtl ? 'text-right' : ''}`}>
+                      {t('lms.builder.enrollment_stats', 'Enrollment Statistics')}
+                    </h3>
+
+                    {/* Total Enrollments */}
+                    <div className={`mb-4 ${isRtl ? 'text-right' : ''}`}>
+                      <div className="text-2xl font-bold">{enrollmentStats.totalEnrollments}</div>
+                      <p className="text-sm text-muted-foreground">
+                        {t('lms.builder.total_enrollments', 'Total Enrollments')}
+                      </p>
+                    </div>
+
+                    {/* Lifetime Sales */}
+                    <div className={`mb-4 ${isRtl ? 'text-right' : ''}`}>
+                      <div className="text-2xl font-bold">
+                        ₪{enrollmentStats.lifetimeSales.toLocaleString()}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {t('lms.builder.lifetime_sales', 'Lifetime Sales')}
+                      </p>
+                    </div>
+
+                    {/* Progress Stats */}
+                    <div className="space-y-3">
+                      <div className={isRtl ? 'text-right' : ''}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium">
+                            {t('lms.builder.completed', 'Completed')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {enrollmentStats.completedCount} {t('lms.builder.students', 'students')}
+                            </span>
+                            <span className="text-sm font-semibold text-green-600">
+                              {enrollmentStats.completedPercent}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div
+                            className="bg-green-600 h-2 rounded-full transition-all"
+                            style={{ width: `${enrollmentStats.completedPercent}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={isRtl ? 'text-right' : ''}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium">
+                            {t('lms.builder.in_progress', 'In Progress')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {enrollmentStats.inProgressCount} {t('lms.builder.students', 'students')}
+                            </span>
+                            <span className="text-sm font-semibold text-blue-600">
+                              {enrollmentStats.inProgressPercent}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all"
+                            style={{ width: `${enrollmentStats.inProgressPercent}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={isRtl ? 'text-right' : ''}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium">
+                            {t('lms.builder.not_started', 'Not Started')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {enrollmentStats.notStartedCount} {t('lms.builder.students', 'students')}
+                            </span>
+                            <span className="text-sm font-semibold text-gray-600">
+                              {enrollmentStats.notStartedPercent}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div
+                            className="bg-gray-600 h-2 rounded-full transition-all"
+                            style={{ width: `${enrollmentStats.notStartedPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -1681,6 +1842,7 @@ export default function CourseBuilderPage() {
                 <CardContent>
                   <CourseMaterials
                     courseId={params.id as string}
+                    courseIsPublished={course?.is_active ?? false}
                     t={t}
                     isRtl={isRtl}
                     direction={direction}

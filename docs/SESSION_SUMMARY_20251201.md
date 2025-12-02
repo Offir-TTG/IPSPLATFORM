@@ -242,3 +242,40 @@ New schema: `enrollments → products → (programs|courses)`
 ---
 
 *Session completed successfully - All critical issues resolved*
+
+---
+
+## Session 2: Enrollment Reset Feature & Build Fixes
+
+### Completed Features
+
+#### 1. Enrollment Reset Feature ✅
+
+**What it does:**
+Allows admins to reset enrollments back to draft status, clearing all progress so users can restart the enrollment wizard.
+
+**Files Created:**
+- `src/app/api/admin/enrollments/[id]/reset/route.ts` - Reset API endpoint
+- `supabase/migrations/20251202_add_enrollment_wizard_fields.sql` - Database schema
+- `supabase/migrations/20251202_enrollment_reset_translations.sql` - UI translations
+- `docs/ENROLLMENT_RESET_FEATURE_COMPLETE.md` - Feature documentation
+
+**Files Modified:**
+- `src/app/admin/enrollments/page.tsx` - Added Reset button and dialog UI
+- `src/app/api/enrollments/[id]/send-contract/route.ts` - Fixed DocuSign method call
+- 57 page.tsx files - Added `export const dynamic = 'force-dynamic'`
+
+### Issues Fixed
+
+1. ✅ **Database Schema Error** - `enrolled_at` NOT NULL constraint
+2. ✅ **Wrong Enrollment URL** - Changed to token-based URL
+3. ✅ **Edit Button Visibility** - Made consistent across mobile/desktop
+4. ✅ **DocuSign TypeScript Error** - Fixed non-existent method call
+5. ✅ **Build Errors** - Fixed static generation issues for dynamic pages
+
+### Build Status
+
+✅ **Build Successful** - App runs on http://localhost:3002
+
+The "export errors" are warnings (not failures) for pages that can't be statically generated - this is expected for authenticated pages.
+

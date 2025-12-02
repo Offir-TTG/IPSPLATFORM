@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -119,7 +121,7 @@ export default function PaymentDetailsPage() {
     );
   }
 
-  if (!details) {
+  if (!details || !details.product || !details.payment_plan) {
     return (
       <div className="container mx-auto py-8">
         <Card>

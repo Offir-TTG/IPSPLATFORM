@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { useDashboard } from '@/hooks/useDashboard';
 import { WelcomeHero } from '@/components/user/dashboard/WelcomeHero';

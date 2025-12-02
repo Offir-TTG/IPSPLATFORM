@@ -25,20 +25,35 @@ export async function GET(request: NextRequest) {
     // Get query parameters
     const { searchParams } = new URL(request.url);
     const roleFilter = searchParams.get('role');
+    const emailFilter = searchParams.get('email');
 
     // Build query
     let query = supabase
       .from('users')
       .select('id, first_name, last_name, email, role, phone, created_at')
-      .eq('tenant_id', userData.tenant_id)
-      .order('first_name', { ascending: true });
+      .eq('tenant_id', userData.tenant_id);
 
     // Apply role filter if provided
     if (roleFilter) {
       query = query.eq('role', roleFilter);
     }
 
+    // Apply email filter if provided (case-insensitive exact match)
+    if (emailFilter) {
+      // Use eq with lowercase for exact case-insensitive match
+      const normalizedEmail = emailFilter.toLowerCase();
+      console.log('[Email Check] Searching for email:', normalizedEmail);
+      query = query.eq('email', normalizedEmail);
+    } else {
+      // Only sort by name if not filtering by email (for performance)
+      query = query.order('first_name', { ascending: true });
+    }
+
     const { data: users, error } = await query;
+
+    if (emailFilter) {
+      console.log('[Email Check] Results for', emailFilter, ':', users?.length || 0, 'users found');
+    }
 
     if (error) {
       console.error('Error fetching users:', error);
@@ -48,7 +63,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(users || []);
+    // Return with no-cache headers to prevent stale data
+    return NextResponse.json(users || [], {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache'
+      }
+    });
 
   } catch (error) {
     console.error('Error in GET /api/admin/users:', error);

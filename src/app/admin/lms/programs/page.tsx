@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit2, Trash2, Users, BookOpen, Search, X, XCircle, Check, Loader2, Upload, ImageIcon, Eye, LayoutGrid, List } from 'lucide-react';

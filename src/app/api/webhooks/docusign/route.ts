@@ -168,8 +168,7 @@ async function handleEnvelopeSent(supabase: any, event: DocuSignWebhookEvent) {
       .from('enrollments')
       .update({
         signature_status: 'sent',
-        signature_envelope_id: envelopeId,
-        signature_sent_at: envelopeSummary?.statusChangedDateTime,
+        docusign_envelope_id: envelopeId,
         updated_at: new Date().toISOString()
       })
       .eq('id', enrollmentId);
@@ -209,8 +208,6 @@ async function handleEnvelopeCompleted(supabase: any, event: DocuSignWebhookEven
       .from('enrollments')
       .update({
         signature_status: 'completed',
-        signature_completed_at: envelopeSummary?.statusChangedDateTime,
-        contract_signed: true,
         updated_at: new Date().toISOString()
       })
       .eq('id', enrollmentId);
@@ -243,7 +240,6 @@ async function handleEnvelopeDeclined(supabase: any, event: DocuSignWebhookEvent
       .from('enrollments')
       .update({
         signature_status: 'declined',
-        signature_declined_reason: declinedReason,
         updated_at: new Date().toISOString()
       })
       .eq('id', enrollmentId);

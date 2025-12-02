@@ -460,16 +460,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Handle legacy calls: t(key, fallback, context)
     let fallback: string | undefined;
     let actualParams: Record<string, any> | undefined;
-    let actualContext: LanguageContext = 'user';
+    let actualContext: LanguageContext = context || 'user';
 
     if (typeof params === 'string') {
       // Legacy signature: t(key, fallback, context)
       fallback = params;
-      actualContext = (context as LanguageContext) || 'user';
-    } else if (typeof params === 'object') {
-      // New signature: t(key, params)
+      actualContext = context || 'user';
+    } else if (params && typeof params === 'object') {
+      // New signature: t(key, params, context) - params is object (but not null)
       actualParams = params;
-      actualContext = 'user';
+      actualContext = context || 'user';
+    } else {
+      // No params: t(key) or t(key, undefined, context) or t(key, null, context)
+      actualContext = context || 'user';
     }
 
     const translations = actualContext === 'admin' ? adminTranslations : userTranslations;

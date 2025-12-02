@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { AuditEventsTable } from '@/components/audit/AuditEventsTable';
 import { AuditFilters, FilterState } from '@/components/audit/AuditFilters';

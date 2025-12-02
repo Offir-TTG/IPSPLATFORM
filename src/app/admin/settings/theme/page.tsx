@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
 import { Palette, Save, RefreshCw, Moon, Sun, Type, Plus, Minus, ChevronDown } from 'lucide-react';

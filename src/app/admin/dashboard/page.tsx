@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
 import { Users, BookOpen, DollarSign, TrendingUp, Video, Calendar } from 'lucide-react';

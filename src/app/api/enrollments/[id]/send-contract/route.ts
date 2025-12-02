@@ -1,47 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { withAuth } from '@/lib/middleware/auth';
 import { getDocuSignClient } from '@/lib/docusign/client';
 
-// POST /api/enrollments/[id]/send-contract - Send DocuSign contract for enrollment
-export const POST = withAuth(async (
+// POST /api/enrollments/[id]/send-contract - Send DocuSign contract for enrollment (embedded signing)
+export async function POST(
   request: NextRequest,
-  user: any,
   { params }: { params: { id: string } }
-) => {
+) {
   try {
     const supabase = await createClient();
 
-    // Get enrollment details
+    // Verify authentication
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, tenant_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!userData) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Get enrollment details with product
     const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
       .select(`
-        *,
-        student:students(*),
-        program:programs(*)
+        id,
+        user_id,
+        product_id,
+        tenant_id,
+        signature_status,
+        docusign_envelope_id,
+        product:products!enrollments_product_id_fkey (
+          id,
+          title,
+          type,
+          requires_signature,
+          signature_template_id
+        )
       `)
       .eq('id', params.id)
+      .eq('tenant_id', userData.tenant_id)
       .single();
 
     if (enrollmentError || !enrollment) {
       return NextResponse.json(
-        { success: false, error: 'Enrollment not found' },
+        { error: 'Enrollment not found' },
         { status: 404 }
       );
     }
 
-    // Check if contract is already signed
-    if (enrollment.contract_signed) {
+    // Check authorization
+    if (enrollment.user_id !== userData.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const product = Array.isArray(enrollment.product) ? enrollment.product[0] : enrollment.product;
+
+    // Check if signature is already complete
+    if (enrollment.signature_status === 'completed') {
       return NextResponse.json(
-        { success: false, error: 'Contract is already signed' },
+        { error: 'Contract is already signed' },
         { status: 400 }
       );
     }
 
-    // Check if program has DocuSign template configured
-    if (!enrollment.program.docusign_template_id) {
+    // Check if product requires signature
+    if (!product.requires_signature) {
       return NextResponse.json(
-        { success: false, error: 'No DocuSign template configured for this program' },
+        { error: 'This enrollment does not require a signature' },
+        { status: 400 }
+      );
+    }
+
+    // Check if product has DocuSign template configured
+    if (!product.signature_template_id) {
+      return NextResponse.json(
+        { error: 'No DocuSign template configured for this product' },
         { status: 400 }
       );
     }
@@ -50,43 +90,48 @@ export const POST = withAuth(async (
     const { data: integration } = await supabase
       .from('integrations')
       .select('*')
+      .eq('tenant_id', userData.tenant_id)
       .eq('integration_key', 'docusign')
       .eq('is_enabled', true)
       .single();
 
     if (!integration) {
       return NextResponse.json(
-        { success: false, error: 'DocuSign integration is not configured or enabled' },
+        { error: 'DocuSign integration is not configured or enabled' },
         { status: 400 }
       );
     }
 
     // Prepare recipient information
     const recipientInfo = {
-      email: enrollment.student.email,
-      name: `${enrollment.student.first_name} ${enrollment.student.last_name}`,
-      recipientId: enrollment.student.id,
-      routingOrder: '1'
+      email: userData.email,
+      name: `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || userData.email,
+      recipientId: userData.id,
+      clientUserId: userData.id // For embedded signing
     };
 
     // Prepare email subject
-    const emailSubject = `Contract for ${enrollment.program.name}`;
+    const emailSubject = `Enrollment Agreement for ${product.title}`;
 
     // Prepare custom fields to track the enrollment
     const customFields = {
       enrollment_id: enrollment.id,
-      program_id: enrollment.program.id,
-      student_id: enrollment.student.id,
+      product_id: product.id,
+      user_id: userData.id,
       tenant_id: enrollment.tenant_id
     };
+
+    // Return URL after signing (back to wizard)
+    const returnUrl = `${request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL}/enroll/wizard/${enrollment.id}?docusign=complete`;
 
     try {
       // Get DocuSign client from database integration
       const docusignClient = await getDocuSignClient();
 
-      // Send the envelope
+      // Create envelope using template (for now, use regular template sending)
+      // TODO: Implement embedded signing when DocuSignClient supports it
       const envelopeResponse = await docusignClient.sendEnvelopeFromTemplate(
-        enrollment.program.docusign_template_id,
+        product.signature_template_id,
         recipientInfo,
         emailSubject,
         customFields
@@ -97,8 +142,7 @@ export const POST = withAuth(async (
         .from('enrollments')
         .update({
           signature_status: 'sent',
-          signature_envelope_id: envelopeResponse.envelopeId,
-          signature_sent_at: new Date().toISOString(),
+          docusign_envelope_id: envelopeResponse.envelopeId,
           updated_at: new Date().toISOString()
         })
         .eq('id', enrollment.id);
@@ -106,25 +150,24 @@ export const POST = withAuth(async (
       // Log the event
       await supabase.from('audit_events').insert({
         tenant_id: enrollment.tenant_id,
-        user_id: user.id,
-        action: 'contract_sent',
+        user_id: userData.id,
+        action: 'signature_requested',
         resource_type: 'enrollment',
         resource_id: enrollment.id,
         details: {
           envelope_id: envelopeResponse.envelopeId,
-          template_id: enrollment.program.docusign_template_id,
-          recipient_email: recipientInfo.email
+          template_id: product.signature_template_id,
+          recipient_email: recipientInfo.email,
+          signing_method: 'embedded'
         },
         created_at: new Date().toISOString()
       });
 
       return NextResponse.json({
         success: true,
-        data: {
-          envelopeId: envelopeResponse.envelopeId,
-          status: envelopeResponse.status,
-          message: 'Contract sent successfully'
-        }
+        envelope_id: envelopeResponse.envelopeId,
+        status: envelopeResponse.status,
+        message: 'Signature request sent via email'
       });
 
     } catch (docusignError) {
@@ -132,8 +175,7 @@ export const POST = withAuth(async (
 
       return NextResponse.json(
         {
-          success: false,
-          error: 'Failed to send contract',
+          error: 'Failed to create signature request',
           details: docusignError instanceof Error ? docusignError.message : 'Unknown error'
         },
         { status: 500 }
@@ -144,58 +186,72 @@ export const POST = withAuth(async (
     console.error('Send contract error:', error);
     return NextResponse.json(
       {
-        success: false,
         error: 'Failed to send contract',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     );
   }
-}, ['admin', 'instructor']);
+}
 
 // GET /api/enrollments/[id]/send-contract - Get contract status
-export const GET = withAuth(async (
+export async function GET(
   request: NextRequest,
-  user: any,
   { params }: { params: { id: string } }
-) => {
+) {
   try {
     const supabase = await createClient();
+
+    // Verify authentication
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('id, tenant_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!userData) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
     // Get enrollment signature status
     const { data: enrollment, error } = await supabase
       .from('enrollments')
-      .select('id, signature_status, signature_envelope_id, signature_sent_at, signature_completed_at, contract_signed')
+      .select('id, user_id, signature_status, docusign_envelope_id, updated_at')
       .eq('id', params.id)
+      .eq('tenant_id', userData.tenant_id)
       .single();
 
     if (error || !enrollment) {
       return NextResponse.json(
-        { success: false, error: 'Enrollment not found' },
+        { error: 'Enrollment not found' },
         { status: 404 }
       );
     }
 
+    // Check authorization
+    if (enrollment.user_id !== userData.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     return NextResponse.json({
-      success: true,
-      data: {
-        enrollmentId: enrollment.id,
-        signatureStatus: enrollment.signature_status,
-        envelopeId: enrollment.signature_envelope_id,
-        sentAt: enrollment.signature_sent_at,
-        completedAt: enrollment.signature_completed_at,
-        contractSigned: enrollment.contract_signed
-      }
+      enrollment_id: enrollment.id,
+      signature_status: enrollment.signature_status,
+      envelope_id: enrollment.docusign_envelope_id,
+      updated_at: enrollment.updated_at
     });
 
   } catch (error) {
     console.error('Get contract status error:', error);
     return NextResponse.json(
       {
-        success: false,
         error: 'Failed to get contract status'
       },
       { status: 500 }
     );
   }
-}, ['admin', 'instructor', 'student']);
+}

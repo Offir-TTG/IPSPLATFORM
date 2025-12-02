@@ -50,7 +50,7 @@ export async function sendEmailViaSMTP({
     }
   };
 
-  const transporter = nodemailer.createTransporter(config);
+  const transporter = nodemailer.createTransport(config);
 
   try {
     await transporter.sendMail({
@@ -107,7 +107,7 @@ export async function verifyEmailConfig(): Promise<boolean> {
     }
   };
 
-  const transporter = nodemailer.createTransporter(config);
+  const transporter = nodemailer.createTransport(config);
 
   try {
     await transporter.verify();
