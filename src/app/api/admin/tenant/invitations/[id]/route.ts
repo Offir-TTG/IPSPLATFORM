@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 
+export const dynamic = 'force-dynamic';
+
 // DELETE - Revoke invitation
 export async function DELETE(
   request: NextRequest,

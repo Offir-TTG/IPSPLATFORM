@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 
 /**
  * POST /api/enrollments/token/[token]/accept
  *
  * Accept enrollment invitation
- * Requires authentication - user must be logged in
+ * This endpoint is public - no authentication required
+ * Uses admin client to bypass RLS since users are not authenticated yet
  *
  * Returns:
  * - success: true if accepted
- * - requires_payment: boolean indicating if payment is needed
- * - payment_url: URL to payment page if payment required
+ * - wizard_url: URL to enrollment wizard
+ * - enrollment_id: ID of the enrollment
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: { token: string } }
 ) {
   try {
-    const supabase = await createClient();
+    // Use admin client to bypass RLS - enrollment links are accessed by unauthenticated users
+    const supabase = createAdminClient();
 
     // NO AUTHENTICATION REQUIRED - token-based enrollment flow
     // User account will be created at the END of the wizard (in complete endpoint)

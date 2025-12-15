@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { pauseEnrollmentPayments } from '@/lib/payments/scheduleManager';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/payments/enrollments/:id/pause - Pause enrollment payments
 export async function POST(
   request: NextRequest,

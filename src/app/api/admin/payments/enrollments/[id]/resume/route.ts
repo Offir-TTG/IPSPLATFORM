@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { resumeEnrollmentPayments } from '@/lib/payments/scheduleManager';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/payments/enrollments/:id/resume - Resume enrollment payments
 export async function POST(
   request: NextRequest,

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/user/profile/deactivate - Deactivate user account (soft delete)
 export const POST = withAuth(async (
   request: NextRequest,

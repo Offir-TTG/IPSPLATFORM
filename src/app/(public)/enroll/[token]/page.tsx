@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2 } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Mail, UserPlus, Calendar, CreditCard, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { he, enUS } from 'date-fns/locale';
 import { useLanguage } from '@/context/AppContext';
@@ -124,10 +124,10 @@ export default function EnrollmentPage() {
   // This ensures the page always renders even after refresh
   if (!mounted || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-purple-50 to-white">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-purple-600 mx-auto mb-3" />
-          <p className="text-muted-foreground">Loading your invitation...</p>
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
+          <p className="mt-4 text-muted-foreground text-lg">Loading your invitation...</p>
         </div>
       </div>
     );
@@ -135,19 +135,27 @@ export default function EnrollmentPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-purple-50 to-white" dir={direction}>
-        <Card className="max-w-md w-full border-red-200">
-          <CardHeader>
-            <CardTitle className="text-red-500" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-              {t('enrollment.error.title', 'Invalid Link')}
-            </CardTitle>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background p-4" dir={direction}>
+        <Card className="max-w-md w-full border-destructive/20 shadow-xl">
+          <CardHeader className="bg-destructive/5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-destructive/10 rounded-2xl flex items-center justify-center">
+                <XCircle className="h-6 w-6 text-destructive" />
+              </div>
+              <CardTitle className="text-destructive text-xl" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('enrollment.error.title', 'Invalid Link')}
+              </CardTitle>
+            </div>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-4" style={{ textAlign: isRTL ? 'right' : 'left' }}>{error}</p>
+          <CardContent className="pt-6">
+            <Alert variant="destructive" className="mb-6">
+              <XCircle className="h-4 w-4" />
+              <AlertDescription style={{ textAlign: isRTL ? 'right' : 'left' }}>{error}</AlertDescription>
+            </Alert>
             <Button
-              variant="outline"
               onClick={() => router.push('/login')}
               className="w-full"
+              size="lg"
             >
               {t('enrollment.error.loginButton', 'Go to Login')}
             </Button>
@@ -225,34 +233,40 @@ export default function EnrollmentPage() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-b from-purple-50 via-white to-purple-50 p-4"
+      className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background py-8 px-4"
       dir={direction}
       style={{ textAlign: isRTL ? 'right' : 'left' }}
     >
-      <div className="max-w-2xl mx-auto mt-20">
-        <Card className="shadow-2xl" dir={direction} style={{ textAlign: isRTL ? 'right' : 'left' }}>
-          <CardHeader className="text-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-t-lg">
-            <CheckCircle2 className="h-16 w-16 mx-auto mb-4" />
-            <CardTitle className="text-3xl font-bold mb-2">
-              {t('enrollment.header.title', 'You\'re Invited!')}
-            </CardTitle>
-            <CardDescription className="text-purple-100">
-              {t('enrollment.header.subtitle', 'You\'ve been invited to enroll in the following:')}
-            </CardDescription>
-          </CardHeader>
+      <div className="max-w-2xl mx-auto">
+        <Card className="shadow-2xl border-0 overflow-hidden backdrop-blur-sm bg-card/95" dir={direction} style={{ textAlign: isRTL ? 'right' : 'left' }}>
+          {/* Gradient Header */}
+          <div className="relative bg-gradient-to-r from-primary via-primary/90 to-primary/80 text-primary-foreground px-6 sm:px-8 py-8 sm:py-10">
+            <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,transparent,black)]"></div>
+            <div className="relative text-center">
+              <div className="w-20 h-20 bg-primary-foreground/10 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
+                <UserPlus className="h-10 w-10 text-primary-foreground" />
+              </div>
+              <CardTitle className="text-2xl sm:text-3xl font-bold mb-2">
+                {t('enrollment.header.title', 'You\'re Invited!')}
+              </CardTitle>
+              <CardDescription className="text-primary-foreground/90 text-sm sm:text-base">
+                {t('enrollment.header.subtitle', 'You\'ve been invited to enroll in the following:')}
+              </CardDescription>
+            </div>
+          </div>
 
-          <CardContent className="space-y-6 p-6" dir={direction} style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+          <CardContent className="space-y-6 p-6 sm:p-8" dir={direction} style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* Product Details */}
-            <div className={`py-3 bg-purple-50 ${isRTL ? 'border-r-4 pr-4 rounded-l-lg' : 'border-l-4 pl-4 rounded-r-lg'} border-purple-500`}>
+            <div className={`p-4 bg-primary/5 ${isRTL ? 'border-r-4 pr-4 rounded-l-lg' : 'border-l-4 pl-4 rounded-r-lg'} border-primary shadow-sm`}>
               <div style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
-                <h3 className="font-semibold text-xl text-gray-900">{enrollment.product_name}</h3>
-                <div className={`flex items-center gap-2 mt-1 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
-                  <Badge variant="outline" className="text-xs">
+                <h3 className="font-bold text-xl text-foreground">{enrollment.product_name}</h3>
+                <div className={`flex items-center gap-2 mt-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
+                  <Badge variant="secondary" className="text-xs">
                     {t(`enrollment.productType.${enrollment.product_type}`, enrollment.product_type)}
                   </Badge>
                 </div>
                 {enrollment.product_description && (
-                  <p className="text-sm text-muted-foreground mt-2" style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
+                  <p className="text-sm text-muted-foreground mt-3" style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
                     {stripHtmlTags(enrollment.product_description)}
                   </p>
                 )}
@@ -261,18 +275,19 @@ export default function EnrollmentPage() {
 
             {/* Pricing Info */}
             {enrollment.total_amount > 0 && (
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200" style={{ direction: isRTL ? 'rtl' : 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
-                <div className="mb-2 space-y-1">
-                  <div className="font-medium text-gray-700">
-                    {t('enrollment.pricing.totalAmount', 'Total Amount')}:
-                  </div>
-                  <div className={`font-bold text-xl text-gray-900 ${isRTL ? 'text-right' : 'text-left'}`} dir="ltr">
-                    {enrollment.currency} {enrollment.total_amount.toFixed(2)}
+              <div className="bg-muted/50 p-5 rounded-lg border border-muted shadow-sm" style={{ direction: isRTL ? 'rtl' : 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <CreditCard className="h-5 w-5 text-primary" />
+                  <div className="font-semibold text-foreground">
+                    {t('enrollment.pricing.totalAmount', 'Total Amount')}
                   </div>
                 </div>
+                <div className={`font-bold text-2xl text-foreground ${isRTL ? 'text-right' : 'text-left'}`} dir="ltr">
+                  {enrollment.currency} {enrollment.total_amount.toFixed(2)}
+                </div>
                 {enrollment.payment_plan_data && (
-                  <div className="text-sm text-muted-foreground mt-2 pt-2 border-t" style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
-                    <div className="font-medium mb-1">{t('enrollment.pricing.paymentPlan', 'Payment Plan')}:</div>
+                  <div className="text-sm text-muted-foreground mt-3 pt-3 border-t border-muted-foreground/20" style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
+                    <div className="font-medium mb-2">{t('enrollment.pricing.paymentPlan', 'Payment Plan')}:</div>
                     {renderPaymentPlanDetails(enrollment.payment_plan_data)}
                   </div>
                 )}
@@ -280,38 +295,51 @@ export default function EnrollmentPage() {
             )}
 
             {enrollment.payment_model === 'free' && (
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <p className="text-green-700 font-medium text-center">
+              <Alert className="border-emerald-200 bg-emerald-50">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <AlertDescription className="text-emerald-700 font-medium">
                   {t('enrollment.pricing.free', '🎉 This enrollment is completely free!')}
-                </p>
-              </div>
+                </AlertDescription>
+              </Alert>
             )}
 
             {/* User Email Verification */}
-            <div className="text-sm text-muted-foreground text-center bg-blue-50 p-3 rounded-lg">
-              <span className="font-medium">{t('enrollment.verification.sentTo', 'Invitation sent to:')}</span> {enrollment.user_email}
-            </div>
+            <Alert className="border-primary/20 bg-primary/5">
+              <Mail className="h-4 w-4 text-primary" />
+              <AlertDescription className="text-foreground">
+                <span className="font-medium">{t('enrollment.verification.sentTo', 'Invitation sent to:')}</span>{' '}
+                <span className="font-semibold">{enrollment.user_email}</span>
+              </AlertDescription>
+            </Alert>
 
             {/* Expiration Warning */}
-            <Alert className={isExpiringSoon ? 'border-orange-500 bg-orange-50' : ''}>
-              <AlertDescription className={`text-center ${isExpiringSoon ? 'text-orange-800' : ''}`}>
+            <Alert className={isExpiringSoon ? 'border-orange-500 bg-orange-50' : 'border-muted bg-muted/30'}>
+              <Clock className={`h-4 w-4 ${isExpiringSoon ? 'text-orange-600' : 'text-muted-foreground'}`} />
+              <AlertDescription className={isExpiringSoon ? 'text-orange-800 font-medium' : 'text-muted-foreground'}>
                 {isExpiringSoon && <strong>{t('enrollment.expiry.soon', '⚠️ Expiring soon!')} </strong>}
                 {t('enrollment.expiry.expires', 'This invitation expires')} {formatDistanceToNow(new Date(enrollment.token_expires_at), { addSuffix: true, locale: language === 'he' ? he : enUS })}
               </AlertDescription>
             </Alert>
 
             {/* Action Buttons */}
-            <div className="flex flex-col gap-3 pt-4">
+            <div className="flex flex-col gap-3 pt-2">
               <Button
                 size="lg"
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                className="w-full"
                 onClick={handleAccept}
                 disabled={accepting}
               >
-                {accepting
-                  ? t('enrollment.action.processing', 'Processing...')
-                  : t('enrollment.action.accept', 'Accept Enrollment')
-                }
+                {accepting ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    {t('enrollment.action.processing', 'Processing...')}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-5 w-5 mr-2" />
+                    {t('enrollment.action.accept', 'Accept Enrollment')}
+                  </>
+                )}
               </Button>
 
               <p className="text-xs text-center text-muted-foreground">

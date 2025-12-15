@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS lesson_topics (
   lesson_id UUID NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   content_type TEXT NOT NULL CHECK (
-    content_type IN ('video', 'text', 'pdf', 'quiz', 'assignment', 'link', 'embed', 'download')
+    content_type IN ('video', 'text', 'pdf', 'quiz', 'assignment', 'link', 'embed', 'download', 'whiteboard')
   ),
   content JSONB NOT NULL DEFAULT '{}'::jsonb,
   "order" INTEGER NOT NULL,

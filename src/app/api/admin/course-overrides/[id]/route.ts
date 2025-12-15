@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // DELETE /api/admin/course-overrides/[id] - Remove course override
 export async function DELETE(
   request: NextRequest,

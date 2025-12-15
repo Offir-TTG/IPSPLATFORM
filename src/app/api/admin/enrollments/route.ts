@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { randomUUID } from 'crypto';
+import { generatePaymentSchedules } from '@/lib/payments/paymentEngine';
+
+export const dynamic = 'force-dynamic';
 
 // GET /api/admin/enrollments - List all enrollments (with filters)
 export async function GET(request: NextRequest) {
@@ -44,8 +47,12 @@ export async function GET(request: NextRequest) {
         status,
         payment_status,
         next_payment_date,
+        payment_start_date,
         enrolled_at,
         created_at,
+        expires_at,
+        wizard_profile_data,
+        invitation_sent_at,
         user:users!enrollments_user_id_fkey (
           id,
           first_name,
@@ -89,6 +96,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Enrollments fetched from database
+
     // Transform data to match frontend expectations
     let enrollments = (data || []).map((enrollment: any) => {
       // Determine product name based on type
@@ -121,7 +130,9 @@ export async function GET(request: NextRequest) {
             frequency: plan.frequency || 'monthly',
             deposit_type: plan.deposit_type,
             deposit_amount: plan.deposit_amount,
-            deposit_percentage: plan.deposit_percentage
+            deposit_percentage: plan.deposit_percentage,
+            installments: plan.installments,
+            installment_amount: plan.installment_amount
           };
         } else if (model === 'subscription') {
           paymentPlanKey = 'admin.enrollments.paymentPlan.subscription';
@@ -133,11 +144,34 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // MEMORY-BASED WIZARD: Get user data from wizard_profile_data if user doesn't exist yet
+      let userName: string;
+      let userEmail: string;
+
+      
+
+      if (enrollment.user) {
+        // User exists - use user table data
+        userName = `${enrollment.user.first_name} ${enrollment.user.last_name}`;
+        userEmail = enrollment.user.email;
+        
+      } else if (enrollment.wizard_profile_data) {
+        // User doesn't exist yet - use wizard_profile_data
+        userName = `${enrollment.wizard_profile_data.first_name || ''} ${enrollment.wizard_profile_data.last_name || ''}`.trim();
+        userEmail = enrollment.wizard_profile_data.email || '';
+        
+      } else {
+        // No user data available
+        userName = 'Unknown';
+        userEmail = '';
+        
+      }
+
       return {
         id: enrollment.id,
         user_id: enrollment.user?.id || '',
-        user_name: enrollment.user ? `${enrollment.user.first_name} ${enrollment.user.last_name}` : 'Unknown',
-        user_email: enrollment.user?.email || '',
+        user_name: userName,
+        user_email: userEmail,
         product_id: enrollment.product_id,
         product_name: productName,
         product_type: enrollment.product?.type || 'N/A',
@@ -152,7 +186,11 @@ export async function GET(request: NextRequest) {
         payment_status: enrollment.payment_status || 'pending',
         status: enrollment.status || 'active',
         next_payment_date: enrollment.next_payment_date,
+        payment_start_date: enrollment.payment_start_date,
+        enrolled_at: enrollment.enrolled_at,
         created_at: enrollment.created_at || enrollment.enrolled_at,
+        expires_at: enrollment.expires_at || null,
+        invitation_sent_at: enrollment.invitation_sent_at || null,
       };
     });
 
@@ -253,7 +291,7 @@ export async function POST(request: NextRequest) {
     // Fetch the product to get pricing information FIRST (validate before creating user)
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('id, title, type, price, currency, payment_model, payment_plan')
+      .select('id, title, type, price, currency, payment_model, payment_plan, payment_start_date')
       .eq('id', product_id)
       .single();
 
@@ -282,9 +320,12 @@ export async function POST(request: NextRequest) {
       paymentStatus = 'paid';
     }
 
-    // NOW handle user creation/lookup AFTER validating the product exists
-    // This prevents orphaned user records if product validation fails
-    let finalUserId: string;
+    // MEMORY-BASED WIZARD APPROACH:
+    // - If user_id provided: Use existing user
+    // - If no user_id: DO NOT create user yet - store info in wizard_profile_data
+    // - User will be created at END of wizard when they complete it
+    let finalUserId: string | null = null;
+    let wizardProfileData: any = null;
 
     if (user_id) {
       // Using existing user - verify they exist
@@ -303,7 +344,8 @@ export async function POST(request: NextRequest) {
       }
       finalUserId = user_id;
     } else {
-      // Creating new user - check if email already exists first
+      // NO USER_ID - Memory-based wizard approach
+      // Check if email already exists first
       const { data: existingUsers } = await supabase
         .from('users')
         .select('id, email')
@@ -317,70 +359,102 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Create new user - this happens AFTER all validation
-      const newUserId = randomUUID();
-      const { error: userError } = await supabase.from('users').insert({
-        id: newUserId,
-        tenant_id: adminData.tenant_id,
+      // DO NOT create user yet!
+      // Store user info in wizard_profile_data for later use
+      // User will be created when they complete the wizard
+      wizardProfileData = {
         email: userEmail.toLowerCase(),
         first_name: userFirstName,
         last_name: userLastName,
         phone: userPhone || null,
-        role: 'student',
-        invited_by: user.id,
-        status: 'invited',
-      });
+      };
 
-      if (userError) {
-        console.error('Error creating user:', userError);
-        return NextResponse.json(
-          { error: userError.message || 'Failed to create user' },
-          { status: 500 }
-        );
-      }
+      console.log('[Admin Enrollment] Storing user info in wizard_profile_data for wizard completion:', wizardProfileData);
 
-      finalUserId = newUserId;
+      // Leave finalUserId as null - enrollment will be linked to user later
+      finalUserId = null;
     }
 
-    // Check for existing enrollment (now that we have finalUserId)
-    const { data: existingEnrollment } = await supabase
-      .from('enrollments')
-      .select('id')
-      .eq('user_id', finalUserId)
-      .eq('product_id', product_id)
-      .eq('tenant_id', adminData.tenant_id)
-      .single();
+    // Check for existing enrollment (only if we have a user_id)
+    if (finalUserId) {
+      const { data: existingEnrollment } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('user_id', finalUserId)
+        .eq('product_id', product_id)
+        .eq('tenant_id', adminData.tenant_id)
+        .single();
 
-    if (existingEnrollment) {
-      // If we just created a user and enrollment already exists, clean up the orphaned user
-      if (!user_id) {
-        console.log('Cleaning up orphaned user created during failed enrollment:', finalUserId);
-        await supabase.from('users').delete().eq('id', finalUserId);
+      if (existingEnrollment) {
+        return NextResponse.json(
+          { error: 'User is already enrolled in this product' },
+          { status: 409 }
+        );
       }
-      return NextResponse.json(
-        { error: 'User is already enrolled in this product' },
-        { status: 409 }
-      );
+    } else {
+      // For new users (no user_id yet), check by email in wizard_profile_data
+      // This prevents duplicate enrollments for the same email
+      const { data: existingEnrollments } = await supabase
+        .from('enrollments')
+        .select('id, wizard_profile_data')
+        .eq('product_id', product_id)
+        .eq('tenant_id', adminData.tenant_id)
+        .is('user_id', null);
+
+      if (existingEnrollments && existingEnrollments.length > 0) {
+        const duplicateEnrollment = existingEnrollments.find(
+          (e: any) => e.wizard_profile_data?.email?.toLowerCase() === userEmail.toLowerCase()
+        );
+
+        if (duplicateEnrollment) {
+          return NextResponse.json(
+            { error: 'An enrollment for this email and product already exists' },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     // Create enrollment
+    const enrollmentData: any = {
+      tenant_id: adminData.tenant_id,
+      user_id: finalUserId, // null if new user (wizard will link later)
+      product_id,
+      payment_plan_id: payment_plan_id || null,
+      total_amount: totalAmount,
+      paid_amount: waive_payment ? totalAmount : 0,
+      currency,
+      status,
+      payment_status: paymentStatus,
+      payment_waived: waive_payment,
+      enrollment_type: 'admin_assigned',
+      created_by: user.id,
+      expires_at: expires_at || null,
+      payment_start_date: body.payment_start_date || product.payment_start_date || null, // Admin override or copy from product
+    };
+
+    // Save email and name for invitation purposes (to pre-fill the form for user)
+    // Don't save phone and address because the wizard checks for ALL fields:
+    // - If email, first_name, last_name, phone, address are ALL present → profile marked complete (skip step)
+    // - If phone or address are missing → profile NOT complete (show profile step)
+    // This allows admin to provide known info (email, name) while user fills the rest
+    if (!finalUserId && wizardProfileData) {
+      enrollmentData.wizard_profile_data = {
+        email: wizardProfileData.email,
+        first_name: wizardProfileData.first_name || '',
+        last_name: wizardProfileData.last_name || ''
+        // DO NOT include phone, address - user will fill these in wizard
+      };
+      console.log('[Admin Enrollment] Saving email and name for invitation:', {
+        email: wizardProfileData.email,
+        first_name: wizardProfileData.first_name,
+        last_name: wizardProfileData.last_name
+      });
+    }
+
     const { data, error } = await supabase
       .from('enrollments')
-      .insert({
-        tenant_id: adminData.tenant_id,
-        user_id: finalUserId,
-        product_id,
-        payment_plan_id: payment_plan_id || null,
-        total_amount: totalAmount,
-        paid_amount: waive_payment ? totalAmount : 0,
-        currency,
-        status,
-        payment_status: paymentStatus,
-        payment_waived: waive_payment,
-        enrollment_type: 'admin_assigned',
-        created_by: user.id,
-        expires_at: expires_at || null,
-      })
+      .insert(enrollmentData)
       .select(`
         id,
         user_id,
@@ -417,6 +491,102 @@ export async function POST(request: NextRequest) {
         { error: error.message || 'Failed to create enrollment' },
         { status: 500 }
       );
+    }
+
+    // Generate payment schedules if payment is required and not waived
+    if (!waive_payment && totalAmount > 0) {
+      try {
+        // Determine payment plan to use
+        let paymentPlan = null;
+
+        if (payment_plan_id) {
+          // Fetch the payment plan template
+          const { data: planData } = await supabase
+            .from('payment_plans')
+            .select('*')
+            .eq('id', payment_plan_id)
+            .eq('tenant_id', adminData.tenant_id)
+            .single();
+
+          if (planData) {
+            paymentPlan = planData;
+          }
+        }
+
+        // If no payment plan template, use product's payment model
+        if (!paymentPlan && product.payment_model) {
+          const paymentConfig = product.payment_plan || {};
+
+          if (product.payment_model === 'one_time') {
+            paymentPlan = {
+              plan_type: 'one_time',
+              currency: product.currency || 'USD',
+            };
+          } else if (product.payment_model === 'deposit_then_plan') {
+            paymentPlan = {
+              plan_type: 'deposit',
+              deposit_type: paymentConfig.deposit_type || 'percentage',
+              deposit_amount: paymentConfig.deposit_amount,
+              deposit_percentage: paymentConfig.deposit_percentage,
+              installment_count: paymentConfig.installments || 1,
+              installment_frequency: paymentConfig.frequency || 'monthly',
+              currency: product.currency || 'USD',
+            };
+          } else if (product.payment_model === 'recurring') {
+            paymentPlan = {
+              plan_type: 'recurring',
+              installment_count: paymentConfig.installments || 1,
+              installment_frequency: paymentConfig.frequency || 'monthly',
+              currency: product.currency || 'USD',
+            };
+          }
+        }
+
+        // Generate schedules if we have a payment plan
+        if (paymentPlan) {
+          // Determine start date with priority: enrollment.payment_start_date → product.payment_start_date → now
+          // Parse date-only values as local midnight to avoid timezone shifts
+          let startDate: Date;
+          if (enrollmentData.payment_start_date) {
+            const dateOnly = enrollmentData.payment_start_date.split('T')[0];
+            startDate = new Date(dateOnly + 'T00:00:00');
+          } else if (product.payment_start_date) {
+            const dateOnly = product.payment_start_date.split('T')[0];
+            startDate = new Date(dateOnly + 'T00:00:00');
+          } else {
+            startDate = new Date();
+          }
+
+          console.log(`[Admin Enrollment] Generating schedules with start date: ${startDate.toISOString()}`);
+
+          // Use correct function signature: (enrollmentId, tenantId, plan, totalAmount, startDate)
+          const schedules = generatePaymentSchedules(
+            data.id,
+            adminData.tenant_id,
+            paymentPlan,
+            totalAmount,
+            startDate
+          );
+
+          // Insert schedules into database
+          if (schedules && schedules.length > 0) {
+            const { error: scheduleError } = await supabase
+              .from('payment_schedules')
+              .insert(schedules);
+
+            if (scheduleError) {
+              console.error('Error creating payment schedules:', scheduleError);
+              // Don't fail enrollment creation if schedule generation fails
+              // Admin can manually create schedules later
+            } else {
+              console.log(`[Admin Enrollment] Created ${schedules.length} payment schedules for enrollment ${data.id}`);
+            }
+          }
+        }
+      } catch (scheduleError) {
+        console.error('Error generating payment schedules:', scheduleError);
+        // Don't fail enrollment creation if schedule generation fails
+      }
     }
 
     return NextResponse.json(data, { status: 201 });

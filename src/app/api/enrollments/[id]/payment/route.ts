@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getEnrollmentPaymentDetails } from '@/lib/payments/enrollmentService';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/enrollments/:id/payment - Get payment details for an enrollment
 export async function GET(
   request: NextRequest,

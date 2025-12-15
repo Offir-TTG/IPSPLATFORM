@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { courseService } from '@/lib/lms/courseService';
 
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // POST /api/lms/courses/[id]/duplicate
 // Duplicate a course with all modules, lessons, and topics

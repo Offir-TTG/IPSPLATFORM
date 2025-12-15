@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
 import crypto from 'crypto';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/admin/enrollments/:id/resend-invitation
  *
@@ -75,8 +77,8 @@ export async function POST(
     const enrollmentUser = Array.isArray(enrollment.user) ? enrollment.user[0] : enrollment.user;
     const product = Array.isArray(enrollment.product) ? enrollment.product[0] : enrollment.product;
 
-    // Generate new enrollment token
-    const newToken = crypto.randomBytes(32).toString('hex');
+    // Generate new enrollment token (using base64url to match send-link endpoint)
+    const newToken = crypto.randomBytes(32).toString('base64url');
 
     // Use enrollment's expires_at if set, otherwise default to 7 days from now
     const tokenExpiresAt = enrollment.expires_at
@@ -88,6 +90,9 @@ export async function POST(
         })();
 
     // Reset enrollment to draft status with new token
+    console.log('[Resend Invitation] Resetting enrollment:', enrollment.id);
+    console.log('[Resend Invitation] Setting wizard_profile_data to null');
+
     const { error: updateError } = await supabase
       .from('enrollments')
       .update({
@@ -98,17 +103,20 @@ export async function POST(
         docusign_envelope_id: null,
         paid_amount: 0,
         payment_status: 'pending',
+        wizard_profile_data: null, // Clear wizard profile data from previous attempt
         updated_at: new Date().toISOString()
       })
       .eq('id', enrollment.id);
 
     if (updateError) {
-      console.error('Error resetting enrollment:', updateError);
+      console.error('[Resend Invitation] Error resetting enrollment:', updateError);
       return NextResponse.json(
         { error: 'Failed to reset enrollment' },
         { status: 500 }
       );
     }
+
+    console.log('[Resend Invitation] Successfully reset enrollment');
 
     // Reset user onboarding
     await supabase

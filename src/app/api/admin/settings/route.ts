@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { logAuditEvent } from '@/lib/audit/auditService';
 
+export const dynamic = 'force-dynamic';
+
 // GET all platform settings
 export async function GET(request: NextRequest) {
   try {

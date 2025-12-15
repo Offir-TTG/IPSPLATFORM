@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { cancelEnrollment } from '@/lib/payments/enrollmentService';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/enrollments/:id/cancel - Cancel an enrollment
 export async function POST(
   request: NextRequest,

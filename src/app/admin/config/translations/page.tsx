@@ -26,6 +26,7 @@ interface Translation {
   translation_key: string;
   translation_value: string;
   category: string;
+  context?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -33,6 +34,7 @@ interface Translation {
 interface TranslationGroup {
   key: string;
   category: string;
+  context: string;
   translations: Record<string, string>; // languageCode -> value
 }
 
@@ -121,6 +123,8 @@ export default function TranslationsPage() {
       const result = await response.json();
 
       if (result.success) {
+        console.log('Loaded translations:', result.data);
+        console.log('Total records:', result.data.length);
         setTranslations(result.data);
         groupTranslations(result.data);
         extractCategories(result.data);
@@ -157,6 +161,7 @@ export default function TranslationsPage() {
         grouped.set(t.translation_key, {
           key: t.translation_key,
           category: t.category,
+          context: t.context || (t.translation_key.startsWith('admin.') ? 'admin' : 'user'),
           translations: {},
         });
       }
@@ -169,11 +174,13 @@ export default function TranslationsPage() {
   };
 
   const [editCategory, setEditCategory] = useState('');
+  const [editContext, setEditContext] = useState('');
 
-  const handleEdit = (key: string, currentTranslations: Record<string, string>, category: string) => {
+  const handleEdit = (key: string, currentTranslations: Record<string, string>, category: string, context: string) => {
     setEditingKey(key);
     setEditValues({ ...currentTranslations });
     setEditCategory(category);
+    setEditContext(context);
     setError('');
     setSuccess('');
   };
@@ -182,6 +189,7 @@ export default function TranslationsPage() {
     setEditingKey(null);
     setEditValues({});
     setEditCategory('');
+    setEditContext('');
     setError('');
   };
 
@@ -200,6 +208,7 @@ export default function TranslationsPage() {
             translation_key: key,
             translation_value: value,
             category: editCategory || key.split('.')[0],
+            context: editContext || (key.startsWith('admin.') ? 'admin' : 'user'),
           }),
         })
       );
@@ -211,6 +220,8 @@ export default function TranslationsPage() {
         setSuccess('Translations saved successfully');
         setEditingKey(null);
         setEditValues({});
+        setEditCategory('');
+        setEditContext('');
         await loadTranslations();
 
         // Clear success message after 3 seconds
@@ -391,18 +402,19 @@ export default function TranslationsPage() {
 
         {success && (
           <div style={{
-            backgroundColor: 'hsl(var(--success) / 0.1)',
-            border: '1px solid hsl(var(--success))',
-            color: 'hsl(var(--success-foreground))',
+            backgroundColor: 'hsl(142 76% 36% / 0.1)',
+            border: '1px solid hsl(142 76% 36%)',
+            color: 'hsl(142 76% 20%)',
             padding: '0.75rem 1rem',
             borderRadius: 'calc(var(--radius) * 1.5)',
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
             fontSize: 'var(--font-size-sm)',
-            fontFamily: 'var(--font-family-primary)'
+            fontFamily: 'var(--font-family-primary)',
+            fontWeight: 'var(--font-weight-medium)'
           }}>
-            <Check className="h-5 w-5" />
+            <Check className="h-5 w-5" style={{ color: 'hsl(142 76% 36%)' }} />
             <span>{success}</span>
           </div>
         )}
@@ -814,7 +826,7 @@ export default function TranslationsPage() {
                           </div>
                         ) : (
                           <button
-                            onClick={() => handleEdit(group.key, group.translations, group.category)}
+                            onClick={() => handleEdit(group.key, group.translations, group.category, group.context)}
                             style={{
                               padding: '0.5rem',
                               color: 'hsl(var(--primary))',

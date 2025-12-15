@@ -6,6 +6,25 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
 /**
+ * Get context-aware storage
+ * Wizard routes use sessionStorage (isolated), Admin uses localStorage (persistent)
+ */
+function getStorage(): Storage {
+  if (typeof window === 'undefined') return localStorage;
+
+  const path = window.location.pathname;
+
+  // Wizard and public enrollment routes use sessionStorage (browser-isolated)
+  if (path.includes('/enroll/wizard/') || path.includes('/enroll/')) {
+    console.log('[Storage] Using sessionStorage for wizard (browser-isolated)');
+    return sessionStorage;
+  }
+
+  // Admin and other routes use localStorage (persistent)
+  return localStorage;
+}
+
+/**
  * Set tenant context for the browser client
  * Call this after user authentication or when switching tenants
  */
@@ -56,12 +75,27 @@ export async function initializeTenantContext(): Promise<void> {
 
     // For localhost, use default tenant
     if (hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
+      // Use context-aware storage (sessionStorage for wizard, localStorage for admin)
+      const storage = getStorage();
+
+      // Check if tenant is already set in storage
+      const existingTenantId = storage.getItem('tenant_id');
+
+      if (existingTenantId) {
+        // Use existing tenant context - don't overwrite it
+        console.log('[Supabase Client] Using existing tenant from storage:', existingTenantId);
+        await setTenantContext(existingTenantId);
+        return;
+      }
+
+      // No existing tenant - use default
       const defaultSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT_SLUG || 'default';
       const tenant = await getTenantBySlug(defaultSlug);
       if (tenant?.id) {
         await setTenantContext(tenant.id);
-        localStorage.setItem('tenant_id', tenant.id);
-        localStorage.setItem('tenant_slug', tenant.slug);
+        // Store in context-aware storage
+        storage.setItem('tenant_id', tenant.id);
+        storage.setItem('tenant_slug', tenant.slug);
       }
       return;
     }
@@ -75,14 +109,17 @@ export async function initializeTenantContext(): Promise<void> {
       const tenant = await getTenantBySlug(subdomain);
       if (tenant?.id) {
         await setTenantContext(tenant.id);
-        localStorage.setItem('tenant_id', tenant.id);
-        localStorage.setItem('tenant_slug', tenant.slug);
+        // Store in context-aware storage
+        const storage = getStorage();
+        storage.setItem('tenant_id', tenant.id);
+        storage.setItem('tenant_slug', tenant.slug);
         return;
       }
     }
 
-    // Fallback: try to get from localStorage
-    const storedTenantId = localStorage.getItem('tenant_id');
+    // Fallback: try to get from context-aware storage
+    const storage = getStorage();
+    const storedTenantId = storage.getItem('tenant_id');
     if (storedTenantId) {
       await setTenantContext(storedTenantId);
     }

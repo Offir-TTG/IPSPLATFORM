@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/lms/courses/upload-image - Upload a course image
 export const POST = withAuth(async (
   request: NextRequest,

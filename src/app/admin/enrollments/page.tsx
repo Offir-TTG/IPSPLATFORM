@@ -55,7 +55,11 @@ interface Enrollment {
   payment_status: 'pending' | 'partial' | 'paid' | 'overdue';
   status: 'draft' | 'pending' | 'active' | 'suspended' | 'cancelled' | 'completed';
   next_payment_date?: string;
+  payment_start_date?: string;
+  enrolled_at?: string;
   created_at: string;
+  expires_at?: string | null;
+  invitation_sent_at?: string | null;
 }
 
 interface EnrollmentFilters {
@@ -104,6 +108,8 @@ export default function EnrollmentsPage() {
       if (filters.status) params.append('status', filters.status);
       if (filters.paymentStatus) params.append('paymentStatus', filters.paymentStatus);
       if (filters.search) params.append('search', filters.search);
+      // Add cache-busting timestamp to force fresh fetch
+      params.append('_t', Date.now().toString());
 
       const response = await fetch(`/api/admin/enrollments?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch enrollments');
@@ -613,10 +619,15 @@ export default function EnrollmentsPage() {
                             setSendLinkDialogOpen(true);
                           }}
                           title={t('admin.enrollments.sendLink', 'Send enrollment link')}
+                          className="relative"
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                           </svg>
+                          {enrollment.invitation_sent_at && (
+                            <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-background"
+                                  title={`Sent: ${new Date(enrollment.invitation_sent_at).toLocaleString()}`} />
+                          )}
                         </Button>
                       )}
                       {(enrollment.status === 'pending' || enrollment.status === 'active') && (
@@ -745,10 +756,15 @@ export default function EnrollmentsPage() {
                                   setSendLinkDialogOpen(true);
                                 }}
                                 title={t('admin.enrollments.sendLink', 'Send enrollment link')}
+                                className="relative"
                               >
                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                 </svg>
+                                {enrollment.invitation_sent_at && (
+                                  <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-background"
+                                        title={`Sent: ${new Date(enrollment.invitation_sent_at).toLocaleString()}`} />
+                                )}
                               </Button>
                             )}
                             {(enrollment.status === 'pending' || enrollment.status === 'active') && (

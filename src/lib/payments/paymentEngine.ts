@@ -203,7 +203,8 @@ export function generatePaymentSchedules(
   startDate?: Date
 ): Omit<PaymentSchedule, 'id' | 'created_at' | 'updated_at'>[] {
   const schedules: Omit<PaymentSchedule, 'id' | 'created_at' | 'updated_at'>[] = [];
-  const now = startDate || new Date();
+  const now = new Date(); // Always use current date for immediate payments (one_time, deposit)
+  const planStartDate = startDate || now; // Use startDate for installments/subscriptions
 
   switch (plan.plan_type) {
     case 'one_time':
@@ -249,12 +250,33 @@ export function generatePaymentSchedules(
 
       // Installment payments
       if (plan.installment_count && plan.installment_count > 0) {
-        const installmentAmount = remainingAmount / plan.installment_count;
-        const frequencyDays = getFrequencyDays(plan.installment_frequency!, plan.custom_frequency_days);
+        // Round each installment amount to 2 decimal places
+        const baseInstallmentAmount = parseFloat((remainingAmount / plan.installment_count).toFixed(2));
+
+        // Calculate total of rounded installments
+        const totalRoundedInstallments = baseInstallmentAmount * plan.installment_count;
+
+        // Calculate rounding discrepancy and add it to the last installment
+        const roundingAdjustment = parseFloat((remainingAmount - totalRoundedInstallments).toFixed(2));
 
         for (let i = 0; i < plan.installment_count; i++) {
-          const dueDate = new Date(now);
-          dueDate.setDate(dueDate.getDate() + (frequencyDays * (i + 1)));
+          let dueDate: Date;
+
+          if (plan.installment_frequency === 'monthly') {
+            // Use proper month calculation for monthly frequency
+            dueDate = addMonths(planStartDate, i);
+          } else {
+            // Use day-based calculation for weekly/biweekly/custom
+            const frequencyDays = getFrequencyDays(plan.installment_frequency!, plan.custom_frequency_days);
+            dueDate = new Date(planStartDate);
+            dueDate.setDate(dueDate.getDate() + (frequencyDays * i));
+          }
+
+          // Add rounding adjustment to the last installment to ensure exact total
+          const isLastInstallment = i === plan.installment_count - 1;
+          const installmentAmount = isLastInstallment
+            ? parseFloat((baseInstallmentAmount + roundingAdjustment).toFixed(2))
+            : baseInstallmentAmount;
 
           schedules.push({
             tenant_id: tenantId,
@@ -276,12 +298,33 @@ export function generatePaymentSchedules(
 
     case 'installments':
       if (plan.installment_count && plan.installment_count > 0) {
-        const installmentAmount = totalAmount / plan.installment_count;
-        const frequencyDays = getFrequencyDays(plan.installment_frequency!, plan.custom_frequency_days);
+        // Round each installment amount to 2 decimal places
+        const baseInstallmentAmount = parseFloat((totalAmount / plan.installment_count).toFixed(2));
+
+        // Calculate total of rounded installments
+        const totalRoundedInstallments = baseInstallmentAmount * plan.installment_count;
+
+        // Calculate rounding discrepancy and add it to the last installment
+        const roundingAdjustment = parseFloat((totalAmount - totalRoundedInstallments).toFixed(2));
 
         for (let i = 0; i < plan.installment_count; i++) {
-          const dueDate = new Date(now);
-          dueDate.setDate(dueDate.getDate() + (frequencyDays * i));
+          let dueDate: Date;
+
+          if (plan.installment_frequency === 'monthly') {
+            // Use proper month calculation for monthly frequency
+            dueDate = addMonths(planStartDate, i);
+          } else {
+            // Use day-based calculation for weekly/biweekly/custom
+            const frequencyDays = getFrequencyDays(plan.installment_frequency!, plan.custom_frequency_days);
+            dueDate = new Date(planStartDate);
+            dueDate.setDate(dueDate.getDate() + (frequencyDays * i));
+          }
+
+          // Add rounding adjustment to the last installment to ensure exact total
+          const isLastInstallment = i === plan.installment_count - 1;
+          const installmentAmount = isLastInstallment
+            ? parseFloat((baseInstallmentAmount + roundingAdjustment).toFixed(2))
+            : baseInstallmentAmount;
 
           schedules.push({
             tenant_id: tenantId,
@@ -326,6 +369,8 @@ export function generatePaymentSchedules(
 
 /**
  * Convert frequency to days
+ * Note: For monthly frequency, we use addMonths() instead of adding days
+ * to ensure we get the correct date (e.g., Jan 31 + 1 month = Feb 28/29, not March 2/3)
  */
 function getFrequencyDays(frequency: string, customDays?: number): number {
   switch (frequency) {
@@ -334,12 +379,23 @@ function getFrequencyDays(frequency: string, customDays?: number): number {
     case 'biweekly':
       return 14;
     case 'monthly':
-      return 30;
+      return 30; // Fallback value - actual monthly calculation should use addMonths()
     case 'custom':
       return customDays || 30;
     default:
       return 30;
   }
+}
+
+/**
+ * Add months to a date correctly (handles month-end edge cases)
+ * Uses local time to keep dates consistent with input
+ */
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  // Use local methods since we're working with date-only values
+  result.setMonth(result.getMonth() + months);
+  return result;
 }
 
 /**

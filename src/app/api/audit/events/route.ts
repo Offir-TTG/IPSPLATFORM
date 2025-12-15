@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // GET audit events with filtering
 export async function GET(request: NextRequest) {
   try {

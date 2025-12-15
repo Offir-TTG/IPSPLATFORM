@@ -324,6 +324,43 @@ export async function getDocuSignClient(): Promise<DocuSignClient> {
 }
 
 /**
+ * Get DocuSign client by tenant ID (for unauthenticated flows like enrollment wizard)
+ * Uses admin client to bypass RLS
+ */
+export async function getDocuSignClientByTenantId(tenantId: string): Promise<DocuSignClient> {
+  try {
+    const { createAdminClient } = await import('@/lib/supabase/server');
+    const supabase = createAdminClient();
+
+    // Query integrations filtered by tenant_id using admin client
+    const { data: integration, error } = await supabase
+      .from('integrations')
+      .select('*')
+      .eq('integration_key', 'docusign')
+      .eq('tenant_id', tenantId)
+      .eq('is_enabled', true)
+      .single();
+
+    if (error || !integration) {
+      console.error('[getDocuSignClientByTenantId] Integration query error:', error);
+      throw new Error('DocuSign integration is not enabled or not configured for this tenant');
+    }
+
+    const credentials = integration.credentials as DocuSignCredentials;
+    const settings = integration.settings as DocuSignSettings;
+
+    if (!credentials.account_id || !credentials.integration_key || !credentials.user_id || !credentials.private_key) {
+      throw new Error('DocuSign credentials are incomplete. Please configure the integration in the admin panel.');
+    }
+
+    return new DocuSignClient(credentials, settings);
+  } catch (error) {
+    console.error('[getDocuSignClientByTenantId] Failed to get DocuSign client:', error);
+    throw error;
+  }
+}
+
+/**
  * Get DocuSign client with specific credentials (for testing)
  */
 export function createDocuSignClient(credentials: DocuSignCredentials, settings?: DocuSignSettings): DocuSignClient {

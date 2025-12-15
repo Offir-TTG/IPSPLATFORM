@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { courseService } from '@/lib/lms/courseService';
 
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // GET /api/lms/courses
 // List all courses with optional filtering

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { getProduct, updateProduct, deleteProduct, getProductStats } from '@/lib/payments/productService';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/payments/products/:id - Get product details
 export async function GET(
   request: NextRequest,

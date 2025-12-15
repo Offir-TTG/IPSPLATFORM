@@ -3,18 +3,17 @@ import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/programs - List all programs
 export const GET = withAuth(async (request: NextRequest, user: any) => {
   try {
     const supabase = await createClient();
 
-    // Get programs with course counts (enrollments optional for now)
+    // Get programs first
     const { data: programs, error } = await supabase
       .from('programs')
-      .select(`
-        *,
-        courses:courses(count)
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -25,12 +24,21 @@ export const GET = withAuth(async (request: NextRequest, user: any) => {
       );
     }
 
-    // Transform the data to include counts
-    const transformedPrograms = programs?.map(program => ({
-      ...program,
-      course_count: program.courses?.[0]?.count || 0,
-      student_count: 0, // Will be populated when enrollments table is ready
-    }));
+    // Get course counts for each program using the program_courses junction table
+    const transformedPrograms = await Promise.all(
+      (programs || []).map(async (program) => {
+        const { count } = await supabase
+          .from('program_courses')
+          .select('*', { count: 'exact', head: true })
+          .eq('program_id', program.id);
+
+        return {
+          ...program,
+          course_count: count || 0,
+          student_count: 0, // Will be populated when enrollments table is ready
+        };
+      })
+    );
 
     return NextResponse.json({
       success: true,

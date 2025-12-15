@@ -83,7 +83,9 @@ export async function processEnrollment(
   }
 
   // 4. Create enrollment record
-  const enrollmentStartDate = start_date || new Date();
+  // Use provided start_date, or current date if not specified
+  // Do NOT copy from product - enrollment has its own payment_start_date that should be set explicitly
+  const enrolledAt = new Date();
 
   const { data: enrollment, error: enrollmentError } = await supabase
     .from('enrollments')
@@ -99,7 +101,8 @@ export async function processEnrollment(
       payment_status: 'pending',
       deposit_paid: false,
       status: 'draft', // Start as draft, will change to pending when email is sent, then active when user completes enrollment
-      enrolled_at: enrollmentStartDate.toISOString(),
+      enrolled_at: enrolledAt.toISOString(),
+      payment_start_date: start_date?.toISOString() || null, // Use explicitly provided start_date, or null to use default later
       payment_metadata: {
         ...metadata,
         enrollment_processed_at: new Date().toISOString(),
@@ -114,12 +117,17 @@ export async function processEnrollment(
   }
 
   // 5. Generate payment schedules
+  // Use enrollment's payment_start_date if set, otherwise use current date
+  const paymentStartDate = enrollment.payment_start_date
+    ? new Date(enrollment.payment_start_date)
+    : new Date();
+
   const schedules = generatePaymentSchedules(
     enrollment.id,
     tenant_id,
     paymentPlan,
     totalAmount,
-    enrollmentStartDate
+    paymentStartDate
   );
 
   // 6. Insert payment schedules
@@ -235,7 +243,8 @@ export async function processEnrollment(
  */
 export async function getEnrollmentPaymentDetails(
   enrollment_id: string,
-  tenant_id: string
+  tenant_id: string,
+  supabaseClient?: any // Optional admin client for unauthenticated access
 ): Promise<{
   enrollment: any;
   product: Product;
@@ -243,14 +252,14 @@ export async function getEnrollmentPaymentDetails(
   schedules: PaymentSchedule[];
   payments: any[];
 }> {
-  const supabase = await createClient();
+  const supabase = supabaseClient || await createClient();
 
   // Get enrollment with relations
   const { data: enrollment, error: enrollmentError } = await supabase
     .from('enrollments')
     .select(`
       *,
-      users(id, first_name, last_name, email)
+      users!enrollments_user_id_fkey(id, first_name, last_name, email)
     `)
     .eq('id', enrollment_id)
     .eq('tenant_id', tenant_id)
@@ -266,25 +275,169 @@ export async function getEnrollmentPaymentDetails(
     throw new Error('Product not found');
   }
 
-  // Get payment plan
-  const { data: paymentPlan } = await supabase
-    .from('payment_plans')
-    .select('*')
-    .eq('id', enrollment.payment_plan_id)
-    .eq('tenant_id', tenant_id)
-    .single();
+  // Get payment plan (either from template or from product payment model)
+  let paymentPlan: any;
 
-  if (!paymentPlan) {
-    throw new Error('Payment plan not found');
+  if (enrollment.payment_plan_id) {
+    // Using payment plan template
+    const { data: planData } = await supabase
+      .from('payment_plans')
+      .select('*')
+      .eq('id', enrollment.payment_plan_id)
+      .eq('tenant_id', tenant_id)
+      .single();
+
+    if (!planData) {
+      throw new Error('Payment plan not found');
+    }
+    paymentPlan = planData;
+  } else {
+    // No template - fetch product with payment model to generate synthetic payment plan
+    // This handles enrollments created with direct payment model configuration
+    const { data: productWithPaymentInfo } = await supabase
+      .from('products')
+      .select('payment_model, payment_plan')
+      .eq('id', enrollment.product_id)
+      .eq('tenant_id', tenant_id)
+      .single();
+
+    if (!productWithPaymentInfo) {
+      throw new Error('Product payment configuration not found');
+    }
+
+    const paymentModel = productWithPaymentInfo.payment_model;
+    const paymentConfig = productWithPaymentInfo.payment_plan || {};
+
+    if (paymentModel === 'one_time') {
+      paymentPlan = {
+        id: null as any, // Synthetic plan - no payment_plan_id in schedules
+        tenant_id,
+        plan_name: 'One-Time Payment',
+        plan_type: 'one_time',
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: enrollment.created_at,
+        updated_at: enrollment.created_at,
+      };
+    } else if (paymentModel === 'deposit_then_plan') {
+      paymentPlan = {
+        id: null as any, // Synthetic plan - no payment_plan_id in schedules
+        tenant_id,
+        plan_name: 'Deposit + Installments',
+        plan_type: 'deposit',
+        deposit_type: paymentConfig.deposit_type || 'percentage',
+        deposit_amount: paymentConfig.deposit_amount,
+        deposit_percentage: paymentConfig.deposit_percentage,
+        installment_count: paymentConfig.installments || 1,
+        installment_frequency: paymentConfig.frequency || 'monthly',
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: enrollment.created_at,
+        updated_at: enrollment.created_at,
+      };
+    } else if (paymentModel === 'subscription') {
+      paymentPlan = {
+        id: null as any, // Synthetic plan - no payment_plan_id in schedules
+        tenant_id,
+        plan_name: 'Subscription',
+        plan_type: 'subscription',
+        subscription_frequency: paymentConfig.subscription_interval || 'monthly',
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: enrollment.created_at,
+        updated_at: enrollment.created_at,
+      };
+    } else if (paymentModel === 'free') {
+      paymentPlan = {
+        id: null as any, // Synthetic plan - no payment_plan_id in schedules
+        tenant_id,
+        plan_name: 'Free',
+        plan_type: 'one_time',
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: enrollment.created_at,
+        updated_at: enrollment.created_at,
+      };
+    } else {
+      throw new Error(`Unsupported payment model: ${paymentModel}`);
+    }
   }
 
   // Get schedules
-  const { data: schedules } = await supabase
+  let { data: schedules } = await supabase
     .from('payment_schedules')
     .select('*')
     .eq('enrollment_id', enrollment_id)
     .eq('tenant_id', tenant_id)
     .order('payment_number', { ascending: true });
+
+  // If no schedules exist and enrollment requires payment, generate them on-demand
+  if ((!schedules || schedules.length === 0) && enrollment.total_amount > 0 && !enrollment.payment_waived) {
+    try {
+      const { generatePaymentSchedules } = await import('./paymentEngine');
+
+      // Determine start date with priority: enrollment.payment_start_date → product.payment_start_date → enrollment.created_at
+      // Parse as local midnight to keep dates consistent
+      let startDate: Date;
+      if (enrollment.payment_start_date) {
+        // Enrollment has explicit start date - parse as local midnight
+        const dateOnly = enrollment.payment_start_date.split('T')[0]; // Extract YYYY-MM-DD
+        startDate = new Date(dateOnly + 'T00:00:00');
+        console.log(`[EnrollmentService] Using enrollment payment_start_date: ${dateOnly} → ${startDate.toISOString()}`);
+      } else if ((product as any).payment_start_date) {
+        // Product has default start date - parse as local midnight
+        const dateOnly = (product as any).payment_start_date.split('T')[0];
+        startDate = new Date(dateOnly + 'T00:00:00');
+        console.log(`[EnrollmentService] Using product payment_start_date: ${dateOnly} → ${startDate.toISOString()}`);
+      } else {
+        // Fallback to enrollment creation date
+        startDate = new Date(enrollment.created_at || enrollment.enrolled_at || new Date());
+        console.log(`[EnrollmentService] Using enrollment created_at: ${startDate.toISOString()}`);
+      }
+
+      // Generate schedules using correct function signature: (enrollmentId, tenantId, plan, totalAmount, startDate)
+      const generatedSchedules = generatePaymentSchedules(
+        enrollment_id,
+        tenant_id,
+        paymentPlan,
+        enrollment.total_amount,
+        startDate
+      );
+
+      if (generatedSchedules && generatedSchedules.length > 0) {
+        // The generatePaymentSchedules function already includes all required fields
+        const { data: insertedSchedules, error: scheduleError } = await supabase
+          .from('payment_schedules')
+          .insert(generatedSchedules)
+          .select('*');
+
+        if (!scheduleError && insertedSchedules) {
+          schedules = insertedSchedules;
+          console.log(`[EnrollmentService] Auto-generated ${schedules.length} payment schedules for enrollment ${enrollment_id} starting ${startDate.toISOString().split('T')[0]}`);
+        } else {
+          console.error('[EnrollmentService] Error creating payment schedules:', scheduleError);
+        }
+      }
+    } catch (error) {
+      console.error('[EnrollmentService] Error generating schedules on-demand:', error);
+    }
+  }
 
   // Get payments
   const { data: payments } = await supabase

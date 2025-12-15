@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { ZoomService } from '@/lib/zoom/zoomService';
 import crypto from 'crypto';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Zoom Webhook Handler
  *

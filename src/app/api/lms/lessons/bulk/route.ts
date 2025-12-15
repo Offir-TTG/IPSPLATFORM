@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { lessonService } from '@/lib/lms/lessonService';
 
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // POST /api/lms/lessons/bulk
 // Bulk create lessons (e.g., "Add 10 Lessons")

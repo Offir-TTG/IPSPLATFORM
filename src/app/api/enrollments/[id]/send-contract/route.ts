@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getDocuSignClient } from '@/lib/docusign/client';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/enrollments/[id]/send-contract - Send DocuSign contract for enrollment (embedded signing)
 export async function POST(
   request: NextRequest,

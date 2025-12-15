@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/user/dashboard - Get user dashboard data
 export const GET = withAuth(
   async (request: NextRequest, user: any) => {

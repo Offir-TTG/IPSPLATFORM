@@ -587,9 +587,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
         if (!currentFormData.payment_plan?.installments || currentFormData.payment_plan.installments <= 0) {
           errors.installments = t('products.validation.installments_required', 'Please specify number of installments');
         }
-        if (!currentFormData.payment_plan?.plan_start_date) {
-          errors.plan_start_date = t('products.validation.plan_start_date_required', 'Please select installment plan start date');
-        }
+        // Note: payment_start_date moved to product level and is optional
       }
 
       if (currentFormData.payment_model === 'subscription' && !currentFormData.payment_plan?.subscription_interval) {
@@ -628,6 +626,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
         price: product.price,
         currency: product.currency || 'USD',
         payment_plan: product.payment_plan || {},
+        payment_start_date: product.payment_start_date ? product.payment_start_date.split('T')[0] : undefined,
         default_payment_plan_id: product.default_payment_plan_id,
         alternative_payment_plan_ids: product.alternative_payment_plan_ids || [],
         allow_plan_selection: product.allow_plan_selection ?? true,
@@ -701,9 +700,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
         errors.installments = t('products.validation.installments_required', 'Please specify number of installments');
       }
 
-      if (!plan.plan_start_date) {
-        errors.plan_start_date = t('products.validation.plan_start_date_required', 'Please select installment plan start date');
-      }
+      // Note: payment_start_date moved to product level and is optional
     }
 
     if (formData.payment_model === 'subscription' && !formData.payment_plan.subscription_interval) {
@@ -923,6 +920,25 @@ function ProductForm({ product, onSave, onCancel, t }: {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+          )}
+
+          {/* Payment Start Date - For ALL payment models */}
+          {formData.payment_model !== 'free' && (
+            <div>
+              <Label htmlFor="payment_start_date" suppressHydrationWarning>
+                {t('admin.products.payment_start_date', 'Payment Start Date')}
+              </Label>
+              <Input
+                type="date"
+                id="payment_start_date"
+                value={formData.payment_start_date || ''}
+                onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+              />
+              <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('admin.products.payment_start_date_help', 'Default date when first payment is due for new enrollments. Works for all payment models.')}
+              </p>
             </div>
           )}
 

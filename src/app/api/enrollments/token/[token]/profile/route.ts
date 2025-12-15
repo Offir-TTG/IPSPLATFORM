@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 
 /**
  * POST /api/enrollments/token/:token/profile
  *
  * Save profile data to enrollment WITHOUT creating user account
  * NO AUTHENTICATION REQUIRED - uses token validation instead
+ * Uses admin client to bypass RLS since users are not authenticated yet
  * Profile data is stored in wizard_profile_data JSON column until enrollment completion
  */
 export async function POST(
@@ -13,7 +14,8 @@ export async function POST(
   { params }: { params: { token: string } }
 ) {
   try {
-    const supabase = await createClient();
+    // Use admin client to bypass RLS - enrollment links are accessed by unauthenticated users
+    const supabase = createAdminClient();
     const body = await request.json();
 
     const {
@@ -21,15 +23,17 @@ export async function POST(
       last_name,
       email,
       phone,
-      address,
-      city,
-      country
+      address
     } = body;
 
+    console.log('[Profile Save] Token:', params.token);
+    console.log('[Profile Save] Received data:', { first_name, last_name, email, phone, address });
+
     // Validate required fields
-    if (!first_name || !last_name || !email) {
+    if (!first_name || !last_name || !email || !phone || !address) {
+      console.error('[Profile Save] Missing required fields:', { first_name, last_name, email, phone, address });
       return NextResponse.json(
-        { error: 'First name, last name, and email are required' },
+        { error: 'First name, last name, email, phone, and address are required' },
         { status: 400 }
       );
     }
@@ -51,34 +55,59 @@ export async function POST(
     }
 
     // Store profile data in wizard_profile_data JSON column (NOT in users table yet!)
-    const { error: updateError } = await supabase
+    const profileDataToSave = {
+      first_name,
+      last_name,
+      email,
+      phone,
+      address,
+      updated_at: new Date().toISOString()
+    };
+
+    console.log('[Profile Save] Enrollment ID:', enrollment.id);
+    console.log('[Profile Save] Saving profile data:', profileDataToSave);
+
+    const updateTimestamp = new Date().toISOString();
+    console.log('[Profile Save] Setting updated_at to:', updateTimestamp);
+
+    const { data: updateData, error: updateError } = await supabase
       .from('enrollments')
       .update({
-        wizard_profile_data: {
-          first_name,
-          last_name,
-          email,
-          phone: phone || null,
-          address: address || null,
-          city: city || null,
-          country: country || null,
-          updated_at: new Date().toISOString()
-        },
-        updated_at: new Date().toISOString()
+        wizard_profile_data: profileDataToSave,
+        updated_at: updateTimestamp
       })
-      .eq('enrollment_token', params.token);
+      .eq('enrollment_token', params.token)
+      .select('id, wizard_profile_data, updated_at');
 
     if (updateError) {
-      console.error('Error updating wizard profile data:', updateError);
+      console.error('[Profile Save] Error updating wizard profile data:', updateError);
       return NextResponse.json(
         { error: 'Failed to save profile data' },
         { status: 500 }
       );
     }
 
+    console.log('[Profile Save] Successfully saved profile data');
+    console.log('[Profile Save] Updated enrollment data:', updateData);
+    console.log('[Profile Save] Returned updated_at:', updateData?.[0]?.updated_at);
+
+    // Verify the data was actually saved
+    const { data: verifyData, error: verifyError } = await supabase
+      .from('enrollments')
+      .select('id, wizard_profile_data')
+      .eq('enrollment_token', params.token)
+      .single();
+
+    console.log('[Profile Save] Verification query result:', verifyData);
+    if (verifyError) {
+      console.error('[Profile Save] Verification error:', verifyError);
+    }
+
+    // Return the saved profile data so the frontend doesn't need to refetch
     return NextResponse.json({
       success: true,
-      message: 'Profile data saved successfully'
+      message: 'Profile data saved successfully',
+      profile: profileDataToSave
     });
 
   } catch (error: any) {
@@ -94,13 +123,15 @@ export async function POST(
  * GET /api/enrollments/token/:token/profile
  *
  * Get current profile data from wizard_profile_data
+ * Uses admin client to bypass RLS since users are not authenticated yet
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { token: string } }
 ) {
   try {
-    const supabase = await createClient();
+    // Use admin client to bypass RLS - enrollment links are accessed by unauthenticated users
+    const supabase = createAdminClient();
 
     // Validate token and get enrollment
     const { data: enrollment, error: fetchError } = await supabase

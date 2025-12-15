@@ -10,7 +10,7 @@ import type { Tenant } from '@/lib/tenant/types';
 
 // CACHE VERSION: Increment this number when you need to invalidate all translation caches
 // This forces all clients to fetch fresh translations from the API
-const TRANSLATION_CACHE_VERSION = 2;
+const TRANSLATION_CACHE_VERSION = 8;
 
 // Maximum cache age in milliseconds (1 hour)
 const MAX_CACHE_AGE = 60 * 60 * 1000;
@@ -197,11 +197,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         await initializeTenantContext();
 
-        // After initialization, get tenant info from localStorage
-        const tenantId = localStorage.getItem('tenant_id');
-        const tenantSlug = localStorage.getItem('tenant_slug');
-        const tenantName = localStorage.getItem('tenant_name');
-        const tenantRole = localStorage.getItem('tenant_role');
+        // After initialization, get tenant info from context-aware storage
+        // Wizard uses sessionStorage, Admin uses localStorage
+        const storage = typeof window !== 'undefined' && window.location.pathname.includes('/enroll/wizard/')
+          ? sessionStorage
+          : localStorage;
+
+        const tenantId = storage.getItem('tenant_id');
+        const tenantSlug = storage.getItem('tenant_slug');
+        const tenantName = storage.getItem('tenant_name');
+        const tenantRole = storage.getItem('tenant_role');
 
         if (tenantId && tenantSlug) {
           setTenantState({
@@ -234,21 +239,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     initTenant();
   }, []);
 
+  // Listen for localStorage changes from other tabs/browsers
+  // This detects when wizard might interfere with admin
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Storage events only fire when localStorage is changed in ANOTHER tab/window
+      // Check if tenant_id was changed
+      if (e.key === 'tenant_id' && e.newValue !== e.oldValue) {
+        console.warn('[AppContext] ⚠️ Tenant changed in another tab/browser!', {
+          oldValue: e.oldValue,
+          newValue: e.newValue,
+          url: e.url
+        });
+
+        // DON'T auto-reload - just log the warning
+        // The context-aware storage should prevent this from happening
+        console.warn('[AppContext] This should not happen with sessionStorage isolation!');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const setTenant = (newTenant: TenantInfo | null) => {
     setTenantState(newTenant);
 
+    // Use context-aware storage to prevent cross-browser interference
+    // Wizard uses sessionStorage (isolated), Admin uses localStorage (persistent)
+    const storage = typeof window !== 'undefined' && window.location.pathname.includes('/enroll/wizard/')
+      ? sessionStorage
+      : localStorage;
+
     if (newTenant) {
-      localStorage.setItem('tenant_id', newTenant.id);
-      localStorage.setItem('tenant_slug', newTenant.slug);
-      localStorage.setItem('tenant_name', newTenant.name);
+      storage.setItem('tenant_id', newTenant.id);
+      storage.setItem('tenant_slug', newTenant.slug);
+      storage.setItem('tenant_name', newTenant.name);
       if (newTenant.role) {
-        localStorage.setItem('tenant_role', newTenant.role);
+        storage.setItem('tenant_role', newTenant.role);
       }
     } else {
-      localStorage.removeItem('tenant_id');
-      localStorage.removeItem('tenant_slug');
-      localStorage.removeItem('tenant_name');
-      localStorage.removeItem('tenant_role');
+      storage.removeItem('tenant_id');
+      storage.removeItem('tenant_slug');
+      storage.removeItem('tenant_name');
+      storage.removeItem('tenant_role');
     }
   };
 
@@ -285,7 +319,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem('theme', newTheme);
+    // Use context-aware storage
+    const storage = typeof window !== 'undefined' && window.location.pathname.includes('/enroll/wizard/')
+      ? sessionStorage
+      : localStorage;
+    storage.setItem('theme', newTheme);
   };
 
   const toggleTheme = () => {
@@ -356,7 +394,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               timestamp: Date.now(),
               data: data.data,
             };
-            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+            // Use context-aware storage
+            const storage = window.location.pathname.includes('/enroll/wizard/')
+              ? sessionStorage
+              : localStorage;
+            storage.setItem(cacheKey, JSON.stringify(cacheData));
             console.log(`[Translations] Cached ${Object.keys(data.data).length} admin translations for ${adminLanguage}`);
           }
         } else if (data.success && data.data && Object.keys(data.data).length === 0) {
@@ -408,7 +450,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               timestamp: Date.now(),
               data: data.data,
             };
-            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+            // Use context-aware storage
+            const storage = window.location.pathname.includes('/enroll/wizard/')
+              ? sessionStorage
+              : localStorage;
+            storage.setItem(cacheKey, JSON.stringify(cacheData));
             console.log(`[Translations] Cached ${Object.keys(data.data).length} user translations for ${userLanguage}`);
           }
         } else if (data.success && data.data && Object.keys(data.data).length === 0) {
@@ -434,7 +480,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setAdminLanguageState(lang);
     setAdminDirection(langInfo.direction);
-    localStorage.setItem('admin_language', lang);
+
+    // Use context-aware storage
+    const storage = typeof window !== 'undefined' && window.location.pathname.includes('/enroll/wizard/')
+      ? sessionStorage
+      : localStorage;
+    storage.setItem('admin_language', lang);
 
     // Update document - this is the ONLY place we update on language change
     document.documentElement.lang = lang;
@@ -448,7 +499,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setUserLanguageState(lang);
     setUserDirection(langInfo.direction);
-    localStorage.setItem('user_language', lang);
+
+    // Use context-aware storage
+    const storage = typeof window !== 'undefined' && window.location.pathname.includes('/enroll/wizard/')
+      ? sessionStorage
+      : localStorage;
+    storage.setItem('user_language', lang);
 
     // Update document - this is the ONLY place we update on language change
     document.documentElement.lang = lang;

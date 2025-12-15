@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // DELETE /api/user/profile/remove-avatar - Remove user profile avatar
 export const DELETE = withAuth(async (
   request: NextRequest,

@@ -17,7 +17,8 @@
       "Bash(curl:*)",
       "Bash(npx supabase:*)",
       "Bash(node add-dynamic-to-all.js:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npx tsx:*)"
     ],
     "deny": [],
     "ask": []

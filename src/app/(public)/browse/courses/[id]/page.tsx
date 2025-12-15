@@ -228,8 +228,6 @@ export default function CourseDetailPage() {
         borderBottom: '1px solid hsl(var(--border))'
       }}>
         <div style={{
-          maxWidth: '80rem',
-          marginInline: 'auto',
           paddingBlock: '1rem',
           paddingInline: '1.5rem',
           display: 'flex',
@@ -268,8 +266,6 @@ export default function CourseDetailPage() {
         borderBottom: '1px solid hsl(var(--border))'
       }}>
         <div style={{
-          maxWidth: '80rem',
-          marginInline: 'auto',
           paddingInline: '1.5rem',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -493,11 +489,9 @@ export default function CourseDetailPage() {
         borderBottom: '1px solid hsl(var(--border))'
       }}>
         <div style={{
-          maxWidth: '80rem',
-          marginInline: 'auto',
           paddingInline: '1.5rem'
         }}>
-          <div style={{ display: 'flex', gap: '2rem' }}>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
             {[
               { id: 'overview' as const, label: 'Overview' },
               { id: 'curriculum' as const, label: 'Curriculum' },
@@ -509,6 +503,7 @@ export default function CourseDetailPage() {
                 onClick={() => setActiveTab(tab.id)}
                 style={{
                   paddingBlock: '1rem',
+                  paddingInline: '0.5rem',
                   fontSize: 'var(--font-size-base)',
                   fontWeight: activeTab === tab.id ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)',
                   color: activeTab === tab.id ? 'hsl(var(--primary))' : 'hsl(var(--text-muted))',
@@ -516,7 +511,8 @@ export default function CourseDetailPage() {
                   transition: 'all 0.2s',
                   cursor: 'pointer',
                   background: 'none',
-                  border: 'none'
+                  border: 'none',
+                  whiteSpace: 'nowrap'
                 }}
               >
                 {tab.label}
@@ -528,14 +524,12 @@ export default function CourseDetailPage() {
 
       {/* Tab Content */}
       <div style={{
-        maxWidth: '80rem',
-        marginInline: 'auto',
         paddingBlock: '3rem',
         paddingInline: '1.5rem'
       }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 24rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 24rem), 1fr))',
           gap: '3rem'
         }}>
           {/* Main Content */}
@@ -752,7 +746,7 @@ export default function CourseDetailPage() {
 
                       <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
                         gap: '1.5rem'
                       }}>
                         <div>

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to clear translation cache
 async function clearCache() {
   try {
@@ -16,6 +18,16 @@ async function clearCache() {
 // GET all translations (optionally filtered by language or category)
 export async function GET(request: NextRequest) {
   try {
+    // Verify tenant admin to get tenant_id
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized or insufficient permissions' },
+        { status: 403 }
+      );
+    }
+
+    const { tenant } = auth;
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const languageCode = searchParams.get('language');
@@ -24,10 +36,11 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
     const search = searchParams.get('search');
 
-    // Get total count first
+    // Get total count first - filter by tenant_id
     let countQuery = supabase
       .from('translations')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', tenant.id);
 
     if (languageCode) {
       countQuery = countQuery.eq('language_code', languageCode);
@@ -37,19 +50,32 @@ export async function GET(request: NextRequest) {
       countQuery = countQuery.eq('category', category);
     }
 
+    // If searching, first find all matching translation keys
+    let matchingKeys: string[] | undefined;
     if (search) {
-      countQuery = countQuery.or(`translation_key.ilike.%${search}%,translation_value.ilike.%${search}%`);
+      const { data: matchingTranslations } = await supabase
+        .from('translations')
+        .select('translation_key')
+        .eq('tenant_id', tenant.id)
+        .or(`translation_key.ilike.%${search}%,translation_value.ilike.%${search}%`);
+
+      if (matchingTranslations) {
+        matchingKeys = Array.from(new Set(matchingTranslations.map(t => t.translation_key)));
+      }
+    }
+
+    // Build count query
+    if (matchingKeys && matchingKeys.length > 0) {
+      countQuery = countQuery.in('translation_key', matchingKeys);
     }
 
     const { count } = await countQuery;
 
-    // Get paginated data
+    // Get paginated data - filter by tenant_id
     let query = supabase
       .from('translations')
       .select('*')
-      .order('category')
-      .order('translation_key')
-      .range((page - 1) * pageSize, page * pageSize - 1);
+      .eq('tenant_id', tenant.id);
 
     if (languageCode) {
       query = query.eq('language_code', languageCode);
@@ -59,9 +85,16 @@ export async function GET(request: NextRequest) {
       query = query.eq('category', category);
     }
 
-    if (search) {
-      query = query.or(`translation_key.ilike.%${search}%,translation_value.ilike.%${search}%`);
+    // Apply search filter by matching keys
+    if (matchingKeys && matchingKeys.length > 0) {
+      query = query.in('translation_key', matchingKeys);
     }
+
+    // Order and paginate
+    query = query
+      .order('category')
+      .order('translation_key')
+      .range((page - 1) * pageSize, page * pageSize - 1);
 
     const { data: translations, error } = await query;
 
@@ -106,7 +139,7 @@ export async function POST(request: NextRequest) {
     const { user, tenant } = auth;
     const supabase = await createClient();
 
-    const { language_code, translation_key, translation_value, category } = await request.json();
+    const { language_code, translation_key, translation_value, category, context } = await request.json();
 
     if (!language_code || !translation_key || !translation_value) {
       return NextResponse.json(
@@ -115,31 +148,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upsert translation (Supabase will automatically detect conflict on language_code, translation_key, tenant_id)
+    // Determine context based on translation_key if not provided
+    const translationContext = context || (translation_key.startsWith('admin.') ? 'admin' : 'user');
+
+    // Upsert translation using raw SQL since the unique constraint includes context
     const upsertData = {
       language_code,
       translation_key,
       translation_value,
       category: category || translation_key.split('.')[0],
+      context: translationContext,
       tenant_id: tenant.id,
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Upserting translation:', upsertData);
-
-    const { data: translation, error } = await supabase
-      .from('translations')
-      .upsert(upsertData, {
-        onConflict: 'tenant_id,language_code,translation_key',
-        ignoreDuplicates: false,
-      })
-      .select()
-      .single();
+    // Use database function to handle upsert with partial unique indexes
+    const { data, error } = await supabase.rpc('upsert_translation', {
+      p_language_code: language_code,
+      p_translation_key: translation_key,
+      p_translation_value: translation_value,
+      p_category: upsertData.category,
+      p_context: translationContext,
+      p_tenant_id: tenant.id
+    });
 
     if (error) {
       console.error('Translation upsert error:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       return NextResponse.json(
         { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    const translation = Array.isArray(data) ? data[0] : data;
+
+    if (!translation) {
+      console.error('No translation data returned from upsert');
+      return NextResponse.json(
+        { success: false, error: 'Failed to upsert translation - no data returned' },
         { status: 500 }
       );
     }
@@ -173,7 +220,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { user, tenant } = auth;
+    const { tenant } = auth;
     const supabase = await createClient();
 
     const { language_code, translations } = await request.json();
@@ -185,30 +232,32 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Prepare translations for upsert
-    const translationsToUpsert = translations.map((t: any) => ({
-      language_code,
-      translation_key: t.key,
-      translation_value: t.value,
-      category: t.category || t.key.split('.')[0],
-      tenant_id: tenant.id,
-      updated_at: new Date().toISOString(),
-    }));
-
-    const { data, error } = await supabase
-      .from('translations')
-      .upsert(translationsToUpsert, {
-        onConflict: 'tenant_id,language_code,translation_key',
-        ignoreDuplicates: false,
+    // Use database function for each translation
+    const results = await Promise.all(
+      translations.map(async (t: any) => {
+        const translationContext = t.context || (t.key.startsWith('admin.') ? 'admin' : 'user');
+        return supabase.rpc('upsert_translation', {
+          p_language_code: language_code,
+          p_translation_key: t.key,
+          p_translation_value: t.value,
+          p_category: t.category || t.key.split('.')[0],
+          p_context: translationContext,
+          p_tenant_id: tenant.id
+        });
       })
-      .select();
+    );
 
-    if (error) {
+    // Check for errors
+    const hasError = results.some(r => r.error);
+    if (hasError) {
+      const firstError = results.find(r => r.error)?.error;
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: firstError?.message || 'Failed to update some translations' },
         { status: 500 }
       );
     }
+
+    const data = results.map(r => Array.isArray(r.data) ? r.data[0] : r.data).filter(Boolean);
 
     // Clear cache
     await clearCache();

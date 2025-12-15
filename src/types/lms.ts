@@ -17,7 +17,8 @@ export type TopicContentType =
   | 'assignment'
   | 'link'
   | 'embed'
-  | 'download';
+  | 'download'
+  | 'whiteboard';
 
 export type ProgressStatus = 'not_started' | 'in_progress' | 'completed';
 
@@ -140,7 +141,8 @@ export type TopicContent =
   | AssignmentContent
   | LinkContent
   | EmbedContent
-  | DownloadContent;
+  | DownloadContent
+  | WhiteboardContent;
 
 export interface VideoContent {
   url: string;
@@ -224,6 +226,15 @@ export interface DownloadContent {
   file_type: string;
   size: number;
   description?: string;
+}
+
+export interface WhiteboardContent {
+  snapshot: any; // Tldraw document snapshot (JSON)
+  version: number; // For versioning
+  allow_collaboration?: boolean; // Allow students to collaborate
+  last_modified_by?: string; // User ID
+  last_modified_at?: string; // Timestamp
+  collaborators?: string[]; // Array of user IDs currently viewing
 }
 
 export interface LessonTopicCreateInput {

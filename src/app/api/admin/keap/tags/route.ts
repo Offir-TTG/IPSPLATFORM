@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getKeapClient } from '@/lib/keap/client';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/keap/tags - List all tags
 export async function GET() {
   try {

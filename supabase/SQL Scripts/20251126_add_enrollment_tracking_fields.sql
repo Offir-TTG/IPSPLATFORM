@@ -1,7 +1,9 @@
 -- =====================================================
--- Add Enrollment Tracking Fields to user_programs
+-- Add Enrollment Tracking Fields
 -- =====================================================
--- Run this in your Supabase SQL Editor
+-- Adds fields to user_programs table to track:
+-- - enrollment_type: Distinguish admin-assigned vs self-enrolled
+-- - created_by: Track which admin created the enrollment
 -- =====================================================
 
 -- Add enrollment_type column
@@ -18,13 +20,6 @@ CREATE INDEX IF NOT EXISTS idx_user_programs_created_by ON user_programs(created
 -- Add index for enrollment_type for filtering
 CREATE INDEX IF NOT EXISTS idx_user_programs_enrollment_type ON user_programs(enrollment_type);
 
--- Add comments to explain the fields
+-- Add comment to explain the fields
 COMMENT ON COLUMN user_programs.enrollment_type IS 'Type of enrollment: admin_assigned (manually enrolled by admin) or self_enrolled (enrolled by user)';
 COMMENT ON COLUMN user_programs.created_by IS 'Admin user who created this enrollment (NULL for self-enrolled)';
-
--- Verify the columns were added
-SELECT column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_name = 'user_programs'
-  AND column_name IN ('enrollment_type', 'created_by')
-ORDER BY column_name;

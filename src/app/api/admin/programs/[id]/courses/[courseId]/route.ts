@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // DELETE /api/admin/programs/[id]/courses/[courseId] - Remove course from program
 export async function DELETE(
   request: NextRequest,

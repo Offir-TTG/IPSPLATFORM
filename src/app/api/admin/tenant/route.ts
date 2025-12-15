@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Get current tenant details
 export async function GET(request: NextRequest) {
   try {

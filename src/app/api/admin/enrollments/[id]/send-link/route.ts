@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
 import crypto from 'crypto';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/admin/enrollments/[id]/send-link
  *
@@ -54,6 +56,7 @@ export async function POST(
         total_amount,
         currency,
         expires_at,
+        wizard_profile_data,
         user:users!enrollments_user_id_fkey (
           id,
           email,
@@ -95,16 +98,35 @@ export async function POST(
         })();
 
     // Update enrollment with token and status
+    // Reset enrollment progress but KEEP the email in wizard_profile_data for re-sending
+    const updateData: any = {
+      enrollment_token: token,
+      token_expires_at: expiresAt.toISOString(),
+      invitation_sent_at: new Date().toISOString(),
+      invitation_sent_by: authUser.id,
+      email_language: language || 'en',
+      status: 'pending', // Change from draft to pending
+      signature_status: null, // Clear signature status
+      docusign_envelope_id: null, // Clear docusign envelope
+      paid_amount: 0, // Reset payment
+      payment_status: 'pending' // Reset payment status
+    };
+
+    // Reset wizard_profile_data to only email and name (clear any partial wizard progress)
+    // Keep email and name for re-sending invitations
+    if (enrollment.wizard_profile_data?.email) {
+      updateData.wizard_profile_data = {
+        email: enrollment.wizard_profile_data.email,
+        first_name: enrollment.wizard_profile_data.first_name || '',
+        last_name: enrollment.wizard_profile_data.last_name || ''
+      };
+    } else {
+      updateData.wizard_profile_data = null;
+    }
+
     const { error: updateError } = await supabase
       .from('enrollments')
-      .update({
-        enrollment_token: token,
-        token_expires_at: expiresAt.toISOString(),
-        invitation_sent_at: new Date().toISOString(),
-        invitation_sent_by: authUser.id,
-        email_language: language || 'en',
-        status: 'pending' // Change from draft to pending
-      })
+      .update(updateData)
       .eq('id', params.id);
 
     if (updateError) {
@@ -129,6 +151,25 @@ export async function POST(
       ? (Array.isArray(enrollment.payment_plan) ? enrollment.payment_plan[0] : enrollment.payment_plan)
       : null;
 
+    // MEMORY-BASED WIZARD: Get user data from wizard_profile_data if user doesn't exist yet
+    let userEmail: string;
+    let userFirstName: string;
+
+    if (enrollmentUser) {
+      // User exists - use user table data
+      userEmail = enrollmentUser.email;
+      userFirstName = enrollmentUser.first_name || enrollmentUser.email.split('@')[0];
+    } else if (enrollment.wizard_profile_data) {
+      // User doesn't exist yet - use wizard_profile_data
+      userEmail = enrollment.wizard_profile_data.email;
+      userFirstName = enrollment.wizard_profile_data.first_name || enrollment.wizard_profile_data.email.split('@')[0];
+    } else {
+      return NextResponse.json(
+        { error: 'Enrollment has no user or profile data' },
+        { status: 400 }
+      );
+    }
+
     // Calculate days until expiration
     const expiresIn = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
@@ -140,10 +181,10 @@ export async function POST(
     const emailResult = await sendTemplateEmail({
       tenantId: userData.tenant_id,
       templateKey,
-      to: enrollmentUser.email,
+      to: userEmail,
       language: (language || 'en') as 'en' | 'he',
       variables: {
-        userName: enrollmentUser.first_name || enrollmentUser.email.split('@')[0],
+        userName: userFirstName,
         productName: product.title,
         productType: product.type || 'course',
         organizationName: tenant?.name || 'IPS Platform',

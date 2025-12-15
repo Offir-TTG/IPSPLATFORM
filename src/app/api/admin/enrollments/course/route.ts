@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/enrollments/course - Enroll user in a specific course
 export async function POST(request: NextRequest) {
   try {

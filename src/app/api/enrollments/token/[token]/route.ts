@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 
 /**
  * GET /api/enrollments/token/[token]
  *
  * Validate enrollment token and return enrollment details
  * This endpoint is public - no authentication required for preview
+ * Uses admin client to bypass RLS since users are not authenticated yet
  *
  * Returns:
  * - Enrollment details if token is valid
@@ -16,7 +17,10 @@ export async function GET(
   { params }: { params: { token: string } }
 ) {
   try {
-    const supabase = await createClient();
+    // Use admin client to bypass RLS - enrollment links are accessed by unauthenticated users
+    const supabase = createAdminClient();
+
+    console.log('[Enrollment Token] Looking for token:', params.token);
 
     // Fetch enrollment by token
     const { data: enrollment, error } = await supabase
@@ -30,6 +34,8 @@ export async function GET(
         currency,
         token_expires_at,
         status,
+        enrollment_token,
+        wizard_profile_data,
         user:users!enrollments_user_id_fkey (
           id,
           email,
@@ -52,7 +58,10 @@ export async function GET(
       .eq('enrollment_token', params.token)
       .single();
 
+    console.log('[Enrollment Token] Query result:', { error, enrollmentId: enrollment?.id, token: enrollment?.enrollment_token });
+
     if (error || !enrollment) {
+      console.error('[Enrollment Token] Not found. Error:', error);
       return NextResponse.json(
         { error: 'Invalid enrollment link' },
         { status: 404 }
@@ -73,6 +82,22 @@ export async function GET(
       ? (Array.isArray(enrollment.payment_plan) ? enrollment.payment_plan[0] : enrollment.payment_plan)
       : null;
     const user = Array.isArray(enrollment.user) ? enrollment.user[0] : enrollment.user;
+    // MEMORY-BASED WIZARD: Get email from user or wizard_profile_data
+    let userEmail: string;
+    if (user) {
+      userEmail = user.email;
+    } else if (enrollment.wizard_profile_data) {
+      userEmail = enrollment.wizard_profile_data.email;
+    } else {
+      userEmail = 'Unknown';
+    }
+
+    console.log('[Enrollment Token] User email:', {
+      hasUser: !!user,
+      hasWizardProfileData: !!enrollment.wizard_profile_data,
+      userEmail
+    });
+
 
     // Prepare payment plan data for client-side translation
     let paymentPlanData: any = null;
@@ -137,7 +162,7 @@ export async function GET(
       payment_model: product.payment_model,
       token_expires_at: enrollment.token_expires_at,
       status: enrollment.status,
-      user_email: user.email // Show email so user can verify it's for them
+      user_email: userEmail // Show email so user can verify it's for them
     });
 
   } catch (error) {

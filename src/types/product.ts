@@ -67,9 +67,6 @@ export interface PaymentPlanConfig {
   deposit_amount?: number;        // Used when deposit_type = 'fixed'
   deposit_percentage?: number;    // Used when deposit_type = 'percentage'
 
-  // Plan start date (for deposit_then_plan)
-  plan_start_date?: string;       // Exact date when installment plan begins (deposit is immediate)
-
   // Subscription configuration (for subscription)
   subscription_interval?: SubscriptionInterval;
   trial_days?: number;
@@ -104,6 +101,7 @@ export interface Product {
   price?: number;           // NULL if payment_model = 'free'
   currency?: string;        // e.g., 'USD', 'ILS', 'EUR'
   payment_plan: PaymentPlanConfig;
+  payment_start_date?: string;  // Default start date for payment schedules (works for all payment models)
 
   // Payment plan selection (for products using payment plan templates)
   default_payment_plan_id?: string;         // Default/recommended payment plan
@@ -171,6 +169,7 @@ export interface ProductFormData {
   price?: number;
   currency?: string;
   payment_plan: PaymentPlanConfig;
+  payment_start_date?: string;  // Default start date for payment schedules
 
   // Payment plan selection
   default_payment_plan_id?: string;

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { logAuditEvent } from '@/lib/audit/auditService';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET all languages
 export async function GET() {
   try {

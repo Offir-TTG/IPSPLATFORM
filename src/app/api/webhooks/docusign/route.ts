@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
 // DocuSign Connect webhook events
@@ -64,7 +64,7 @@ function verifyDocuSignSignature(
 // POST /api/webhooks/docusign - Handle DocuSign Connect webhook events
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // Get the raw payload for signature verification
     const rawPayload = await request.text();

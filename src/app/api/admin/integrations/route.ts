@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to encrypt sensitive data
 function encryptCredentials(credentials: Record<string, any>): Record<string, any> {
   // In production, use proper encryption (e.g., crypto-js, node:crypto)

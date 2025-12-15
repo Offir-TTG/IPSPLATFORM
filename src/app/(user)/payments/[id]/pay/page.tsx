@@ -40,9 +40,16 @@ export default function PaymentPage() {
   const fetchPaymentInfo = async () => {
     try {
       const scheduleId = searchParams?.get('schedule');
+      const enrollmentToken = searchParams?.get('token');
 
       // Get enrollment details
-      const res = await fetch(`/api/enrollments/${params.id}/payment`);
+      // Use token-based endpoint if token is provided (for unauthenticated enrollment wizard)
+      // Otherwise use authenticated endpoint (for logged-in users)
+      const endpoint = enrollmentToken
+        ? `/api/enrollments/token/${enrollmentToken}/payment`
+        : `/api/enrollments/${params.id}/payment`;
+
+      const res = await fetch(endpoint);
       const data = await res.json();
 
       if (!data.schedules) {

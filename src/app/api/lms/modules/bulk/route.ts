@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { moduleService } from '@/lib/lms/moduleService';
 
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // POST /api/lms/modules/bulk
 // Bulk create modules (e.g., "Add 10 Modules")

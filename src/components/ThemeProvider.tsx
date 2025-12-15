@@ -133,9 +133,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
           setTheme(data.data);
           applyTheme(data.data, effectiveTheme);
 
-          // Cache theme in localStorage to prevent flash on reload
+          // Cache theme in context-aware storage to prevent flash on reload
+          // Wizard uses sessionStorage, Admin uses localStorage
           try {
-            localStorage.setItem('cached_theme', JSON.stringify(data.data));
+            const storage = typeof window !== 'undefined' && window.location.pathname.includes('/enroll/wizard/')
+              ? sessionStorage
+              : localStorage;
+            storage.setItem('cached_theme', JSON.stringify(data.data));
           } catch (e) {
             console.warn('[ThemeProvider] Failed to cache theme:', e);
           }

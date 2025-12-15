@@ -8,6 +8,8 @@ import { Toaster } from 'sonner';
 
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], weight: ['300', '400', '500', '600', '700'] });
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'פלטפורמת בית הספר להורות | Parenting School Platform',
   description: 'פלטפורמה מקוונת לחינוך הורי | Online parenting education platform',

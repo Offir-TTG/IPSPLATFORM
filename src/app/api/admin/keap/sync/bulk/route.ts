@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { syncStudentToKeap, isKeapEnabled } from '@/lib/keap/syncService';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/keap/sync/bulk - Bulk sync all students to Keap
 export async function POST(request: NextRequest) {
   try {

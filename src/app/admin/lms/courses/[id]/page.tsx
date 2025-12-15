@@ -48,6 +48,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdminLanguage } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { CourseImageUploader } from '@/components/lms/CourseImageUploader';
+import { LessonTopicsBuilder } from '@/components/lms/LessonTopicsBuilder';
 import { Badge } from '@/components/ui/badge';
 
 // Dynamically import RichTextEditor to avoid SSR issues
@@ -72,6 +74,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useSortable } from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
 interface Course {
@@ -137,6 +140,7 @@ function SortableModule({
   onDelete,
   onEditLesson,
   onDeleteLesson,
+  onEditLessonContent,
   onOpenZoomMeeting,
   onCreateZoomMeeting,
   creatingZoomFor,
@@ -152,6 +156,7 @@ function SortableModule({
   onDelete: () => void;
   onEditLesson: (lesson: Lesson) => void;
   onDeleteLesson: (lessonId: string) => void;
+  onEditLessonContent: (lessonId: string, lessonTitle: string) => void;
   onOpenZoomMeeting: (lessonId: string) => void;
   onCreateZoomMeeting: (lessonId: string) => void;
   creatingZoomFor: string | null;
@@ -246,94 +251,27 @@ function SortableModule({
         {module.isExpanded && (
           <div className="ml-10 mt-3 space-y-2 border-l-2 border-muted pl-4">
             {module.lessons && module.lessons.length > 0 ? (
-              module.lessons.map((lesson) => (
-                <div
-                  key={lesson.id}
-                  className="group flex items-center gap-2 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2 flex-1">
-                    <GraduationCap className="h-4 w-4 text-blue-600" />
-                    <div className="flex-1">
-                      <span className="text-sm font-medium">{lesson.title}</span>
-                      {lesson.description && (
-                        <p className="text-xs text-muted-foreground mt-1">{lesson.description}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {lesson.duration && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {lesson.duration}m
-                      </div>
-                    )}
-                    {lesson.is_published ? (
-                      <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
-                        {t('lms.builder.published', 'Published')}
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-xs">
-                        {t('lms.builder.draft', 'Draft')}
-                      </Badge>
-                    )}
-                    {lesson.zoom_meeting_id ? (
-                      <div className="flex items-center gap-1">
-                        {lesson.zoom_session?.has_recording && (
-                          <Badge variant="secondary" className="text-xs">
-                            <Video className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
-                            {t('lms.builder.recorded', 'Recorded')}
-                          </Badge>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs text-green-600 hover:text-green-700"
-                          onClick={() => onOpenZoomMeeting(lesson.id)}
-                        >
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          Zoom
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100"
-                        onClick={() => onCreateZoomMeeting(lesson.id)}
-                        disabled={creatingZoomFor === lesson.id}
-                      >
-                        {creatingZoomFor === lesson.id ? (
-                          <>
-                            <Loader2 className={isRtl ? 'h-3 w-3 ml-1 animate-spin' : 'h-3 w-3 mr-1 animate-spin'} />
-                            {t('common.creating', 'Creating...')}
-                          </>
-                        ) : (
-                          <>
-                            <VideoOff className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
-                            {t('lms.builder.add_zoom', 'Add Zoom')}
-                          </>
-                        )}
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
-                      onClick={() => onEditLesson(lesson)}
-                    >
-                      <Edit2 className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 text-destructive hover:text-destructive"
-                      onClick={() => onDeleteLesson(lesson.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))
+              <SortableContext
+                items={module.lessons.map((l) => l.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {module.lessons.map((lesson) => (
+                  <SortableLesson
+                    key={lesson.id}
+                    lesson={lesson}
+                    moduleId={module.id}
+                    onEdit={onEditLesson}
+                    onDelete={onDeleteLesson}
+                    onEditContent={onEditLessonContent}
+                    onOpenZoomMeeting={onOpenZoomMeeting}
+                    onCreateZoomMeeting={onCreateZoomMeeting}
+                    creatingZoomFor={creatingZoomFor}
+                    t={t}
+                    direction={direction}
+                    isRtl={isRtl}
+                  />
+                ))}
+              </SortableContext>
             ) : (
               <div className="text-center py-6 text-muted-foreground">
                 <GraduationCap className="mx-auto h-8 w-8 mb-2 opacity-50" />
@@ -351,6 +289,155 @@ function SortableModule({
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Sortable Lesson Component
+function SortableLesson({
+  lesson,
+  moduleId,
+  onEdit,
+  onDelete,
+  onEditContent,
+  onOpenZoomMeeting,
+  onCreateZoomMeeting,
+  creatingZoomFor,
+  t,
+  direction,
+  isRtl
+}: {
+  lesson: Lesson;
+  moduleId: string;
+  onEdit: (lesson: Lesson) => void;
+  onDelete: (lessonId: string) => void;
+  onEditContent: (lessonId: string, lessonTitle: string) => void;
+  onOpenZoomMeeting: (lessonId: string) => void;
+  onCreateZoomMeeting: (lessonId: string) => void;
+  creatingZoomFor: string | null;
+  t: (key: string, fallback: string) => string;
+  direction: 'ltr' | 'rtl';
+  isRtl: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: lesson.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex items-center gap-2 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
+    >
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing touch-none">
+        <GripVertical className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+      </div>
+      <div className="flex items-center gap-2 flex-1">
+        <GraduationCap className="h-4 w-4 text-blue-600" />
+        <div className="flex-1">
+          <span className="text-sm font-medium">{lesson.title}</span>
+          {lesson.description && (
+            <p className="text-xs text-muted-foreground mt-1">{lesson.description}</p>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {lesson.duration && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            {lesson.duration}m
+          </div>
+        )}
+        {((lesson as any).lesson_topics?.length > 0) && (
+          <Badge variant="outline" className="text-xs border-blue-500 text-blue-700 dark:text-blue-400">
+            <BookOpen className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
+            {(lesson as any).lesson_topics.length} {t('lms.builder.topics', 'Topics')}
+          </Badge>
+        )}
+        {lesson.is_published ? (
+          <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
+            {t('lms.builder.published', 'Published')}
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-xs">
+            {t('lms.builder.draft', 'Draft')}
+          </Badge>
+        )}
+        {lesson.zoom_meeting_id ? (
+          <div className="flex items-center gap-1">
+            {lesson.zoom_session?.has_recording && (
+              <Badge variant="secondary" className="text-xs">
+                <Video className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
+                {t('lms.builder.recorded', 'Recorded')}
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-green-600 hover:text-green-700"
+              onClick={() => onOpenZoomMeeting(lesson.id)}
+            >
+              <ExternalLink className="h-3 w-3 mr-1" />
+              Zoom
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100"
+            onClick={() => onCreateZoomMeeting(lesson.id)}
+            disabled={creatingZoomFor === lesson.id}
+          >
+            {creatingZoomFor === lesson.id ? (
+              <>
+                <Loader2 className={isRtl ? 'h-3 w-3 ml-1 animate-spin' : 'h-3 w-3 mr-1 animate-spin'} />
+                {t('common.creating', 'Creating...')}
+              </>
+            ) : (
+              <>
+                <VideoOff className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
+                {t('lms.builder.add_zoom', 'Add Zoom')}
+              </>
+            )}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="opacity-0 group-hover:opacity-100 h-7 px-2 text-xs"
+          onClick={() => onEditContent(lesson.id, lesson.title)}
+        >
+          <BookOpen className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
+          {t('lms.topics.edit_content', 'Edit Content')}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
+          onClick={() => onEdit(lesson)}
+        >
+          <Edit2 className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 text-destructive hover:text-destructive"
+          onClick={() => onDelete(lesson.id)}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
       </div>
     </div>
   );
@@ -381,6 +468,9 @@ export default function CourseBuilderPage() {
     notStartedPercent: 0,
   });
 
+  // Course image URL
+  const [courseImageUrl, setCourseImageUrl] = useState<string | null>(null);
+
   // Dialog states
   const [showModuleDialog, setShowModuleDialog] = useState(false);
   const [showLessonDialog, setShowLessonDialog] = useState(false);
@@ -391,8 +481,10 @@ export default function CourseBuilderPage() {
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
   const [showDeleteModuleDialog, setShowDeleteModuleDialog] = useState(false);
   const [showDeleteLessonDialog, setShowDeleteLessonDialog] = useState(false);
+  const [showLessonContentDialog, setShowLessonContentDialog] = useState(false);
   const [moduleToDelete, setModuleToDelete] = useState<string | null>(null);
   const [lessonToDelete, setLessonToDelete] = useState<{ lessonId: string; moduleId: string } | null>(null);
+  const [selectedLessonForContent, setSelectedLessonForContent] = useState<{ lessonId: string; lessonTitle: string } | null>(null);
 
   // Message states
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
@@ -530,6 +622,8 @@ export default function CourseBuilderPage() {
 
       if (courseData.success) {
         setCourse(courseData.data);
+        // Set course image URL
+        setCourseImageUrl(courseData.data.image_url || null);
       } else {
         // Fallback to mock data if API fails
         setCourse({
@@ -637,11 +731,13 @@ export default function CourseBuilderPage() {
       return;
     }
 
-    const activeIndex = modules.findIndex((m) => m.id === active.id);
-    const overIndex = modules.findIndex((m) => m.id === over.id);
+    // Check if we're dragging a module
+    const activeModuleIndex = modules.findIndex((m) => m.id === active.id);
+    const overModuleIndex = modules.findIndex((m) => m.id === over.id);
 
-    if (activeIndex !== -1 && overIndex !== -1) {
-      const newModules = arrayMove(modules, activeIndex, overIndex).map(
+    if (activeModuleIndex !== -1 && overModuleIndex !== -1) {
+      // Module drag & drop
+      const newModules = arrayMove(modules, activeModuleIndex, overModuleIndex).map(
         (module, index) => ({ ...module, order: index })
       );
       setModules(newModules);
@@ -665,6 +761,162 @@ export default function CourseBuilderPage() {
       } catch (error) {
         console.error('Failed to save module order:', error);
         showMessage('warning', t('lms.builder.order_local_only', 'Order updated locally only'));
+      }
+    } else {
+      // Check if we're dragging a lesson
+      // Find which module the active lesson belongs to
+      let sourceModule = null;
+      let activeLesson = null;
+      let activeLessonIndex = -1;
+
+      for (const module of modules) {
+        if (!module.lessons) continue;
+        const index = module.lessons.findIndex((l) => l.id === active.id);
+        if (index !== -1) {
+          sourceModule = module;
+          activeLesson = module.lessons[index];
+          activeLessonIndex = index;
+          break;
+        }
+      }
+
+      if (!sourceModule || !activeLesson) {
+        setActiveId(null);
+        return;
+      }
+
+      // Find which module the over item belongs to
+      let targetModule = null;
+      let overLessonIndex = -1;
+
+      for (const module of modules) {
+        if (!module.lessons) continue;
+        const index = module.lessons.findIndex((l) => l.id === over.id);
+        if (index !== -1) {
+          targetModule = module;
+          overLessonIndex = index;
+          break;
+        }
+      }
+
+      // If no target lesson found, check if dropping on a module
+      if (!targetModule) {
+        const moduleIndex = modules.findIndex((m) => m.id === over.id);
+        if (moduleIndex !== -1) {
+          targetModule = modules[moduleIndex];
+          overLessonIndex = 0; // Add to beginning of module
+        }
+      }
+
+      if (!targetModule) {
+        setActiveId(null);
+        return;
+      }
+
+      // Handle the move
+      if (sourceModule.id === targetModule.id) {
+        // Same module - just reorder
+        const newLessons = arrayMove(sourceModule.lessons!, activeLessonIndex, overLessonIndex).map(
+          (lesson, index) => ({ ...lesson, order: index })
+        );
+
+        setModules(modules.map(m =>
+          m.id === sourceModule!.id
+            ? { ...m, lessons: newLessons }
+            : m
+        ));
+
+        // Save the new order to the API
+        try {
+          const response = await fetch('/api/lms/lessons/reorder', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              module_id: sourceModule.id,
+              lessons: newLessons.map(l => ({ id: l.id, order: l.order })),
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            showMessage('success', t('lms.builder.lesson_order_updated', 'Lesson order updated'));
+          }
+        } catch (error) {
+          console.error('Failed to save lesson order:', error);
+          showMessage('warning', t('lms.builder.order_local_only', 'Order updated locally only'));
+        }
+      } else {
+        // Cross-module move
+        // Remove from source module
+        const newSourceLessons = sourceModule.lessons!
+          .filter((l) => l.id !== activeLesson.id)
+          .map((lesson, index) => ({ ...lesson, order: index }));
+
+        // Add to target module at the specified position
+        const newTargetLessons = [...(targetModule.lessons || [])];
+        newTargetLessons.splice(overLessonIndex, 0, { ...activeLesson, module_id: targetModule.id });
+        const reorderedTargetLessons = newTargetLessons.map((lesson, index) => ({ ...lesson, order: index }));
+
+        // Update local state
+        setModules(modules.map(m => {
+          if (m.id === sourceModule!.id) {
+            return { ...m, lessons: newSourceLessons };
+          } else if (m.id === targetModule!.id) {
+            return { ...m, lessons: reorderedTargetLessons };
+          }
+          return m;
+        }));
+
+        // Save to API - move lesson to new module
+        try {
+          const response = await fetch(`/api/lms/lessons/${activeLesson.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              module_id: targetModule.id,
+              order: overLessonIndex,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            // Reorder lessons in both modules
+            const reorderPromises = [];
+
+            if (newSourceLessons.length > 0) {
+              reorderPromises.push(
+                fetch('/api/lms/lessons/reorder', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    module_id: sourceModule.id,
+                    lessons: newSourceLessons.map(l => ({ id: l.id, order: l.order })),
+                  }),
+                })
+              );
+            }
+
+            reorderPromises.push(
+              fetch('/api/lms/lessons/reorder', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  module_id: targetModule.id,
+                  lessons: reorderedTargetLessons.map(l => ({ id: l.id, order: l.order })),
+                }),
+              })
+            );
+
+            await Promise.all(reorderPromises);
+
+            showMessage('success', t('lms.builder.lesson_moved', 'Lesson moved to new module'));
+          }
+        } catch (error) {
+          console.error('Failed to move lesson:', error);
+          showMessage('error', t('lms.builder.move_failed', 'Failed to move lesson'));
+        }
       }
     }
 
@@ -1446,63 +1698,68 @@ export default function CourseBuilderPage() {
 
   return (
     <AdminLayout>
-      <div className="h-full flex flex-col">
+      <div className="max-w-6xl space-y-6" dir={direction}>
         {/* Header */}
-        <div className="border-b px-6 py-4" dir={direction}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="border-b pb-4" dir={direction}>
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            {/* Left Section - Back Button & Title */}
+            <div className="flex items-start gap-2 md:gap-4">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => router.push('/admin/lms/courses')}
+                className="shrink-0"
               >
                 <ArrowLeft className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                {t('lms.builder.back', 'Back')}
+                <span className="hidden sm:inline">{t('lms.builder.back', 'Back')}</span>
               </Button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold">{course?.title}</h1>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl md:text-2xl font-bold truncate">{course?.title}</h1>
                   {course?.is_active ? (
-                    <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 flex items-center gap-1.5">
+                    <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 flex items-center gap-1.5 shrink-0">
                       <CheckCircle className="h-3 w-3" />
-                      {t('lms.builder.published', 'Published')}
+                      <span className="hidden sm:inline">{t('lms.builder.published', 'Published')}</span>
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-muted-foreground">
-                      {t('lms.builder.draft', 'Draft')}
+                    <Badge variant="outline" className="text-muted-foreground shrink-0">
+                      <span className="hidden sm:inline">{t('lms.builder.draft', 'Draft')}</span>
                     </Badge>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs md:text-sm text-muted-foreground hidden md:block">
                   {t('lms.builder.title', 'Course Builder')} - {t('lms.builder.subtitle', 'Drag & Drop Canvas')}
                 </p>
               </div>
             </div>
-            <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
-              <Button variant="outline" size="sm">
+
+            {/* Right Section - Action Buttons */}
+            <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''} w-full md:w-auto`}>
+              <Button variant="outline" size="sm" className="flex-1 md:flex-none">
                 <Eye className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                {t('lms.builder.preview', 'Preview')}
+                <span className="hidden sm:inline">{t('lms.builder.preview', 'Preview')}</span>
               </Button>
               <Button
                 size="sm"
                 onClick={handlePublishCourse}
                 disabled={saving}
                 variant={course?.is_active ? 'outline' : 'default'}
+                className="flex-1 md:flex-none"
               >
                 {saving ? (
                   <>
                     <Loader2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4 animate-spin`} />
-                    {t('common.saving', 'Saving...')}
+                    <span className="hidden sm:inline">{t('common.saving', 'Saving...')}</span>
                   </>
                 ) : course?.is_active ? (
                   <>
                     <EyeOff className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                    {t('lms.builder.unpublish_course', 'Unpublish Course')}
+                    <span className="hidden sm:inline">{t('lms.builder.unpublish_course', 'Unpublish')}</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                    {t('lms.builder.publish_course', 'Publish Course')}
+                    <span className="hidden sm:inline">{t('lms.builder.publish_course', 'Publish')}</span>
                   </>
                 )}
               </Button>
@@ -1511,26 +1768,37 @@ export default function CourseBuilderPage() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-auto px-6 py-4">
-          <div className="space-y-6">
+        <div className="space-y-6">
+            {/* Course Cover Image */}
+            <CourseImageUploader
+              courseId={params.id as string}
+              currentImageUrl={courseImageUrl}
+              onImageChange={setCourseImageUrl}
+              t={t}
+              isRtl={isRtl}
+              direction={direction}
+            />
+
             {/* Course Structure Section */}
-            <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-300px)]">
+            <div className="flex flex-col lg:flex-row gap-6">
                 {/* Module Builder with Drag & Drop */}
-                <div className="flex-1">
+                <div className="flex-1 order-2 lg:order-1">
               <Card className="h-full">
                 <CardHeader>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
                     <CardTitle className={isRtl ? 'text-right' : ''}>
                       {t('lms.builder.course_structure', 'Course Structure')}
                     </CardTitle>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setShowBulkModuleDialog(true)}
+                        className="flex-1 sm:flex-none"
                       >
                         <PlusCircle className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                        {t('lms.builder.bulk_add_modules', 'Bulk Add Modules')}
+                        <span className="hidden sm:inline">{t('lms.builder.bulk_add_modules', 'Bulk Add')}</span>
+                        <span className="sm:hidden">{t('lms.builder.bulk', 'Bulk')}</span>
                       </Button>
                       <Button
                         size="sm"
@@ -1544,9 +1812,11 @@ export default function CourseBuilderPage() {
                           });
                           setShowModuleDialog(true);
                         }}
+                        className="flex-1 sm:flex-none"
                       >
                         <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                        {t('lms.builder.add_module', 'Add Module')}
+                        <span className="hidden sm:inline">{t('lms.builder.add_module', 'Add Module')}</span>
+                        <span className="sm:hidden">{t('lms.builder.add', 'Add')}</span>
                       </Button>
                     </div>
                   </div>
@@ -1648,6 +1918,10 @@ export default function CourseBuilderPage() {
                               onDelete={() => handleDeleteModule(module.id)}
                               onEditLesson={(lesson) => handleEditLesson(lesson, module.id)}
                               onDeleteLesson={(lessonId) => handleDeleteLesson(lessonId, module.id)}
+                              onEditLessonContent={(lessonId, lessonTitle) => {
+                                setSelectedLessonForContent({ lessonId, lessonTitle });
+                                setShowLessonContentDialog(true);
+                              }}
                               onOpenZoomMeeting={handleOpenZoomMeeting}
                               onCreateZoomMeeting={handleCreateZoomMeeting}
                               creatingZoomFor={creatingZoomFor}
@@ -1675,7 +1949,7 @@ export default function CourseBuilderPage() {
             </div>
 
             {/* Course Stats */}
-            <div className="w-full lg:w-80">
+            <div className="w-full lg:w-80 order-1 lg:order-2">
               <Card>
                 <CardHeader>
                   <CardTitle className={isRtl ? 'text-right' : ''}>
@@ -1831,30 +2105,24 @@ export default function CourseBuilderPage() {
           </div>
 
           {/* Course Materials Section */}
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <Card>
-                <CardHeader>
-                  <CardTitle className={isRtl ? 'text-right' : ''}>
-                    {t('lms.materials.tab_title', 'Course Materials')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CourseMaterials
-                    courseId={params.id as string}
-                    courseIsPublished={course?.is_active ?? false}
-                    t={t}
-                    isRtl={isRtl}
-                    direction={direction}
-                    onStatusMessage={(message) => showMessage(message.type, message.text)}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Empty space to match sidebar width */}
-            <div className="w-80"></div>
-          </div>
+          <div className="w-full">
+            <Card>
+              <CardHeader>
+                <CardTitle className={isRtl ? 'text-right' : ''}>
+                  {t('lms.materials.tab_title', 'Course Materials')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CourseMaterials
+                  courseId={params.id as string}
+                  courseIsPublished={course?.is_active ?? false}
+                  t={t}
+                  isRtl={isRtl}
+                  direction={direction}
+                  onStatusMessage={(message) => showMessage(message.type, message.text)}
+                />
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
@@ -2838,6 +3106,31 @@ export default function CourseBuilderPage() {
               {t('common.delete', 'Delete')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lesson Content Editor Dialog */}
+      <Dialog open={showLessonContentDialog} onOpenChange={setShowLessonContentDialog}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-5xl max-h-[90vh] overflow-y-auto" dir={direction}>
+          <DialogHeader>
+            <DialogTitle className={isRtl ? 'text-right' : ''}>
+              {t('lms.topics.edit_content', 'Edit Content')}: {selectedLessonForContent?.lessonTitle}
+            </DialogTitle>
+            <DialogDescription className={isRtl ? 'text-right' : ''}>
+              {t('lms.topics.edit_content_description', 'Add and organize content blocks for this lesson')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedLessonForContent && (
+            <LessonTopicsBuilder
+              lessonId={selectedLessonForContent.lessonId}
+              lessonTitle={selectedLessonForContent.lessonTitle}
+              t={t}
+              isRtl={isRtl}
+              direction={direction}
+              onClose={() => setShowLessonContentDialog(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { recordManualPayment } from '@/lib/payments/enrollmentService';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/payments/schedules/:id/record-payment - Record a manual payment
 export async function POST(
   request: NextRequest,

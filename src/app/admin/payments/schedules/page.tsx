@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -51,7 +51,7 @@ interface PaymentSchedule {
   original_due_date: string;
   scheduled_date: string;
   paid_date?: string;
-  status: 'pending' | 'paid' | 'overdue' | 'paused' | 'failed' | 'cancelled';
+  status: 'pending' | 'paid' | 'overdue' | 'paused' | 'failed' | 'cancelled' | 'adjusted';
   retry_count?: number;
   next_retry_date?: string;
   last_error?: string;
@@ -62,7 +62,9 @@ interface ScheduleFilters {
   dateFrom?: string;
   dateTo?: string;
   productId?: string;
-  userId?: string;
+  userSearch?: string;
+  minAmount?: string;
+  maxAmount?: string;
   overdueOnly?: boolean;
 }
 
@@ -79,10 +81,50 @@ export default function SchedulesPage() {
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<PaymentSchedule | null>(null);
   const [bulkActionDialog, setBulkActionDialog] = useState<'delay' | 'pause' | 'cancel' | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalSchedules, setTotalSchedules] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const totalPages = Math.ceil(totalSchedules / itemsPerPage);
+  const [products, setProducts] = useState<Array<{ id: string; title: string }>>([]);
 
   useEffect(() => {
     fetchSchedules();
-  }, [filters]);
+  }, [filters, currentPage, itemsPerPage]);
+
+  // Fetch products for the dropdown filter
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch('/api/admin/products', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        console.log('Products API response status:', response.status);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Failed to fetch products:', response.status, errorData);
+          return;
+        }
+
+        const responseData = await response.json();
+        console.log('Products API response:', responseData);
+
+        // The API returns products in the 'data' field, not 'products'
+        if (responseData.success && responseData.data && Array.isArray(responseData.data)) {
+          const mappedProducts = responseData.data.map((p: any) => ({ id: p.id, title: p.title }));
+          console.log('Successfully loaded', mappedProducts.length, 'products');
+          setProducts(mappedProducts);
+        } else {
+          console.error('Products API check failed:', responseData);
+        }
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      }
+    };
+    fetchProducts();
+  }, []);
 
   // Window resize listener for mobile responsiveness
   useEffect(() => {
@@ -99,13 +141,24 @@ export default function SchedulesPage() {
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
       if (filters.dateTo) params.append('dateTo', filters.dateTo);
       if (filters.productId) params.append('productId', filters.productId);
-      if (filters.userId) params.append('userId', filters.userId);
+      if (filters.userSearch) params.append('userSearch', filters.userSearch);
+      if (filters.minAmount) params.append('minAmount', filters.minAmount);
+      if (filters.maxAmount) params.append('maxAmount', filters.maxAmount);
       if (filters.overdueOnly) params.append('overdueOnly', 'true');
+      params.append('page', currentPage.toString());
+      params.append('limit', itemsPerPage.toString());
+      // Add cache-busting timestamp
+      params.append('_t', Date.now().toString());
 
-      const response = await fetch(`/api/admin/payments/schedules?${params.toString()}`);
+      const response = await fetch(`/api/admin/payments/schedules?${params.toString()}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) throw new Error('Failed to fetch schedules');
       const data = await response.json();
+
+
       setSchedules(data.schedules || []);
+      setTotalSchedules(data.total || data.schedules?.length || 0);
     } catch (error) {
       console.error('Error fetching schedules:', error);
       toast({
@@ -127,11 +180,16 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to adjust date');
+
+      await response.json();
+
       toast({
         title: t('common.success', 'Success'),
         description: t('admin.payments.schedules.adjustSuccess', 'Payment date adjusted successfully'),
       });
       setAdjustDialogOpen(false);
+
+      // Refresh schedules to show updated date
       fetchSchedules();
     } catch (error: any) {
       console.error('Error adjusting date:', error);
@@ -262,6 +320,8 @@ export default function SchedulesPage() {
         return <CheckCircle2 className="h-4 w-4 text-green-500" />;
       case 'pending':
         return <Clock className="h-4 w-4 text-yellow-500" />;
+      case 'adjusted':
+        return <Calendar className="h-4 w-4 text-blue-500" />;
       case 'overdue':
         return <AlertCircle className="h-4 w-4 text-red-500" />;
       case 'failed':
@@ -279,21 +339,29 @@ export default function SchedulesPage() {
     const variants: Record<string, any> = {
       paid: 'default',
       pending: 'secondary',
+      adjusted: 'secondary',
       overdue: 'destructive',
       failed: 'destructive',
       paused: 'outline',
       cancelled: 'outline',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status}</Badge>;
+    return (
+      <Badge variant={variants[status] || 'outline'} suppressHydrationWarning>
+        {t(`common.${status}`, status)}
+      </Badge>
+    );
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString(
+    // Use UTC to avoid timezone conversion issues
+    const date = new Date(dateString);
+    return date.toLocaleDateString(
       language === 'he' ? 'he-IL' : 'en-US',
       {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
+        timeZone: 'UTC', // Important: prevents timezone conversion
       }
     );
   };
@@ -374,106 +442,267 @@ export default function SchedulesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div>
-                <Label suppressHydrationWarning>{t('common.status', 'Status')}</Label>
-                <Select
-                  value={filters.status || 'all'}
-                  onValueChange={(value) => setFilters({ ...filters, status: value === 'all' ? undefined : value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction}>
-                    <SelectItem value="all" suppressHydrationWarning>{t('common.allStatuses', 'All Statuses')}</SelectItem>
-                    <SelectItem value="pending" suppressHydrationWarning>{t('common.pending', 'Pending')}</SelectItem>
-                    <SelectItem value="paid" suppressHydrationWarning>{t('common.paid', 'Paid')}</SelectItem>
-                    <SelectItem value="overdue" suppressHydrationWarning>{t('common.overdue', 'Overdue')}</SelectItem>
-                    <SelectItem value="failed" suppressHydrationWarning>{t('common.failed', 'Failed')}</SelectItem>
-                    <SelectItem value="paused" suppressHydrationWarning>{t('common.paused', 'Paused')}</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-4" dir={direction}>
+              {/* Row 1: User, Product, Status */}
+              <div className="grid gap-4 md:grid-cols-3">
+                {/* User Search Filter */}
+                <div>
+                  <Label suppressHydrationWarning>{t('admin.payments.schedules.searchUser', 'Search User')}</Label>
+                  <Input
+                    type="text"
+                    placeholder={t('admin.payments.schedules.searchUserPlaceholder', 'Name or email...')}
+                    value={filters.userSearch || ''}
+                    onChange={(e) => {
+                      setFilters({ ...filters, userSearch: e.target.value });
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+
+                {/* Product Filter */}
+                <div>
+                  <Label suppressHydrationWarning>
+                    {t('admin.payments.schedules.product', 'Product')}
+                    {products.length > 0 && <span className="text-xs text-muted-foreground" style={{ marginLeft: isRtl ? '0' : '0.5rem', marginRight: isRtl ? '0.5rem' : '0' }}>({products.length})</span>}
+                  </Label>
+                  <Select
+                    value={filters.productId || 'all'}
+                    onValueChange={(value) => {
+                      setFilters({ ...filters, productId: value === 'all' ? undefined : value });
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('common.allProducts', 'All Products')} />
+                    </SelectTrigger>
+                    <SelectContent dir={direction}>
+                      <SelectItem value="all" suppressHydrationWarning>{t('common.allProducts', 'All Products')}</SelectItem>
+                      {products.length === 0 ? (
+                        <SelectItem value="loading" disabled>
+                          {t('common.loading', 'Loading...')}
+                        </SelectItem>
+                      ) : (
+                        products.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.title}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <Label suppressHydrationWarning>{t('common.status', 'Status')}</Label>
+                  <Select
+                    value={filters.status || 'all'}
+                    onValueChange={(value) => {
+                      setFilters({ ...filters, status: value === 'all' ? undefined : value });
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent dir={direction}>
+                      <SelectItem value="all" suppressHydrationWarning>{t('common.allStatuses', 'All Statuses')}</SelectItem>
+                      <SelectItem value="pending" suppressHydrationWarning>{t('common.pending', 'Pending')}</SelectItem>
+                      <SelectItem value="adjusted" suppressHydrationWarning>{t('common.adjusted', 'Adjusted')}</SelectItem>
+                      <SelectItem value="paid" suppressHydrationWarning>{t('common.paid', 'Paid')}</SelectItem>
+                      <SelectItem value="overdue" suppressHydrationWarning>{t('common.overdue', 'Overdue')}</SelectItem>
+                      <SelectItem value="failed" suppressHydrationWarning>{t('common.failed', 'Failed')}</SelectItem>
+                      <SelectItem value="paused" suppressHydrationWarning>{t('common.paused', 'Paused')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div>
-                <Label suppressHydrationWarning>{t('common.dateFrom', 'Date From')}</Label>
-                <Input
-                  type="date"
-                  value={filters.dateFrom || ''}
-                  onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                />
+              {/* Row 2: Min Amount */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <Label suppressHydrationWarning>{t('admin.payments.schedules.minAmount', 'Min Amount')}</Label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    min="0"
+                    step="0.01"
+                    value={filters.minAmount || ''}
+                    onChange={(e) => {
+                      setFilters({ ...filters, minAmount: e.target.value });
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+
+                {/* Date From Filter */}
+                <div>
+                  <Label suppressHydrationWarning>{t('common.dateFrom', 'Date From')}</Label>
+                  <Input
+                    type="date"
+                    value={filters.dateFrom || ''}
+                    onChange={(e) => {
+                      setFilters({ ...filters, dateFrom: e.target.value });
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+
+                {/* Date To Filter */}
+                <div>
+                  <Label suppressHydrationWarning>{t('common.dateTo', 'Date To')}</Label>
+                  <Input
+                    type="date"
+                    value={filters.dateTo || ''}
+                    onChange={(e) => {
+                      setFilters({ ...filters, dateTo: e.target.value });
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
               </div>
 
-              <div>
-                <Label suppressHydrationWarning>{t('common.dateTo', 'Date To')}</Label>
-                <Input
-                  type="date"
-                  value={filters.dateTo || ''}
-                  onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                />
-              </div>
+              {/* Row 3: Max Amount and Clear Button */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <Label suppressHydrationWarning>{t('admin.payments.schedules.maxAmount', 'Max Amount')}</Label>
+                  <Input
+                    type="number"
+                    placeholder="999999"
+                    min="0"
+                    step="0.01"
+                    value={filters.maxAmount || ''}
+                    onChange={(e) => {
+                      setFilters({ ...filters, maxAmount: e.target.value });
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
 
-              <div className="flex items-end">
-                <Button
-                  variant="outline"
-                  onClick={() => setFilters({})}
-                  className="w-full"
-                >
-                  <span suppressHydrationWarning>{t('common.clearFilters', 'Clear Filters')}</span>
-                </Button>
+                <div className="md:col-span-2 flex items-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setFilters({});
+                      setCurrentPage(1);
+                    }}
+                    className="w-full"
+                  >
+                    <X className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                    <span suppressHydrationWarning>{t('common.clearFilters', 'Clear Filters')}</span>
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Bulk Actions */}
-        {selectedSchedules.size > 0 && (
-          <Alert>
-            <AlertDescription className="flex items-center justify-between flex-wrap gap-2">
-              <span suppressHydrationWarning>{t('admin.payments.schedules.schedulesSelected', '{count} schedule(s) selected').replace('{count}', selectedSchedules.size.toString())}</span>
-              <div className="flex gap-2 flex-wrap">
-                <Button size="sm" variant="outline" onClick={() => setBulkActionDialog('delay')}>
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</span>
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setBulkActionDialog('pause')}>
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayments', 'Pause Payments')}</span>
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setBulkActionDialog('cancel')}>
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.cancelPayments', 'Cancel Payments')}</span>
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedSchedules(new Set())}>
-                  <span suppressHydrationWarning>{t('common.clear', 'Clear')}</span>
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
+        {selectedSchedules.size > 0 && (() => {
+          // Check if any selected schedules are paid or cancelled
+          const hasNonEditableSchedules = Array.from(selectedSchedules).some(id => {
+            const schedule = schedules.find(s => s.id === id);
+            return schedule?.status === 'paid' || schedule?.status === 'cancelled';
+          });
+
+          return (
+            <Alert>
+              <AlertDescription className="flex items-center justify-between flex-wrap gap-2" dir={direction}>
+                <span suppressHydrationWarning>{t('admin.payments.schedules.schedulesSelected', '{count} schedule(s) selected').replace('{count}', selectedSchedules.size.toString())}</span>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkActionDialog('delay')}
+                    disabled={hasNonEditableSchedules}
+                  >
+                    <span suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkActionDialog('pause')}
+                    disabled={hasNonEditableSchedules}
+                  >
+                    <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayments', 'Pause Payments')}</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkActionDialog('cancel')}
+                    disabled={hasNonEditableSchedules}
+                  >
+                    <span suppressHydrationWarning>{t('admin.payments.schedules.cancelPayments', 'Cancel Payments')}</span>
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedSchedules(new Set())}>
+                    <span suppressHydrationWarning>{t('common.clear', 'Clear')}</span>
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          );
+        })()}
 
         {/* Schedules Table */}
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-visible" dir={direction}>
               <table className="w-full">
-                <thead className="border-b">
-                  <tr className="text-left">
+                <thead style={{
+                  borderBottom: '1px solid hsl(var(--border))',
+                  backgroundColor: 'hsl(var(--muted) / 0.3)'
+                }}>
+                  <tr className={isRtl ? 'text-right' : 'text-left'}>
                     <th className="p-4">
                       <Checkbox
                         checked={selectedSchedules.size === schedules.length && schedules.length > 0}
                         onCheckedChange={toggleAllSchedules}
                       />
                     </th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.user', 'User')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.product', 'Product')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.schedules.paymentNumber', 'Payment #')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.amount', 'Amount')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.status', 'Status')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('common.user', 'User')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('common.product', 'Product')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('admin.payments.schedules.paymentNumber', 'Payment #')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('common.amount', 'Amount')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('common.status', 'Status')}</th>
+                    <th className="p-4" style={{
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      color: 'hsl(var(--text-heading))'
+                    }} suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {schedules.map((schedule) => (
-                    <tr key={schedule.id} className="border-b hover:bg-muted/50">
+                    <tr
+                      key={schedule.id}
+                      className="border-b transition-colors hover:bg-muted/50"
+                      style={{ borderColor: 'hsl(var(--border))' }}
+                    >
                       <td className="p-4">
                         <Checkbox
                           checked={selectedSchedules.has(schedule.id)}
@@ -482,29 +711,49 @@ export default function SchedulesPage() {
                       </td>
                       <td className="p-4">
                         <div>
-                          <div className="font-medium">{schedule.user_name}</div>
-                          <div className="text-sm text-muted-foreground">{schedule.user_email}</div>
+                          <div style={{
+                            fontWeight: 'var(--font-weight-medium)',
+                            color: 'hsl(var(--text-primary))'
+                          }}>{schedule.user_name}</div>
+                          <div style={{
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'hsl(var(--text-muted))'
+                          }}>{schedule.user_email}</div>
                         </div>
                       </td>
                       <td className="p-4">
-                        <div className="font-medium">{schedule.product_name}</div>
+                        <div style={{
+                          fontWeight: 'var(--font-weight-medium)',
+                          color: 'hsl(var(--text-primary))'
+                        }}>{schedule.product_name}</div>
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          #{schedule.payment_number}
-                          <Badge variant="outline" className="capitalize">
-                            {schedule.payment_type}
+                          <span style={{ color: 'hsl(var(--text-primary))' }}>#{schedule.payment_number}</span>
+                          <Badge variant="outline" suppressHydrationWarning>
+                            {t(`admin.payments.schedules.paymentType.${schedule.payment_type}`, schedule.payment_type)}
                           </Badge>
                         </div>
                       </td>
-                      <td className="p-4 font-medium">
-                        {formatCurrency(schedule.amount, schedule.currency)}
+                      <td className="p-4">
+                        <span style={{
+                          fontWeight: 'var(--font-weight-semibold)',
+                          color: 'hsl(var(--text-primary))'
+                        }}>
+                          {formatCurrency(schedule.amount, schedule.currency)}
+                        </span>
                       </td>
                       <td className="p-4">
                         <div>
-                          <div>{formatDate(schedule.scheduled_date)}</div>
+                          <div style={{ color: 'hsl(var(--text-primary))' }}>
+                            {formatDate(schedule.scheduled_date)}
+                          </div>
+                          {/* Show original date if it differs from scheduled date (comparing UTC date strings) */}
                           {schedule.scheduled_date !== schedule.original_due_date && (
-                            <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                            <div style={{
+                              fontSize: 'var(--font-size-xs)',
+                              color: 'hsl(var(--text-muted))'
+                            }} suppressHydrationWarning>
                               {t('admin.payments.schedules.original', 'Original')}: {formatDate(schedule.original_due_date)}
                             </div>
                           )}
@@ -546,6 +795,59 @@ export default function SchedulesPage() {
           </CardContent>
         </Card>
 
+        {/* Pagination */}
+        {schedules.length > 0 && (
+          <div className="flex items-center justify-between flex-wrap gap-4" dir={direction}>
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-muted-foreground" suppressHydrationWarning>
+                {t('admin.payments.schedules.page', 'Page')} {currentPage} {t('admin.payments.schedules.of', 'of')} {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="page-size" className="text-sm text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                  {t('admin.payments.schedules.itemsPerPage', 'Items per page')}:
+                </Label>
+                <Select
+                  value={itemsPerPage.toString()}
+                  onValueChange={(value) => {
+                    setItemsPerPage(Number(value));
+                    setCurrentPage(1); // Reset to first page when changing page size
+                  }}
+                >
+                  <SelectTrigger id="page-size" className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent dir={direction}>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1 || loadingSchedules}
+              >
+                <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                <span suppressHydrationWarning>{t('common.previous', 'Previous')}</span>
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage === totalPages || loadingSchedules}
+              >
+                <span suppressHydrationWarning>{t('common.next', 'Next')}</span>
+                <ArrowLeft className={`h-4 w-4 ltr:ml-2 rtl:mr-2 ${isRtl ? '' : 'rotate-180'}`} />
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Adjust Date Dialog */}
         <AdjustDateDialog
           open={adjustDialogOpen}
@@ -582,33 +884,82 @@ function ScheduleActionsMenu({
   onPause: () => void;
   onResume: () => void;
 }) {
-  const { t } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, right: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const isRtl = direction === 'rtl';
+
+  const handleToggle = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const menuWidth = 192; // 192px = w-48
+      const menuHeight = 200; // Approximate menu height
+      const viewportHeight = window.innerHeight;
+
+      // Check if menu would go off bottom of screen
+      const spaceBelow = viewportHeight - rect.bottom;
+      const openUpward = spaceBelow < menuHeight && rect.top > menuHeight;
+
+      setMenuPosition({
+        top: openUpward ? rect.top - menuHeight - 8 : rect.bottom + 8,
+        left: rect.right - menuWidth,
+        right: rect.right,
+      });
+    }
+    setOpen(!open);
+  };
 
   return (
     <div className="relative">
       <Button
+        ref={buttonRef}
         variant="ghost"
         size="icon"
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
       >
         <MoreVertical className="h-4 w-4" />
       </Button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border rounded-md shadow-lg z-10">
-          <div className="py-1">
+        <>
+          {/* Backdrop to close menu when clicking outside */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          {/* Dropdown menu - fixed position relative to viewport */}
+          <div
+            className="fixed w-48 bg-white dark:bg-gray-800 border rounded-md shadow-lg z-50"
+            style={{
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+            }}
+          >
+            <div className="py-1">
             {schedule.status === 'pending' && (
-              <button
-                className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                onClick={() => {
-                  onAdjust();
-                  setOpen(false);
-                }}
-              >
-                <Calendar className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</span>
-              </button>
+              <>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
+                    onAdjust();
+                    setOpen(false);
+                  }}
+                >
+                  <Calendar className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</span>
+                </button>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
+                    onPause();
+                    setOpen(false);
+                  }}
+                >
+                  <Pause className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
+                </button>
+              </>
             )}
             {schedule.status === 'failed' && (
               <button
@@ -620,18 +971,6 @@ function ScheduleActionsMenu({
               >
                 <RefreshCw className="h-4 w-4" />
                 <span suppressHydrationWarning>{t('admin.payments.schedules.retryPayment', 'Retry Payment')}</span>
-              </button>
-            )}
-            {schedule.status === 'pending' && (
-              <button
-                className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                onClick={() => {
-                  onPause();
-                  setOpen(false);
-                }}
-              >
-                <Pause className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
               </button>
             )}
             {schedule.status === 'paused' && (
@@ -646,8 +985,14 @@ function ScheduleActionsMenu({
                 <span suppressHydrationWarning>{t('admin.payments.schedules.resumePayment', 'Resume Payment')}</span>
               </button>
             )}
+            {(schedule.status === 'paid' || schedule.status === 'cancelled') && (
+              <div className="px-4 py-3 text-sm text-muted-foreground text-center" suppressHydrationWarning>
+                {t('admin.payments.schedules.noActionsAvailable', 'Paid payment cannot be changed')}
+              </div>
+            )}
           </div>
         </div>
+        </>
       )}
     </div>
   );

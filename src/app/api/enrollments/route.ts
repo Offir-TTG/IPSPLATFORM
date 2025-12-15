@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { processEnrollment } from '@/lib/payments/enrollmentService';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/enrollments - Create new enrollment with payment processing
 export async function POST(request: NextRequest) {
   try {
@@ -157,19 +159,19 @@ export async function GET(request: NextRequest) {
       .from('enrollments')
       .select(`
         *,
-        users!inner(id, first_name, last_name, email),
+        users!enrollments_user_id_fkey(id, first_name, last_name, email),
         payment_plans(id, plan_name, plan_type),
-        products!inner(
+        products!enrollments_product_id_fkey(
           id,
-          product_type,
-          product_name,
+          type,
+          title,
           price,
           currency
         )
       `)
       .eq('user_id', targetUserId)
       .eq('tenant_id', userData.tenant_id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false});
 
     // Apply filters
     if (status) {

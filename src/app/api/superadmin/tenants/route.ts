@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { isSuperAdmin } from '@/lib/tenant/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET - List all tenants (Super Admin only)
 export async function GET(request: NextRequest) {
   try {

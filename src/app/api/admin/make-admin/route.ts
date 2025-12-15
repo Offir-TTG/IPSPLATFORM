@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 // POST - Make a user an admin (DEVELOPMENT ONLY)
 export async function POST(request: NextRequest) {
   try {

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { adjustScheduleDate } from '@/lib/payments/scheduleManager';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/admin/payments/schedules/:id/adjust - Adjust payment date
 export async function POST(
   request: NextRequest,

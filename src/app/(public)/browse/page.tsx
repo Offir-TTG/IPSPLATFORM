@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -110,7 +110,7 @@ const priceRanges = [
   { label: 'Over $500', min: 500, max: Infinity }
 ];
 
-export default function BrowsePage() {
+function BrowsePageContent() {
   const { t, direction } = useUserLanguage();
   const searchParams = useSearchParams();
 
@@ -598,5 +598,13 @@ export default function BrowsePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function BrowsePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
+      <BrowsePageContent />
+    </Suspense>
   );
 }

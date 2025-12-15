@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/programs - List all programs (simplified for enrollment dialog)
 export async function GET(request: NextRequest) {
   try {

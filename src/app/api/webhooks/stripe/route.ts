@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+
+export const dynamic = 'force-dynamic';
 
 // Stripe webhook events
 interface StripeWebhookEvent {
@@ -16,7 +18,7 @@ interface StripeWebhookEvent {
 // POST /api/webhooks/stripe - Handle Stripe webhook events
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // Get the raw payload for signature verification
     const rawPayload = await request.text();
@@ -238,29 +240,46 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
     return;
   }
 
-  // Create payment record
-  const { error: paymentError } = await supabase
+  // Check if payment record already exists (prevent duplicates from webhook retries)
+  const { data: existingPayment } = await supabase
     .from('payments')
-    .insert({
-      tenant_id,
-      user_id: enrollment.user_id,
-      enrollment_id,
-      amount: amount / 100,
-      currency: currency.toUpperCase(),
-      payment_method: 'stripe',
-      transaction_id: (paymentIntent as any).charges?.data?.[0]?.id || id,
-      stripe_payment_intent_id: id,
-      status: 'completed',
-      metadata: {
-        payment_type,
-        schedule_id,
-        stripe_payment_method: paymentIntent.payment_method,
-      },
-    });
+    .select('id')
+    .eq('stripe_payment_intent_id', id)
+    .eq('enrollment_id', enrollment_id)
+    .single();
 
-  if (paymentError) {
-    console.error('Error creating payment record:', paymentError);
-    return;
+  if (existingPayment) {
+    console.log(`Payment record already exists for intent ${id}, skipping creation`);
+  } else {
+    // Create payment record
+    const { error: paymentError } = await supabase
+      .from('payments')
+      .insert({
+        tenant_id,
+        enrollment_id,
+        payment_schedule_id: schedule_id,
+        product_id: enrollment.product_id,
+        stripe_payment_intent_id: id,
+        amount: amount / 100,
+        currency: currency.toUpperCase(),
+        payment_type,
+        status: 'succeeded',
+        installment_number: parseInt(metadata.payment_number || '1'),
+        paid_at: new Date().toISOString(),
+        metadata: {
+          payment_type,
+          schedule_id,
+          stripe_payment_method: paymentIntent.payment_method,
+          charge_id: (paymentIntent as any).charges?.data?.[0]?.id,
+        },
+      });
+
+    if (paymentError) {
+      console.error('Error creating payment record:', paymentError);
+      return;
+    }
+
+    console.log(`✓ Created payment record for intent ${id}`);
   }
 
   // Update payment schedule to paid
@@ -289,18 +308,24 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
       .reduce((sum: number, s: any) => sum + parseFloat(s.amount.toString()), 0);
 
     const isFullyPaid = paidAmount >= totalAmount;
-    const isDeposit = payment_type === 'deposit';
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('enrollments')
       .update({
         paid_amount: paidAmount,
         payment_status: isFullyPaid ? 'paid' : 'partial',
-        deposit_paid: isDeposit || undefined,
-        status: isFullyPaid ? 'active' : 'pending', // If fully paid, activate; otherwise keep as pending for more payment
+        // Note: Do NOT change enrollment.status here - that's controlled by the wizard completion
+        // status only changes to 'active' when user completes the enrollment wizard
+        updated_at: new Date().toISOString(),
       })
       .eq('id', enrollment_id)
       .eq('tenant_id', tenant_id);
+
+    if (updateError) {
+      console.error('Error updating enrollment:', updateError);
+    } else {
+      console.log(`✓ Updated enrollment: paid_amount=${paidAmount}, payment_status=${isFullyPaid ? 'paid' : 'partial'}`);
+    }
   }
 
   console.log(`Payment succeeded for enrollment ${enrollment_id}: $${amount / 100}`);

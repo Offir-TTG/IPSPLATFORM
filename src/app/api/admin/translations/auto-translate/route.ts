@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to translate text using a simple approach
 // In production, you could use OpenAI API, Google Translate API, etc.
 async function translateText(text: string, fromLang: string, toLang: string): Promise<string> {

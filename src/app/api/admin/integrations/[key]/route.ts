@@ -5,6 +5,8 @@ import { DocuSignClient } from '@/lib/docusign/client';
 import { ZoomClient } from '@/lib/zoom/client';
 import Stripe from 'stripe';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to encrypt sensitive data
 function encryptCredentials(credentials: Record<string, any>): Record<string, any> {
   // In production, use proper encryption (e.g., crypto-js, node:crypto)

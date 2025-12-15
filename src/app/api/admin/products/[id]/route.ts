@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ProductFormData } from '@/types/product';
 
+export const dynamic = 'force-dynamic';
+
 // GET single product
 export async function GET(
   request: NextRequest,
@@ -89,6 +91,7 @@ export async function PUT(
         price: body.payment_model === 'free' ? null : body.price,
         currency: body.currency || 'USD',
         payment_plan: body.payment_plan,
+        payment_start_date: body.payment_start_date || null,
         enrollment_invitation_template_key: body.enrollment_invitation_template_key,
         enrollment_confirmation_template_key: body.enrollment_confirmation_template_key,
         enrollment_reminder_template_key: body.enrollment_reminder_template_key,

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { logConfigChange, logAuditEvent } from '@/lib/audit/auditService';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Fetch all theme configurations (admin only)
 export async function GET(request: NextRequest) {
   try {

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
+export const dynamic = 'force-dynamic';
+
 // Simple test to verify DocuSign can send envelopes
 export async function POST(request: NextRequest) {
   try {

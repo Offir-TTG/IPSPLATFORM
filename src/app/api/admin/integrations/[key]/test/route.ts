@@ -5,6 +5,8 @@ import { verifyTenantAdmin } from '@/lib/tenant/auth';
 // import { ZoomClient } from '@/lib/zoom/client';
 import Stripe from 'stripe';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to decrypt credentials (placeholder)
 function decryptCredentials(credentials: Record<string, any>): Record<string, any> {
   // In production, use proper decryption

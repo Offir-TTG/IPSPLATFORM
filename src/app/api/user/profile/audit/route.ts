@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/user/profile/audit - Get user's profile audit history
 export const GET = withAuth(
   async (request: NextRequest, user: any) => {

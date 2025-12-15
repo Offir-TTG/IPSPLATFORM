@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ZoomService } from '@/lib/zoom/zoomService';
 
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // GET /api/lms/lessons/[id]/zoom-session
 // Fetch Zoom session data for a lesson

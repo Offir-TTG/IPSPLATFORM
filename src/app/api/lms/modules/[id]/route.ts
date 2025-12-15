@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { moduleService } from '@/lib/lms/moduleService.server';
 
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // GET /api/lms/modules/[id]
 // Get a single module by ID
