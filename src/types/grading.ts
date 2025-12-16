@@ -114,38 +114,172 @@ export const STANDARD_LETTER_GRADES: Omit<GradeRangeCreateInput, 'grading_scale_
 export interface GradeCategory {
   id: string;
   tenant_id: string;
-  course_id: string | null;
+  course_id: string;
   name: string; // e.g., "Homework", "Exams", "Participation"
   description: string | null;
-  weight_percentage: number; // 0-100
+  weight_percentage: number; // 0-100 (percentage weight)
   drop_lowest: number; // Drop N lowest scores
   display_order: number;
+  color_code: string | null; // Hex color code (e.g., #3B82F6)
   is_active: boolean;
   created_at: string;
   updated_at: string;
 
   // Relations
   course?: import('./lms').Course;
-  assignment_grades?: AssignmentGrade[];
+  grade_items?: GradeItem[];
 }
 
 export interface GradeCategoryCreateInput {
-  course_id?: string;
+  course_id: string;
   name: string;
   description?: string;
-  weight_percentage: number;
+  weight: number;
   drop_lowest?: number;
-  display_order: number;
-  is_active?: boolean;
+  display_order?: number;
+  color_code?: string;
 }
 
 export interface GradeCategoryUpdateInput {
   name?: string;
   description?: string;
-  weight_percentage?: number;
+  weight?: number;
   drop_lowest?: number;
   display_order?: number;
-  is_active?: boolean;
+  color_code?: string;
+}
+
+// ============================================================================
+// GRADE ITEM (Assignment/Quiz/Exam)
+// ============================================================================
+
+export interface GradeItem {
+  id: string;
+  tenant_id: string;
+  course_id: string;
+  category_id: string | null;
+  name: string; // e.g., "Homework 1", "Midterm Exam"
+  description: string | null;
+  max_points: number;
+  due_date: string | null;
+  available_from: string | null;
+  available_until: string | null;
+  is_published: boolean;
+  is_extra_credit: boolean;
+  allow_late_submission: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+
+  // Relations
+  course?: import('./lms').Course;
+  category?: GradeCategory;
+  student_grades?: StudentGrade[];
+}
+
+export interface GradeItemCreateInput {
+  course_id: string;
+  category_id?: string;
+  name: string;
+  description?: string;
+  max_points: number;
+  due_date?: string;
+  available_from?: string;
+  available_until?: string;
+  is_published?: boolean;
+  is_extra_credit?: boolean;
+  allow_late_submission?: boolean;
+  display_order?: number;
+}
+
+export interface GradeItemUpdateInput {
+  name?: string;
+  description?: string;
+  category_id?: string;
+  max_points?: number;
+  due_date?: string;
+  available_from?: string;
+  available_until?: string;
+  is_published?: boolean;
+  is_extra_credit?: boolean;
+  allow_late_submission?: boolean;
+  display_order?: number;
+}
+
+// ============================================================================
+// STUDENT GRADE
+// ============================================================================
+
+export type GradeStatus = 'not_submitted' | 'submitted' | 'graded' | 'late' | 'excused';
+
+export interface StudentGrade {
+  id: string;
+  tenant_id: string;
+  grade_item_id: string;
+  student_id: string;
+  points_earned: number | null;
+  percentage: number | null;
+  letter_grade: string | null;
+  status: GradeStatus;
+  is_excused: boolean;
+  is_late: boolean;
+  submitted_at: string | null;
+  graded_at: string | null;
+  graded_by: string | null;
+  feedback: string | null;
+  private_notes: string | null;
+  created_at: string;
+  updated_at: string;
+
+  // Relations
+  grade_item?: GradeItem;
+  student?: import('./lms').User;
+  grader?: import('./lms').User;
+}
+
+export interface StudentGradeCreateInput {
+  grade_item_id: string;
+  student_id: string;
+  points_earned?: number;
+  percentage?: number;
+  letter_grade?: string;
+  status?: GradeStatus;
+  is_excused?: boolean;
+  is_late?: boolean;
+  submitted_at?: string;
+  feedback?: string;
+  private_notes?: string;
+}
+
+export interface StudentGradeUpdateInput {
+  points_earned?: number;
+  percentage?: number;
+  letter_grade?: string;
+  status?: GradeStatus;
+  is_excused?: boolean;
+  is_late?: boolean;
+  submitted_at?: string;
+  graded_at?: string;
+  feedback?: string;
+  private_notes?: string;
+}
+
+// ============================================================================
+// STUDENT COURSE GRADE (Calculated View)
+// ============================================================================
+
+export interface StudentCourseGrade {
+  tenant_id: string;
+  course_id: string;
+  student_id: string;
+  student_name: string;
+  course_title: string;
+  final_percentage: number | null;
+  total_items: number;
+  graded_items: number;
+  missing_items: number;
+  late_items: number;
+  last_updated: string | null;
 }
 
 // ============================================================================

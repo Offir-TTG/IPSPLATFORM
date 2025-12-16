@@ -42,6 +42,7 @@ import {
   Loader2,
   ExternalLink,
   CheckCircle,
+  Award,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1735,6 +1736,15 @@ export default function CourseBuilderPage() {
 
             {/* Right Section - Action Buttons */}
             <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''} w-full md:w-auto`}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 md:flex-none"
+                onClick={() => router.push(`/admin/lms/courses/${params.id}/grading/categories`)}
+              >
+                <Award className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
+                <span className="hidden sm:inline">{t('lms.builder.grading', 'Grading')}</span>
+              </Button>
               <Button variant="outline" size="sm" className="flex-1 md:flex-none">
                 <Eye className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                 <span className="hidden sm:inline">{t('lms.builder.preview', 'Preview')}</span>

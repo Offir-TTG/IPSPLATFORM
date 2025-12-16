@@ -512,7 +512,7 @@ export interface CertificateCreateInput {
 }
 
 // ============================================================================
-// LESSON ATTENDANCE
+// LESSON ATTENDANCE (Legacy - per lesson tracking)
 // ============================================================================
 
 export interface LessonAttendance {
@@ -549,6 +549,71 @@ export interface AttendanceUpdateInput {
   left_at?: string;
   duration_minutes?: number;
   notes?: string;
+}
+
+// ============================================================================
+// ATTENDANCE (New comprehensive tracking system)
+// ============================================================================
+
+export interface Attendance {
+  id: string;
+  tenant_id: string;
+  course_id: string;
+  lesson_id: string | null;
+  student_id: string;
+  attendance_date: string; // DATE format (YYYY-MM-DD)
+  status: AttendanceStatus;
+  notes: string | null;
+  recorded_by: string;
+  created_at: string;
+  updated_at: string;
+
+  // Relations
+  course?: Course;
+  lesson?: Lesson;
+  student?: User;
+  recorder?: User;
+}
+
+export interface AttendanceRecord {
+  course_id: string;
+  lesson_id?: string;
+  student_id: string;
+  attendance_date: string;
+  status: AttendanceStatus;
+  notes?: string;
+}
+
+export interface BulkAttendanceInput {
+  course_id: string;
+  lesson_id?: string;
+  attendance_date: string;
+  records: {
+    student_id: string;
+    status: AttendanceStatus;
+    notes?: string;
+  }[];
+}
+
+export interface AttendanceStats {
+  tenant_id: string;
+  course_id: string;
+  student_id: string;
+  total_sessions: number;
+  present_count: number;
+  absent_count: number;
+  late_count: number;
+  excused_count: number;
+  attendance_percentage: number;
+}
+
+export interface AttendanceFilter {
+  course_id?: string;
+  lesson_id?: string;
+  student_id?: string;
+  date_from?: string;
+  date_to?: string;
+  status?: AttendanceStatus;
 }
 
 // ============================================================================

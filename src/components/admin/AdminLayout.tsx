@@ -29,6 +29,7 @@ import {
   User,
   TrendingUp,
   BarChart3,
+  Award,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -185,6 +186,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.lms_programs', icon: BookOpen, href: '/admin/lms/programs' },
         { key: 'admin.nav.lms_courses', icon: GraduationCap, href: '/admin/lms/courses' },
         { key: 'admin.nav.enrollments', icon: UserPlus, href: '/admin/enrollments' },
+        { key: 'admin.nav.grading', icon: Award, href: '/admin/grading/scales' },
       ],
     },
     {

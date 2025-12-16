@@ -12,80 +12,104 @@ import {
   ArrowRight,
   CheckCircle2,
   PlayCircle,
-  Trophy
+  Trophy,
+  Loader2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
+import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-// MOCKUP DATA
-const mockPrograms = [
-  {
-    id: '1',
-    name: 'Full Stack Web Development Bootcamp',
-    description: 'Master modern web development with React, Node.js, and databases. Build production-ready applications.',
-    image_url: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&h=400&fit=crop',
-    status: 'in_progress',
-    progress: 67,
-    total_courses: 8,
-    completed_courses: 5,
-    enrolled_at: '2025-01-15',
-    estimated_completion: '2025-06-30',
-    instructor: 'Dr. Sarah Johnson',
-    total_hours: 240,
-    hours_completed: 161,
-    certificate_eligible: false,
-    courses: [
-      { id: 'c1', title: 'HTML & CSS Fundamentals', status: 'completed' },
-      { id: 'c2', title: 'JavaScript Mastery', status: 'completed' },
-      { id: 'c3', title: 'React.js Development', status: 'in_progress' },
-      { id: 'c4', title: 'Node.js & Express', status: 'not_started' },
-    ]
-  },
-  {
-    id: '2',
-    name: 'Data Science & Machine Learning',
-    description: 'Learn Python, statistics, and ML algorithms. Work on real-world data science projects.',
-    image_url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&h=400&fit=crop',
-    status: 'in_progress',
-    progress: 34,
-    total_courses: 10,
-    completed_courses: 3,
-    enrolled_at: '2025-02-01',
-    estimated_completion: '2025-09-30',
-    instructor: 'Prof. Michael Chen',
-    total_hours: 320,
-    hours_completed: 109,
-    certificate_eligible: false,
-    courses: [
-      { id: 'c5', title: 'Python for Data Science', status: 'completed' },
-      { id: 'c6', title: 'Statistics & Probability', status: 'in_progress' },
-    ]
-  },
-  {
-    id: '3',
-    name: 'Professional Photography Course',
-    description: 'From basics to advanced techniques. Master composition, lighting, and post-processing.',
-    image_url: 'https://images.unsplash.com/photo-1452587925148-ce544e77e70d?w=800&h=400&fit=crop',
-    status: 'completed',
-    progress: 100,
-    total_courses: 6,
-    completed_courses: 6,
-    enrolled_at: '2024-09-01',
-    estimated_completion: '2024-12-31',
-    instructor: 'Emma Rodriguez',
-    total_hours: 120,
-    hours_completed: 120,
-    certificate_eligible: true,
-    courses: [
-      { id: 'c7', title: 'Camera Basics', status: 'completed' },
-      { id: 'c8', title: 'Composition Techniques', status: 'completed' },
-      { id: 'c9', title: 'Portrait Photography', status: 'completed' },
-    ]
+interface Program {
+  id: string;
+  program_id: string;
+  name: string;
+  description: string;
+  image_url: string;
+  status: 'active' | 'completed';
+  progress: number;
+  total_courses: number;
+  completed_courses: number;
+  enrolled_at: string;
+  completed_at: string | null;
+  estimated_completion: string | null;
+  instructor: string | null;
+  total_hours: number;
+  hours_completed: number;
+  certificate_eligible: boolean;
+  courses: Array<{
+    id: string;
+    title: string;
+    status: 'completed' | 'in_progress' | 'not_started';
+  }>;
+  payment_status: string;
+  total_amount: number;
+  paid_amount: number;
+  currency: string;
+}
+
+async function fetchPrograms(): Promise<Program[]> {
+  const response = await fetch('/api/user/programs', {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch programs');
   }
-];
+
+  const result = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to fetch programs');
+  }
+
+  return result.data;
+}
 
 export default function ProgramsPage() {
   const { t } = useUserLanguage();
+  const { data: programs, isLoading, error, refetch } = useQuery({
+    queryKey: ['user-programs'],
+    queryFn: fetchPrograms,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">{t('user.programs.loading', 'Loading your programs...')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Alert variant="destructive" className="max-w-2xl">
+          <AlertCircle className="h-5 w-5" />
+          <AlertTitle className="text-lg font-semibold">{t('user.programs.errorTitle', 'Error loading programs')}</AlertTitle>
+          <AlertDescription className="mt-2">
+            <p className="mb-4">{t('user.programs.errorMessage', 'Failed to load your programs. Please try again.')}</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
+              {t('user.programs.retry', 'Retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-12">
@@ -110,7 +134,7 @@ export default function ProgramsPage() {
             fontFamily: 'var(--font-family-primary)',
             fontWeight: 'var(--font-weight-medium)'
           }}>
-            {mockPrograms.length} {t('user.programs.activePrograms', 'Active Programs')}
+            {programs?.length || 0} {t('user.programs.activePrograms', 'Active Programs')}
           </span>
         </div>
         <p style={{
@@ -140,7 +164,7 @@ export default function ProgramsPage() {
                 fontFamily: 'var(--font-family-heading)',
                 fontWeight: 'var(--font-weight-bold)',
                 color: 'hsl(var(--text-heading))'
-              }}>{mockPrograms.length}</p>
+              }}>{programs?.length || 0}</p>
             </div>
           </div>
         </Card>
@@ -162,7 +186,7 @@ export default function ProgramsPage() {
                 fontWeight: 'var(--font-weight-bold)',
                 color: 'hsl(var(--text-heading))'
               }}>
-                {mockPrograms.filter(p => p.status === 'completed').length}
+                {programs?.filter((p: Program) => p.status === 'completed').length || 0}
               </p>
             </div>
           </div>
@@ -185,7 +209,7 @@ export default function ProgramsPage() {
                 fontWeight: 'var(--font-weight-bold)',
                 color: 'hsl(var(--text-heading))'
               }}>
-                {mockPrograms.filter(p => p.status === 'in_progress').length}
+                {programs?.filter((p: Program) => p.status === 'active').length || 0}
               </p>
             </div>
           </div>
@@ -208,7 +232,7 @@ export default function ProgramsPage() {
                 fontWeight: 'var(--font-weight-bold)',
                 color: 'hsl(var(--text-heading))'
               }}>
-                {mockPrograms.filter(p => p.certificate_eligible).length}
+                {programs?.filter((p: Program) => p.certificate_eligible).length || 0}
               </p>
             </div>
           </div>
@@ -217,7 +241,7 @@ export default function ProgramsPage() {
 
       {/* Programs Grid */}
       <div className="space-y-6">
-        {mockPrograms.map((program) => (
+        {(programs || []).map((program: Program) => (
           <Card key={program.id} className="overflow-hidden hover:shadow-lg transition-shadow">
             <div className="md:flex">
               {/* Image */}
@@ -339,7 +363,7 @@ export default function ProgramsPage() {
                     color: 'hsl(var(--text-muted))'
                   }}>
                     <span>{program.completed_courses}/{program.total_courses} {t('user.programs.card.coursesCompleted', 'courses completed')}</span>
-                    {program.status !== 'completed' && (
+                    {program.status !== 'completed' && program.estimated_completion && (
                       <span>{t('user.programs.card.estCompletion', 'Est. completion')}: {new Date(program.estimated_completion).toLocaleDateString()}</span>
                     )}
                   </div>
@@ -347,7 +371,7 @@ export default function ProgramsPage() {
 
                 {/* Course Pills */}
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {program.courses.slice(0, 4).map((course) => (
+                  {program.courses.slice(0, 4).map((course: any) => (
                     <span
                       key={course.id}
                       style={{
@@ -446,7 +470,7 @@ export default function ProgramsPage() {
       </div>
 
       {/* Empty State (hidden when there are programs) */}
-      {mockPrograms.length === 0 && (
+      {(!programs || programs.length === 0) && (
         <Card className="p-12 text-center">
           <div className="max-w-md mx-auto">
             <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{

@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-// GET /api/lms/courses/[id] - Get course details (student view)
+// GET /api/admin/lms/courses/[courseId] - Get course details
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { courseId: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -22,7 +22,7 @@ export async function GET(
     // Get user data with tenant
     const { data: userData, error: userDataError } = await supabase
       .from('users')
-      .select('tenant_id')
+      .select('tenant_id, role')
       .eq('id', user.id)
       .single();
 
@@ -30,11 +30,16 @@ export async function GET(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    // Check permissions (admin, super_admin, or instructor)
+    if (!['admin', 'super_admin', 'instructor'].includes(userData.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // Get course
     const { data: course, error: courseError } = await supabase
       .from('courses')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', params.courseId)
       .eq('tenant_id', userData.tenant_id)
       .single();
 
@@ -47,7 +52,7 @@ export async function GET(
       data: course,
     });
   } catch (error) {
-    console.error('Error in GET /api/lms/courses/[id]:', error);
+    console.error('Error in GET /api/admin/lms/courses/[courseId]:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

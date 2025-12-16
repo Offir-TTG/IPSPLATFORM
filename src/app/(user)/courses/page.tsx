@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -16,13 +17,59 @@ import {
   PlayCircle,
   CheckCircle2,
   ChevronRight,
-  Loader2
+  Loader2,
+  GraduationCap,
+  UserCheck
 } from 'lucide-react';
 import Image from 'next/image';
-import { useDashboard, type Enrollment } from '@/hooks/useDashboard';
 import { useUserLanguage } from '@/context/AppContext';
+import { useQuery } from '@tanstack/react-query';
 
 type CourseStatus = 'all' | 'in_progress' | 'completed' | 'not_started';
+
+interface Course {
+  id: string;
+  course_id: string;
+  course_name: string;
+  course_description: string | null;
+  course_image: string | null;
+  program_id: string | null;
+  program_name: string | null;
+  status: string;
+  enrolled_at: string;
+  completed_at: string | null;
+  expires_at: string | null;
+  overall_progress: number;
+  completed_lessons: number;
+  total_lessons: number;
+  instructor: string | null;
+  payment_status: string;
+  total_amount: number;
+  paid_amount: number;
+  currency: string;
+}
+
+async function fetchCourses(): Promise<Course[]> {
+  const response = await fetch('/api/user/courses', {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch courses');
+  }
+
+  const result = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to fetch courses');
+  }
+
+  return result.data;
+}
 
 function getCourseStatus(progress: number): 'in_progress' | 'completed' | 'not_started' {
   if (progress === 0) return 'not_started';
@@ -30,7 +77,7 @@ function getCourseStatus(progress: number): 'in_progress' | 'completed' | 'not_s
   return 'in_progress';
 }
 
-function getDefaultImage(courseName: string): string {
+function getDefaultImage(courseName: string | null): string {
   // Generate a consistent image based on course name hash
   const images = [
     'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=800&h=400&fit=crop',
@@ -38,14 +85,26 @@ function getDefaultImage(courseName: string): string {
     'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&h=400&fit=crop',
     'https://images.unsplash.com/photo-1554048612-b6a482bc67e5?w=800&h=400&fit=crop',
   ];
+
+  // Return first image if courseName is null
+  if (!courseName) {
+    return images[0];
+  }
+
   const hash = courseName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return images[hash % images.length];
 }
 
 export default function CoursesPage() {
   const { t } = useUserLanguage();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<CourseStatus>('all');
-  const { data, isLoading, error } = useDashboard();
+  const { data: courses, isLoading, error, refetch } = useQuery({
+    queryKey: ['user-courses'],
+    queryFn: fetchCourses,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
 
   if (isLoading) {
     return (
@@ -81,28 +140,54 @@ export default function CoursesPage() {
           <p style={{
             color: 'hsl(var(--text-muted))',
             fontSize: 'var(--font-size-base)',
-            fontFamily: 'var(--font-family-primary)'
+            fontFamily: 'var(--font-family-primary)',
+            marginBottom: '1rem'
           }}>
             {error instanceof Error ? error.message : t('user.courses.errorMessage', 'An error occurred while loading your courses')}
           </p>
+          <button
+            onClick={() => refetch()}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              paddingInlineStart: '1rem',
+              paddingInlineEnd: '1rem',
+              paddingTop: '0.5rem',
+              paddingBottom: '0.5rem',
+              backgroundColor: 'hsl(var(--primary))',
+              color: 'hsl(var(--primary-foreground))',
+              borderRadius: 'calc(var(--radius) * 1.5)',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 'var(--font-size-sm)',
+              fontFamily: 'var(--font-family-primary)',
+              fontWeight: 'var(--font-weight-medium)',
+              transition: 'opacity 0.2s'
+            }}
+            className="hover:opacity-90"
+          >
+            {t('user.courses.retry', 'Retry')}
+          </button>
         </Card>
       </div>
     );
   }
 
-  const enrollments = data?.enrollments || [];
+  const allCourses = courses || [];
 
-  const filteredCourses = enrollments.filter(enrollment => {
-    const status = getCourseStatus(enrollment.overall_progress);
+  const filteredCourses = allCourses.filter(course => {
+    const status = getCourseStatus(course.overall_progress);
     if (activeTab === 'all') return true;
     return status === activeTab;
   });
 
   const stats = {
-    total: enrollments.length,
-    in_progress: enrollments.filter(e => getCourseStatus(e.overall_progress) === 'in_progress').length,
-    completed: enrollments.filter(e => getCourseStatus(e.overall_progress) === 'completed').length,
-    not_started: enrollments.filter(e => getCourseStatus(e.overall_progress) === 'not_started').length
+    total: allCourses.length,
+    in_progress: allCourses.filter(c => getCourseStatus(c.overall_progress) === 'in_progress').length,
+    completed: allCourses.filter(c => getCourseStatus(c.overall_progress) === 'completed').length,
+    not_started: allCourses.filter(c => getCourseStatus(c.overall_progress) === 'not_started').length
   };
 
   return (
@@ -220,17 +305,17 @@ export default function CoursesPage() {
 
       {/* Courses Grid */}
       <div className="grid gap-6 md:grid-cols-2">
-        {filteredCourses.map((enrollment) => {
-          const status = getCourseStatus(enrollment.overall_progress);
-          const courseImage = enrollment.course_image || getDefaultImage(enrollment.course_name);
+        {filteredCourses.map((course) => {
+          const status = getCourseStatus(course.overall_progress);
+          const courseImage = course.course_image || getDefaultImage(course.course_name);
 
           return (
-            <Card key={enrollment.id} className="overflow-hidden group hover:shadow-xl transition-all duration-300">
+            <Card key={course.id} className="overflow-hidden group hover:shadow-xl transition-all duration-300">
               {/* Image Header */}
               <div className="relative h-48 bg-muted overflow-hidden">
                 <Image
                   src={courseImage}
-                  alt={enrollment.course_name}
+                  alt={course.course_name}
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
                 />
@@ -325,7 +410,7 @@ export default function CoursesPage() {
               {/* Content */}
               <div className="p-6">
                 {/* Program Tag */}
-                {enrollment.program_name && (
+                {course.program_name && (
                   <span style={{
                     display: 'inline-block',
                     paddingInlineStart: '0.625rem',
@@ -341,7 +426,7 @@ export default function CoursesPage() {
                     fontWeight: 'var(--font-weight-medium)',
                     marginBottom: '0.75rem'
                   }}>
-                    {enrollment.program_name}
+                    {course.program_name}
                   </span>
                 )}
 
@@ -352,17 +437,17 @@ export default function CoursesPage() {
                   fontWeight: 'var(--font-weight-bold)',
                   color: 'hsl(var(--text-heading))',
                   marginBottom: '0.5rem'
-                }}>{enrollment.course_name}</h3>
+                }}>{course.course_name}</h3>
 
                 {/* Description */}
-                {enrollment.course_description && (
+                {course.course_description && (
                   <p className="line-clamp-2" style={{
                     fontSize: 'var(--font-size-sm)',
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-muted))',
                     marginBottom: '1rem'
                   }}>
-                    {enrollment.course_description}
+                    {course.course_description}
                   </p>
                 )}
 
@@ -381,15 +466,15 @@ export default function CoursesPage() {
                         fontFamily: 'var(--font-family-primary)',
                         fontWeight: 'var(--font-weight-bold)',
                         color: 'hsl(var(--primary))'
-                      }}>{enrollment.overall_progress}%</span>
+                      }}>{course.overall_progress}%</span>
                     </div>
-                    <Progress value={enrollment.overall_progress} className="h-2 mb-2" />
+                    <Progress value={course.overall_progress} className="h-2 mb-2" />
                     <div className="flex items-center justify-between" style={{
                       fontSize: 'var(--font-size-xs)',
                       fontFamily: 'var(--font-family-primary)',
                       color: 'hsl(var(--text-muted))'
                     }}>
-                      <span>{enrollment.completed_lessons}/{enrollment.total_lessons} {t('user.courses.lessons', 'lessons')}</span>
+                      <span>{course.completed_lessons}/{course.total_lessons} {t('user.courses.lessons', 'lessons')}</span>
                     </div>
                   </div>
                 )}
@@ -402,11 +487,11 @@ export default function CoursesPage() {
                 }}>
                   <div className="flex items-center gap-1">
                     <Video className="h-3 w-3" />
-                    <span>{enrollment.total_lessons} {t('user.courses.lessonsCount', 'lessons')}</span>
+                    <span>{course.total_lessons} {t('user.courses.lessonsCount', 'lessons')}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    <span>{t('user.courses.enrolled', 'Enrolled')} {new Date(enrollment.enrolled_at).toLocaleDateString()}</span>
+                    <span>{t('user.courses.enrolled', 'Enrolled')} {new Date(course.enrolled_at).toLocaleDateString()}</span>
                   </div>
                 </div>
 
@@ -417,34 +502,63 @@ export default function CoursesPage() {
                   color: 'hsl(var(--text-muted))',
                   marginBottom: '1rem'
                 }}>
-                  {t('user.courses.enrolledOn', 'Enrolled on')} {new Date(enrollment.enrolled_at).toLocaleDateString()}
+                  {t('user.courses.enrolledOn', 'Enrolled on')} {new Date(course.enrolled_at).toLocaleDateString()}
                 </p>
 
                 {/* Actions */}
-                <div className="flex gap-2">
-                  {status === 'completed' ? (
-                    <>
-                      <button
-                        style={{
-                          flex: 1,
-                          paddingInlineStart: '0.75rem',
-                          paddingInlineEnd: '0.75rem',
-                          paddingTop: '0.5rem',
-                          paddingBottom: '0.5rem',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: 'calc(var(--radius) * 1.5)',
-                          backgroundColor: 'transparent',
-                          color: 'hsl(var(--text-body))',
-                          cursor: 'pointer',
-                          fontSize: 'var(--font-size-sm)',
-                          fontFamily: 'var(--font-family-primary)',
-                          fontWeight: 'var(--font-weight-medium)',
-                          transition: 'background-color 0.2s'
-                        }}
-                        className="hover:bg-accent"
-                      >
-                        {t('user.courses.actions.review', 'Review Course')}
-                      </button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    {status === 'completed' ? (
+                      <>
+                        <button
+                          style={{
+                            flex: 1,
+                            paddingInlineStart: '0.75rem',
+                            paddingInlineEnd: '0.75rem',
+                            paddingTop: '0.5rem',
+                            paddingBottom: '0.5rem',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: 'calc(var(--radius) * 1.5)',
+                            backgroundColor: 'transparent',
+                            color: 'hsl(var(--text-body))',
+                            cursor: 'pointer',
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-family-primary)',
+                            fontWeight: 'var(--font-weight-medium)',
+                            transition: 'background-color 0.2s'
+                          }}
+                          className="hover:bg-accent"
+                        >
+                          {t('user.courses.actions.review', 'Review Course')}
+                        </button>
+                        <button
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            paddingInlineStart: '0.75rem',
+                            paddingInlineEnd: '0.75rem',
+                            paddingTop: '0.5rem',
+                            paddingBottom: '0.5rem',
+                            backgroundColor: 'hsl(var(--primary))',
+                            color: 'hsl(var(--primary-foreground))',
+                            borderRadius: 'calc(var(--radius) * 1.5)',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-family-primary)',
+                            fontWeight: 'var(--font-weight-medium)',
+                            transition: 'opacity 0.2s'
+                          }}
+                          className="hover:opacity-90"
+                        >
+                          <Award className="h-4 w-4" />
+                          {t('user.courses.actions.getCertificate', 'Get Certificate')}
+                        </button>
+                      </>
+                    ) : status === 'not_started' ? (
                       <button
                         style={{
                           flex: 1,
@@ -468,12 +582,47 @@ export default function CoursesPage() {
                         }}
                         className="hover:opacity-90"
                       >
-                        <Award className="h-4 w-4" />
-                        {t('user.courses.actions.getCertificate', 'Get Certificate')}
+                        {t('user.courses.actions.startLearning', 'Start Learning')}
+                        <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
                       </button>
-                    </>
-                  ) : status === 'not_started' ? (
+                    ) : (
+                      <button
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.5rem',
+                          paddingInlineStart: '0.75rem',
+                          paddingInlineEnd: '0.75rem',
+                          paddingTop: '0.5rem',
+                          paddingBottom: '0.5rem',
+                          backgroundColor: 'hsl(var(--primary))',
+                          color: 'hsl(var(--primary-foreground))',
+                          borderRadius: 'calc(var(--radius) * 1.5)',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: 'var(--font-size-sm)',
+                          fontFamily: 'var(--font-family-primary)',
+                          fontWeight: 'var(--font-weight-medium)',
+                          transition: 'opacity 0.2s'
+                        }}
+                        className="hover:opacity-90"
+                      >
+                        {t('user.courses.actions.continueLearning', 'Continue Learning')}
+                        <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* View Grades and Attendance Buttons */}
+                  <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
                     <button
+                      onClick={() => {
+                        const courseId = course.course_id || course.id;
+                        console.log('Navigating to grades for course:', courseId);
+                        router.push(`/courses/${courseId}/grades`);
+                      }}
                       style={{
                         flex: 1,
                         display: 'flex',
@@ -482,25 +631,30 @@ export default function CoursesPage() {
                         gap: '0.5rem',
                         paddingInlineStart: '0.75rem',
                         paddingInlineEnd: '0.75rem',
-                        paddingTop: '0.5rem',
-                        paddingBottom: '0.5rem',
-                        backgroundColor: 'hsl(var(--primary))',
-                        color: 'hsl(var(--primary-foreground))',
+                        paddingTop: '0.625rem',
+                        paddingBottom: '0.625rem',
+                        border: '2px solid hsl(var(--primary))',
                         borderRadius: 'calc(var(--radius) * 1.5)',
-                        border: 'none',
+                        backgroundColor: 'hsl(var(--primary) / 0.05)',
+                        color: 'hsl(var(--primary))',
                         cursor: 'pointer',
                         fontSize: 'var(--font-size-sm)',
                         fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        transition: 'opacity 0.2s'
+                        fontWeight: 'var(--font-weight-semibold)',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                       }}
-                      className="hover:opacity-90"
+                      className="hover:bg-primary hover:text-primary-foreground"
                     >
-                      {t('user.courses.actions.startLearning', 'Start Learning')}
-                      <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
+                      <GraduationCap className="h-5 w-5" />
+                      {t('user.courses.actions.viewGrades', 'View Grades')}
                     </button>
-                  ) : (
+
                     <button
+                      onClick={() => {
+                        const courseId = course.course_id || course.id;
+                        router.push(`/courses/${courseId}/attendance`);
+                      }}
                       style={{
                         flex: 1,
                         display: 'flex',
@@ -509,24 +663,25 @@ export default function CoursesPage() {
                         gap: '0.5rem',
                         paddingInlineStart: '0.75rem',
                         paddingInlineEnd: '0.75rem',
-                        paddingTop: '0.5rem',
-                        paddingBottom: '0.5rem',
-                        backgroundColor: 'hsl(var(--primary))',
-                        color: 'hsl(var(--primary-foreground))',
+                        paddingTop: '0.625rem',
+                        paddingBottom: '0.625rem',
+                        border: '2px solid hsl(var(--secondary))',
                         borderRadius: 'calc(var(--radius) * 1.5)',
-                        border: 'none',
+                        backgroundColor: 'hsl(var(--secondary) / 0.05)',
+                        color: 'hsl(var(--secondary-foreground))',
                         cursor: 'pointer',
                         fontSize: 'var(--font-size-sm)',
                         fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        transition: 'opacity 0.2s'
+                        fontWeight: 'var(--font-weight-semibold)',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                       }}
-                      className="hover:opacity-90"
+                      className="hover:bg-secondary hover:text-secondary-foreground"
                     >
-                      {t('user.courses.actions.continueLearning', 'Continue Learning')}
-                      <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
+                      <UserCheck className="h-5 w-5" />
+                      {t('user.courses.actions.viewAttendance', 'View Attendance')}
                     </button>
-                  )}
+                  </div>
                 </div>
               </div>
             </Card>

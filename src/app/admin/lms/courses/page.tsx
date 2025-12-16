@@ -25,6 +25,8 @@ import {
   Check,
   Upload,
   Image,
+  GraduationCap,
+  UserCheck,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -947,6 +949,24 @@ export default function CoursesListPage() {
                       <BookOpen className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
                       <span suppressHydrationWarning>{t('lms.courses.manage', 'Manage Course')}</span>
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => router.push(`/admin/lms/courses/${course.id}/grading/gradebook`)}
+                    >
+                      <GraduationCap className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
+                      <span suppressHydrationWarning>{t('lms.courses.gradebook', 'Gradebook')}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => router.push(`/admin/lms/courses/${course.id}/attendance`)}
+                    >
+                      <UserCheck className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
+                      <span suppressHydrationWarning>{t('lms.courses.attendance', 'Attendance')}</span>
+                    </Button>
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -1102,6 +1122,32 @@ export default function CoursesListPage() {
                       >
                         <BookOpen className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
                         <span suppressHydrationWarning>{t('lms.courses.manage', 'Manage Course')}</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/admin/lms/courses/${course.id}/grading/gradebook`)}
+                        style={{
+                          width: isMobile ? '100%' : 'auto',
+                          flex: isMobile ? '1 1 100%' : '0 0 auto'
+                        }}
+                      >
+                        <GraduationCap className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                        <span suppressHydrationWarning>{t('lms.courses.gradebook', 'Gradebook')}</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/admin/lms/courses/${course.id}/attendance`)}
+                        style={{
+                          width: isMobile ? '100%' : 'auto',
+                          flex: isMobile ? '1 1 100%' : '0 0 auto'
+                        }}
+                      >
+                        <UserCheck className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                        <span suppressHydrationWarning>{t('lms.courses.attendance', 'Attendance')}</span>
                       </Button>
 
                       <div style={{
