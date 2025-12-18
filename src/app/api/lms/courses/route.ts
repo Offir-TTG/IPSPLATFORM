@@ -83,6 +83,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get user's tenant_id
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('tenant_id')
+      .eq('id', user.id)
+      .single();
+
+    if (userError || !userData) {
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
     // Get request body
     const body = await request.json();
 
@@ -141,6 +155,7 @@ export async function POST(request: NextRequest) {
 
     // Create course
     const courseData: any = {
+      tenant_id: userData.tenant_id,
       program_id: body.is_standalone
         ? null
         : (body.program_id && typeof body.program_id === 'string' && body.program_id.trim() !== '' ? body.program_id : null),

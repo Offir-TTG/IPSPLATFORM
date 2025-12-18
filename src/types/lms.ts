@@ -125,6 +125,7 @@ export interface LessonTopic {
   order: number;
   duration_minutes: number;
   is_required: boolean;
+  is_published: boolean;
   created_at: string;
   updated_at: string;
 

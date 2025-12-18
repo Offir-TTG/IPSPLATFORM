@@ -114,6 +114,7 @@ export const courseService = {
    * Create a new course
    */
   async createCourse(courseData: {
+    tenant_id?: string;
     program_id: string | null;
     instructor_id?: string;
     title: string;

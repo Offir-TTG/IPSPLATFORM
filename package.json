@@ -37,7 +37,7 @@
     "@tiptap/pm": "^2.27.1",
     "@tiptap/react": "^2.1.16",
     "@tiptap/starter-kit": "^2.1.16",
-    "@zoom/meetingsdk": "^3.8.10",
+    "@zoom/meetingsdk": "^3.13.2",
     "axios": "^1.6.5",
     "bullmq": "^5.1.8",
     "class-variance-authority": "^0.7.1",

@@ -50,6 +50,7 @@ interface Course {
 }
 
 async function fetchCourses(): Promise<Course[]> {
+  console.log('Fetching courses from API...');
   const response = await fetch('/api/user/courses', {
     method: 'GET',
     headers: {
@@ -58,16 +59,20 @@ async function fetchCourses(): Promise<Course[]> {
     credentials: 'include',
   });
 
+  console.log('API response status:', response.status);
+
   if (!response.ok) {
     throw new Error('Failed to fetch courses');
   }
 
   const result = await response.json();
+  console.log('API result:', result);
 
   if (!result.success) {
     throw new Error(result.error || 'Failed to fetch courses');
   }
 
+  console.log('Returning courses:', result.data);
   return result.data;
 }
 
@@ -105,6 +110,16 @@ export default function CoursesPage() {
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
+
+  async function handleStartCourse(courseId: string) {
+    try {
+      // Navigate to the course page which will automatically mark it as started
+      // when the user views the first lesson or interacts with content
+      router.push(`/courses/${courseId}`);
+    } catch (error) {
+      console.error('Error starting course:', error);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -441,14 +456,18 @@ export default function CoursesPage() {
 
                 {/* Description */}
                 {course.course_description && (
-                  <p className="line-clamp-2" style={{
-                    fontSize: 'var(--font-size-sm)',
-                    fontFamily: 'var(--font-family-primary)',
-                    color: 'hsl(var(--text-muted))',
-                    marginBottom: '1rem'
-                  }}>
-                    {course.course_description}
-                  </p>
+                  <div
+                    className="line-clamp-2"
+                    style={{
+                      fontSize: 'var(--font-size-sm)',
+                      fontFamily: 'var(--font-family-primary)',
+                      color: 'hsl(var(--text-muted))',
+                      marginBottom: '1rem'
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: course.course_description.replace(/<p>/g, '').replace(/<\/p>/g, '')
+                    }}
+                  />
                 )}
 
                 {/* Progress (if started) */}
@@ -491,19 +510,9 @@ export default function CoursesPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    <span>{t('user.courses.enrolled', 'Enrolled')} {new Date(course.enrolled_at).toLocaleDateString()}</span>
+                    <span>{t('user.courses.enrolledOn', 'Enrolled on')} {new Date(course.enrolled_at).toLocaleDateString()}</span>
                   </div>
                 </div>
-
-                {/* Enrollment Date */}
-                <p style={{
-                  fontSize: 'var(--font-size-xs)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-muted))',
-                  marginBottom: '1rem'
-                }}>
-                  {t('user.courses.enrolledOn', 'Enrolled on')} {new Date(course.enrolled_at).toLocaleDateString()}
-                </p>
 
                 {/* Actions */}
                 <div className="flex flex-col gap-2">
@@ -560,6 +569,7 @@ export default function CoursesPage() {
                       </>
                     ) : status === 'not_started' ? (
                       <button
+                        onClick={() => handleStartCourse(course.course_id || course.id)}
                         style={{
                           flex: 1,
                           display: 'flex',
@@ -587,6 +597,11 @@ export default function CoursesPage() {
                       </button>
                     ) : (
                       <button
+                        onClick={() => {
+                          const courseId = course.course_id || course.id;
+                          console.log('Continuing course:', courseId);
+                          router.push(`/courses/${courseId}`);
+                        }}
                         style={{
                           flex: 1,
                           display: 'flex',

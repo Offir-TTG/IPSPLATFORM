@@ -107,12 +107,40 @@ export const lessonService = {
     try {
       const supabase = await createClient();
 
+      // Get user's tenant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return {
+          success: false,
+          error: 'User not authenticated',
+        };
+      }
+
+      const { data: tenantUser, error: tenantError } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!tenantUser) {
+        return {
+          success: false,
+          error: 'User not associated with any tenant',
+        };
+      }
+
+      // Add tenant_id to lesson data
+      const insertData = {
+        ...lessonData,
+        tenant_id: tenantUser.tenant_id,
+      };
+
       // Explicitly list all columns to avoid PostgREST schema cache issues
       const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
 
       const { data, error } = await supabase
         .from('lessons')
-        .insert(lessonData)
+        .insert(insertData)
         .select(lessonsColumns)
         .single();
 
@@ -532,6 +560,28 @@ export const lessonService = {
     try {
       const supabase = await createClient();
 
+      // Get user's tenant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return {
+          success: false,
+          error: 'User not authenticated',
+        };
+      }
+
+      const { data: tenantUser, error: tenantError } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!tenantUser) {
+        return {
+          success: false,
+          error: 'User not associated with any tenant',
+        };
+      }
+
       // Get original lesson with topics
       const { data: originalLesson, error: fetchError } = await supabase
         .from('lessons')
@@ -550,6 +600,7 @@ export const lessonService = {
       const { data: newLesson, error: lessonError } = await supabase
         .from('lessons')
         .insert({
+          tenant_id: tenantUser.tenant_id,
           course_id: originalLesson.course_id,
           module_id: newModuleId || originalLesson.module_id,
           title: `${originalLesson.title} (Copy)`,
@@ -575,6 +626,7 @@ export const lessonService = {
       // Duplicate topics
       if (originalLesson.lesson_topics && originalLesson.lesson_topics.length > 0) {
         const topicsToInsert = originalLesson.lesson_topics.map((topic: any) => ({
+          tenant_id: tenantUser.tenant_id,
           lesson_id: newLesson.id,
           title: topic.title,
           content_type: topic.content_type,

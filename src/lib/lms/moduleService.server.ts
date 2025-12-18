@@ -404,6 +404,28 @@ export const moduleService = {
     try {
       const supabase = await createClient();
 
+      // Get user's tenant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return {
+          success: false,
+          error: 'User not authenticated',
+        };
+      }
+
+      const { data: tenantUser, error: tenantError } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!tenantUser) {
+        return {
+          success: false,
+          error: 'User not associated with any tenant',
+        };
+      }
+
       // Get original module with lessons
       // Explicitly list all lessons columns to avoid PostgREST schema cache issues
       const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
@@ -425,6 +447,7 @@ export const moduleService = {
       const { data: newModule, error: moduleError } = await supabase
         .from('modules')
         .insert({
+          tenant_id: tenantUser.tenant_id,
           course_id: newCourseId || originalModule.course_id,
           title: `${originalModule.title} (Copy)`,
           description: originalModule.description,
@@ -449,6 +472,7 @@ export const moduleService = {
           const { data: newLesson } = await supabase
             .from('lessons')
             .insert({
+              tenant_id: tenantUser.tenant_id,
               course_id: newModule.course_id,
               module_id: newModule.id,
               title: lesson.title,
@@ -467,6 +491,7 @@ export const moduleService = {
           // Duplicate topics
           if (newLesson && lesson.topics && lesson.topics.length > 0) {
             const topicsToInsert = lesson.topics.map((topic: any) => ({
+              tenant_id: tenantUser.tenant_id,
               lesson_id: newLesson.id,
               title: topic.title,
               content_type: topic.content_type,

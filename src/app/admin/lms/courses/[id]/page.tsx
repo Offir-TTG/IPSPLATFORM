@@ -684,35 +684,25 @@ export default function CourseBuilderPage() {
 
   const loadEnrollmentStats = async () => {
     try {
-      // Load enrollments for this course
-      const response = await fetch(`/api/enrollments?course_id=${params.id}`);
-      const data = await response.json();
+      // Use the students API which properly handles both program and standalone enrollments
+      const studentsResponse = await fetch(`/api/admin/lms/courses/${params.id}/students`);
+      const studentsData = await studentsResponse.json();
 
-      if (data.success && data.data) {
-        const enrollments = data.data;
-        const total = enrollments.length;
+      if (studentsData.success && studentsData.data) {
+        const students = studentsData.data;
+        const total = students.length;
 
-        // Calculate lifetime sales (sum of all payment amounts)
-        const lifetimeSales = enrollments.reduce((sum: number, enrollment: any) => {
-          return sum + (enrollment.total_amount || 0);
-        }, 0);
-
-        // Calculate progress percentages
-        const completed = enrollments.filter((e: any) => e.status === 'completed').length;
-        const inProgress = enrollments.filter((e: any) => e.status === 'active').length;
-        const notStarted = enrollments.filter((e: any) =>
-          e.status === 'pending' || e.status === 'draft'
-        ).length;
-
+        // For now, set basic stats
+        // TODO: Enhance to get actual progress/completion data from user_progress table
         setEnrollmentStats({
           totalEnrollments: total,
-          lifetimeSales: lifetimeSales,
-          completedCount: completed,
-          completedPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
-          inProgressCount: inProgress,
-          inProgressPercent: total > 0 ? Math.round((inProgress / total) * 100) : 0,
-          notStartedCount: notStarted,
-          notStartedPercent: total > 0 ? Math.round((notStarted / total) * 100) : 0,
+          lifetimeSales: 0, // TODO: Calculate from enrollments/payments
+          completedCount: 0, // TODO: Get from user_progress
+          completedPercent: 0,
+          inProgressCount: total, // Assume all are in progress for now
+          inProgressPercent: 100,
+          notStartedCount: 0,
+          notStartedPercent: 0,
         });
       }
     } catch (error) {
@@ -1426,14 +1416,14 @@ export default function CourseBuilderPage() {
     try {
       setSaving(true);
 
-      const newPublishedState = !course.is_active;
+      const newPublishedState = !course.is_published;
 
-      // Update course active status (courses use is_active instead of is_published)
+      // Update course published status
       const courseResponse = await fetch(`/api/lms/courses/${course.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          is_active: newPublishedState,
+          is_published: newPublishedState,
         }),
       });
 
@@ -1459,6 +1449,8 @@ export default function CourseBuilderPage() {
 
       // Update all lessons across all modules
       const lessonPromises: Promise<Response>[] = [];
+      const topicPromises: Promise<Response>[] = [];
+
       modules.forEach(module => {
         if (module.lessons && module.lessons.length > 0) {
           module.lessons.forEach(lesson => {
@@ -1471,11 +1463,26 @@ export default function CourseBuilderPage() {
                 }),
               })
             );
+
+            // Update lesson topics if they exist
+            if (lesson.topics && lesson.topics.length > 0) {
+              lesson.topics.forEach((topic: any) => {
+                topicPromises.push(
+                  fetch(`/api/lms/lesson-topics/${topic.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      is_published: newPublishedState,
+                    }),
+                  })
+                );
+              });
+            }
           });
         }
       });
 
-      await Promise.all(lessonPromises);
+      await Promise.all([...lessonPromises, ...topicPromises]);
 
       // Update all course materials
       try {
@@ -1501,11 +1508,15 @@ export default function CourseBuilderPage() {
       }
 
       // Update local state
-      setCourse({ ...course, is_active: newPublishedState });
+      setCourse({ ...course, is_published: newPublishedState });
       setModules(modules.map(m => ({
         ...m,
         is_published: newPublishedState,
-        lessons: m.lessons?.map(l => ({ ...l, is_published: newPublishedState })),
+        lessons: m.lessons?.map(l => ({
+          ...l,
+          is_published: newPublishedState,
+          topics: l.topics?.map((t: any) => ({ ...t, is_published: newPublishedState }))
+        })),
       })));
 
       showMessage(
@@ -1717,7 +1728,7 @@ export default function CourseBuilderPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-xl md:text-2xl font-bold truncate">{course?.title}</h1>
-                  {course?.is_active ? (
+                  {course?.is_published ? (
                     <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 flex items-center gap-1.5 shrink-0">
                       <CheckCircle className="h-3 w-3" />
                       <span className="hidden sm:inline">{t('lms.builder.published', 'Published')}</span>
@@ -1753,7 +1764,7 @@ export default function CourseBuilderPage() {
                 size="sm"
                 onClick={handlePublishCourse}
                 disabled={saving}
-                variant={course?.is_active ? 'outline' : 'default'}
+                variant={course?.is_published ? 'outline' : 'default'}
                 className="flex-1 md:flex-none"
               >
                 {saving ? (
@@ -1761,7 +1772,7 @@ export default function CourseBuilderPage() {
                     <Loader2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4 animate-spin`} />
                     <span className="hidden sm:inline">{t('common.saving', 'Saving...')}</span>
                   </>
-                ) : course?.is_active ? (
+                ) : course?.is_published ? (
                   <>
                     <EyeOff className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                     <span className="hidden sm:inline">{t('lms.builder.unpublish_course', 'Unpublish')}</span>
