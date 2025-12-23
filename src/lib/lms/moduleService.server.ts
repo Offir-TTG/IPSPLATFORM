@@ -30,11 +30,19 @@ export const moduleService = {
         .from('modules')
         .select(
           includeLessons
-            ? `*, lessons(${lessonsColumns}, lesson_topics(*), zoom_sessions(id, zoom_meeting_id, join_url, start_url, recording_status))`
+            ? `*, lessons(${lessonsColumns}, lesson_topics(*), zoom_sessions(id, zoom_meeting_id, join_url, start_url, recording_status, daily_room_name, daily_room_url, platform))`
             : '*'
         )
         .eq('course_id', courseId)
         .order('order', { ascending: true });
+
+      // Order lessons within modules by their order field
+      if (includeLessons) {
+        query = query.order('order', {
+          ascending: true,
+          foreignTable: 'lessons'
+        });
+      }
 
       const { data, error } = await query;
 

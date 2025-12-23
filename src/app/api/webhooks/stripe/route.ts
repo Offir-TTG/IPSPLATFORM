@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { stripe } from '@/lib/payments/stripeService';
 
 export const dynamic = 'force-dynamic';
 
@@ -329,6 +330,56 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
   }
 
   console.log(`Payment succeeded for enrollment ${enrollment_id}: $${amount / 100}`);
+
+  // Create a receipt invoice in Stripe for this payment
+  try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('stripe_customer_id, first_name, last_name')
+      .eq('id', enrollment.user_id)
+      .single();
+
+    if (user?.stripe_customer_id) {
+      // Create invoice for the payment (as a receipt)
+      const invoiceItem = await stripe.invoiceItems.create({
+        customer: user.stripe_customer_id,
+        amount: amount,
+        currency: currency,
+        description: metadata.product_name || `Payment ${payment_type}`,
+        metadata: {
+          tenant_id,
+          enrollment_id,
+          schedule_id: schedule_id || '',
+          payment_type,
+          payment_intent_id: id,
+        },
+      });
+
+      const invoice = await stripe.invoices.create({
+        customer: user.stripe_customer_id,
+        collection_method: 'charge_automatically',
+        auto_advance: false, // Don't auto-finalize
+        metadata: {
+          tenant_id,
+          enrollment_id,
+          schedule_id: schedule_id || '',
+          payment_type,
+          payment_intent_id: id,
+        },
+      });
+
+      // Finalize and mark as paid (since payment already succeeded)
+      await stripe.invoices.finalizeInvoice(invoice.id);
+      await stripe.invoices.pay(invoice.id, {
+        paid_out_of_band: true, // Mark as paid outside of Stripe
+      });
+
+      console.log(`✓ Created receipt invoice ${invoice.number} for payment ${id}`);
+    }
+  } catch (invoiceError) {
+    // Don't fail the webhook if invoice creation fails
+    console.error('Error creating receipt invoice:', invoiceError);
+  }
 }
 
 // Handle payment intent failed

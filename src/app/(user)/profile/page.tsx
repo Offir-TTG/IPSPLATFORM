@@ -2,11 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
@@ -29,9 +32,13 @@ import {
   Trash2,
   Loader2,
   Upload,
-  Linkedin,
-  Facebook,
-  Instagram
+  BookOpen,
+  Award,
+  Target,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
@@ -40,118 +47,67 @@ import { Switch } from '@/components/ui/switch';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { EditableProfileCard } from '@/components/user/EditableProfileCard';
+import Link from 'next/link';
 
-// MOCKUP DATA
-const mockUser = {
-  id: 'd7cb0921-4af6-4641-bdbd-c14c59eba9dc',
-  first_name: 'Offir',
-  last_name: 'Omer',
-  email: 'offir.omer@gmail.com',
-  phone: '+1 (555) 123-4567',
-  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Offir',
-  location: 'Tel Aviv, Israel',
-  timezone: 'Asia/Jerusalem',
-  language: 'English',
-  joined_date: '2024-09-01',
-  role: 'student',
-  verified: true,
-  bio: 'Passionate learner exploring web development and data science. Love building things and solving problems.',
-  social: {
-    linkedin: 'linkedin.com/in/offiromer',
-    github: 'github.com/offiromer',
-    website: 'offiromer.com'
-  }
-};
+interface Enrollment {
+  id: string;
+  product_name: string;
+  product_type: string;
+  total_amount: number;
+  paid_amount: number;
+  payment_status: string;
+  enrolled_date: string;
+  currency: string;
+  payment_plan_name: string;
+}
 
-const mockBillingInfo = {
-  payment_method: {
-    type: 'visa',
-    last4: '4242',
-    expires: '12/2026',
-    name: 'Offir Omer'
-  },
-  billing_address: {
-    street: '123 Rothschild Blvd',
-    city: 'Tel Aviv',
-    state: '',
-    zip: '6688101',
-    country: 'Israel'
-  },
-  subscription: {
-    plan: 'Pro',
-    status: 'active',
-    billing_cycle: 'monthly',
-    amount: 49.99,
-    currency: 'USD',
-    next_billing_date: '2025-02-20',
-    auto_renew: true
-  }
-};
+interface PaymentSchedule {
+  id: string;
+  payment_number: number;
+  amount: number;
+  currency: string;
+  scheduled_date: string;
+  paid_date?: string;
+  status: string;
+  payment_type: string;
+  product_name?: string;
+}
 
-const mockInvoices = [
-  {
-    id: 'inv_001',
-    date: '2025-01-20',
-    description: 'Pro Plan - Monthly Subscription',
-    amount: 49.99,
-    status: 'paid',
-    invoice_url: '#'
-  },
-  {
-    id: 'inv_002',
-    date: '2024-12-20',
-    description: 'Pro Plan - Monthly Subscription',
-    amount: 49.99,
-    status: 'paid',
-    invoice_url: '#'
-  },
-  {
-    id: 'inv_003',
-    date: '2024-11-20',
-    description: 'Pro Plan - Monthly Subscription',
-    amount: 49.99,
-    status: 'paid',
-    invoice_url: '#'
-  },
-  {
-    id: 'inv_004',
-    date: '2024-10-20',
-    description: 'Professional Photography Course',
-    amount: 299.00,
-    status: 'paid',
-    invoice_url: '#'
-  }
-];
-
-const mockEnrollments = [
-  {
-    id: 'enr_001',
-    program: 'Full Stack Web Development Bootcamp',
-    amount: 1299.00,
-    enrolled_date: '2025-01-15',
-    payment_status: 'paid'
-  },
-  {
-    id: 'enr_002',
-    program: 'Data Science & Machine Learning',
-    amount: 1499.00,
-    enrolled_date: '2025-02-01',
-    payment_status: 'paid'
-  },
-  {
-    id: 'enr_003',
-    program: 'Professional Photography Course',
-    amount: 299.00,
-    enrolled_date: '2024-09-01',
-    payment_status: 'paid'
-  }
-];
+interface Invoice {
+  id: string;
+  number: string;
+  status: string;
+  amount_due: number;
+  amount_paid: number;
+  currency: string;
+  created: number;
+  due_date: number | null;
+  paid_at: number | null;
+  invoice_pdf: string | null;
+  hosted_invoice_url: string | null;
+  description: string;
+  metadata: Record<string, string>;
+}
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState('profile');
-  const { t, direction } = useUserLanguage();
+  const { t, language } = useUserLanguage();
   const { data: profileData, isLoading, error } = useUserProfile();
   const queryClient = useQueryClient();
+  const isRtl = language === 'he';
+
+  // Enrollments state
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [loadingEnrollments, setLoadingEnrollments] = useState(false);
+  const [paymentSchedules, setPaymentSchedules] = useState<PaymentSchedule[]>([]);
+
+  // Invoices state
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+
+  // Pagination state for payment schedules (per enrollment)
+  const [paymentPages, setPaymentPages] = useState<Record<string, number>>({});
+  const PAYMENTS_PER_PAGE = 10;
 
   // Dialog states
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
@@ -189,14 +145,12 @@ export default function ProfilePage() {
         throw new Error(result.error || 'Failed to update profile');
       }
 
-      // Invalidate and refetch profile data
       await queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-
       toast.success('Profile updated successfully');
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to update profile');
-      throw error; // Re-throw to let the component handle it
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -227,9 +181,7 @@ export default function ProfilePage() {
         throw new Error(result.error || 'Failed to upload avatar');
       }
 
-      // Invalidate and refetch profile data
       await queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-
       toast.success('Avatar updated successfully');
       setIsAvatarDialogOpen(false);
       setSelectedFile(null);
@@ -257,9 +209,7 @@ export default function ProfilePage() {
         throw new Error(result.error || 'Failed to remove avatar');
       }
 
-      // Invalidate and refetch profile data
       await queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-
       toast.success('Avatar removed successfully');
       setIsAvatarDialogOpen(false);
       setSelectedFile(null);
@@ -275,7 +225,6 @@ export default function ProfilePage() {
   const handleChangePassword = async () => {
     setPasswordError(null);
 
-    // Validation
     if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
       setPasswordError(t('user.profile.security.password_error.all_fields_required'));
       return;
@@ -339,8 +288,6 @@ export default function ProfilePage() {
       }
 
       toast.success(t('user.profile.security.account_deactivated_success'));
-
-      // Redirect to logout or home page
       window.location.href = '/auth/logout';
     } catch (error) {
       console.error('Error deactivating account:', error);
@@ -350,7 +297,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Local state for preferences - initialize from API data
+  // Local state for preferences
   const [notificationPrefs, setNotificationPrefs] = useState(
     profileData?.preferences.notifications || {
       lesson_reminders: true,
@@ -360,18 +307,244 @@ export default function ProfilePage() {
     }
   );
 
+  // Fetch enrollments and invoices when billing tab is active
+  useEffect(() => {
+    if (activeTab === 'billing') {
+      if (enrollments.length === 0) {
+        fetchEnrollments();
+      }
+      if (invoices.length === 0) {
+        fetchInvoices();
+      }
+    }
+  }, [activeTab, enrollments.length, invoices.length]);
+
+  const fetchEnrollments = async () => {
+    setLoadingEnrollments(true);
+    try {
+      const response = await fetch('/api/enrollments');
+      const data = await response.json();
+
+      if (data.enrollments) {
+        const formatted = data.enrollments.map((e: any) => ({
+          id: e.id,
+          product_name: e.products.title || e.products.product_name,
+          product_type: e.products.type || e.products.product_type,
+          total_amount: e.total_amount,
+          paid_amount: e.paid_amount,
+          payment_status: e.payment_status,
+          enrolled_date: e.enrolled_date || e.created_at,
+          currency: e.products.currency || 'ILS',
+          payment_plan_name: e.payment_plans?.plan_name || t('user.profile.billing.fullPayment', 'Full Payment'),
+        }));
+        setEnrollments(formatted);
+
+        // Fetch payment schedules for all enrollments
+        const allSchedules: PaymentSchedule[] = [];
+        const updatedEnrollments = [...formatted];
+
+        for (let i = 0; i < formatted.length; i++) {
+          const enrollment = formatted[i];
+          try {
+            const scheduleRes = await fetch(`/api/enrollments/${enrollment.id}/payment`);
+            const scheduleData = await scheduleRes.json();
+
+            // Update enrollment with actual payment plan information
+            if (scheduleData.payment_plan) {
+              updatedEnrollments[i] = {
+                ...enrollment,
+                payment_plan_name: scheduleData.payment_plan.plan_name || t('user.profile.billing.fullPayment', 'Full Payment'),
+              };
+            }
+
+            if (scheduleData.schedules) {
+              const schedulesWithProduct = scheduleData.schedules.map((s: any) => ({
+                ...s,
+                product_name: enrollment.product_name,
+              }));
+              allSchedules.push(...schedulesWithProduct);
+            }
+          } catch (error) {
+            console.error(`Error fetching schedules for enrollment ${enrollment.id}:`, error);
+          }
+        }
+
+        setEnrollments(updatedEnrollments);
+
+        // Sort schedules by date (most recent first for paid, earliest first for pending)
+        const sortedSchedules = allSchedules.sort((a, b) => {
+          if (a.status === 'paid' && b.status === 'paid') {
+            return new Date(b.paid_date || b.scheduled_date).getTime() - new Date(a.paid_date || a.scheduled_date).getTime();
+          }
+          return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+        });
+
+        setPaymentSchedules(sortedSchedules);
+      }
+    } catch (error) {
+      console.error('Error fetching enrollments:', error);
+      toast.error(t('user.profile.billing.errorLoading', 'Failed to load enrollment data'));
+    } finally {
+      setLoadingEnrollments(false);
+    }
+  };
+
+  const fetchInvoices = async () => {
+    setLoadingInvoices(true);
+    try {
+      const response = await fetch('/api/user/invoices');
+      const data = await response.json();
+
+      if (data.success && data.invoices) {
+        setInvoices(data.invoices);
+      }
+    } catch (error) {
+      console.error('Error fetching invoices:', error);
+      toast.error(t('invoices.error_loading', 'Failed to load invoices'));
+    } finally {
+      setLoadingInvoices(false);
+    }
+  };
+
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+      style: 'currency',
+      currency: currency || 'ILS',
+    }).format(amount);
+  };
+
+  // Translate payment plan names
+  const translatePaymentPlanName = (planName: string) => {
+    // Map of English plan names to translation keys
+    const planNameMap: Record<string, string> = {
+      'Full Payment': 'user.profile.billing.fullPayment',
+      'One-Time Payment': 'user.profile.billing.fullPayment',
+      'Deposit + Installments': 'payment.plan.type.deposit',
+      'Subscription': 'payment.plan.type.subscription',
+      'Free': 'payment.plan.type.free',
+    };
+
+    const translationKey = planNameMap[planName];
+    if (translationKey) {
+      return t(translationKey, planName);
+    }
+
+    // If it's not a known English name, return as-is (might already be in Hebrew)
+    return planName;
+  };
+
+  const getPaymentStatusBadge = (status: string) => {
+    const badgeClass = isRtl ? 'flex flex-row-reverse gap-1' : 'flex gap-1';
+    switch (status) {
+      case 'paid':
+        return (
+          <Badge className={`bg-green-600 text-white ${badgeClass}`}>
+            <CheckCircle2 className="h-3 w-3" />
+            {t('user.profile.billing.status.paid', 'Paid')}
+          </Badge>
+        );
+      case 'partial':
+        return (
+          <Badge variant="secondary" className={badgeClass}>
+            <Clock className="h-3 w-3" />
+            {t('user.profile.billing.status.partial', 'Partial')}
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className={badgeClass}>
+            <AlertCircle className="h-3 w-3" />
+            {t('user.profile.billing.status.pending', 'Pending')}
+          </Badge>
+        );
+    }
+  };
+
+  const getScheduleStatusBadge = (status: string) => {
+    const badgeClass = isRtl ? 'flex flex-row-reverse gap-1' : 'flex gap-1';
+    switch (status) {
+      case 'paid':
+        return (
+          <Badge className={`bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20 border ${badgeClass}`}>
+            <CheckCircle2 className="h-3 w-3" />
+            {t('user.profile.billing.schedule.paid', 'Paid')}
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge className={`bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 border ${badgeClass}`}>
+            <Clock className="h-3 w-3" />
+            {t('user.profile.billing.schedule.pending', 'Pending')}
+          </Badge>
+        );
+      case 'overdue':
+        return (
+          <Badge className={`bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 border ${badgeClass}`}>
+            <AlertCircle className="h-3 w-3" />
+            {t('user.profile.billing.schedule.overdue', 'Overdue')}
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline">
+            {status}
+          </Badge>
+        );
+    }
+  };
+
+  const getInvoiceStatusBadge = (status: string) => {
+    const badgeClass = isRtl ? 'flex flex-row-reverse gap-1' : 'flex gap-1';
+    switch (status) {
+      case 'paid':
+        return (
+          <Badge className={`bg-green-500 hover:bg-green-600 text-white ${badgeClass}`}>
+            <CheckCircle2 className="h-3 w-3" />
+            {t('invoices.status.paid', 'Paid')}
+          </Badge>
+        );
+      case 'open':
+        return (
+          <Badge className={`bg-yellow-500 hover:bg-yellow-600 text-white ${badgeClass}`}>
+            <Clock className="h-3 w-3" />
+            {t('invoices.status.open', 'Open')}
+          </Badge>
+        );
+      case 'overdue':
+        return (
+          <Badge variant="destructive" className={badgeClass}>
+            <AlertCircle className="h-3 w-3" />
+            {t('invoices.status.overdue', 'Overdue')}
+          </Badge>
+        );
+      case 'draft':
+        return (
+          <Badge variant="outline" className={badgeClass}>
+            {t('invoices.status.draft', 'Draft')}
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className={badgeClass}>
+            {status}
+          </Badge>
+        );
+    }
+  };
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString(isRtl ? 'he-IL' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen pb-12 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" style={{ color: 'hsl(var(--primary))' }} />
-          <p style={{
-            color: 'hsl(var(--text-muted))',
-            fontSize: 'var(--font-size-base)',
-            fontFamily: 'var(--font-family-primary)'
-          }}>{t('user.profile.loading')}</p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -379,22 +552,12 @@ export default function ProfilePage() {
   // Error state
   if (error || !profileData) {
     return (
-      <div className="min-h-screen pb-12">
-        <Card className="p-6">
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Card className="p-6 max-w-2xl">
           <div className="text-center">
             <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" />
-            <h2 style={{
-              fontSize: 'var(--font-size-xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))',
-              marginBottom: '0.5rem'
-            }}>{t('user.profile.error.title')}</h2>
-            <p style={{
-              color: 'hsl(var(--text-muted))',
-              fontSize: 'var(--font-size-base)',
-              fontFamily: 'var(--font-family-primary)'
-            }}>
+            <h2 className="text-xl font-bold mb-2">{t('user.profile.error.title')}</h2>
+            <p className="text-muted-foreground">
               {error instanceof Error ? error.message : t('user.profile.error.description')}
             </p>
           </div>
@@ -404,26 +567,16 @@ export default function ProfilePage() {
   }
 
   const { user, preferences, security } = profileData;
-
-  // Use user's avatar or generate default
   const avatarUrl = user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`;
 
   return (
-    <div className="min-h-screen pb-12">
+    <div className="container mx-auto py-6 px-4 max-w-6xl" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <div className="mb-8">
-        <h1 style={{
-          fontSize: 'var(--font-size-3xl)',
-          fontFamily: 'var(--font-family-heading)',
-          fontWeight: 'var(--font-weight-bold)',
-          color: 'hsl(var(--text-heading))',
-          marginBottom: '0.5rem'
-        }}>{t('user.profile.title')}</h1>
-        <p style={{
-          color: 'hsl(var(--text-muted))',
-          fontSize: 'var(--font-size-base)',
-          fontFamily: 'var(--font-family-primary)'
-        }}>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold" suppressHydrationWarning>
+          {t('user.profile.title')}
+        </h1>
+        <p className="text-muted-foreground" suppressHydrationWarning>
           {t('user.profile.subtitle')}
         </p>
       </div>
@@ -451,452 +604,461 @@ export default function ProfilePage() {
 
         {/* BILLING TAB */}
         <TabsContent value="billing" className="space-y-6">
-          {/* Subscription Card */}
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 style={{
-                  fontSize: 'var(--font-size-xl)',
-                  fontFamily: 'var(--font-family-heading)',
-                  fontWeight: 'var(--font-weight-bold)',
-                  color: 'hsl(var(--text-heading))',
-                  marginBottom: '0.25rem'
-                }}>{t('user.profile.billing.current_subscription')}</h3>
-                <p style={{
-                  color: 'hsl(var(--text-muted))',
-                  fontSize: 'var(--font-size-base)',
-                  fontFamily: 'var(--font-family-primary)'
-                }}>{t('user.profile.billing.manage_subscription_text')}</p>
+          {loadingEnrollments ? (
+            <Card className="p-12">
+              <div className="flex flex-col items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                <p className="text-muted-foreground">{t('user.profile.billing.loading', 'Loading billing data...')}</p>
               </div>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                paddingInlineStart: '1rem',
-                paddingInlineEnd: '1rem',
-                paddingTop: '0.5rem',
-                paddingBottom: '0.5rem',
-                backgroundColor: 'rgb(22, 163, 74)',
-                color: 'white',
-                borderRadius: 'calc(var(--radius) * 1.5)',
-                fontSize: 'var(--font-size-lg)',
-                fontFamily: 'var(--font-family-primary)',
-                fontWeight: 'var(--font-weight-medium)'
-              }}>
-                {mockBillingInfo.subscription.plan} {t('user.profile.billing.plan')}
-              </span>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-6 mb-6">
-              <div>
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-muted))',
-                  marginBottom: '0.25rem'
-                }}>{t('user.profile.billing.billing_cycle')}</p>
-                <p style={{
-                  fontSize: 'var(--font-size-lg)',
-                  fontFamily: 'var(--font-family-heading)',
-                  fontWeight: 'var(--font-weight-semibold)',
-                  color: 'hsl(var(--text-heading))'
-                }}>{t(`user.profile.billing.cycle.${mockBillingInfo.subscription.billing_cycle}`)}</p>
-              </div>
-              <div>
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-muted))',
-                  marginBottom: '0.25rem'
-                }}>{t('user.profile.billing.amount')}</p>
-                <p style={{
-                  fontSize: 'var(--font-size-lg)',
-                  fontFamily: 'var(--font-family-heading)',
-                  fontWeight: 'var(--font-weight-semibold)',
-                  color: 'hsl(var(--text-heading))'
-                }}>
-                  ${mockBillingInfo.subscription.amount} {mockBillingInfo.subscription.currency}
-                </p>
-              </div>
-              <div>
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-muted))',
-                  marginBottom: '0.25rem'
-                }}>{t('user.profile.billing.next_billing_date')}</p>
-                <p style={{
-                  fontSize: 'var(--font-size-lg)',
-                  fontFamily: 'var(--font-family-heading)',
-                  fontWeight: 'var(--font-weight-semibold)',
-                  color: 'hsl(var(--text-heading))'
-                }}>
-                  {new Date(mockBillingInfo.subscription.next_billing_date).toLocaleDateString()}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-muted rounded-lg mb-6">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-                <span style={{
-                  fontSize: 'var(--font-size-base)',
-                  fontFamily: 'var(--font-family-primary)',
-                  fontWeight: 'var(--font-weight-medium)',
-                  color: 'hsl(var(--text-body))'
-                }}>{t('user.profile.billing.auto_renewal')} {mockBillingInfo.subscription.auto_renew ? t('user.profile.billing.enabled') : t('user.profile.billing.disabled')}</span>
-              </div>
-              <button
-                style={{
-                  paddingInlineStart: '0.75rem',
-                  paddingInlineEnd: '0.75rem',
-                  paddingTop: '0.375rem',
-                  paddingBottom: '0.375rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius) * 1.5)',
-                  backgroundColor: 'transparent',
-                  color: 'hsl(var(--text-body))',
-                  cursor: 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  transition: 'background-color 0.2s'
-                }}
-                className="hover:bg-accent"
-              >
-                {t('user.profile.billing.manage_subscription')}
-              </button>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  paddingInlineStart: '1rem',
-                  paddingInlineEnd: '1rem',
-                  paddingTop: '0.5rem',
-                  paddingBottom: '0.5rem',
-                  backgroundColor: 'hsl(var(--primary))',
-                  color: 'hsl(var(--primary-foreground))',
-                  borderRadius: 'calc(var(--radius) * 1.5)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  fontWeight: 'var(--font-weight-medium)',
-                  transition: 'opacity 0.2s'
-                }}
-                className="hover:opacity-90"
-              >
-                {t('user.profile.billing.upgrade_plan')}
-              </button>
-              <button
-                style={{
-                  paddingInlineStart: '0.75rem',
-                  paddingInlineEnd: '0.75rem',
-                  paddingTop: '0.5rem',
-                  paddingBottom: '0.5rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius) * 1.5)',
-                  backgroundColor: 'transparent',
-                  color: 'hsl(var(--text-body))',
-                  cursor: 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  transition: 'background-color 0.2s'
-                }}
-                className="hover:bg-accent"
-              >
-                {t('user.profile.billing.cancel_subscription')}
-              </button>
-            </div>
-          </Card>
-
-          {/* Payment Method */}
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 style={{
-                fontSize: 'var(--font-size-xl)',
-                fontFamily: 'var(--font-family-heading)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'hsl(var(--text-heading))'
-              }}>{t('user.profile.billing.payment_method')}</h3>
-              <button
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  paddingInlineStart: '0.75rem',
-                  paddingInlineEnd: '0.75rem',
-                  paddingTop: '0.375rem',
-                  paddingBottom: '0.375rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius) * 1.5)',
-                  backgroundColor: 'transparent',
-                  color: 'hsl(var(--text-body))',
-                  cursor: 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  transition: 'background-color 0.2s'
-                }}
-                className="hover:bg-accent"
-              >
-                <Edit className="h-4 w-4" />
-                {t('user.profile.billing.update')}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4 p-4 bg-muted rounded-lg">
-              <div className="p-3 bg-background rounded">
-                <CreditCard className="h-6 w-6" />
-              </div>
-              <div className="flex-1">
-                <p style={{
-                  fontSize: 'var(--font-size-base)',
-                  fontFamily: 'var(--font-family-primary)',
-                  fontWeight: 'var(--font-weight-semibold)',
-                  color: 'hsl(var(--text-heading))',
-                  textTransform: 'capitalize'
-                }}>{mockBillingInfo.payment_method.type} •••• {mockBillingInfo.payment_method.last4}</p>
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-muted))'
-                }}>
-                  {t('user.profile.billing.expires')} {mockBillingInfo.payment_method.expires}
-                </p>
-              </div>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                paddingInlineStart: '0.625rem',
-                paddingInlineEnd: '0.625rem',
-                paddingTop: '0.25rem',
-                paddingBottom: '0.25rem',
-                backgroundColor: 'hsl(var(--secondary))',
-                color: 'hsl(var(--secondary-foreground))',
-                borderRadius: 'calc(var(--radius) * 1.5)',
-                fontSize: 'var(--font-size-xs)',
-                fontFamily: 'var(--font-family-primary)',
-                fontWeight: 'var(--font-weight-medium)'
-              }}>{t('user.profile.billing.default')}</span>
-            </div>
-
-            <Separator className="my-6" />
-
-            <div>
-              <h4 style={{
-                fontSize: 'var(--font-size-base)',
-                fontFamily: 'var(--font-family-heading)',
-                fontWeight: 'var(--font-weight-semibold)',
-                color: 'hsl(var(--text-heading))',
-                marginBottom: '0.75rem'
-              }}>{t('user.profile.billing.billing_address')}</h4>
-              <div className="space-y-1" style={{
-                fontSize: 'var(--font-size-sm)',
-                fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-muted))'
-              }}>
-                <p>{mockBillingInfo.payment_method.name}</p>
-                <p>{mockBillingInfo.billing_address.street}</p>
-                <p>{mockBillingInfo.billing_address.city}, {mockBillingInfo.billing_address.zip}</p>
-                <p>{mockBillingInfo.billing_address.country}</p>
-              </div>
-            </div>
-          </Card>
-
-          {/* Billing History */}
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 style={{
-                fontSize: 'var(--font-size-xl)',
-                fontFamily: 'var(--font-family-heading)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'hsl(var(--text-heading))'
-              }}>{t('user.profile.billing.billing_history')}</h3>
-              <button
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  paddingInlineStart: '0.75rem',
-                  paddingInlineEnd: '0.75rem',
-                  paddingTop: '0.375rem',
-                  paddingBottom: '0.375rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius) * 1.5)',
-                  backgroundColor: 'transparent',
-                  color: 'hsl(var(--text-body))',
-                  cursor: 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  transition: 'background-color 0.2s'
-                }}
-                className="hover:bg-accent"
-              >
-                <Download className="h-4 w-4" />
-                {t('user.profile.billing.export')}
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {mockInvoices.map((invoice) => (
-                <div key={invoice.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-muted rounded">
-                      <Receipt className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p style={{
-                        fontSize: 'var(--font-size-base)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        color: 'hsl(var(--text-heading))'
-                      }}>{invoice.description}</p>
-                      <div className="flex items-center gap-2" style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        color: 'hsl(var(--text-muted))'
-                      }}>
-                        <Calendar className="h-3 w-3" />
-                        <span>{new Date(invoice.date).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-end">
-                      <p style={{
-                        fontSize: 'var(--font-size-base)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-semibold)',
-                        color: 'hsl(var(--text-heading))'
-                      }}>${invoice.amount.toFixed(2)}</p>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        paddingInlineStart: '0.625rem',
-                        paddingInlineEnd: '0.625rem',
-                        paddingTop: '0.25rem',
-                        paddingBottom: '0.25rem',
-                        backgroundColor: invoice.status === 'paid' ? 'hsl(var(--primary))' : 'hsl(var(--secondary))',
-                        color: invoice.status === 'paid' ? 'hsl(var(--primary-foreground))' : 'hsl(var(--secondary-foreground))',
-                        borderRadius: 'calc(var(--radius) * 1.5)',
-                        fontSize: 'var(--font-size-xs)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)'
-                      }}>
-                        {t(`user.profile.billing.status.${invoice.status}`)}
-                      </span>
-                    </div>
-                    <button
-                      style={{
-                        padding: '0.375rem',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'hsl(var(--text-body))',
-                        transition: 'background-color 0.2s',
-                        borderRadius: 'calc(var(--radius))'
-                      }}
-                      className="hover:bg-accent"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </div>
+            </Card>
+          ) : enrollments.length === 0 ? (
+            <Card className="p-12 text-center border-2 border-dashed">
+              <div className="flex justify-center mb-4">
+                <div className="rounded-full bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-6">
+                  <CreditCard className="h-10 w-10 text-muted-foreground" />
                 </div>
-              ))}
-            </div>
-          </Card>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">
+                {t('user.profile.billing.noEnrollments', 'No Enrollments Yet')}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {t('user.profile.billing.noEnrollmentsDesc', "You haven't enrolled in any programs yet.")}
+              </p>
+              <Button variant="outline" asChild>
+                <Link href="/courses">
+                  {t('user.profile.billing.browseCourses', 'Browse Courses')}
+                </Link>
+              </Button>
+            </Card>
+          ) : (
+            <>
+              {/* Summary Stats */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {t('user.profile.billing.totalSpent', 'Total Spent')}
+                    </p>
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  </div>
+                  <p className="text-2xl font-bold">
+                    {formatCurrency(
+                      enrollments.reduce((sum, e) => sum + e.paid_amount, 0),
+                      enrollments[0]?.currency || 'ILS'
+                    )}
+                  </p>
+                </Card>
 
-          {/* Enrollments */}
-          <Card className="p-6">
-            <h3 style={{
-              fontSize: 'var(--font-size-xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))',
-              marginBottom: '1.5rem'
-            }}>{t('user.profile.billing.program_enrollments')}</h3>
-            <div className="space-y-3">
-              {mockEnrollments.map((enrollment) => (
-                <div key={enrollment.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <p style={{
-                      fontSize: 'var(--font-size-base)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)',
-                      color: 'hsl(var(--text-heading))',
-                      marginBottom: '0.25rem'
-                    }}>{enrollment.program}</p>
-                    <p style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-muted))'
-                    }}>
-                      {t('user.profile.billing.enrolled')} {new Date(enrollment.enrolled_date).toLocaleDateString()}
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {t('user.profile.billing.outstanding', 'Outstanding')}
+                    </p>
+                    <Clock className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <p className="text-2xl font-bold">
+                    {formatCurrency(
+                      enrollments.reduce((sum, e) => sum + (e.total_amount - e.paid_amount), 0),
+                      enrollments[0]?.currency || 'ILS'
+                    )}
+                  </p>
+                </Card>
+
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {t('user.profile.billing.activeEnrollments', 'Active Enrollments')}
+                    </p>
+                    <BookOpen className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <p className="text-2xl font-bold">{enrollments.length}</p>
+                </Card>
+              </div>
+
+              {/* Enrollments List with Integrated Payment History */}
+              <Card className="p-6">
+                <h3 className="text-xl font-bold mb-6">
+                  {t('user.profile.billing.myEnrollments', 'My Enrollments')}
+                </h3>
+
+                <Accordion type="multiple" className="space-y-4">
+                  {enrollments.map((enrollment) => {
+                    const enrollmentPayments = paymentSchedules.filter(
+                      schedule => schedule.product_name === enrollment.product_name
+                    );
+
+                    // Pagination for this enrollment's payments
+                    const currentPage = paymentPages[enrollment.id] || 1;
+                    const totalPaymentPages = Math.ceil(enrollmentPayments.length / PAYMENTS_PER_PAGE);
+                    const startIndex = (currentPage - 1) * PAYMENTS_PER_PAGE;
+                    const endIndex = startIndex + PAYMENTS_PER_PAGE;
+                    const paginatedPayments = enrollmentPayments.slice(startIndex, endIndex);
+
+                    const handlePageChange = (enrollmentId: string, newPage: number) => {
+                      setPaymentPages(prev => ({
+                        ...prev,
+                        [enrollmentId]: newPage
+                      }));
+                    };
+
+                    return (
+                      <AccordionItem
+                        key={enrollment.id}
+                        value={enrollment.id}
+                        className="border-none"
+                      >
+                        <Card className="group overflow-hidden hover:shadow-xl transition-all duration-300 border-2 hover:border-primary/20">
+                          <div className="p-6">
+                            {/* Top: Header with Icon, Title, and Badge */}
+                            <div className="flex items-start gap-4 mb-4">
+                              <div className="flex-shrink-0">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent flex items-center justify-center border-2 border-primary/10 group-hover:scale-105 transition-transform">
+                                  <BookOpen className="h-8 w-8 text-primary" />
+                                </div>
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className={`flex-1 min-w-0 ${isRtl ? 'text-right' : 'text-left'}`}>
+                                    <h4 className="font-bold text-lg text-foreground line-clamp-1 group-hover:text-primary transition-colors mb-1">
+                                      {enrollment.product_name}
+                                    </h4>
+                                    <p className="text-sm text-muted-foreground capitalize">
+                                      {t(`product.type.${enrollment.product_type}`, enrollment.product_type)}
+                                    </p>
+                                  </div>
+                                  {getPaymentStatusBadge(enrollment.payment_status)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <Separator className="mb-4" />
+
+                            {/* Middle: Info Grid */}
+                            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 ${isRtl ? 'text-right' : 'text-left'}`}>
+                              <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground">
+                                  {t('user.profile.billing.enrolled', 'Enrolled')}
+                                </p>
+                                <p className="text-sm font-medium">
+                                  {new Date(enrollment.enrolled_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
+                                  })}
+                                </p>
+                              </div>
+
+                              <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground">
+                                  {t('user.profile.billing.paymentPlan', 'Payment Plan')}
+                                </p>
+                                <p className="text-sm font-medium">
+                                  {translatePaymentPlanName(enrollment.payment_plan_name)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Payment Progress */}
+                            <div className="space-y-2 p-4 bg-muted/30 rounded-lg mb-4">
+                              <div className={`flex items-center justify-between text-sm mb-1 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                                <span className="font-medium text-muted-foreground">
+                                  {t('user.profile.billing.paymentProgress', 'Payment Progress')}
+                                </span>
+                                <span className="font-bold">
+                                  {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
+                                </span>
+                              </div>
+                              <div className="w-full bg-secondary rounded-full h-3">
+                                <div
+                                  className={`bg-gradient-to-r from-primary to-primary/80 h-3 transition-all duration-500 flex items-center px-2 ${isRtl ? 'rounded-r-full justify-start' : 'rounded-l-full justify-end'}`}
+                                  style={{
+                                    width: `${Math.min(100, (enrollment.paid_amount / enrollment.total_amount) * 100)}%`,
+                                    [isRtl ? 'marginLeft' : 'marginRight']: 'auto',
+                                    [isRtl ? 'marginRight' : 'marginLeft']: '0'
+                                  }}
+                                >
+                                  {enrollment.paid_amount > 0 && (
+                                    <span className="text-[10px] font-bold text-white">
+                                      {Math.round((enrollment.paid_amount / enrollment.total_amount) * 100)}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {enrollment.payment_status !== 'paid' && (
+                                <p className={`text-xs font-medium text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                                  {t('user.profile.billing.remaining', 'Remaining')}: {formatCurrency(enrollment.total_amount - enrollment.paid_amount, enrollment.currency)}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Payment History Toggle */}
+                            {enrollmentPayments.length > 0 && (
+                              <>
+                                <Separator className="mb-3" />
+                                <AccordionTrigger className="hover:no-underline py-2">
+                                  <div className="flex items-center gap-2 w-full">
+                                    {isRtl ? (
+                                      <>
+                                        <Receipt className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium text-right">
+                                          {t('user.profile.billing.paymentHistory', 'Payment History')}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          ({enrollmentPayments.filter(p => p.status === 'paid').length}/{enrollmentPayments.length})
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Receipt className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium flex-1 text-left">
+                                          {t('user.profile.billing.paymentHistory', 'Payment History')}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          ({enrollmentPayments.filter(p => p.status === 'paid').length}/{enrollmentPayments.length})
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </AccordionTrigger>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Payment History Content */}
+                          {enrollmentPayments.length > 0 && (
+                            <AccordionContent>
+                              <div className="px-6 pb-6 pt-2 bg-muted/5">
+                                {/* Table Header */}
+                                <div className={`grid grid-cols-12 gap-3 px-3 py-2 text-xs font-medium text-muted-foreground border-b mb-2`}>
+                                  <div className={`col-span-1 ${isRtl ? 'text-right' : 'text-left'}`}>#</div>
+                                  <div className={`col-span-3 ${isRtl ? 'text-right' : 'text-left'}`}>{t('user.profile.billing.paymentType.deposit', 'Type')}</div>
+                                  <div className={`col-span-3 hidden sm:block ${isRtl ? 'text-right' : 'text-left'}`}>{t('user.profile.billing.dueOn', 'Date')}</div>
+                                  <div className={`col-span-3 sm:col-span-2 ${isRtl ? 'text-right' : 'text-right'}`}>{t('user.profile.billing.amount', 'Amount')}</div>
+                                  <div className={`col-span-2 ${isRtl ? 'text-right' : 'text-right'}`}>{t('user.profile.billing.status.paid', 'Status')}</div>
+                                </div>
+
+                                {/* Payment Rows */}
+                                <div className="space-y-1">
+                                  {paginatedPayments.map((schedule) => (
+                                    <div
+                                      key={schedule.id}
+                                      className={`grid grid-cols-12 gap-3 px-3 py-2.5 rounded-md hover:bg-muted/50 transition-colors items-center ${isRtl ? 'text-right' : 'text-left'}`}
+                                    >
+                                      {/* Payment Number */}
+                                      <div className="col-span-1">
+                                        <span className="text-xs font-semibold text-foreground">
+                                          {schedule.payment_number}
+                                        </span>
+                                      </div>
+
+                                      {/* Payment Type */}
+                                      <div className="col-span-3">
+                                        <span className="text-xs text-muted-foreground">
+                                          {t(`user.profile.billing.paymentType.${schedule.payment_type}`, schedule.payment_type)}
+                                        </span>
+                                      </div>
+
+                                      {/* Date */}
+                                      <div className="col-span-3 hidden sm:block">
+                                        <span className="text-xs text-muted-foreground">
+                                          {schedule.status === 'paid' && schedule.paid_date
+                                            ? new Date(schedule.paid_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                              })
+                                            : new Date(schedule.scheduled_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                              })
+                                          }
+                                        </span>
+                                      </div>
+
+                                      {/* Amount */}
+                                      <div className={`col-span-3 sm:col-span-2 ${isRtl ? 'text-right' : 'text-right'}`}>
+                                        <span className="text-sm font-bold text-foreground">
+                                          {formatCurrency(schedule.amount, schedule.currency)}
+                                        </span>
+                                      </div>
+
+                                      {/* Status Badge */}
+                                      <div className={`col-span-2 flex ${isRtl ? 'justify-end' : 'justify-end'}`}>
+                                        {getScheduleStatusBadge(schedule.status)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* Pagination Controls */}
+                                {totalPaymentPages > 1 && (
+                                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handlePageChange(enrollment.id, currentPage - 1)}
+                                      disabled={currentPage === 1}
+                                    >
+                                      {isRtl ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                                    </Button>
+                                    <span className="text-sm text-muted-foreground px-2">
+                                      {t('common.page', 'Page')} {currentPage} {t('common.of', 'of')} {totalPaymentPages}
+                                    </span>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handlePageChange(enrollment.id, currentPage + 1)}
+                                      disabled={currentPage === totalPaymentPages}
+                                    >
+                                      {isRtl ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </AccordionContent>
+                          )}
+                        </Card>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              </Card>
+
+              {/* Invoices Section */}
+              <Card className="p-6" dir={isRtl ? 'rtl' : 'ltr'}>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold">
+                    {t('user.invoices.title', 'My Invoices')}
+                  </h3>
+                  {invoices.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {invoices.length} {t('invoices.filter.all', 'Invoices')}
+                    </Badge>
+                  )}
+                </div>
+
+                {loadingInvoices ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : invoices.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h4 className="text-lg font-semibold mb-2">
+                      {t('invoices.empty.title', 'No invoices yet')}
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      {t('invoices.empty.subtitle', 'Your invoices will appear here')}
                     </p>
                   </div>
-                  <div className="text-end">
-                    <p style={{
-                      fontSize: 'var(--font-size-base)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-semibold)',
-                      color: 'hsl(var(--text-heading))',
-                      marginBottom: '0.25rem'
-                    }}>${enrollment.amount.toFixed(2)}</p>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                      paddingInlineStart: '0.625rem',
-                      paddingInlineEnd: '0.625rem',
-                      paddingTop: '0.25rem',
-                      paddingBottom: '0.25rem',
-                      backgroundColor: 'hsl(var(--primary))',
-                      color: 'hsl(var(--primary-foreground))',
-                      borderRadius: 'calc(var(--radius) * 1.5)',
-                      fontSize: 'var(--font-size-xs)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)'
-                    }}>
-                      <CheckCircle2 className="h-3 w-3" />
-                      {t(`user.profile.billing.status.${enrollment.payment_status}`)}
-                    </span>
+                ) : (
+                  <div className="space-y-3">
+                    {invoices.map((invoice) => (
+                      <Card key={invoice.id} className="overflow-hidden hover:shadow-md transition-all duration-200 border-2 hover:border-primary/20">
+                        <div className="p-5" dir={isRtl ? 'rtl' : 'ltr'}>
+                          {/* Top Row: Invoice Number, Status, and Amount - Spread Across */}
+                          <div className="flex items-start justify-between gap-6 mb-4">
+                            <div className="flex-1">
+                              <h4 className="text-lg font-semibold mb-1.5">{invoice.number}</h4>
+                              {getInvoiceStatusBadge(invoice.status)}
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground mb-1">
+                                {t('invoices.amount_due', 'Amount Due')}
+                              </div>
+                              <div className="text-2xl font-bold">
+                                {formatCurrency(invoice.amount_due, invoice.currency)}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Description - Full Width */}
+                          <p className="text-sm text-muted-foreground mb-4 pb-4 border-b">
+                            {invoice.description}
+                          </p>
+
+                          {/* Date Information - Spread Across in 3 Columns */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-5">
+                            <div>
+                              <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                                {t('invoices.invoice_date', 'Invoice Date')}
+                              </div>
+                              <div className="text-sm font-medium">{formatDate(invoice.created)}</div>
+                            </div>
+                            {invoice.paid_at && (
+                              <div>
+                                <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                                  {t('invoices.paid_on', 'Paid on')}
+                                </div>
+                                <div className="text-sm font-medium text-green-600">{formatDate(invoice.paid_at)}</div>
+                              </div>
+                            )}
+                            {invoice.due_date && !invoice.paid_at && (
+                              <div>
+                                <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                                  {t('invoices.due_date', 'Due Date')}
+                                </div>
+                                <div className="text-sm font-medium text-orange-600">{formatDate(invoice.due_date)}</div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions Row - Spread Across Bottom */}
+                          <div className="flex gap-2 flex-wrap pt-4 border-t">
+                            {invoice.hosted_invoice_url && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => window.open(invoice.hosted_invoice_url!, '_blank')}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                                {t('invoices.actions.view', 'View')}
+                              </Button>
+                            )}
+                            {invoice.invoice_pdf && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => window.open(invoice.invoice_pdf!, '_blank')}
+                              >
+                                <Download className="h-3.5 w-3.5 mr-1.5" />
+                                {t('invoices.actions.download', 'PDF')}
+                              </Button>
+                            )}
+                            {(invoice.status === 'open' || invoice.status === 'overdue') &&
+                              invoice.hosted_invoice_url && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => window.open(invoice.hosted_invoice_url!, '_blank')}
+                                >
+                                  {t('invoices.actions.pay_now', 'Pay Now')}
+                                </Button>
+                              )}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          </Card>
+                )}
+              </Card>
+            </>
+          )}
         </TabsContent>
 
         {/* SECURITY TAB */}
         <TabsContent value="security" className="space-y-6">
           <Card className="p-6">
-            <h3 style={{
-              fontSize: 'var(--font-size-xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))',
-              marginBottom: '1.5rem'
-            }}>{t('user.profile.security.password_auth')}</h3>
+            <h3 className="text-xl font-bold mb-6">{t('user.profile.security.password_auth')}</h3>
 
             <div className="space-y-4 mb-6">
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Key className="h-5 w-5" style={{ color: 'hsl(var(--text-muted))' }} />
+                  <Key className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p style={{
-                      fontSize: 'var(--font-size-base)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)',
-                      color: 'hsl(var(--text-heading))'
-                    }}>{t('user.profile.security.password')}</p>
-                    <p style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-muted))'
-                    }}>
+                    <p className="font-medium">{t('user.profile.security.password')}</p>
+                    <p className="text-sm text-muted-foreground">
                       {security.password_last_changed
                         ? `${t('user.profile.security.last_changed', 'Last changed')}: ${new Date(security.password_last_changed).toLocaleDateString()}`
                         : t('user.profile.security.never_changed', 'Never changed')
@@ -904,69 +1066,34 @@ export default function ProfilePage() {
                     </p>
                   </div>
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setIsPasswordDialogOpen(true)}
-                  style={{
-                    paddingInlineStart: '0.75rem',
-                    paddingInlineEnd: '0.75rem',
-                    paddingTop: '0.375rem',
-                    paddingBottom: '0.375rem',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: 'calc(var(--radius) * 1.5)',
-                    backgroundColor: 'transparent',
-                    color: 'hsl(var(--text-body))',
-                    cursor: 'pointer',
-                    fontSize: 'var(--font-size-sm)',
-                    fontFamily: 'var(--font-family-primary)',
-                    transition: 'background-color 0.2s'
-                  }}
-                  className="hover:bg-accent"
-                >{t('user.profile.security.change_password')}</button>
+                >
+                  {t('user.profile.security.change_password')}
+                </Button>
               </div>
             </div>
 
             <Separator className="my-6" />
 
             <div>
-              <h4 style={{
-                fontSize: 'var(--font-size-base)',
-                fontFamily: 'var(--font-family-heading)',
-                fontWeight: 'var(--font-weight-semibold)',
-                color: 'hsl(var(--text-heading))',
-                marginBottom: '1rem'
-              }}>{t('user.profile.security.active_sessions')}</h4>
+              <h4 className="font-semibold mb-4">{t('user.profile.security.active_sessions')}</h4>
               <div className="space-y-3">
                 {security.active_sessions.map((session) => (
                   <div key={session.id} className={`flex items-center justify-between p-4 rounded-lg ${session.is_current ? 'bg-muted' : 'border'}`}>
                     <div>
-                      <p style={{
-                        fontSize: 'var(--font-size-base)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        color: 'hsl(var(--text-heading))'
-                      }}>
+                      <p className="font-medium">
                         {session.is_current ? t('user.profile.security.current_session') : session.device}
                       </p>
-                      <p style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        color: 'hsl(var(--text-muted))'
-                      }}>{session.location} • {new Date(session.last_active).toLocaleString()}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {session.location} • {new Date(session.last_active).toLocaleString()}
+                      </p>
                     </div>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      paddingInlineStart: '0.625rem',
-                      paddingInlineEnd: '0.625rem',
-                      paddingTop: '0.25rem',
-                      paddingBottom: '0.25rem',
-                      backgroundColor: 'hsl(var(--primary))',
-                      color: 'hsl(var(--primary-foreground))',
-                      borderRadius: 'calc(var(--radius) * 1.5)',
-                      fontSize: 'var(--font-size-xs)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)'
-                    }}>{t('user.profile.security.active')}</span>
+                    <Badge className="bg-primary text-primary-foreground text-xs">
+                      {t('user.profile.security.active')}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -978,46 +1105,21 @@ export default function ProfilePage() {
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
                 <div className="flex-1">
-                  <p style={{
-                    fontSize: 'var(--font-size-base)',
-                    fontFamily: 'var(--font-family-heading)',
-                    fontWeight: 'var(--font-weight-semibold)',
-                    marginBottom: '0.25rem'
-                  }} className="text-red-900 dark:text-red-100">{t('user.profile.security.danger_zone')}</p>
-                  <p style={{
-                    fontSize: 'var(--font-size-sm)',
-                    fontFamily: 'var(--font-family-primary)',
-                    marginBottom: '0.75rem'
-                  }} className="text-red-700 dark:text-red-300">
+                  <p className="font-semibold mb-1 text-red-900 dark:text-red-100">
+                    {t('user.profile.security.danger_zone')}
+                  </p>
+                  <p className="text-sm mb-3 text-red-700 dark:text-red-300">
                     {t('user.profile.security.delete_warning')}
                   </p>
-                  <button
+                  <Button
+                    variant="destructive"
+                    size="sm"
                     onClick={() => setShowDeactivateDialog(true)}
                     disabled={isDeactivating}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      paddingInlineStart: '0.75rem',
-                      paddingInlineEnd: '0.75rem',
-                      paddingTop: '0.375rem',
-                      paddingBottom: '0.375rem',
-                      backgroundColor: 'hsl(var(--destructive))',
-                      color: 'hsl(var(--destructive-foreground))',
-                      borderRadius: 'calc(var(--radius) * 1.5)',
-                      border: 'none',
-                      cursor: isDeactivating ? 'not-allowed' : 'pointer',
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)',
-                      transition: 'opacity 0.2s',
-                      opacity: isDeactivating ? 0.5 : 1
-                    }}
-                    className="hover:opacity-90"
                   >
-                    {isDeactivating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {isDeactivating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
                     {t('user.profile.security.deactivate_account')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1027,13 +1129,7 @@ export default function ProfilePage() {
         {/* PREFERENCES TAB */}
         <TabsContent value="preferences" className="space-y-6">
           <Card className="p-6">
-            <h3 style={{
-              fontSize: 'var(--font-size-xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))',
-              marginBottom: '1.5rem'
-            }}>{t('user.profile.preferences.notifications')}</h3>
+            <h3 className="text-xl font-bold mb-6">{t('user.profile.preferences.notifications')}</h3>
 
             <div className="space-y-4">
               {[
@@ -1044,26 +1140,16 @@ export default function ProfilePage() {
               ].map((pref) => (
                 <div key={pref.key} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-3">
-                    <Bell className="h-5 w-5" style={{ color: 'hsl(var(--text-muted))' }} />
+                    <Bell className="h-5 w-5 text-muted-foreground" />
                     <div>
-                      <p style={{
-                        fontSize: 'var(--font-size-base)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        color: 'hsl(var(--text-heading))'
-                      }}>{pref.label}</p>
-                      <p style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        color: 'hsl(var(--text-muted))'
-                      }}>{pref.description}</p>
+                      <p className="font-medium">{pref.label}</p>
+                      <p className="text-sm text-muted-foreground">{pref.description}</p>
                     </div>
                   </div>
                   <Switch
                     checked={notificationPrefs[pref.key]}
                     onCheckedChange={(checked) => {
                       setNotificationPrefs(prev => ({ ...prev, [pref.key]: checked }));
-                      // TODO: Save to backend
                     }}
                   />
                 </div>
@@ -1072,85 +1158,35 @@ export default function ProfilePage() {
           </Card>
 
           <Card className="p-6">
-            <h3 style={{
-              fontSize: 'var(--font-size-xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))',
-              marginBottom: '1.5rem'
-            }}>{t('user.profile.preferences.regional_settings')}</h3>
+            <h3 className="text-xl font-bold mb-6">{t('user.profile.preferences.regional_settings')}</h3>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Globe className="h-5 w-5" style={{ color: 'hsl(var(--text-muted))' }} />
+                  <Globe className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p style={{
-                      fontSize: 'var(--font-size-base)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)',
-                      color: 'hsl(var(--text-heading))'
-                    }}>{t('user.profile.preferences.language')}</p>
-                    <p style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-muted))'
-                    }}>{preferences.regional.language === 'en' ? 'English' : 'עברית'}</p>
+                    <p className="font-medium">{t('user.profile.preferences.language')}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {preferences.regional.language === 'en' ? 'English' : 'עברית'}
+                    </p>
                   </div>
                 </div>
-                <button
-                  style={{
-                    paddingInlineStart: '0.75rem',
-                    paddingInlineEnd: '0.75rem',
-                    paddingTop: '0.375rem',
-                    paddingBottom: '0.375rem',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: 'calc(var(--radius) * 1.5)',
-                    backgroundColor: 'transparent',
-                    color: 'hsl(var(--text-body))',
-                    cursor: 'pointer',
-                    fontSize: 'var(--font-size-sm)',
-                    fontFamily: 'var(--font-family-primary)',
-                    transition: 'background-color 0.2s'
-                  }}
-                  className="hover:bg-accent"
-                >{t('user.profile.preferences.change')}</button>
+                <Button variant="outline" size="sm">
+                  {t('user.profile.preferences.change')}
+                </Button>
               </div>
 
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Clock className="h-5 w-5" style={{ color: 'hsl(var(--text-muted))' }} />
+                  <Clock className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p style={{
-                      fontSize: 'var(--font-size-base)',
-                      fontFamily: 'var(--font-family-primary)',
-                      fontWeight: 'var(--font-weight-medium)',
-                      color: 'hsl(var(--text-heading))'
-                    }}>{t('user.profile.preferences.timezone')}</p>
-                    <p style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-muted))'
-                    }}>{preferences.regional.timezone}</p>
+                    <p className="font-medium">{t('user.profile.preferences.timezone')}</p>
+                    <p className="text-sm text-muted-foreground">{preferences.regional.timezone}</p>
                   </div>
                 </div>
-                <button
-                  style={{
-                    paddingInlineStart: '0.75rem',
-                    paddingInlineEnd: '0.75rem',
-                    paddingTop: '0.375rem',
-                    paddingBottom: '0.375rem',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: 'calc(var(--radius) * 1.5)',
-                    backgroundColor: 'transparent',
-                    color: 'hsl(var(--text-body))',
-                    cursor: 'pointer',
-                    fontSize: 'var(--font-size-sm)',
-                    fontFamily: 'var(--font-family-primary)',
-                    transition: 'background-color 0.2s'
-                  }}
-                  className="hover:bg-accent"
-                >{t('user.profile.preferences.change')}</button>
+                <Button variant="outline" size="sm">
+                  {t('user.profile.preferences.change')}
+                </Button>
               </div>
             </div>
           </Card>
@@ -1159,7 +1195,7 @@ export default function ProfilePage() {
 
       {/* Upload Avatar Dialog */}
       <Dialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
-        <DialogContent dir={direction}>
+        <DialogContent dir={isRtl ? 'rtl' : 'ltr'}>
           <DialogHeader>
             <DialogTitle>{t('user.profile.buttons.change_avatar')}</DialogTitle>
             <DialogDescription>
@@ -1168,7 +1204,6 @@ export default function ProfilePage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {/* File Input */}
             <div className="border-2 border-dashed rounded-lg p-6 text-center">
               <input
                 type="file"
@@ -1185,155 +1220,76 @@ export default function ProfilePage() {
                     }
                   }
                 }}
-                style={{ display: 'none' }}
+                className="hidden"
                 id="avatar-upload"
               />
-              <label
-                htmlFor="avatar-upload"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  cursor: 'pointer'
-                }}
-              >
-                <Upload className="h-8 w-8" style={{ color: 'hsl(var(--text-muted))' }} />
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-body))'
-                }}>
+              <label htmlFor="avatar-upload" className="flex flex-col items-center gap-2 cursor-pointer">
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <p className="text-sm">
                   {selectedFile ? selectedFile.name : t('user.profile.upload.select_image')}
                 </p>
-                <p style={{
-                  fontSize: 'var(--font-size-xs)',
-                  fontFamily: 'var(--font-family-primary)',
-                  color: 'hsl(var(--text-muted))'
-                }}>
+                <p className="text-xs text-muted-foreground">
                   {t('user.profile.upload.file_types')}
                 </p>
               </label>
             </div>
 
-            {/* Preview */}
             {selectedFile && (
               <div className="flex justify-center">
-                <div className="relative">
-                  <Image
-                    src={URL.createObjectURL(selectedFile)}
-                    alt="Preview"
-                    width={120}
-                    height={120}
-                    className="rounded-full border-4 border-muted"
-                  />
-                </div>
+                <Image
+                  src={URL.createObjectURL(selectedFile)}
+                  alt="Preview"
+                  width={120}
+                  height={120}
+                  className="rounded-full border-4 border-muted"
+                />
               </div>
             )}
 
-            {/* Error Message */}
             {uploadError && (
               <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg">
                 <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)'
-                }} className="text-red-700 dark:text-red-300">
-                  {uploadError}
-                </p>
+                <p className="text-sm text-red-700 dark:text-red-300">{uploadError}</p>
               </div>
             )}
           </div>
 
           <DialogFooter>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button
-                onClick={() => {
-                  setIsAvatarDialogOpen(false);
-                  setSelectedFile(null);
-                  setUploadError(null);
-                }}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAvatarDialogOpen(false);
+                setSelectedFile(null);
+                setUploadError(null);
+              }}
+              disabled={isUploading}
+            >
+              {t('user.profile.upload.cancel')}
+            </Button>
+            {user.avatar_url && (
+              <Button
+                variant="destructive"
+                onClick={handleRemoveAvatar}
                 disabled={isUploading}
-                style={{
-                  paddingInlineStart: '1rem',
-                  paddingInlineEnd: '1rem',
-                  paddingTop: '0.5rem',
-                  paddingBottom: '0.5rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius))',
-                  backgroundColor: 'transparent',
-                  color: 'hsl(var(--text-body))',
-                  cursor: isUploading ? 'not-allowed' : 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  opacity: isUploading ? 0.5 : 1
-                }}
-                className="hover:bg-accent"
               >
-                {t('user.profile.upload.cancel')}
-              </button>
-              {user.avatar_url && (
-                <button
-                  onClick={handleRemoveAvatar}
-                  disabled={isUploading}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    paddingInlineStart: '1rem',
-                    paddingInlineEnd: '1rem',
-                    paddingTop: '0.5rem',
-                    paddingBottom: '0.5rem',
-                    backgroundColor: 'hsl(var(--destructive))',
-                    color: 'hsl(var(--destructive-foreground))',
-                    borderRadius: 'calc(var(--radius))',
-                    border: 'none',
-                    cursor: isUploading ? 'not-allowed' : 'pointer',
-                    fontSize: 'var(--font-size-sm)',
-                    fontFamily: 'var(--font-family-primary)',
-                    fontWeight: 'var(--font-weight-medium)',
-                    opacity: isUploading ? 0.5 : 1
-                  }}
-                  className="hover:opacity-90"
-                >
-                  {isUploading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {t('user.profile.upload.remove_avatar')}
-                </button>
-              )}
-              <button
-                onClick={handleAvatarUpload}
-                disabled={isUploading || !selectedFile}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  paddingInlineStart: '1rem',
-                  paddingInlineEnd: '1rem',
-                  paddingTop: '0.5rem',
-                  paddingBottom: '0.5rem',
-                  backgroundColor: 'hsl(var(--primary))',
-                  color: 'hsl(var(--primary-foreground))',
-                  borderRadius: 'calc(var(--radius))',
-                  border: 'none',
-                  cursor: (isUploading || !selectedFile) ? 'not-allowed' : 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)',
-                  fontWeight: 'var(--font-weight-medium)',
-                  opacity: (isUploading || !selectedFile) ? 0.5 : 1
-                }}
-                className="hover:opacity-90"
-              >
-                {isUploading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isUploading ? t('user.profile.upload.uploading') : t('user.profile.upload.upload_avatar')}
-              </button>
-            </div>
+                {isUploading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                {t('user.profile.upload.remove_avatar')}
+              </Button>
+            )}
+            <Button
+              onClick={handleAvatarUpload}
+              disabled={isUploading || !selectedFile}
+            >
+              {isUploading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {isUploading ? t('user.profile.upload.uploading') : t('user.profile.upload.upload_avatar')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Change Password Dialog */}
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
-        <DialogContent dir={direction}>
+        <DialogContent dir={isRtl ? 'rtl' : 'ltr'}>
           <DialogHeader>
             <DialogTitle>{t('user.profile.security.change_password')}</DialogTitle>
             <DialogDescription>
@@ -1343,162 +1299,75 @@ export default function ProfilePage() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label style={{
-                display: 'block',
-                fontSize: 'var(--font-size-sm)',
-                fontFamily: 'var(--font-family-primary)',
-                fontWeight: 'var(--font-weight-medium)',
-                color: 'hsl(var(--text-heading))'
-              }}>
+              <label className="text-sm font-medium">
                 {t('user.profile.security.current_password')}
               </label>
               <input
                 type="password"
                 value={passwordData.currentPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius))',
-                  fontSize: 'var(--font-size-base)',
-                  fontFamily: 'var(--font-family-primary)',
-                  backgroundColor: 'hsl(var(--background))',
-                  color: 'hsl(var(--text-body))'
-                }}
-                className="focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             <div className="space-y-2">
-              <label style={{
-                display: 'block',
-                fontSize: 'var(--font-size-sm)',
-                fontFamily: 'var(--font-family-primary)',
-                fontWeight: 'var(--font-weight-medium)',
-                color: 'hsl(var(--text-heading))'
-              }}>
+              <label className="text-sm font-medium">
                 {t('user.profile.security.new_password')}
               </label>
               <input
                 type="password"
                 value={passwordData.newPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius))',
-                  fontSize: 'var(--font-size-base)',
-                  fontFamily: 'var(--font-family-primary)',
-                  backgroundColor: 'hsl(var(--background))',
-                  color: 'hsl(var(--text-body))'
-                }}
-                className="focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             <div className="space-y-2">
-              <label style={{
-                display: 'block',
-                fontSize: 'var(--font-size-sm)',
-                fontFamily: 'var(--font-family-primary)',
-                fontWeight: 'var(--font-weight-medium)',
-                color: 'hsl(var(--text-heading))'
-              }}>
+              <label className="text-sm font-medium">
                 {t('user.profile.security.confirm_password')}
               </label>
               <input
                 type="password"
                 value={passwordData.confirmPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'calc(var(--radius))',
-                  fontSize: 'var(--font-size-base)',
-                  fontFamily: 'var(--font-family-primary)',
-                  backgroundColor: 'hsl(var(--background))',
-                  color: 'hsl(var(--text-body))'
-                }}
-                className="focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
-            {/* Error Message */}
             {passwordError && (
               <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg">
                 <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                <p style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)'
-                }} className="text-red-700 dark:text-red-300">
-                  {passwordError}
-                </p>
+                <p className="text-sm text-red-700 dark:text-red-300">{passwordError}</p>
               </div>
             )}
           </div>
 
           <DialogFooter>
-            <button
+            <Button
+              variant="outline"
               onClick={() => {
                 setIsPasswordDialogOpen(false);
                 setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                 setPasswordError(null);
               }}
               disabled={isSaving}
-              style={{
-                paddingInlineStart: '1rem',
-                paddingInlineEnd: '1rem',
-                paddingTop: '0.5rem',
-                paddingBottom: '0.5rem',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: 'calc(var(--radius))',
-                backgroundColor: 'transparent',
-                color: 'hsl(var(--text-body))',
-                cursor: isSaving ? 'not-allowed' : 'pointer',
-                fontSize: 'var(--font-size-sm)',
-                fontFamily: 'var(--font-family-primary)',
-                opacity: isSaving ? 0.5 : 1
-              }}
-              className="hover:bg-accent"
             >
               {t('user.profile.edit.cancel')}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleChangePassword}
               disabled={isSaving}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                paddingInlineStart: '1rem',
-                paddingInlineEnd: '1rem',
-                paddingTop: '0.5rem',
-                paddingBottom: '0.5rem',
-                backgroundColor: 'hsl(var(--primary))',
-                color: 'hsl(var(--primary-foreground))',
-                borderRadius: 'calc(var(--radius))',
-                border: 'none',
-                cursor: isSaving ? 'not-allowed' : 'pointer',
-                fontSize: 'var(--font-size-sm)',
-                fontFamily: 'var(--font-family-primary)',
-                fontWeight: 'var(--font-weight-medium)',
-                opacity: isSaving ? 0.5 : 1
-              }}
-              className="hover:opacity-90"
             >
-              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {isSaving ? t('user.profile.edit.saving') : t('user.profile.security.change_password')}
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Deactivate Account Confirmation Dialog */}
+      {/* Deactivate Account Dialog */}
       <AlertDialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
-        <AlertDialogContent dir={direction}>
+        <AlertDialogContent dir={isRtl ? 'rtl' : 'ltr'}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('user.profile.security.deactivate_account')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -1514,7 +1383,7 @@ export default function ProfilePage() {
             >
               {isDeactivating ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" style={{ marginInlineEnd: '0.5rem' }} />
+                  <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
                   {t('user.profile.security.deactivating')}
                 </>
               ) : (

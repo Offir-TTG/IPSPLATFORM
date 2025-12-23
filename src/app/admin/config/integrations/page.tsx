@@ -276,6 +276,49 @@ export default function IntegrationsPage() {
       ]
     },
     {
+      key: 'daily',
+      name: 'Daily.co',
+      description: t('admin.integrations.daily.description', 'Video calling platform with automatic host assignment'),
+      icon: <Video className="h-5 w-5" />,
+      fields: [
+        {
+          key: 'api_key',
+          label: t('admin.integrations.daily.apiKey', 'API Key'),
+          type: 'password',
+          placeholder: t('admin.integrations.daily.apiKeyPlaceholder', 'Your Daily.co API Key'),
+          required: true
+        }
+      ],
+      settings: [
+        {
+          key: 'subdomain',
+          label: t('admin.integrations.daily.subdomain', 'Subdomain'),
+          type: 'text',
+          placeholder: t('admin.integrations.daily.subdomainPlaceholder', 'yourname (for yourname.daily.co)')
+        },
+        {
+          key: 'default_room_privacy',
+          label: t('admin.integrations.daily.roomPrivacy', 'Default Room Privacy'),
+          type: 'select',
+          options: [
+            { value: 'private', label: t('admin.integrations.daily.privacyPrivate', 'Private (requires token)') },
+            { value: 'public', label: t('admin.integrations.daily.privacyPublic', 'Public') }
+          ]
+        },
+        {
+          key: 'enable_recording',
+          label: t('admin.integrations.daily.enableRecording', 'Enable Cloud Recording'),
+          type: 'toggle'
+        },
+        {
+          key: 'default_expiry_hours',
+          label: t('admin.integrations.daily.expiryHours', 'Room Expiry (hours)'),
+          type: 'text',
+          placeholder: '24'
+        }
+      ]
+    },
+    {
       key: 'sendgrid',
       name: 'SendGrid',
       description: t('admin.integrations.sendgrid.description', 'Email delivery service'),
@@ -535,7 +578,9 @@ export default function IntegrationsPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        toast.success(result.message || t('admin.integrations.success.testPassed', `${integrationKey} connection test successful`));
+        // Use integration-specific translation if available
+        const messageKey = `admin.integrations.${integrationKey}.connectionSuccessful`;
+        toast.success(result.message || t(messageKey, `${integrationKey} connection test successful`));
         setIntegrations(prev =>
           prev.map(i =>
             i.integration_key === integrationKey

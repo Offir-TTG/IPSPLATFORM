@@ -51,21 +51,44 @@ export const GET = withAuth(
         },
       }).catch((err) => console.error('Audit log failed:', err));
 
+      // Ensure recent_attendance exists (for backwards compatibility before SQL update)
+      const dashboardData = data || {
+        enrollments: [],
+        upcoming_sessions: [],
+        pending_assignments: [],
+        recent_attendance: [],
+        stats: {
+          total_courses: 0,
+          completed_lessons: 0,
+          in_progress_lessons: 0,
+          pending_assignments: 0,
+          total_attendance: 0,
+          attendance_present: 0,
+          attendance_rate: 0,
+          total_hours_spent: 0,
+        },
+        recent_activity: [],
+      };
+
+      // Add recent_attendance if missing (backwards compatibility)
+      if (!dashboardData.recent_attendance) {
+        dashboardData.recent_attendance = [];
+      }
+
+      // Ensure attendance stats exist (backwards compatibility)
+      if (!dashboardData.stats.total_attendance) {
+        dashboardData.stats.total_attendance = 0;
+      }
+      if (!dashboardData.stats.attendance_present) {
+        dashboardData.stats.attendance_present = 0;
+      }
+      if (!dashboardData.stats.attendance_rate) {
+        dashboardData.stats.attendance_rate = 0;
+      }
+
       return NextResponse.json({
         success: true,
-        data: data || {
-          enrollments: [],
-          upcoming_sessions: [],
-          pending_assignments: [],
-          stats: {
-            total_courses: 0,
-            completed_lessons: 0,
-            in_progress_lessons: 0,
-            pending_assignments: 0,
-            total_hours_spent: 0,
-          },
-          recent_activity: [],
-        },
+        data: dashboardData,
       });
     } catch (error) {
       console.error('Dashboard error:', error);

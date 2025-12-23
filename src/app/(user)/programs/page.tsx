@@ -287,14 +287,15 @@ export default function ProgramsPage() {
                       color: 'hsl(var(--text-heading))',
                       marginBottom: '0.5rem'
                     }}>{program.name}</h3>
-                    <p style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-muted))',
-                      marginBottom: '0.75rem'
-                    }}>
-                      {program.description}
-                    </p>
+                    <div
+                      style={{
+                        fontSize: 'var(--font-size-sm)',
+                        fontFamily: 'var(--font-family-primary)',
+                        color: 'hsl(var(--text-muted))',
+                        marginBottom: '0.75rem'
+                      }}
+                      dangerouslySetInnerHTML={{ __html: program.description }}
+                    />
 
                     {/* Instructor & Dates */}
                     <div className="flex flex-wrap gap-4 mb-4" style={{

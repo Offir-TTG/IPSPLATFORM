@@ -55,6 +55,9 @@ export default function EmailTemplatesPage() {
   const isMobile = windowWidth <= 640;
   const isRtl = direction === 'rtl';
 
+  // Debug log state changes
+  console.log('🔄 [Component] Render - templates.length:', templates.length, 'loading:', loading);
+
   // Preview dialog state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<EmailTemplate | null>(null);
@@ -74,7 +77,12 @@ export default function EmailTemplatesPage() {
   }, []);
 
   async function loadTemplates() {
-    if (!tenantId) return;
+    if (!tenantId) {
+      console.log('🔍 [Templates] No tenantId, skipping load');
+      return;
+    }
+
+    console.log('🔍 [Templates] Loading templates for tenant:', tenantId);
 
     try {
       const { data, error } = await supabase
@@ -85,13 +93,21 @@ export default function EmailTemplatesPage() {
         .order('template_name', { ascending: true });
 
       if (error) {
-        console.error('Error loading templates:', error);
+        console.error('❌ [Templates] Error loading templates:', error);
         return;
       }
 
+      console.log('✅ [Templates] Loaded templates:', data?.length || 0);
+      console.log('📋 [Templates] Template keys:', data?.map(t => t.template_key));
+
+      // Check specifically for password reset
+      const hasPasswordReset = data?.some(t => t.template_key === 'system.password_reset');
+      console.log('🔑 [Templates] Has password_reset template:', hasPasswordReset);
+
       setTemplates(data || []);
+      console.log('✅ [Templates] State updated with', data?.length || 0, 'templates');
     } catch (error) {
-      console.error('Error loading templates:', error);
+      console.error('❌ [Templates] Error loading templates:', error);
     } finally {
       setLoading(false);
     }
@@ -200,6 +216,7 @@ export default function EmailTemplatesPage() {
   };
 
   if (loading) {
+    console.log('⏳ [Component] Showing loading state');
     return (
       <AdminLayout>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -211,6 +228,8 @@ export default function EmailTemplatesPage() {
       </AdminLayout>
     );
   }
+
+  console.log('✅ [Component] Rendering main content, templates:', templates.length);
 
   return (
     <AdminLayout>
@@ -276,7 +295,14 @@ export default function EmailTemplatesPage() {
             gap: '1rem',
             gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))'
           }}>
-            {templates.map((template) => (
+            {(() => {
+              console.log('🎨 [Render] Rendering', templates.length, 'templates');
+              console.log('🎨 [Render] Template keys:', templates.map(t => t.template_key));
+              return null;
+            })()}
+            {templates.map((template) => {
+              console.log('🎴 [Card] Rendering card for:', template.template_key, 'Name:', getTemplateName(template));
+              return (
               <Card key={template.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex items-start justify-between mb-2">
@@ -326,7 +352,8 @@ export default function EmailTemplatesPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -411,6 +438,30 @@ export default function EmailTemplatesPage() {
                     <p className="font-medium text-sm">parent.progress_report</p>
                     <p className="text-xs text-muted-foreground">
                       {t('email_template.parent_progress_report.description', 'Sent to parents with student progress updates')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Badge className={getCategoryColor('system')}>
+                    {getCategoryLabel('system')}
+                  </Badge>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">system.user_invitation</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('email_template.system_user_invitation.description', 'Sent when admin invites a new user to the platform')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Badge className={getCategoryColor('system')}>
+                    {getCategoryLabel('system')}
+                  </Badge>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">system.password_reset</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('email_template.system_password_reset.description', 'Sent when admin triggers password reset for a user')}
                     </p>
                   </div>
                 </div>

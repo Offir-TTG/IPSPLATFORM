@@ -4,16 +4,17 @@ import { withAuth } from '@/lib/middleware/auth';
 
 export const dynamic = 'force-dynamic';
 
+// OPTIMIZED VERSION - Fixes N+1 query problem
 // GET /api/user/courses - Get user's course enrollments (both standalone and from programs)
 export const GET = withAuth(
   async (_request: NextRequest, user: any) => {
     try {
       const supabase = await createClient();
-      const adminClient = createAdminClient(); // For querying user_progress to bypass RLS
+      const adminClient = createAdminClient();
 
       console.log('Fetching courses for user:', user.id);
 
-      // Fetch ALL enrollments first
+      // OPTIMIZATION 1: Fetch ALL enrollments with products in ONE query
       const { data: allEnrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
         .select(`
@@ -48,10 +49,6 @@ export const GET = withAuth(
         );
       }
 
-      console.log('Total enrollments found:', allEnrollments?.length || 0);
-
-      const allCourses: any[] = [];
-
       if (!allEnrollments || allEnrollments.length === 0) {
         console.log('No enrollments found for user');
         return NextResponse.json({
@@ -60,79 +57,181 @@ export const GET = withAuth(
         });
       }
 
-      // Process each enrollment
+      console.log('Total enrollments found:', allEnrollments.length);
+
+      // OPTIMIZATION 2: Extract all course IDs and program IDs upfront
+      const courseIds = new Set<string>();
+      const programIds = new Set<string>();
+      const enrollmentIds = allEnrollments.map(e => e.id);
+
       for (const enrollment of allEnrollments) {
         const product = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
+        if (!product) continue;
 
-        if (!product) {
-          console.log('Enrollment has no product:', enrollment.id);
-          continue;
-        }
-
-        console.log('Processing enrollment:', enrollment.id, 'Product type:', product.type);
-
-        // Handle standalone course enrollments
         if (product.type === 'course' && product.course_id) {
-          // Get course details
-          const { data: course, error: courseError } = await supabase
-            .from('courses')
-            .select(`
-              id,
-              title,
-              description,
-              image_url,
-              instructor_id,
-              is_published,
-              is_active,
-              users!courses_instructor_id_fkey (
-                first_name,
-                last_name
-              )
-            `)
-            .eq('id', product.course_id)
-            .single();
+          courseIds.add(product.course_id);
+        } else if (product.type === 'program' && product.program_id) {
+          programIds.add(product.program_id);
+        }
+      }
 
-          // Skip if course is not published or not active
-          if (course && (!course.is_published || !course.is_active)) {
-            console.log('Skipping inactive/unpublished course:', course.title);
-            continue;
-          }
+      // OPTIMIZATION 3: Fetch ALL courses in ONE bulk query
+      const { data: allCourses, error: coursesError } = await supabase
+        .from('courses')
+        .select(`
+          id,
+          title,
+          description,
+          image_url,
+          instructor_id,
+          is_published,
+          is_active,
+          users!courses_instructor_id_fkey (
+            first_name,
+            last_name
+          )
+        `)
+        .in('id', Array.from(courseIds))
+        .eq('is_published', true)
+        .eq('is_active', true);
 
-          if (courseError || !course) {
-            console.error('Error fetching course:', courseError);
-            continue;
-          }
+      if (coursesError) {
+        console.error('Error fetching courses:', coursesError);
+        return NextResponse.json(
+          { success: false, error: 'Failed to fetch courses' },
+          { status: 500 }
+        );
+      }
 
-          // Get progress for this course
-          const { data: lessonData } = await supabase
-            .from('lessons')
-            .select('id, module_id, modules!inner(id, course_id)')
-            .eq('modules.course_id', course.id);
+      // OPTIMIZATION 4: Fetch ALL program courses in ONE bulk query
+      const { data: programCoursesData, error: programCoursesError } = await supabase
+        .from('program_courses')
+        .select(`
+          program_id,
+          course_id,
+          courses!inner (
+            id,
+            title,
+            description,
+            image_url,
+            instructor_id,
+            is_published,
+            is_active,
+            users!courses_instructor_id_fkey (
+              first_name,
+              last_name
+            )
+          )
+        `)
+        .in('program_id', Array.from(programIds))
+        .order('order', { ascending: true });
 
-          const totalLessons = lessonData?.length || 0;
+      if (programCoursesError) {
+        console.error('Error fetching program courses:', programCoursesError);
+      }
 
-          // Get user progress (use admin client to bypass RLS)
-          const { data: progressData } = await adminClient
-            .from('user_progress')
-            .select('lesson_id, status, completed_at')
-            .eq('user_id', user.id)
-            .eq('enrollment_id', enrollment.id);
+      // OPTIMIZATION 5: Fetch ALL programs in ONE bulk query
+      const { data: programsData, error: programsError } = await supabase
+        .from('programs')
+        .select('id, name')
+        .in('id', Array.from(programIds));
 
-          const completedLessons = progressData?.filter(p => p.status === 'completed').length || 0;
-          const progress = totalLessons > 0
-            ? Math.round((completedLessons / totalLessons) * 100)
-            : 0;
+      if (programsError) {
+        console.error('Error fetching programs:', programsError);
+      }
 
-          // Get instructor name
-          let instructorName = null;
-          if (course.users) {
-            const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
-            if (instructor) {
-              instructorName = `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim();
-            }
-          }
+      // Add program courses to our course list
+      const programCourses = programCoursesData
+        ?.map(pc => ({
+          ...pc.courses,
+          program_id: pc.program_id
+        }))
+        .filter((course: any) => course.is_published && course.is_active) || [];
 
-          allCourses.push({
+      // Combine standalone courses and program courses
+      const allCoursesToProcess = [
+        ...(allCourses || []).map(c => ({ ...c, program_id: null })),
+        ...programCourses
+      ];
+
+      // Add all program course IDs to our set
+      for (const course of programCourses) {
+        courseIds.add(course.id);
+      }
+
+      // OPTIMIZATION 6: Fetch ALL lessons for ALL courses in ONE bulk query
+      const { data: allLessons, error: lessonsError } = await supabase
+        .from('lessons')
+        .select('id, module_id, modules!inner(id, course_id)')
+        .in('modules.course_id', Array.from(courseIds));
+
+      if (lessonsError) {
+        console.error('Error fetching lessons:', lessonsError);
+      }
+
+      // OPTIMIZATION 7: Fetch ALL user progress in ONE bulk query
+      const { data: allProgress, error: progressError } = await adminClient
+        .from('user_progress')
+        .select('lesson_id, status, completed_at, enrollment_id')
+        .eq('user_id', user.id)
+        .in('enrollment_id', enrollmentIds);
+
+      if (progressError) {
+        console.error('Error fetching progress:', progressError);
+      }
+
+      // Create lookup maps for fast access
+      const courseMap = new Map(allCoursesToProcess.map(c => [c.id, c]));
+      const programMap = new Map(programsData?.map(p => [p.id, p]) || []);
+      const lessonsByCourse = new Map<string, any[]>();
+      const progressByEnrollment = new Map<string, any[]>();
+
+      // Group lessons by course
+      for (const lesson of allLessons || []) {
+        const courseId = lesson.modules?.course_id || lesson.modules?.[0]?.course_id;
+        if (!courseId) continue;
+
+        if (!lessonsByCourse.has(courseId)) {
+          lessonsByCourse.set(courseId, []);
+        }
+        lessonsByCourse.get(courseId)!.push(lesson);
+      }
+
+      // Group progress by enrollment
+      for (const progress of allProgress || []) {
+        if (!progressByEnrollment.has(progress.enrollment_id)) {
+          progressByEnrollment.set(progress.enrollment_id, []);
+        }
+        progressByEnrollment.get(progress.enrollment_id)!.push(progress);
+      }
+
+      // Build final result
+      const result: any[] = [];
+
+      for (const enrollment of allEnrollments) {
+        const product = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
+        if (!product) continue;
+
+        const enrollmentProgress = progressByEnrollment.get(enrollment.id) || [];
+
+        // Handle standalone courses
+        if (product.type === 'course' && product.course_id) {
+          const course = courseMap.get(product.course_id);
+          if (!course) continue;
+
+          const lessons = lessonsByCourse.get(course.id) || [];
+          const lessonIds = lessons.map(l => l.id);
+          const courseProgress = enrollmentProgress.filter(p => lessonIds.includes(p.lesson_id));
+          const completedLessons = courseProgress.filter(p => p.status === 'completed').length;
+          const totalLessons = lessons.length;
+          const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+
+          const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
+          const instructorName = instructor
+            ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
+            : null;
+
+          result.push({
             id: enrollment.id,
             course_id: course.id,
             course_name: course.title,
@@ -155,99 +254,30 @@ export const GET = withAuth(
           });
         }
 
-        // Handle program enrollments - get all courses in the program
+        // Handle program enrollments
         else if (product.type === 'program' && product.program_id) {
-          // Get program details
-          const { data: program, error: programError } = await supabase
-            .from('programs')
-            .select('id, name')
-            .eq('id', product.program_id)
-            .single();
+          const program = programMap.get(product.program_id);
+          if (!program) continue;
 
-          if (programError || !program) {
-            console.error('Error fetching program:', programError);
-            continue;
-          }
+          // Get all courses for this program
+          const programCoursesForEnrollment = allCoursesToProcess.filter(
+            c => c.program_id === product.program_id
+          );
 
-          console.log('Looking for courses in program:', program.id, program.name);
+          for (const course of programCoursesForEnrollment) {
+            const lessons = lessonsByCourse.get(course.id) || [];
+            const lessonIds = lessons.map(l => l.id);
+            const courseProgress = enrollmentProgress.filter(p => lessonIds.includes(p.lesson_id));
+            const completedLessons = courseProgress.filter(p => p.status === 'completed').length;
+            const totalLessons = lessons.length;
+            const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-          // Get all courses linked to this program through program_courses junction table
-          const { data: programCourseLinks, error: coursesError } = await supabase
-            .from('program_courses')
-            .select(`
-              course_id,
-              courses!inner (
-                id,
-                title,
-                description,
-                image_url,
-                instructor_id,
-                is_published,
-                is_active,
-                users!courses_instructor_id_fkey (
-                  first_name,
-                  last_name
-                )
-              )
-            `)
-            .eq('program_id', program.id)
-            .order('order', { ascending: true });
+            const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
+            const instructorName = instructor
+              ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
+              : null;
 
-          if (coursesError) {
-            console.error('Error fetching program courses:', coursesError);
-            continue;
-          }
-
-          // Filter for published and active courses
-          const programCourses = programCourseLinks
-            ?.map(link => link.courses)
-            .filter(course => {
-              if (Array.isArray(course)) {
-                return course[0]?.is_published && course[0]?.is_active;
-              }
-              return course?.is_published && course?.is_active;
-            })
-            .map(course => Array.isArray(course) ? course[0] : course) || [];
-
-          console.log('Found courses in program:', programCourses?.length || 0);
-
-          if (coursesError) {
-            console.error('Error fetching program courses:', coursesError);
-            continue;
-          }
-
-          // Add each course from the program
-          for (const course of programCourses || []) {
-            // Get progress for this course
-            const { data: lessonData } = await supabase
-              .from('lessons')
-              .select('id, module_id, modules!inner(id, course_id)')
-              .eq('modules.course_id', course.id);
-
-            const totalLessons = lessonData?.length || 0;
-
-            // Get user progress (use admin client to bypass RLS)
-            const { data: progressData } = await adminClient
-              .from('user_progress')
-              .select('lesson_id, status, completed_at')
-              .eq('user_id', user.id)
-              .eq('enrollment_id', enrollment.id);
-
-            const completedLessons = progressData?.filter(p => p.status === 'completed').length || 0;
-            const progress = totalLessons > 0
-              ? Math.round((completedLessons / totalLessons) * 100)
-              : 0;
-
-            // Get instructor name
-            let instructorName = null;
-            if (course.users) {
-              const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
-              if (instructor) {
-                instructorName = `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim();
-              }
-            }
-
-            allCourses.push({
+            result.push({
               id: enrollment.id,
               course_id: course.id,
               course_name: course.title,
@@ -272,11 +302,11 @@ export const GET = withAuth(
         }
       }
 
-      console.log('Total courses to return:', allCourses.length);
+      console.log('Total courses to return:', result.length);
 
       return NextResponse.json({
         success: true,
-        data: allCourses,
+        data: result,
       });
     } catch (error) {
       console.error('Error in courses API:', error);

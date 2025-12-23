@@ -283,24 +283,31 @@ export const lessonService = {
     try {
       const supabase = await createClient();
 
-      // Check if this lesson has a Zoom meeting and if we're updating Zoom-relevant fields
-      const zoomRelevantFields = ['start_time', 'duration', 'timezone', 'title'];
-      const hasZoomRelevantUpdates = zoomRelevantFields.some(field => field in updates);
+      // Check if this lesson has a Zoom meeting or Daily.co room and if we're updating relevant fields
+      const relevantFields = ['start_time', 'duration', 'timezone', 'title'];
+      const hasRelevantUpdates = relevantFields.some(field => field in updates);
 
       let zoomSessionExists = false;
       let zoomMeetingId = null;
+      let dailySessionExists = false;
+      let dailyRoomName = null;
 
-      if (hasZoomRelevantUpdates) {
-        // Check if there's a Zoom session for this lesson
-        const { data: zoomSession } = await supabase
+      if (hasRelevantUpdates) {
+        // Check if there's a Zoom or Daily.co session for this lesson
+        const { data: session } = await supabase
           .from('zoom_sessions')
-          .select('zoom_meeting_id')
+          .select('zoom_meeting_id, daily_room_name, platform')
           .eq('lesson_id', id)
           .maybeSingle();
 
-        if (zoomSession?.zoom_meeting_id) {
-          zoomSessionExists = true;
-          zoomMeetingId = zoomSession.zoom_meeting_id;
+        if (session) {
+          if (session.platform === 'zoom' && session.zoom_meeting_id) {
+            zoomSessionExists = true;
+            zoomMeetingId = session.zoom_meeting_id;
+          } else if (session.platform === 'daily' && session.daily_room_name) {
+            dailySessionExists = true;
+            dailyRoomName = session.daily_room_name;
+          }
         }
       }
 
@@ -323,8 +330,9 @@ export const lessonService = {
       }
 
       // Auto-sync to Zoom if a Zoom meeting exists and relevant fields were updated
-      let zoomSyncMessage = '';
-      if (zoomSessionExists && hasZoomRelevantUpdates) {
+      let syncMessage = '';
+
+      if (zoomSessionExists && hasRelevantUpdates) {
         try {
           console.log('[updateLesson] Auto-syncing changes to Zoom meeting:', zoomMeetingId);
           const { ZoomService } = await import('@/lib/zoom/zoomService');
@@ -332,7 +340,7 @@ export const lessonService = {
           const tenantId = (data as any).tenant_id;
           if (!tenantId) {
             console.error('[updateLesson] No tenant_id found on lesson');
-            zoomSyncMessage = ' (Zoom sync skipped: no tenant context)';
+            syncMessage = ' (Zoom sync skipped: no tenant context)';
           } else {
             const zoomService = new ZoomService(tenantId);
 
@@ -347,24 +355,153 @@ export const lessonService = {
 
             if (!zoomResult.success) {
               console.error('[updateLesson] Failed to sync to Zoom:', zoomResult.error);
-              zoomSyncMessage = ` (Warning: Zoom sync failed - ${zoomResult.error})`;
+              syncMessage = ` (Warning: Zoom sync failed - ${zoomResult.error})`;
             } else {
               console.log('[updateLesson] Successfully synced changes to Zoom');
-              zoomSyncMessage = ' and synced to Zoom meeting';
+              syncMessage = ' and synced to Zoom meeting';
             }
           }
         } catch (zoomError) {
           // Don't fail the lesson update if Zoom service is unavailable
           console.error('[updateLesson] Error syncing to Zoom:', zoomError);
           const errorMsg = zoomError instanceof Error ? zoomError.message : 'Unknown error';
-          zoomSyncMessage = ` (Warning: Zoom sync failed - ${errorMsg})`;
+          syncMessage = ` (Warning: Zoom sync failed - ${errorMsg})`;
+        }
+      } else if (dailySessionExists && hasRelevantUpdates) {
+        // For Daily.co: Since room names can't be changed, we need to delete the old room and create a new one
+        try {
+          console.log('[updateLesson] Recreating Daily.co room with updated lesson data:', dailyRoomName);
+          const { dailyService } = await import('@/lib/daily/dailyService');
+
+          // Get tenant_id and course info from the updated lesson
+          const tenantId = (data as any).tenant_id;
+          const courseId = (data as any).course_id;
+
+          if (!tenantId || !courseId) {
+            console.error('[updateLesson] Missing tenant_id or course_id');
+            syncMessage = ' (Daily.co sync skipped: missing context)';
+          } else {
+            // Get course info for room name generation
+            const { data: course } = await supabase
+              .from('courses')
+              .select('title')
+              .eq('id', courseId)
+              .single();
+
+            const courseName = course?.title || 'course';
+            const lessonTitle = (data as any).title || 'lesson';
+
+            // Format date if available
+            let dateStr = '';
+            if (updates.start_time || (data as any).start_time) {
+              try {
+                const startTime = updates.start_time || (data as any).start_time;
+                const startDate = new Date(startTime);
+                const tz = updates.timezone || (data as any).timezone || 'UTC';
+                dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz });
+              } catch (e) {
+                console.error('[updateLesson] Error formatting date:', e);
+              }
+            }
+
+            // Build new room name with updated data
+            // For non-Latin names, use a hash-based approach to create readable names
+            const createSlug = (text: string): string => {
+              // First try to keep alphanumeric (works for Latin text)
+              let slug = text
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, '-')
+                .replace(/[^a-z0-9-]/g, '');
+
+              // If slug is empty (non-Latin characters), create a hash
+              if (!slug || slug.length < 3) {
+                const hash = Buffer.from(text).toString('base64')
+                  .replace(/[^a-z0-9]/gi, '')
+                  .toLowerCase()
+                  .substring(0, 8);
+                slug = hash;
+              }
+
+              return slug;
+            };
+
+            let newRoomName = [
+              courseName ? createSlug(courseName) : '',
+              lessonTitle ? createSlug(lessonTitle) : '',
+              dateStr
+            ]
+              .filter(Boolean)
+              .join('-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '');
+
+            newRoomName = `${newRoomName}-${id.substring(0, 8)}`;
+
+            // Only recreate if the room name would be different
+            if (newRoomName !== dailyRoomName) {
+              console.log('[updateLesson] New room name differs, recreating:', { old: dailyRoomName, new: newRoomName });
+
+              // Get integration settings for expiry hours
+              const { data: integration } = await supabase
+                .from('integrations')
+                .select('settings')
+                .eq('integration_key', 'daily')
+                .single();
+
+              const defaultExpiryHours = integration?.settings?.default_expiry_hours || (24 * 180);
+
+              // Delete old room
+              try {
+                await dailyService.deleteRoom(dailyRoomName);
+                console.log('[updateLesson] Old Daily.co room deleted');
+              } catch (deleteError) {
+                console.warn('[updateLesson] Failed to delete old Daily.co room (might not exist):', deleteError);
+              }
+
+              // Create new room with updated name
+              const newRoom = await dailyService.createRoom(newRoomName, {
+                privacy: 'private',
+                expiresInHours: defaultExpiryHours,
+                enableRecording: false,
+              });
+
+              console.log('[updateLesson] New Daily.co room created:', newRoom.url);
+
+              // Update zoom_sessions record with new room info
+              const { error: updateError } = await supabase
+                .from('zoom_sessions')
+                .update({
+                  daily_room_name: newRoom.name,
+                  daily_room_url: newRoom.url,
+                  daily_room_id: newRoom.id,
+                })
+                .eq('lesson_id', id)
+                .eq('platform', 'daily');
+
+              if (updateError) {
+                console.error('[updateLesson] Failed to update zoom_sessions with new room info:', updateError);
+                syncMessage = ' (Warning: Daily.co room created but database update failed)';
+              } else {
+                syncMessage = ' and recreated Daily.co room';
+              }
+            } else {
+              console.log('[updateLesson] Room name unchanged, no recreation needed');
+              syncMessage = ' (Daily.co room unchanged)';
+            }
+          }
+        } catch (dailyError) {
+          // Don't fail the lesson update if Daily.co service is unavailable
+          console.error('[updateLesson] Error recreating Daily.co room:', dailyError);
+          const errorMsg = dailyError instanceof Error ? dailyError.message : 'Unknown error';
+          syncMessage = ` (Warning: Daily.co room recreation failed - ${errorMsg})`;
         }
       }
 
       return {
         success: true,
         data: data as unknown as Lesson,
-        message: `Lesson updated successfully${zoomSyncMessage}`,
+        message: `Lesson updated successfully${syncMessage}`,
       };
     } catch (error) {
       return {
@@ -399,29 +536,30 @@ export const lessonService = {
 
       const tenantId = lesson.tenant_id;
 
-      // First, get zoom session info before deleting
+      // First, get session info before deleting (includes both Zoom and Daily.co)
       console.log('[lessonService.deleteLesson] Checking for zoom_sessions...');
-      const { data: zoomSessions, error: zoomFetchError } = await supabase
+      const { data: sessions, error: sessionFetchError } = await supabase
         .from('zoom_sessions')
-        .select('zoom_meeting_id')
+        .select('zoom_meeting_id, daily_room_name, platform')
         .eq('lesson_id', id);
 
-      if (zoomFetchError) {
-        console.log('[lessonService.deleteLesson] Error fetching zoom sessions:', zoomFetchError);
+      if (sessionFetchError) {
+        console.log('[lessonService.deleteLesson] Error fetching sessions:', sessionFetchError);
       }
 
       // Delete Zoom meetings from Zoom API if they exist
       let zoomDeletedCount = 0;
       let zoomFailedCount = 0;
-      if (zoomSessions && zoomSessions.length > 0) {
-        console.log('[lessonService.deleteLesson] Found', zoomSessions.length, 'Zoom meetings to delete');
-        try {
-          const { ZoomService } = await import('@/lib/zoom/zoomService');
-          const zoomService = new ZoomService(tenantId);
-          const zoomClient = await (zoomService as any).getZoomClient();
+      if (sessions && sessions.length > 0) {
+        const zoomSessions = sessions.filter(s => s.platform === 'zoom' && s.zoom_meeting_id);
+        if (zoomSessions.length > 0) {
+          console.log('[lessonService.deleteLesson] Found', zoomSessions.length, 'Zoom meetings to delete');
+          try {
+            const { ZoomService } = await import('@/lib/zoom/zoomService');
+            const zoomService = new ZoomService(tenantId);
+            const zoomClient = await (zoomService as any).getZoomClient();
 
-          for (const session of zoomSessions) {
-            if (session.zoom_meeting_id) {
+            for (const session of zoomSessions) {
               try {
                 console.log('[lessonService.deleteLesson] Deleting Zoom meeting:', session.zoom_meeting_id);
                 await zoomClient.deleteMeeting(session.zoom_meeting_id);
@@ -433,11 +571,41 @@ export const lessonService = {
                 zoomFailedCount++;
               }
             }
+          } catch (zoomServiceError) {
+            // Log but don't fail if Zoom service is not configured
+            console.error('[lessonService.deleteLesson] Zoom service error:', zoomServiceError);
+            zoomFailedCount = zoomSessions.length;
           }
-        } catch (zoomServiceError) {
-          // Log but don't fail if Zoom service is not configured
-          console.error('[lessonService.deleteLesson] Zoom service error:', zoomServiceError);
-          zoomFailedCount = zoomSessions.length;
+        }
+      }
+
+      // Delete Daily.co rooms from Daily.co API if they exist
+      let dailyDeletedCount = 0;
+      let dailyFailedCount = 0;
+      if (sessions && sessions.length > 0) {
+        const dailySessions = sessions.filter(s => s.platform === 'daily' && s.daily_room_name);
+        if (dailySessions.length > 0) {
+          console.log('[lessonService.deleteLesson] Found', dailySessions.length, 'Daily.co rooms to delete');
+          try {
+            const { dailyService } = await import('@/lib/daily/dailyService');
+
+            for (const session of dailySessions) {
+              try {
+                console.log('[lessonService.deleteLesson] Deleting Daily.co room:', session.daily_room_name);
+                await dailyService.deleteRoom(session.daily_room_name);
+                console.log('[lessonService.deleteLesson] Successfully deleted Daily.co room:', session.daily_room_name);
+                dailyDeletedCount++;
+              } catch (dailyDeleteError) {
+                // Log but don't fail the entire delete operation if Daily.co API fails
+                console.error('[lessonService.deleteLesson] Failed to delete Daily.co room:', session.daily_room_name, dailyDeleteError);
+                dailyFailedCount++;
+              }
+            }
+          } catch (dailyServiceError) {
+            // Log but don't fail if Daily.co service is not configured
+            console.error('[lessonService.deleteLesson] Daily.co service error:', dailyServiceError);
+            dailyFailedCount = dailySessions.length;
+          }
         }
       }
 
@@ -479,16 +647,30 @@ export const lessonService = {
         };
       }
 
-      // Build message with Zoom deletion status
+      // Build message with Zoom and Daily.co deletion status
       let message = 'Lesson deleted successfully';
-      if (zoomDeletedCount > 0 || zoomFailedCount > 0) {
-        if (zoomDeletedCount > 0 && zoomFailedCount === 0) {
-          message += ` (${zoomDeletedCount} Zoom meeting${zoomDeletedCount > 1 ? 's' : ''} deleted)`;
-        } else if (zoomDeletedCount > 0 && zoomFailedCount > 0) {
-          message += ` (${zoomDeletedCount} Zoom meeting${zoomDeletedCount > 1 ? 's' : ''} deleted, ${zoomFailedCount} failed)`;
-        } else if (zoomFailedCount > 0) {
-          message += ` (Warning: Failed to delete ${zoomFailedCount} Zoom meeting${zoomFailedCount > 1 ? 's' : ''})`;
-        }
+      const messageParts: string[] = [];
+
+      // Zoom status
+      if (zoomDeletedCount > 0 && zoomFailedCount === 0) {
+        messageParts.push(`${zoomDeletedCount} Zoom meeting${zoomDeletedCount > 1 ? 's' : ''} deleted`);
+      } else if (zoomDeletedCount > 0 && zoomFailedCount > 0) {
+        messageParts.push(`${zoomDeletedCount} Zoom meeting${zoomDeletedCount > 1 ? 's' : ''} deleted, ${zoomFailedCount} failed`);
+      } else if (zoomFailedCount > 0) {
+        messageParts.push(`Warning: Failed to delete ${zoomFailedCount} Zoom meeting${zoomFailedCount > 1 ? 's' : ''}`);
+      }
+
+      // Daily.co status
+      if (dailyDeletedCount > 0 && dailyFailedCount === 0) {
+        messageParts.push(`${dailyDeletedCount} Daily.co room${dailyDeletedCount > 1 ? 's' : ''} deleted`);
+      } else if (dailyDeletedCount > 0 && dailyFailedCount > 0) {
+        messageParts.push(`${dailyDeletedCount} Daily.co room${dailyDeletedCount > 1 ? 's' : ''} deleted, ${dailyFailedCount} failed`);
+      } else if (dailyFailedCount > 0) {
+        messageParts.push(`Warning: Failed to delete ${dailyFailedCount} Daily.co room${dailyFailedCount > 1 ? 's' : ''}`);
+      }
+
+      if (messageParts.length > 0) {
+        message += ` (${messageParts.join(', ')})`;
       }
 
       return {

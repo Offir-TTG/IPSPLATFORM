@@ -924,4 +924,351 @@ Thank you for your continued support of {{studentName}}'s education.
       },
     },
   },
+
+  // ============================================================================
+  // SYSTEM / AUTHENTICATION TEMPLATES
+  // ============================================================================
+  {
+    key: 'system.user_invitation',
+    name: 'User Invitation',
+    category: 'system',
+    description: 'Sent when admin invites a new user to the platform',
+    variables: [
+      { name: 'userName', description: 'User first name', example: 'John', required: true, type: 'string' },
+      { name: 'userEmail', description: 'User email address', example: 'john@example.com', required: true, type: 'string' },
+      { name: 'temporaryPassword', description: 'Temporary password', example: 'Temp1234!', required: true, type: 'string' },
+      { name: 'role', description: 'User role', example: 'student', required: true, type: 'string' },
+      { name: 'organizationName', description: 'Organization name', example: 'IPS Platform', required: true, type: 'string' },
+      { name: 'loginUrl', description: 'Login page URL', example: 'https://...', required: true, type: 'url' },
+      { name: 'adminName', description: 'Admin who sent invitation', example: 'John Smith', required: false, type: 'string' },
+    ],
+    versions: {
+      en: {
+        subject: 'Welcome to {{organizationName}}!',
+        bodyHtml: `
+<div style="padding: 20px;">
+  <h2>Welcome to {{organizationName}}!</h2>
+
+  <p>Hi {{userName}},</p>
+
+  <p>You have been invited to join <strong>{{organizationName}}</strong> as a <strong>{{role}}</strong>.</p>
+
+  <div style="background: linear-gradient(to right, #f8f9ff 0%, #ffffff 100%); border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 6px;">
+    <h3 style="margin: 0 0 15px 0; font-size: 18px;">Your Login Credentials</h3>
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 10px 0;">
+      <p style="margin: 5px 0; font-size: 14px;"><strong>Email:</strong> {{userEmail}}</p>
+      <p style="margin: 5px 0; font-size: 14px;"><strong>Temporary Password:</strong> <code style="background: white; padding: 4px 8px; border-radius: 4px; font-family: monospace;">{{temporaryPassword}}</code></p>
+    </div>
+    <p style="margin: 10px 0 0 0; font-size: 13px; color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">
+      <strong>⚠️ Important:</strong> Please change your password after your first login for security.
+    </p>
+  </div>
+
+  <div style="text-align: center; margin: 35px 0;">
+    <a href="{{loginUrl}}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+      Login to Your Account
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #666; text-align: center;">Or copy this link: <a href="{{loginUrl}}">{{loginUrl}}</a></p>
+
+  <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 25px 0;">
+    <p style="margin: 5px 0; font-size: 13px; color: #666;"><strong>Getting Started:</strong></p>
+    <ol style="margin: 10px 0; padding-left: 20px; font-size: 13px; color: #666;">
+      <li>Click the button above to access the login page</li>
+      <li>Enter your email and temporary password</li>
+      <li>You'll be prompted to create a new secure password</li>
+      <li>Explore your dashboard and available courses</li>
+    </ol>
+  </div>
+
+  {{#if adminName}}
+  <p style="font-size: 13px; color: #666;">You were invited by: {{adminName}}</p>
+  {{/if}}
+
+  <p>We're excited to have you join us!</p>
+
+  <p style="text-align: center; color: #666; font-size: 13px; margin-top: 30px;">
+    {{organizationName}}<br/>
+    If you have questions, please contact support.
+  </p>
+</div>
+        `,
+        bodyText: `
+Welcome to {{organizationName}}!
+
+Hi {{userName}},
+
+You have been invited to join {{organizationName}} as a {{role}}.
+
+Your Login Credentials:
+------------------------
+Email: {{userEmail}}
+Temporary Password: {{temporaryPassword}}
+
+⚠️ IMPORTANT: Please change your password after your first login for security.
+
+Login to your account: {{loginUrl}}
+
+Getting Started:
+1. Click the link above to access the login page
+2. Enter your email and temporary password
+3. You'll be prompted to create a new secure password
+4. Explore your dashboard and available courses
+
+{{#if adminName}}
+You were invited by: {{adminName}}
+{{/if}}
+
+We're excited to have you join us!
+
+---
+{{organizationName}}
+If you have questions, please contact support.
+        `,
+      },
+      he: {
+        subject: 'ברוכים הבאים ל-{{organizationName}}!',
+        bodyHtml: `
+<div style="padding: 20px; direction: rtl;">
+  <h2>ברוכים הבאים ל-{{organizationName}}!</h2>
+
+  <p>שלום {{userName}},</p>
+
+  <p>הוזמנת להצטרף ל-<strong>{{organizationName}}</strong> בתפקיד <strong>{{role}}</strong>.</p>
+
+  <div style="background: linear-gradient(to left, #f8f9ff 0%, #ffffff 100%); border-right: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 6px;">
+    <h3 style="margin: 0 0 15px 0; font-size: 18px;">פרטי ההתחברות שלך</h3>
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 10px 0;">
+      <p style="margin: 5px 0; font-size: 14px;"><strong>אימייל:</strong> {{userEmail}}</p>
+      <p style="margin: 5px 0; font-size: 14px;"><strong>סיסמה זמנית:</strong> <code style="background: white; padding: 4px 8px; border-radius: 4px; font-family: monospace;">{{temporaryPassword}}</code></p>
+    </div>
+    <p style="margin: 10px 0 0 0; font-size: 13px; color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">
+      <strong>⚠️ חשוב:</strong> אנא שנה את הסיסמה שלך לאחר ההתחברות הראשונה למען האבטחה.
+    </p>
+  </div>
+
+  <div style="text-align: center; margin: 35px 0;">
+    <a href="{{loginUrl}}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+      התחבר לחשבון שלך
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #666; text-align: center;">או העתק קישור זה: <a href="{{loginUrl}}">{{loginUrl}}</a></p>
+
+  <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 25px 0;">
+    <p style="margin: 5px 0; font-size: 13px; color: #666;"><strong>תחילת העבודה:</strong></p>
+    <ol style="margin: 10px 0; padding-right: 20px; font-size: 13px; color: #666;">
+      <li>לחץ על הכפתור למעלה כדי לגשת לדף ההתחברות</li>
+      <li>הזן את האימייל והסיסמה הזמנית שלך</li>
+      <li>תתבקש ליצור סיסמה חדשה ומאובטחת</li>
+      <li>חקור את לוח הבקרה והקורסים הזמינים</li>
+    </ol>
+  </div>
+
+  {{#if adminName}}
+  <p style="font-size: 13px; color: #666;">הוזמנת על ידי: {{adminName}}</p>
+  {{/if}}
+
+  <p>אנחנו שמחים שהצטרפת אלינו!</p>
+
+  <p style="text-align: center; color: #666; font-size: 13px; margin-top: 30px;">
+    {{organizationName}}<br/>
+    אם יש לך שאלות, אנא פנה לתמיכה.
+  </p>
+</div>
+        `,
+        bodyText: `
+ברוכים הבאים ל-{{organizationName}}!
+
+שלום {{userName}},
+
+הוזמנת להצטרף ל-{{organizationName}} בתפקיד {{role}}.
+
+פרטי ההתחברות שלך:
+--------------------
+אימייל: {{userEmail}}
+סיסמה זמנית: {{temporaryPassword}}
+
+⚠️ חשוב: אנא שנה את הסיסמה שלך לאחר ההתחברות הראשונה למען האבטחה.
+
+התחבר לחשבון שלך: {{loginUrl}}
+
+תחילת העבודה:
+1. לחץ על הקישור למעלה כדי לגשת לדף ההתחברות
+2. הזן את האימייל והסיסמה הזמנית שלך
+3. תתבקש ליצור סיסמה חדשה ומאובטחת
+4. חקור את לוח הבקרה והקורסים הזמינים
+
+{{#if adminName}}
+הוזמנת על ידי: {{adminName}}
+{{/if}}
+
+אנחנו שמחים שהצטרפת אלינו!
+
+---
+{{organizationName}}
+אם יש לך שאלות, אנא פנה לתמיכה.
+        `,
+      },
+    },
+  },
+
+  {
+    key: 'system.password_reset',
+    name: 'Password Reset',
+    category: 'system',
+    description: 'Sent when admin triggers password reset for a user',
+    variables: [
+      { name: 'userName', description: 'User first name', example: 'John', required: true, type: 'string' },
+      { name: 'resetUrl', description: 'Password reset URL with token', example: 'https://...', required: true, type: 'url' },
+      { name: 'expiresIn', description: 'Hours until link expires', example: '24', required: true, type: 'number' },
+      { name: 'organizationName', description: 'Organization name', example: 'IPS Platform', required: true, type: 'string' },
+      { name: 'adminName', description: 'Admin who initiated reset', example: 'Support Team', required: false, type: 'string' },
+    ],
+    versions: {
+      en: {
+        subject: 'Reset Your Password',
+        bodyHtml: `
+<div style="padding: 20px;">
+  <h2>Password Reset Request</h2>
+
+  <p>Hi {{userName}},</p>
+
+  <p>We received a request to reset your password for your {{organizationName}} account.</p>
+
+  <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 6px;">
+    <p style="margin: 0; color: #666;">Click the button below to create a new password:</p>
+  </div>
+
+  <div style="text-align: center; margin: 35px 0;">
+    <a href="{{resetUrl}}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+      Reset Password
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #666; text-align: center;">Or copy this link: <a href="{{resetUrl}}">{{resetUrl}}</a></p>
+
+  <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
+    <strong style="color: #856404;">⏰ This link will expire in {{expiresIn}} hours</strong>
+  </div>
+
+  <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 25px 0;">
+    <p style="margin: 5px 0; font-size: 13px; color: #666;"><strong>Security Note:</strong></p>
+    <ul style="margin: 10px 0; padding-left: 20px; font-size: 13px; color: #666;">
+      <li>If you didn't request this password reset, please ignore this email</li>
+      <li>Your password won't change until you create a new one</li>
+      <li>Never share this link with anyone</li>
+    </ul>
+  </div>
+
+  {{#if adminName}}
+  <p style="font-size: 13px; color: #666;">This reset was initiated by: {{adminName}}</p>
+  {{/if}}
+
+  <p style="text-align: center; color: #666; font-size: 13px; margin-top: 30px;">
+    {{organizationName}}<br/>
+    If you have questions, please contact support.
+  </p>
+</div>
+        `,
+        bodyText: `
+Password Reset Request
+
+Hi {{userName}},
+
+We received a request to reset your password for your {{organizationName}} account.
+
+Click the link below to create a new password:
+{{resetUrl}}
+
+⏰ This link will expire in {{expiresIn}} hours
+
+Security Note:
+- If you didn't request this password reset, please ignore this email
+- Your password won't change until you create a new one
+- Never share this link with anyone
+
+{{#if adminName}}
+This reset was initiated by: {{adminName}}
+{{/if}}
+
+---
+{{organizationName}}
+If you have questions, please contact support.
+        `,
+      },
+      he: {
+        subject: 'איפוס סיסמה',
+        bodyHtml: `
+<div style="padding: 20px; direction: rtl;">
+  <h2>בקשת איפוס סיסמה</h2>
+
+  <p>שלום {{userName}},</p>
+
+  <p>קיבלנו בקשה לאיפוס הסיסמה שלך עבור חשבון {{organizationName}}.</p>
+
+  <div style="background: #f8f9fa; border-right: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 6px;">
+    <p style="margin: 0; color: #666;">לחץ על הכפתור למטה כדי ליצור סיסמה חדשה:</p>
+  </div>
+
+  <div style="text-align: center; margin: 35px 0;">
+    <a href="{{resetUrl}}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+      איפוס סיסמה
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #666; text-align: center;">או העתק קישור זה: <a href="{{resetUrl}}">{{resetUrl}}</a></p>
+
+  <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
+    <strong style="color: #856404;">⏰ קישור זה יפוג בעוד {{expiresIn}} שעות</strong>
+  </div>
+
+  <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 25px 0;">
+    <p style="margin: 5px 0; font-size: 13px; color: #666;"><strong>הערת אבטחה:</strong></p>
+    <ul style="margin: 10px 0; padding-right: 20px; font-size: 13px; color: #666;">
+      <li>אם לא ביקשת איפוס סיסמה זה, אנא התעלם מאימייל זה</li>
+      <li>הסיסמה שלך לא תשתנה עד שתיצור אחת חדשה</li>
+      <li>לעולם אל תשתף קישור זה עם אף אחד</li>
+    </ul>
+  </div>
+
+  {{#if adminName}}
+  <p style="font-size: 13px; color: #666;">איפוס זה יזם על ידי: {{adminName}}</p>
+  {{/if}}
+
+  <p style="text-align: center; color: #666; font-size: 13px; margin-top: 30px;">
+    {{organizationName}}<br/>
+    אם יש לך שאלות, אנא פנה לתמיכה.
+  </p>
+</div>
+        `,
+        bodyText: `
+בקשת איפוס סיסמה
+
+שלום {{userName}},
+
+קיבלנו בקשה לאיפוס הסיסמה שלך עבור חשבון {{organizationName}}.
+
+לחץ על הקישור למטה כדי ליצור סיסמה חדשה:
+{{resetUrl}}
+
+⏰ קישור זה יפוג בעוד {{expiresIn}} שעות
+
+הערת אבטחה:
+- אם לא ביקשת איפוס סיסמה זה, אנא התעלם מאימייל זה
+- הסיסמה שלך לא תשתנה עד שתיצור אחת חדשה
+- לעולם אל תשתף קישור זה עם אף אחד
+
+{{#if adminName}}
+איפוס זה יזם על ידי: {{adminName}}
+{{/if}}
+
+---
+{{organizationName}}
+אם יש לך שאלות, אנא פנה לתמיכה.
+        `,
+      },
+    },
+  },
 ];

@@ -186,9 +186,11 @@ export default function PaymentsPage() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.pendingPayments}</div>
+              <div className="text-2xl font-bold">
+                ${stats.pendingAmount.toLocaleString()}
+              </div>
               <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.scheduledUpcoming', 'Scheduled upcoming')}
+                {t('admin.payments.fromPayments', `From ${stats.pendingPayments} payments`)}
               </p>
             </CardContent>
           </Card>
@@ -213,24 +215,6 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Pending Amount Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle suppressHydrationWarning>{t('admin.payments.pendingAmount', 'Pending Amount')}</CardTitle>
-            <CardDescription suppressHydrationWarning>
-              {t('admin.payments.pendingAmount.description', 'Total amount from pending and scheduled payments')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold text-primary">
-              ${stats.pendingAmount.toLocaleString()}
-            </div>
-            <p className="text-sm text-muted-foreground mt-2" suppressHydrationWarning>
-              {t('admin.payments.pendingAmount.fromPayments', `From ${stats.pendingPayments} scheduled payments`).replace('{count}', stats.pendingPayments.toString())}
-            </p>
-          </CardContent>
-        </Card>
 
         {/* Quick Actions */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

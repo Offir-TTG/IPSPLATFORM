@@ -66,14 +66,11 @@ interface ProgramCourse {
 
 interface Student {
   id: string;
-  enrollment_status: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  status: string;
   enrolled_at: string;
-  user: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-  };
 }
 
 interface User {
@@ -212,9 +209,13 @@ export default function ProgramDetailPage() {
       const res = await fetch(`/api/admin/enrollments?program_id=${programId}`);
       if (!res.ok) throw new Error('Failed to load students');
       const data = await res.json();
-      setStudents(data);
+      console.log('Enrollments response:', data);
+      // API returns { enrollments: [...] }, not a plain array
+      setStudents(data.enrollments || []);
+      console.log('Students set to:', data.enrollments || []);
     } catch (error) {
       console.error('Error loading students:', error);
+      setStudents([]); // Set empty array on error to prevent .map crash
     }
   };
 
@@ -354,13 +355,45 @@ export default function ProgramDetailPage() {
 
     setSaving(true);
     try {
+      // First, find or create a product for this program
+      const productsRes = await fetch(`/api/admin/products?type=program`);
+      const productsData = await productsRes.json();
+      const products = productsData.success ? productsData.data : [];
+
+      // Find existing product for this program
+      let programProduct = products.find((p: any) => p.program_id === programId);
+
+      if (!programProduct) {
+        // Create a product for this program if it doesn't exist
+        const createProductRes = await fetch('/api/admin/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'program',
+            title: program?.name || 'Program',
+            program_id: programId,
+            payment_model: 'free', // Default to free, admin can change later
+            price: program?.price || 0,
+            currency: program?.currency || 'USD'
+          })
+        });
+
+        if (!createProductRes.ok) {
+          throw new Error('Failed to create product for program');
+        }
+
+        const createProductData = await createProductRes.json();
+        programProduct = createProductData.success ? createProductData.data : createProductData;
+      }
+
+      // Now enroll the student in the product
       const res = await fetch('/api/admin/enrollments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: selectedUser,
-          program_id: programId,
-          enrollment_status: 'active'
+          product_id: programProduct.id,
+          status: 'active'
         })
       });
 
@@ -391,11 +424,18 @@ export default function ProgramDetailPage() {
   };
 
   const handleUpdateEnrollmentStatus = async (enrollmentId: string, newStatus: string) => {
+    // TODO: Implement status update endpoint
+    toast({
+      title: t('lms.program_detail.toast_error', 'Error'),
+      description: 'Status update functionality is not yet implemented',
+      variant: 'destructive'
+    });
+    /*
     try {
       const res = await fetch(`/api/admin/enrollments/${enrollmentId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enrollment_status: newStatus })
+        body: JSON.stringify({ status: newStatus })
       });
 
       if (!res.ok) throw new Error('Failed to update enrollment status');
@@ -414,6 +454,7 @@ export default function ProgramDetailPage() {
         variant: 'destructive'
       });
     }
+    */
   };
 
   const handleUnenrollStudent = async () => {
@@ -655,9 +696,12 @@ export default function ProgramDetailPage() {
                             }
                           </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {pc.course.description}
-                        </p>
+                        {pc.course.description && (
+                          <div
+                            className="text-sm text-muted-foreground mt-1 prose prose-sm max-w-none"
+                            dangerouslySetInnerHTML={{ __html: pc.course.description }}
+                          />
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -693,31 +737,16 @@ export default function ProgramDetailPage() {
         {activeTab === 'students' && (
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>{t('lms.program_detail.students_title', 'Enrolled Students')}</CardTitle>
-                  <CardDescription>
-                    {t('lms.program_detail.students_description', 'Manage student enrollments in this program')}
-                  </CardDescription>
-                </div>
-                <Button onClick={() => setShowEnrollStudentDialog(true)}>
-                  <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {t('lms.program_detail.students_enroll', 'Enroll Student')}
-                </Button>
-              </div>
+              <CardTitle>{t('lms.program_detail.students_title', 'Enrolled Students')}</CardTitle>
+              <CardDescription>
+                {t('lms.program_detail.students_description', 'View student enrollments in this program')}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {students.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <Users className="h-12 w-12 mx-auto mb-4 opacity-20" />
                   <p>{t('lms.program_detail.students_empty', 'No students enrolled in this program yet')}</p>
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    onClick={() => setShowEnrollStudentDialog(true)}
-                  >
-                    {t('lms.program_detail.students_enroll_first', 'Enroll First Student')}
-                  </Button>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -728,40 +757,21 @@ export default function ProgramDetailPage() {
                     >
                       <div className="flex-1">
                         <p className="font-medium">
-                          {student.user.first_name} {student.user.last_name}
+                          {student.user_name}
                         </p>
-                        <p className="text-sm text-muted-foreground">{student.user.email}</p>
+                        <p className="text-sm text-muted-foreground">{student.user_email}</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {t('lms.program_detail.student_enrolled', 'Enrolled')}: {new Date(student.enrolled_at).toLocaleDateString()}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Select
-                          value={student.enrollment_status}
-                          onValueChange={(value) => handleUpdateEnrollmentStatus(student.id, value)}
-                        >
-                          <SelectTrigger className="w-[140px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent dir={direction}>
-                            <SelectItem value="active">{t('lms.program_detail.enrollment_active', 'Active')}</SelectItem>
-                            <SelectItem value="pending">{t('lms.program_detail.enrollment_pending', 'Pending')}</SelectItem>
-                            <SelectItem value="suspended">{t('lms.program_detail.enrollment_suspended', 'Suspended')}</SelectItem>
-                            <SelectItem value="completed">{t('lms.program_detail.enrollment_completed', 'Completed')}</SelectItem>
-                            <SelectItem value="dropped">{t('lms.program_detail.enrollment_dropped', 'Dropped')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setStudentToUnenroll(student);
-                            setShowUnenrollDialog(true);
-                          }}
-                        >
-                          <UserX className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                      <Badge variant={student.status === 'active' ? 'default' : 'secondary'}>
+                        {student.status === 'active' && t('lms.program_detail.enrollment_active', 'Active')}
+                        {student.status === 'pending' && t('lms.program_detail.enrollment_pending', 'Pending')}
+                        {student.status === 'suspended' && t('lms.program_detail.enrollment_suspended', 'Suspended')}
+                        {student.status === 'completed' && t('lms.program_detail.enrollment_completed', 'Completed')}
+                        {student.status === 'dropped' && t('lms.program_detail.enrollment_dropped', 'Dropped')}
+                        {!['active', 'pending', 'suspended', 'completed', 'dropped'].includes(student.status) && student.status}
+                      </Badge>
                     </div>
                   ))}
                 </div>
@@ -994,9 +1004,10 @@ export default function ProgramDetailPage() {
                             <div className="flex-1 min-w-0">
                               <h4 className="font-medium text-sm mb-1">{course.title}</h4>
                               {course.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-2">
-                                  {course.description}
-                                </p>
+                                <div
+                                  className="text-xs text-muted-foreground line-clamp-2 prose prose-xs max-w-none"
+                                  dangerouslySetInnerHTML={{ __html: course.description }}
+                                />
                               )}
                             </div>
                             {isSelected && (
@@ -1088,7 +1099,7 @@ export default function ProgramDetailPage() {
                 ) : (
                   <div className="divide-y">
                     {filteredUsers
-                      .filter(user => !students.some(s => s.user.id === user.id))
+                      .filter(user => !students.some(s => s.user_id === user.id))
                       .map((user) => (
                         <div
                           key={user.id}
@@ -1147,9 +1158,8 @@ export default function ProgramDetailPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>{t('lms.program_detail.unenroll_student_title', 'Unenroll Student?')}</AlertDialogTitle>
               <AlertDialogDescription>
-                {t('lms.program_detail.unenroll_student_description', 'Are you sure you want to unenroll {firstName} {lastName} from this program? Their enrollment status will be changed to "dropped".')
-                  .replace('{firstName}', studentToUnenroll?.user.first_name || '')
-                  .replace('{lastName}', studentToUnenroll?.user.last_name || '')}
+                {t('lms.program_detail.unenroll_student_description', 'Are you sure you want to unenroll {name} from this program? Their enrollment status will be changed to "dropped".')
+                  .replace('{name}', studentToUnenroll?.user_name || '')}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

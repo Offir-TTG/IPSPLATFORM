@@ -160,6 +160,13 @@ export const GET = withAuth(
             zoom_passcode,
             recording_url,
             status,
+            zoom_sessions (
+              id,
+              platform,
+              daily_room_name,
+              daily_room_url,
+              daily_room_id
+            ),
             lesson_topics (
               id,
               title,
@@ -192,28 +199,53 @@ export const GET = withAuth(
           lessons: module.lessons
             ?.filter(lesson => lesson.is_published)
             .sort((a, b) => a.order - b.order)
-            .map(lesson => ({
-              ...lesson,
-              lesson_topics: lesson.lesson_topics
-                ?.filter(topic => topic.is_published)
-                .sort((a, b) => a.order - b.order) || []
-            })) || []
+            .map(lesson => {
+              // Handle zoom_sessions being either an array or a single object
+              const zoomSession = Array.isArray(lesson.zoom_sessions)
+                ? lesson.zoom_sessions[0]
+                : lesson.zoom_sessions;
+
+              return {
+                ...lesson,
+                // Add platform and Daily.co fields from zoom_sessions
+                platform: zoomSession?.platform || null,
+                daily_room_name: zoomSession?.daily_room_name || null,
+                daily_room_url: zoomSession?.daily_room_url || null,
+                daily_room_id: zoomSession?.daily_room_id || null,
+                // recording_url stays from lesson table
+                // Remove zoom_sessions array from response
+                zoom_sessions: undefined,
+                lesson_topics: lesson.lesson_topics
+                  ?.filter(topic => topic.is_published)
+                  .sort((a, b) => a.order - b.order) || []
+              };
+            }) || []
         })) || [];
 
-      // Fetch user progress for this course
+      // Fetch user progress for this enrollment
       // Use admin client to bypass RLS and avoid tenant config parameter issues
-      const { data: progressData } = await adminClient
+      const { data: allProgressData } = await adminClient
         .from('user_progress')
         .select('lesson_id, status, progress_percentage, completed_at, last_accessed_at')
         .eq('user_id', user.id)
         .eq('enrollment_id', enrollmentId);
+
+      // Get all lesson IDs for THIS course only
+      const courseLessonIds = processedModules.flatMap(module =>
+        module.lessons.map(lesson => lesson.id)
+      );
+
+      // IMPORTANT: Filter progress to only include lessons from THIS course
+      const progressData = allProgressData?.filter(p =>
+        courseLessonIds.includes(p.lesson_id)
+      ) || [];
 
       // Calculate overall progress
       const totalLessons = processedModules.reduce(
         (acc, module) => acc + module.lessons.length,
         0
       );
-      const completedLessons = progressData?.filter(p => p.status === 'completed').length || 0;
+      const completedLessons = progressData.filter(p => p.status === 'completed').length;
       const overallProgress = totalLessons > 0
         ? Math.round((completedLessons / totalLessons) * 100)
         : 0;

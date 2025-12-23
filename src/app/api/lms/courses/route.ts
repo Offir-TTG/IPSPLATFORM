@@ -25,6 +25,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Get user's tenant_id
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('tenant_id')
+      .eq('id', user.id)
+      .single();
+
+    if (userError || !userData) {
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const program_id = searchParams.get('program_id');
@@ -34,6 +48,7 @@ export async function GET(request: NextRequest) {
 
     // Build filter
     const filter: any = {};
+    filter.tenant_id = userData.tenant_id; // Always filter by tenant
     if (program_id) filter.program_id = program_id;
     if (instructor_id) filter.instructor_id = instructor_id;
     if (is_active !== null) filter.is_active = is_active === 'true';
@@ -169,6 +184,7 @@ export async function POST(request: NextRequest) {
       course_type: body.course_type,
       is_standalone: body.is_standalone ?? false,
       image_url: body.image_url || null,
+      is_published: body.is_published ?? false,
     };
 
     const result = await courseService.createCourse(courseData);
@@ -178,6 +194,36 @@ export async function POST(request: NextRequest) {
         { success: false, error: result.error },
         { status: 400 }
       );
+    }
+
+    // If course is linked to a program, create the program_courses relationship
+    if (courseData.program_id && result.data?.id) {
+      // Get the next order number for the program
+      const { data: existingCourses } = await supabase
+        .from('program_courses')
+        .select('order')
+        .eq('program_id', courseData.program_id)
+        .order('order', { ascending: false })
+        .limit(1);
+
+      const courseOrder = existingCourses && existingCourses.length > 0
+        ? existingCourses[0].order + 1
+        : 0;
+
+      // Add course to program via junction table
+      const { error: junctionError } = await supabase
+        .from('program_courses')
+        .insert({
+          program_id: courseData.program_id,
+          course_id: result.data.id,
+          is_required: true,
+          order: courseOrder
+        });
+
+      if (junctionError) {
+        console.error('Error adding course to program:', junctionError);
+        // Don't fail the whole operation, just log it
+      }
     }
 
     // Log audit event

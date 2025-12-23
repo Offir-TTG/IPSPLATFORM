@@ -4,21 +4,58 @@ import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
-// Generate Zoom SDK signature
+// Generate Zoom Meeting SDK JWT signature
 function generateSignature(
   sdkKey: string,
   sdkSecret: string,
   meetingNumber: string,
   role: number
 ): string {
-  const timestamp = new Date().getTime() - 30000;
-  const msg = Buffer.from(sdkKey + meetingNumber + timestamp + role).toString('base64');
-  const hash = crypto
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + 60 * 60 * 2; // 2 hours expiration
+
+  // JWT Header
+  const header = {
+    alg: 'HS256',
+    typ: 'JWT'
+  };
+
+  // JWT Payload
+  const payload = {
+    sdkKey: sdkKey,
+    appKey: sdkKey,
+    mn: String(meetingNumber),
+    role: role,
+    iat: iat,
+    exp: exp,
+    tokenExp: exp
+  };
+
+  // Base64Url encode
+  const base64UrlEncode = (obj: object) => {
+    return Buffer.from(JSON.stringify(obj))
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  };
+
+  // Create token segments
+  const headerEncoded = base64UrlEncode(header);
+  const payloadEncoded = base64UrlEncode(payload);
+  const signatureInput = `${headerEncoded}.${payloadEncoded}`;
+
+  // Generate HMAC SHA256 signature
+  const signature = crypto
     .createHmac('sha256', sdkSecret)
-    .update(msg)
-    .digest('base64');
-  const signature = Buffer.from(`${sdkKey}.${meetingNumber}.${timestamp}.${role}.${hash}`).toString('base64');
-  return signature;
+    .update(signatureInput)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  // Return complete JWT
+  return `${headerEncoded}.${payloadEncoded}.${signature}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -93,6 +130,13 @@ export async function POST(request: NextRequest) {
     // Generate signature
     // role: 0 = participant, 1 = host
     const signature = generateSignature(sdkKey, sdkSecret, meetingNumber, role || 0);
+
+    console.log('[Zoom Signature] Generated for meeting:', {
+      meetingNumber,
+      role: role || 0,
+      sdkKeyPrefix: sdkKey.substring(0, 10),
+      signatureLength: signature.length,
+    });
 
     return NextResponse.json({
       success: true,

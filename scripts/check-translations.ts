@@ -1,78 +1,85 @@
+/**
+ * Check Translations
+ * Verifies password reset related translations exist
+ */
+
 import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load environment variables from .env.local
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Missing environment variables');
+  process.exit(1);
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function checkTranslations() {
-  console.log('Checking translations in database...\n');
+  console.log('🔍 Checking password reset translations...\n');
 
-  // Get tenant ID
-  const { data: tenants } = await supabase
-    .from('tenants')
-    .select('id')
-    .limit(1);
+  const keysToCheck = [
+    'emails.category.system',
+    'email_template.system_password_reset.name',
+    'email_template.system_password_reset.description',
+  ];
+
+  // Get all tenants
+  const { data: tenants } = await supabase.from('tenants').select('id, name');
 
   if (!tenants || tenants.length === 0) {
-    console.error('No tenant found');
+    console.log('⚠️  No tenants found');
     return;
   }
 
-  const tenantId = tenants[0].id;
-  console.log('Tenant ID:', tenantId, '\n');
+  for (const tenant of tenants) {
+    console.log(`\n📧 Tenant: ${tenant.name}`);
+    console.log('='.repeat(60));
 
-  // Check for the specific translations
-  const keys = ['lms.builder.lesson_order_updated', 'lms.builder.topics'];
+    for (const key of keysToCheck) {
+      console.log(`\n🔑 ${key}:`);
 
-  for (const key of keys) {
-    console.log(`\n=== ${key} ===`);
+      // Check EN
+      const { data: enData } = await supabase
+        .from('translations')
+        .select('translation_value')
+        .eq('tenant_id', tenant.id)
+        .eq('language_code', 'en')
+        .eq('translation_key', key)
+        .single();
 
-    const { data, error } = await supabase
-      .from('translations')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('translation_key', key)
-      .order('language_code');
+      if (enData) {
+        console.log(`   ✅ EN: "${enData.translation_value}"`);
+      } else {
+        console.log(`   ❌ EN: NOT FOUND`);
+      }
 
-    if (error) {
-      console.error('Error:', error);
-    } else if (!data || data.length === 0) {
-      console.log('❌ NOT FOUND in database');
-    } else {
-      data.forEach(t => {
-        console.log(`  ${t.language_code}: "${t.translation_value}"`);
-      });
+      // Check HE
+      const { data: heData } = await supabase
+        .from('translations')
+        .select('translation_value')
+        .eq('tenant_id', tenant.id)
+        .eq('language_code', 'he')
+        .eq('translation_key', key)
+        .single();
+
+      if (heData) {
+        console.log(`   ✅ HE: "${heData.translation_value}"`);
+      } else {
+        console.log(`   ❌ HE: NOT FOUND`);
+      }
     }
   }
-
-  // Check what the API would return for Hebrew admin context
-  console.log('\n\n=== API Response Check ===');
-  console.log('Fetching translations for: language=he, context=admin\n');
-
-  const { data: apiData, error: apiError } = await supabase
-    .from('translations')
-    .select('translation_key, translation_value')
-    .eq('tenant_id', tenantId)
-    .eq('language_code', 'he')
-    .in('translation_key', keys);
-
-  if (apiError) {
-    console.error('API Error:', apiError);
-  } else {
-    console.log('API would return:');
-    console.table(apiData);
-  }
-
-  // Check if there are ANY Hebrew translations
-  console.log('\n\n=== Hebrew Translation Count ===');
-  const { count } = await supabase
-    .from('translations')
-    .select('*', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .eq('language_code', 'he');
-
-  console.log(`Total Hebrew translations in database: ${count}`);
 }
 
-checkTranslations().catch(console.error);
+checkTranslations()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });

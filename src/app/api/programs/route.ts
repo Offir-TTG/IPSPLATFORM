@@ -24,18 +24,34 @@ export const GET = withAuth(async (request: NextRequest, user: any) => {
       );
     }
 
-    // Get course counts for each program using the program_courses junction table
+    // Get course counts and student counts for each program
     const transformedPrograms = await Promise.all(
       (programs || []).map(async (program) => {
-        const { count } = await supabase
+        // Get course count
+        const { count: courseCount } = await supabase
           .from('program_courses')
           .select('*', { count: 'exact', head: true })
           .eq('program_id', program.id);
 
+        // Get student count by counting enrollments for products that reference this program
+        const { data: enrollments } = await supabase
+          .from('enrollments')
+          .select(`
+            id,
+            product:products!enrollments_product_id_fkey(
+              program_id
+            )
+          `);
+
+        // Filter enrollments where product.program_id matches this program
+        const programEnrollments = (enrollments || []).filter((e: any) =>
+          e.product?.program_id === program.id
+        );
+
         return {
           ...program,
-          course_count: count || 0,
-          student_count: 0, // Will be populated when enrollments table is ready
+          course_count: courseCount || 0,
+          student_count: programEnrollments.length,
         };
       })
     );

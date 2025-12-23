@@ -16,7 +16,7 @@ import {
 import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowLeft,
@@ -78,7 +78,6 @@ export default function CourseAttendancePage() {
   const params = useParams();
   const router = useRouter();
   const { t, language, direction } = useAdminLanguage();
-  const { toast } = useToast();
   const isRtl = direction === 'rtl';
 
   const courseId = params.id as string;
@@ -92,6 +91,7 @@ export default function CourseAttendancePage() {
   const [attendance, setAttendance] = useState<Map<string, AttendanceStatus>>(new Map());
   const [originalAttendance, setOriginalAttendance] = useState<Map<string, AttendanceStatus>>(new Map());
   const [notes, setNotes] = useState<Map<string, string>>(new Map());
+  const [attendanceIds, setAttendanceIds] = useState<Map<string, string>>(new Map()); // Store record IDs for updates
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -174,10 +174,8 @@ export default function CourseAttendancePage() {
       // Don't auto-select program - let user choose or keep "All Programs"
     } catch (error: any) {
       console.error('Error loading course:', error);
-      toast({
-        title: t('common.error', 'Error'),
+      toast.error(t('common.error', 'Error'), {
         description: error.message,
-        variant: 'destructive',
       });
     }
   }
@@ -275,10 +273,8 @@ export default function CourseAttendancePage() {
       setStudents(result.data || []);
     } catch (error: any) {
       console.error('Error loading students:', error);
-      toast({
-        title: t('common.error', 'Error'),
+      toast.error(t('common.error', 'Error'), {
         description: error.message,
-        variant: 'destructive',
       });
     }
   }
@@ -323,12 +319,14 @@ export default function CourseAttendancePage() {
 
       const attendanceMap = new Map<string, AttendanceStatus>();
       const notesMap = new Map<string, string>();
+      const idsMap = new Map<string, string>();
 
       records.forEach((record: any) => {
         const key = selectedLesson === 'all'
           ? `${record.student_id}___${record.lesson_id}`
           : record.student_id;
         attendanceMap.set(key, record.status);
+        idsMap.set(key, record.id); // Store the record ID
         if (record.notes) {
           notesMap.set(key, record.notes);
         }
@@ -337,14 +335,13 @@ export default function CourseAttendancePage() {
       setAttendance(attendanceMap);
       setOriginalAttendance(new Map(attendanceMap));
       setNotes(notesMap);
+      setAttendanceIds(idsMap);
       setIsRetrying(false);
     } catch (error: any) {
       console.error('Error loading attendance:', error);
       setLoadingError(error.message || 'Failed to load attendance');
-      toast({
-        title: t('common.error', 'Error'),
+      toast.error(t('common.error', 'Error'), {
         description: error.message || 'Failed to load attendance',
-        variant: 'destructive',
       });
     }
   }
@@ -413,7 +410,6 @@ export default function CourseAttendancePage() {
   }
 
   async function handleSave() {
-    console.log('🚀 handleSave called');
     try {
       setSaving(true);
 
@@ -423,33 +419,28 @@ export default function CourseAttendancePage() {
           ? key.split('___')
           : [key, selectedLesson];
 
-        return {
+        const record: any = {
           student_id: studentId,
           lesson_id: lessonId,
           status,
           notes: notes.get(key) || null,
         };
-      });
 
-      console.log('📦 Built records:', {
-        recordsCount: records.length,
-        attendanceMapSize: attendance.size,
-        selectedCourse,
-        selectedDate,
-        records
+        // Include the existing record ID if available (for updates)
+        const existingId = attendanceIds.get(key);
+        if (existingId) {
+          record.id = existingId;
+        }
+
+        return record;
       });
 
       if (records.length === 0) {
-        console.log('⚠️ No records to save');
-        toast({
-          title: t('common.info', 'Info'),
-          description: t('admin.attendance.noDataToSave', 'No attendance data to save'),
-        });
+        toast.info(t('admin.attendance.noDataToSave', 'No attendance data to save'));
         setSaving(false);
         return;
       }
 
-      console.log('📡 Sending POST request...');
       const response = await fetch(`/api/admin/lms/courses/${selectedCourse}/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -461,43 +452,30 @@ export default function CourseAttendancePage() {
         }),
       });
 
-      console.log('📨 Response status:', response.status);
       const result = await response.json();
-      console.log('📨 Response data:', result);
 
       if (!response.ok) {
-        console.log('❌ Response not OK');
         const errorMessage = result.details || result.error || 'Failed to save attendance';
         throw new Error(errorMessage);
       }
 
       if (!result.success) {
-        console.log('❌ Result success=false');
         throw new Error(result.error || 'Failed to save attendance');
       }
 
-      console.log('✅ Save successful, showing toast');
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.attendance.saved', 'Attendance saved successfully'),
-      });
+      toast.success(t('admin.attendance.saved', 'Attendance saved successfully'));
 
       // Reload attendance to show updated data
-      console.log('🔄 Reloading attendance...');
       await loadAttendance();
 
       // Update original attendance to reflect saved state
       setOriginalAttendance(new Map(attendance));
-      console.log('✅ handleSave completed');
     } catch (error: any) {
-      console.error('❌ Error in handleSave:', error);
-      toast({
-        title: t('common.error', 'Error'),
+      console.error('Error saving attendance:', error);
+      toast.error(t('common.error', 'Error'), {
         description: error.message || t('admin.attendance.saveFailed', 'Failed to save attendance'),
-        variant: 'destructive',
       });
     } finally {
-      console.log('🏁 handleSave finally block');
       setSaving(false);
     }
   }
@@ -526,16 +504,11 @@ export default function CourseAttendancePage() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(downloadUrl);
 
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.attendance.exported', 'Attendance exported successfully'),
-      });
+      toast.success(t('admin.attendance.exported', 'Attendance exported successfully'));
     } catch (error: any) {
       console.error('Error exporting attendance:', error);
-      toast({
-        title: t('common.error', 'Error'),
+      toast.error(t('common.error', 'Error'), {
         description: error.message,
-        variant: 'destructive',
       });
     }
   }
@@ -549,15 +522,9 @@ export default function CourseAttendancePage() {
       return allCourses;
     }
     // Filter courses by program_id (for courses directly assigned to program)
-    // OR by checking programIds array (for courses linked via program_courses)
+    // Filter by direct program_id match
     const filtered = allCourses.filter(c => {
-      // Direct program_id match
-      if (c.program_id === selectedProgram) return true;
-      // Check if course is linked to program via program_courses (programIds array)
-      if (c.programIds && Array.isArray(c.programIds)) {
-        return c.programIds.includes(selectedProgram);
-      }
-      return false;
+      return c.program_id === selectedProgram;
     });
     console.log(`Filtered ${filtered.length} courses for program ${selectedProgram}`);
     return filtered;

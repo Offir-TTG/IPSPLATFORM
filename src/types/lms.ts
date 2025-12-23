@@ -590,7 +590,9 @@ export interface BulkAttendanceInput {
   lesson_id?: string;
   attendance_date: string;
   records: {
+    id?: string; // Optional: existing record ID for updates
     student_id: string;
+    lesson_id?: string; // Optional: per-record lesson_id for grid view
     status: AttendanceStatus;
     notes?: string;
   }[];
@@ -990,6 +992,7 @@ export interface BulkOperationResult {
 // ============================================================================
 
 export interface CourseFilter {
+  tenant_id?: string;
   program_id?: string;
   instructor_id?: string;
   is_active?: boolean;

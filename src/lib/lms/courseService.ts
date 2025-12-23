@@ -17,14 +17,20 @@ export const courseService = {
    */
   async listCourses(filter?: CourseFilter): Promise<ApiResponse<Course[]>> {
     try {
-      
+
 
       let query = supabase
         .from('courses')
-        .select('*, program:programs(*), instructor:users(*)')
+        // CRITICAL FIX: Only select course and basic program/instructor info, NO modules/lessons
+        .select('*, program:programs(id, name, is_active), instructor:users(id, first_name, last_name, email)')
         .order('created_at', { ascending: false });
 
       // Apply filters
+      if (filter?.tenant_id) {
+        // Filter by tenant_id - use eq for exact match
+        query = query.eq('tenant_id', filter.tenant_id);
+      }
+
       if (filter?.program_id) {
         query = query.eq('program_id', filter.program_id);
       }
@@ -50,6 +56,9 @@ export const courseService = {
       if (filter?.start_date_to) {
         query = query.lte('start_date', filter.start_date_to);
       }
+
+      // CRITICAL FIX: Add limit to prevent loading thousands of records
+      query = query.limit(100);
 
       const { data, error } = await query;
 
@@ -77,14 +86,15 @@ export const courseService = {
    */
   async getCourseById(id: string, includeModules = false): Promise<ApiResponse<Course | CourseWithModules>> {
     try {
-      
+
 
       let query = supabase
         .from('courses')
         .select(
           includeModules
-            ? '*, program:programs(*), instructor:users(*), modules(*, lessons(*, lesson_topics(*)))'
-            : '*, program:programs(*), instructor:users(*)'
+            // CRITICAL FIX: Limit nested data to prevent memory issues
+            ? '*, program:programs(id, name, is_active), instructor:users(id, first_name, last_name, email), modules(id, title, description, order, is_published)'
+            : '*, program:programs(id, name, is_active), instructor:users(id, first_name, last_name, email)'
         )
         .eq('id', id)
         .single();
@@ -126,6 +136,7 @@ export const courseService = {
     course_type: 'course' | 'lecture' | 'workshop' | 'webinar' | 'session';
     is_standalone?: boolean;
     image_url?: string | null;
+    is_published?: boolean;
   }): Promise<ApiResponse<Course>> {
     try {
       
@@ -231,10 +242,10 @@ export const courseService = {
     try {
       
 
-      // Get original course with all hierarchy
+      // CRITICAL FIX: Get original course with ONLY necessary fields, load modules separately
       const { data: originalCourse, error: fetchError } = await supabase
         .from('courses')
-        .select('*, modules(*, lessons(*, lesson_topics(*)))')
+        .select('*')
         .eq('id', id)
         .single();
 
@@ -244,6 +255,13 @@ export const courseService = {
           error: fetchError?.message || 'Course not found',
         };
       }
+
+      // Load modules separately to avoid memory explosion
+      const { data: modules, error: modulesError } = await supabase
+        .from('modules')
+        .select('*')
+        .eq('course_id', id)
+        .order('order', { ascending: true });
 
       // Create new course
       const { data: newCourse, error: courseError } = await supabase
@@ -259,6 +277,8 @@ export const courseService = {
           is_active: false, // Duplicates start as inactive
           course_type: originalCourse.course_type,
           is_standalone: originalCourse.is_standalone,
+          image_url: originalCourse.image_url,
+          is_published: false, // Duplicates start as unpublished
         })
         .select()
         .single();
@@ -271,8 +291,8 @@ export const courseService = {
       }
 
       // Duplicate modules and lessons (if any)
-      if (originalCourse.modules && originalCourse.modules.length > 0) {
-        for (const module of originalCourse.modules) {
+      if (modules && modules.length > 0) {
+        for (const module of modules) {
           const { data: newModule } = await supabase
             .from('modules')
             .insert({
@@ -287,40 +307,57 @@ export const courseService = {
             .select()
             .single();
 
-          // Duplicate lessons
-          if (newModule && module.lessons && module.lessons.length > 0) {
-            for (const lesson of module.lessons) {
-              const { data: newLesson } = await supabase
-                .from('lessons')
-                .insert({
-                  course_id: newCourse.id,
-                  module_id: newModule.id,
-                  title: lesson.title,
-                  description: lesson.description,
-                  content: lesson.content,
-                  order: lesson.order,
-                  start_time: lesson.start_time,
-                  duration: lesson.duration,
-                  materials: lesson.materials,
-                  is_published: false,
-                  status: 'scheduled',
-                })
-                .select()
-                .single();
+          // Load lessons for this module separately
+          if (newModule) {
+            const { data: lessons } = await supabase
+              .from('lessons')
+              .select('*')
+              .eq('module_id', module.id)
+              .order('order', { ascending: true });
 
-              // Duplicate topics
-              if (newLesson && lesson.topics && lesson.topics.length > 0) {
-                const topicsToInsert = lesson.topics.map((topic: any) => ({
-                  lesson_id: newLesson.id,
-                  title: topic.title,
-                  content_type: topic.content_type,
-                  content: topic.content,
-                  order: topic.order,
-                  duration_minutes: topic.duration_minutes,
-                  is_required: topic.is_required,
-                }));
+            // Duplicate lessons
+            if (lessons && lessons.length > 0) {
+              for (const lesson of lessons) {
+                const { data: newLesson } = await supabase
+                  .from('lessons')
+                  .insert({
+                    course_id: newCourse.id,
+                    module_id: newModule.id,
+                    title: lesson.title,
+                    description: lesson.description,
+                    content: lesson.content,
+                    order: lesson.order,
+                    start_time: lesson.start_time,
+                    duration: lesson.duration,
+                    materials: lesson.materials,
+                    is_published: false,
+                    status: 'scheduled',
+                  })
+                  .select()
+                  .single();
 
-                await supabase.from('lesson_topics').insert(topicsToInsert);
+                // Load and duplicate topics
+                if (newLesson) {
+                  const { data: topics } = await supabase
+                    .from('lesson_topics')
+                    .select('*')
+                    .eq('lesson_id', lesson.id)
+                    .order('order', { ascending: true });
+
+                  if (topics && topics.length > 0) {
+                    const topicsToInsert = topics.map((topic: any) => ({
+                      lesson_id: newLesson.id,
+                      title: topic.title,
+                      content_type: topic.content_type,
+                      content: topic.content,
+                      order: topic.order,
+                      duration_minutes: topic.duration_minutes,
+                      is_required: topic.is_required,
+                    }));
+
+                    await supabase.from('lesson_topics').insert(topicsToInsert);
+                  }
+                }
               }
             }
           }

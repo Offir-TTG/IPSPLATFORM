@@ -193,7 +193,35 @@ export default function TransactionsPage() {
       refunded: 'outline',
       partially_refunded: 'secondary',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status.replace('_', ' ')}</Badge>;
+
+    const statusLabels: Record<string, string> = {
+      completed: t('admin.payments.transactions.status.completed', 'Completed'),
+      pending: t('admin.payments.transactions.status.pending', 'Pending'),
+      failed: t('admin.payments.transactions.status.failed', 'Failed'),
+      refunded: t('admin.payments.transactions.status.refunded', 'Refunded'),
+      partially_refunded: t('admin.payments.transactions.status.partiallyRefunded', 'Partially Refunded'),
+    };
+
+    return <Badge variant={variants[status] || 'outline'} suppressHydrationWarning>{statusLabels[status] || status}</Badge>;
+  };
+
+  const translatePaymentMethod = (method: string) => {
+    const normalizedMethod = method?.toLowerCase().replace(/[\s-]/g, '_') || 'unknown';
+    const methodLabels: Record<string, string> = {
+      card: t('admin.payments.paymentMethod.card', 'Card'),
+      credit_card: t('admin.payments.paymentMethod.credit_card', 'Credit Card'),
+      bank_transfer: t('admin.payments.paymentMethod.bank_transfer', 'Bank Transfer'),
+      cash: t('admin.payments.paymentMethod.cash', 'Cash'),
+      check: t('admin.payments.paymentMethod.check', 'Check'),
+      cheque: t('admin.payments.paymentMethod.cheque', 'Cheque'),
+      paypal: t('admin.payments.paymentMethod.paypal', 'PayPal'),
+      stripe: t('admin.payments.paymentMethod.stripe', 'Stripe'),
+      online: t('admin.payments.paymentMethod.online', 'Online'),
+      manual: t('admin.payments.paymentMethod.manual', 'Manual'),
+      unknown: t('admin.payments.paymentMethod.unknown', 'Unknown'),
+    };
+
+    return methodLabels[normalizedMethod] || t(`admin.payments.paymentMethod.${normalizedMethod}`, method);
   };
 
   const formatDate = (dateString: string) => {
@@ -407,9 +435,9 @@ export default function TransactionsPage() {
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full" dir={direction}>
                 <thead className="border-b">
-                  <tr className="text-left">
+                  <tr className={isRtl ? 'text-right' : 'text-left'}>
                     <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</th>
                     <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.user', 'User')}</th>
                     <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.product', 'Product')}</th>
@@ -434,7 +462,7 @@ export default function TransactionsPage() {
                       <td className="p-4">
                         <div className="font-medium">{transaction.product_name}</div>
                       </td>
-                      <td className="p-4">
+                      <td className={`p-4 ${isRtl ? 'text-right' : 'text-left'}`}>
                         <div className="font-medium" suppressHydrationWarning>
                           {formatCurrency(transaction.amount, transaction.currency)}
                           {transaction.refund_amount && (
@@ -445,18 +473,18 @@ export default function TransactionsPage() {
                         </div>
                       </td>
                       <td className="p-4">
-                        <Badge variant="outline" className="capitalize">
-                          {transaction.payment_method}
+                        <Badge variant="outline" suppressHydrationWarning>
+                          {translatePaymentMethod(transaction.payment_method)}
                         </Badge>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center gap-2">
+                        <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
                           {getStatusIcon(transaction.status)}
                           {getStatusBadge(transaction.status)}
                         </div>
                       </td>
                       <td className="p-4">
-                        <div className="flex gap-2">
+                        <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -515,6 +543,7 @@ export default function TransactionsPage() {
           transaction={selectedTransaction}
           onClose={() => setDetailsDialogOpen(false)}
           direction={direction}
+          language={language}
         />
       </div>
     </AdminLayout>
@@ -641,14 +670,35 @@ function TransactionDetailsDialog({
   transaction,
   onClose,
   direction,
+  language,
 }: {
   open: boolean;
   transaction: Transaction | null;
   onClose: () => void;
   direction: 'ltr' | 'rtl';
+  language: string;
 }) {
-  const { t, language } = useAdminLanguage();
+  const { t } = useAdminLanguage();
   if (!transaction) return null;
+
+  const translatePaymentMethod = (method: string) => {
+    const normalizedMethod = method?.toLowerCase().replace(/[\s-]/g, '_') || 'unknown';
+    const methodLabels: Record<string, string> = {
+      card: t('admin.payments.paymentMethod.card', 'Card'),
+      credit_card: t('admin.payments.paymentMethod.credit_card', 'Credit Card'),
+      bank_transfer: t('admin.payments.paymentMethod.bank_transfer', 'Bank Transfer'),
+      cash: t('admin.payments.paymentMethod.cash', 'Cash'),
+      check: t('admin.payments.paymentMethod.check', 'Check'),
+      cheque: t('admin.payments.paymentMethod.cheque', 'Cheque'),
+      paypal: t('admin.payments.paymentMethod.paypal', 'PayPal'),
+      stripe: t('admin.payments.paymentMethod.stripe', 'Stripe'),
+      online: t('admin.payments.paymentMethod.online', 'Online'),
+      manual: t('admin.payments.paymentMethod.manual', 'Manual'),
+      unknown: t('admin.payments.paymentMethod.unknown', 'Unknown'),
+    };
+
+    return methodLabels[normalizedMethod] || t(`admin.payments.paymentMethod.${normalizedMethod}`, method);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -685,7 +735,7 @@ function TransactionDetailsDialog({
             </div>
             <div>
               <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.method', 'Payment Method')}</Label>
-              <div className="capitalize">{transaction.payment_method}</div>
+              <div suppressHydrationWarning>{translatePaymentMethod(transaction.payment_method)}</div>
             </div>
             <div>
               <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</Label>

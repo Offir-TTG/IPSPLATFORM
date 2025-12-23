@@ -190,6 +190,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
     {
+      titleKey: 'admin.nav.users_access',
+      items: [
+        { key: 'admin.nav.users', icon: Users, href: '/admin/settings/users' },
+      ],
+    },
+    {
       titleKey: 'admin.nav.configuration',
       items: [
         { key: 'admin.nav.languages', icon: Languages, href: '/admin/config/languages' },
@@ -200,7 +206,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.integrations', icon: Plug, href: '/admin/config/integrations' },
         { key: 'admin.nav.navigation', icon: Navigation, href: '/admin/config/navigation' },
         { key: 'admin.nav.emails', icon: Mail, href: '/admin/emails' },
-        { key: 'admin.nav.keap.dashboard', icon: Users, href: '/admin/keap' },
+        { key: 'admin.nav.keap.dashboard', icon: User, href: '/admin/keap' },
       ],
     },
     {

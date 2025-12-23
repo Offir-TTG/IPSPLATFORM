@@ -39,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import {
   Dialog,
   DialogContent,
@@ -78,6 +79,7 @@ import type { Course, CourseFilter } from '@/types/lms';
 
 interface CreateCourseData {
   program_id: string | undefined;
+  instructor_id?: string;
   title: string;
   description?: string;
   start_date: string;
@@ -99,6 +101,7 @@ export default function CoursesListPage() {
   const isRtl = direction === 'rtl';
   const [courses, setCourses] = useState<Course[]>([]);
   const [programs, setPrograms] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -183,6 +186,32 @@ export default function CoursesListPage() {
     }
   };
 
+  const loadUsers = async () => {
+    try {
+      const response = await fetch('/api/admin/tenant/users?limit=1000&role=instructor');
+      const result = await response.json();
+      if (result.success && result.data && Array.isArray(result.data.users)) {
+        // Transform tenant_users structure to simple user objects
+        const transformedUsers = result.data.users
+          .filter((tu: any) => tu.users) // Only include records with user details
+          .map((tu: any) => ({
+            id: tu.users.id,
+            email: tu.users.email,
+            first_name: tu.users.first_name,
+            last_name: tu.users.last_name,
+            role: tu.role
+          }));
+        setUsers(transformedUsers);
+      } else {
+        console.warn('Users API did not return array:', result);
+        setUsers([]);
+      }
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      setUsers([]);
+    }
+  };
+
   // Load courses
   const loadCourses = async () => {
     try {
@@ -210,9 +239,10 @@ export default function CoursesListPage() {
     }
   };
 
-  // Load programs and courses on mount and when filters change
+  // Load programs, users, and courses on mount and when filters change
   useEffect(() => {
     loadPrograms();
+    loadUsers();
     loadCourses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, searchQuery]);
@@ -316,27 +346,14 @@ export default function CoursesListPage() {
     try {
       setCreateLoading(true);
 
-      let uploadedImageUrl: string | null = null;
-
-      // Upload image if there's a new file
-      if (imageFile) {
-        try {
-          uploadedImageUrl = await uploadCourseImage(imageFile);
-          if (!uploadedImageUrl) {
-            console.error('Image upload returned null');
-            setCreateError(t('lms.courses.image_upload_error', 'Failed to upload image. Creating course without image.'));
-            // Continue without image
-          }
-        } catch (uploadError) {
-          console.error('Image upload error:', uploadError);
-          setCreateError(t('lms.courses.image_upload_error', 'Failed to upload image. Creating course without image.'));
-          // Continue without image
-        }
-      }
-
+      // First create the course without image
       const courseData = {
         ...newCourse,
-        image_url: uploadedImageUrl,
+        image_url: null, // Will be updated after upload
+        // Convert empty strings to null for date fields
+        start_date: newCourse.start_date || null,
+        end_date: newCourse.end_date || null,
+        program_id: newCourse.program_id || null,
       };
 
       const response = await fetch('/api/lms/courses', {
@@ -348,23 +365,21 @@ export default function CoursesListPage() {
       const result = await response.json();
 
       if (result.success) {
-        // If image was uploaded and course was created, update the course with the courseId
-        if (imageFile && uploadedImageUrl && result.data?.id) {
-          // Re-upload with the courseId for better file organization
+        // Upload image with courseId if there's a file
+        if (imageFile && result.data?.id) {
           try {
-            const finalImageUrl = await uploadCourseImage(imageFile, result.data.id);
-            if (finalImageUrl && finalImageUrl !== uploadedImageUrl) {
-              // Delete the temp image
-              await deleteCourseImage(uploadedImageUrl);
-              // Update course with final image URL
-              await fetch(`/api/lms/courses/${result.data.id}`, {
-                method: 'PUT',
+            const uploadedImageUrl = await uploadCourseImage(imageFile, result.data.id);
+            if (uploadedImageUrl) {
+              // Update the course with the image URL
+              await fetch(`/api/admin/lms/courses/${result.data.id}`, {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image_url: finalImageUrl }),
+                body: JSON.stringify({ image_url: uploadedImageUrl }),
               });
             }
-          } catch (err) {
-            console.error('Failed to update image with courseId:', err);
+          } catch (uploadError) {
+            console.error('Image upload error:', uploadError);
+            // Course is created, just log the error
           }
         }
 
@@ -411,6 +426,7 @@ export default function CoursesListPage() {
     setSelectedCourse(course);
     setEditCourse({
       program_id: course.program_id,
+      instructor_id: course.instructor_id,
       title: course.title,
       description: course.description || '',
       start_date: course.start_date?.split('T')[0] || course.start_date,
@@ -496,6 +512,10 @@ export default function CoursesListPage() {
       const courseData = {
         ...editCourse,
         image_url: finalImageUrl,
+        // Convert empty strings to null for date fields
+        start_date: editCourse.start_date || null,
+        end_date: editCourse.end_date || null,
+        program_id: editCourse.program_id || null,
       };
 
       const response = await fetch(`/api/lms/courses/${selectedCourse.id}`, {
@@ -590,10 +610,19 @@ export default function CoursesListPage() {
 
     try {
       setDuplicateLoading(true);
+
+      const courseData = {
+        ...duplicateCourse,
+        // Convert empty strings to null for date fields
+        start_date: duplicateCourse.start_date || null,
+        end_date: duplicateCourse.end_date || null,
+        program_id: duplicateCourse.program_id || null,
+      };
+
       const response = await fetch('/api/lms/courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(duplicateCourse),
+        body: JSON.stringify(courseData),
       });
 
       const result = await response.json();
@@ -866,9 +895,9 @@ export default function CoursesListPage() {
         ) : viewMode === 'grid' ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {courses.map((course) => (
-              <Card key={course.id} className="relative overflow-hidden">
+              <Card key={course.id} className="relative overflow-hidden flex flex-col">
                 {course.image_url && (
-                  <div className="h-48 w-full overflow-hidden bg-muted">
+                  <div className="h-40 w-full overflow-hidden bg-muted flex-shrink-0">
                     <img
                       src={course.image_url}
                       alt={course.title}
@@ -877,21 +906,24 @@ export default function CoursesListPage() {
                   </div>
                 )}
                 {!course.image_url && (
-                  <div className="h-48 w-full bg-muted flex items-center justify-center">
-                    <Image className="h-16 w-16 text-muted-foreground/50" />
+                  <div className="h-40 w-full bg-muted flex items-center justify-center flex-shrink-0">
+                    <Image className="h-12 w-12 text-muted-foreground/50" />
                   </div>
                 )}
-                <CardHeader>
+                <CardHeader className="flex-shrink-0">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <CardTitle className="text-xl">{course.title}</CardTitle>
-                      {course.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-                          {course.description}
-                        </p>
-                      )}
+                      <CardTitle className="text-xl line-clamp-2">{course.title}</CardTitle>
+                      <div className="h-10 mt-2">
+                        {course.description && (
+                          <div
+                            className="text-sm text-muted-foreground line-clamp-2"
+                            dangerouslySetInnerHTML={{ __html: course.description }}
+                          />
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 flex-shrink-0">
                       <Badge variant={course.is_active ? 'default' : 'secondary'}>
                         {course.is_active
                           ? t('lms.courses.active', 'Active')
@@ -901,7 +933,7 @@ export default function CoursesListPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex-1 flex flex-col">
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -939,7 +971,7 @@ export default function CoursesListPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2 mt-4">
+                  <div className="space-y-2 mt-auto pt-4">
                     <Button
                       variant="default"
                       size="sm"
@@ -949,24 +981,26 @@ export default function CoursesListPage() {
                       <BookOpen className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
                       <span suppressHydrationWarning>{t('lms.courses.manage', 'Manage Course')}</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => router.push(`/admin/lms/courses/${course.id}/grading/gradebook`)}
-                    >
-                      <GraduationCap className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                      <span suppressHydrationWarning>{t('lms.courses.gradebook', 'Gradebook')}</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => router.push(`/admin/lms/courses/${course.id}/attendance`)}
-                    >
-                      <UserCheck className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
-                      <span suppressHydrationWarning>{t('lms.courses.attendance', 'Attendance')}</span>
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => router.push(`/admin/lms/courses/${course.id}/grading/gradebook`)}
+                      >
+                        <GraduationCap className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
+                        <span suppressHydrationWarning>{t('lms.courses.gradebook', 'Gradebook')}</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => router.push(`/admin/lms/courses/${course.id}/attendance`)}
+                      >
+                        <UserCheck className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
+                        <span suppressHydrationWarning>{t('lms.courses.attendance', 'Attendance')}</span>
+                      </Button>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -1009,6 +1043,38 @@ export default function CoursesListPage() {
                     gap: '1rem',
                     alignItems: isMobile ? 'stretch' : 'flex-start'
                   }}>
+                    {/* Course Image */}
+                    <div style={{
+                      width: isMobile ? '100%' : '160px',
+                      height: '160px',
+                      flexShrink: 0,
+                      borderRadius: 'calc(var(--radius) * 1.5)',
+                      overflow: 'hidden',
+                      backgroundColor: 'hsl(var(--muted))'
+                    }}>
+                      {course.image_url ? (
+                        <img
+                          src={course.image_url}
+                          alt={course.title}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover'
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Image className="h-12 w-12 text-muted-foreground/50" />
+                        </div>
+                      )}
+                    </div>
+
                     {/* Course Info - Left Side */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{
@@ -1041,17 +1107,18 @@ export default function CoursesListPage() {
                       </div>
 
                       {course.description && (
-                        <p style={{
-                          fontSize: 'var(--font-size-sm)',
-                          color: 'hsl(var(--muted-foreground))',
-                          marginBottom: '0.75rem',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical' as any,
-                          overflow: 'hidden'
-                        }}>
-                          {course.description}
-                        </p>
+                        <div
+                          style={{
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'hsl(var(--muted-foreground))',
+                            marginBottom: '0.75rem',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical' as any,
+                            overflow: 'hidden'
+                          }}
+                          dangerouslySetInnerHTML={{ __html: course.description }}
+                        />
                       )}
 
                       <div style={{
@@ -1406,6 +1473,29 @@ export default function CoursesListPage() {
                     {t('lms.courses.program_help', 'Select the program this course belongs to')}
                   </p>
                 ) : null}
+              </div>
+
+              {/* Instructor Selector */}
+              <div>
+                <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'} mb-2`}>
+                  <span suppressHydrationWarning>{t('lms.courses.instructor', 'Instructor')}</span>
+                </label>
+                <Combobox
+                  value={newCourse.instructor_id || ''}
+                  onValueChange={(value) => {
+                    setNewCourse({ ...newCourse, instructor_id: value || undefined });
+                  }}
+                  options={users.map((user) => ({
+                    value: user.id,
+                    label: user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : user.email
+                  }))}
+                  placeholder={t('lms.courses.select_instructor', 'Select an instructor (optional)')}
+                  searchPlaceholder={t('common.search', 'Search...')}
+                  emptyText={t('lms.courses.no_users', 'No users available')}
+                />
+                <p className={`text-xs text-muted-foreground mt-1 ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
+                  {t('lms.courses.instructor_help', 'Leave empty to set yourself as the instructor')}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1810,6 +1900,29 @@ export default function CoursesListPage() {
                     {t('lms.courses.program_help', 'Select the program this course belongs to')}
                   </p>
                 ) : null}
+              </div>
+
+              {/* Instructor Selector */}
+              <div>
+                <label className={`text-sm font-medium block ${isRtl ? 'text-right' : 'text-left'} mb-2`}>
+                  <span suppressHydrationWarning>{t('lms.courses.instructor', 'Instructor')}</span>
+                </label>
+                <Combobox
+                  value={editCourse.instructor_id || ''}
+                  onValueChange={(value) => {
+                    setEditCourse({ ...editCourse, instructor_id: value || undefined });
+                  }}
+                  options={users.map((user) => ({
+                    value: user.id,
+                    label: user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : user.email
+                  }))}
+                  placeholder={t('lms.courses.select_instructor', 'Select an instructor (optional)')}
+                  searchPlaceholder={t('common.search', 'Search...')}
+                  emptyText={t('lms.courses.no_users', 'No users available')}
+                />
+                <p className={`text-xs text-muted-foreground mt-1 ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
+                  {t('lms.courses.instructor_help', 'Leave empty to set yourself as the instructor')}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

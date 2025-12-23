@@ -14,6 +14,12 @@ async function showAllTooltips() {
     console.log('='.repeat(70));
 
     const { data: tenants } = await supabase.from('tenants').select('id').limit(1).single();
+
+    if (!tenants) {
+      console.error('No tenant found');
+      return;
+    }
+
     const { data: tooltips } = await supabase
       .from('translations')
       .select('translation_key, language_code, translation_value')

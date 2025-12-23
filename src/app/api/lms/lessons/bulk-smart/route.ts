@@ -6,7 +6,99 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { lessonService } from '@/lib/lms/lessonService.server';
 import { ZoomService } from '@/lib/zoom/zoomService';
+import { dailyService } from '@/lib/daily/dailyService';
 import { createAdminClient } from '@/lib/supabase/server';
+
+/**
+ * Replace all tokens in a pattern with actual values
+ */
+function replaceAllTokens(
+  pattern: string,
+  lessonNumber: number,
+  seriesName: string,
+  courseName: string,
+  startTime: Date | null,
+  timezone: string
+): string {
+  let result = pattern;
+
+  // Replace basic tokens
+  result = result.replace(/\{n\}/g, lessonNumber.toString());
+  result = result.replace(/\{series_name\}/g, seriesName);
+  result = result.replace(/\{course_name\}/g, courseName);
+
+  if (startTime) {
+    const date = new Date(startTime);
+
+    // Format date tokens
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    // {date} - YYYY-MM-DD
+    result = result.replace(/\{date\}/g, `${year}-${month}-${day}`);
+
+    // {date_short} - DD/MM
+    result = result.replace(/\{date_short\}/g, `${day}/${month}`);
+
+    // {dd} - Day of month (01-31)
+    result = result.replace(/\{dd\}/g, day);
+
+    // {mm} - Month number (01-12)
+    result = result.replace(/\{mm\}/g, month);
+
+    // {date_long} - Full date with day name (localized)
+    try {
+      const dateLong = date.toLocaleDateString('he-IL', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: timezone || 'UTC'
+      });
+      result = result.replace(/\{date_long\}/g, dateLong);
+    } catch (e) {
+      console.error('Error formatting date_long:', e);
+    }
+
+    // {time} - HH:MM
+    result = result.replace(/\{time\}/g, `${hours}:${minutes}`);
+
+    // {time_12h} - 12-hour format
+    const hours12 = date.getHours() % 12 || 12;
+    const ampm = date.getHours() >= 12 ? 'PM' : 'AM';
+    result = result.replace(/\{time_12h\}/g, `${hours12}:${minutes} ${ampm}`);
+
+    // {day} - Day of week
+    try {
+      const dayName = date.toLocaleDateString('he-IL', {
+        weekday: 'long',
+        timeZone: timezone || 'UTC'
+      });
+      result = result.replace(/\{day\}/g, dayName);
+    } catch (e) {
+      console.error('Error formatting day:', e);
+    }
+
+    // {month} - Month name
+    try {
+      const monthName = date.toLocaleDateString('he-IL', {
+        month: 'long',
+        timeZone: timezone || 'UTC'
+      });
+      result = result.replace(/\{month\}/g, monthName);
+    } catch (e) {
+      console.error('Error formatting month:', e);
+    }
+
+    // {year} - Year
+    result = result.replace(/\{year\}/g, year.toString());
+  }
+
+  return result;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,11 +119,16 @@ export async function POST(request: NextRequest) {
       duration_minutes,
       timezone,
       starting_order,
+      // Video meeting platform
+      meeting_platform = 'zoom', // 'zoom' or 'daily'
       create_zoom_meetings,
+      create_daily_rooms,
       zoom_topic_pattern,
       zoom_agenda,
       zoom_recurring,
       recurrence_type,
+      // Daily.co settings
+      daily_room_pattern,
       // Zoom Security Settings
       zoom_passcode,
       zoom_waiting_room,
@@ -46,6 +143,8 @@ export async function POST(request: NextRequest) {
       zoom_auto_recording,
       zoom_record_speaker_view,
       zoom_recording_disclaimer,
+      // Publish settings
+      is_published = false,
     } = body;
 
     // Calculate lesson dates if not provided
@@ -198,7 +297,7 @@ export async function POST(request: NextRequest) {
         duration: duration_minutes,
         timezone: timezone || 'UTC',
         order,
-        is_published: false, // Start as draft
+        is_published: is_published, // Use the provided publish setting
 
         // Zoom Security Settings
         zoom_passcode: zoom_passcode || null,
@@ -250,30 +349,15 @@ export async function POST(request: NextRequest) {
             const lesson = createdLessons[i];
             const lessonNumber = i + 1;
 
-            // Format date for this lesson
-            let dateStr = '';
-            if (lesson.start_time) {
-              try {
-                const startDate = new Date(lesson.start_time);
-                const dateOptions: Intl.DateTimeFormatOptions = {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  timeZone: timezone || 'UTC'
-                };
-                dateStr = startDate.toLocaleString('he-IL', dateOptions);
-              } catch (e) {
-                console.error('Error formatting date:', e);
-              }
-            }
-
-            const zoomTopic = zoom_topic_pattern
-              .replace('{n}', lessonNumber.toString())
-              .replace('{series_name}', series_name)
-              .replace('{course_name}', courseName)
-              .replace('{date}', dateStr);
+            // Replace all tokens in Zoom topic
+            const zoomTopic = replaceAllTokens(
+              zoom_topic_pattern,
+              lessonNumber,
+              series_name,
+              courseName,
+              lesson.start_time ? new Date(lesson.start_time) : null,
+              timezone || 'UTC'
+            );
 
             try {
               const zoomResult = await zoomService.createMeetingForLesson(
@@ -320,30 +404,15 @@ export async function POST(request: NextRequest) {
           const lesson = createdLessons[i];
           const lessonNumber = i + 1;
 
-          // Format date for this lesson
-          let dateStr = '';
-          if (lesson.start_time) {
-            try {
-              const startDate = new Date(lesson.start_time);
-              const dateOptions: Intl.DateTimeFormatOptions = {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: timezone || 'UTC'
-              };
-              dateStr = startDate.toLocaleString('he-IL', dateOptions);
-            } catch (e) {
-              console.error('Error formatting date:', e);
-            }
-          }
-
-          const zoomTopic = zoom_topic_pattern
-            .replace('{n}', lessonNumber.toString())
-            .replace('{series_name}', series_name)
-            .replace('{course_name}', courseName)
-            .replace('{date}', dateStr);
+          // Replace all tokens in Zoom topic
+          const zoomTopic = replaceAllTokens(
+            zoom_topic_pattern,
+            lessonNumber,
+            series_name,
+            courseName,
+            lesson.start_time ? new Date(lesson.start_time) : null,
+            timezone || 'UTC'
+          );
 
           try {
             const zoomResult = await zoomService.createMeetingForLesson(
@@ -383,9 +452,90 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Re-fetch lessons to get updated Zoom meeting IDs
+    // Create Daily.co rooms if requested
+    let dailySuccessCount = 0;
+    let dailyFailCount = 0;
+
+    if (create_daily_rooms) {
+      const supabase = createAdminClient();
+
+      // Get integration settings for expiry hours
+      const { data: integration } = await supabase
+        .from('integrations')
+        .select('settings')
+        .eq('integration_key', 'daily')
+        .single();
+
+      const defaultExpiryHours = integration?.settings?.default_expiry_hours || (24 * 180); // Default: 6 months
+
+      for (let i = 0; i < createdLessons.length; i++) {
+        const lesson = createdLessons[i];
+        const lessonNumber = i + 1;
+
+        try {
+          // Generate room name from pattern with all tokens replaced
+          let roomName = replaceAllTokens(
+            daily_room_pattern || '{series_name}-session-{n}',
+            lessonNumber,
+            series_name,
+            courseName,
+            lesson.start_time ? new Date(lesson.start_time) : null,
+            timezone || 'UTC'
+          );
+
+          // Sanitize room name for Daily.co (lowercase, hyphens, no special chars)
+          roomName = roomName
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9-]/g, '')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+
+          // Add unique suffix to ensure uniqueness
+          roomName = `${roomName}-${lesson.id.substring(0, 8)}`;
+
+          console.log(`[Daily.co] Creating room for lesson ${lesson.id}:`, roomName);
+
+          // Create Daily.co room
+          const room = await dailyService.createRoom(roomName, {
+            privacy: 'private',
+            expiresInHours: defaultExpiryHours,
+            enableRecording: false, // Disabled by default (requires paid plan)
+          });
+
+          console.log(`[Daily.co] Room created for lesson ${lesson.id}:`, room.url);
+
+          // Save room info to database
+          const { error: insertError } = await supabase
+            .from('zoom_sessions')
+            .insert({
+              tenant_id: tenantId,
+              lesson_id: lesson.id,
+              daily_room_name: room.name,
+              daily_room_url: room.url,
+              daily_room_id: room.id,
+              platform: 'daily',
+            });
+
+          if (insertError) {
+            console.error(`[Daily.co] Failed to save room for lesson ${lesson.id}:`, insertError);
+            // Try to cleanup the room
+            await dailyService.deleteRoom(room.name).catch(console.error);
+            dailyFailCount++;
+          } else {
+            dailySuccessCount++;
+          }
+        } catch (err) {
+          dailyFailCount++;
+          console.error(`[Daily.co] Error creating room for lesson ${lesson.id}:`, err);
+        }
+      }
+    }
+
+    // Re-fetch lessons to get updated meeting IDs
     let finalLessons = createdLessons;
-    if (create_zoom_meetings && zoomSuccessCount > 0) {
+    if ((create_zoom_meetings && zoomSuccessCount > 0) || (create_daily_rooms && dailySuccessCount > 0)) {
       const supabase = createAdminClient();
       const lessonIds = createdLessons.map(l => l.id);
       const { data: updatedLessons } = await supabase
@@ -409,6 +559,14 @@ export async function POST(request: NextRequest) {
         message += ` (${zoomFailCount} Zoom meetings failed)`;
       }
     }
+    if (create_daily_rooms) {
+      if (dailySuccessCount > 0) {
+        message += ` with ${dailySuccessCount} Daily.co rooms`;
+      }
+      if (dailyFailCount > 0) {
+        message += ` (${dailyFailCount} Daily.co rooms failed)`;
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -418,6 +576,8 @@ export async function POST(request: NextRequest) {
         lessons_created: createdLessons.length,
         zoom_success: zoomSuccessCount,
         zoom_failed: zoomFailCount,
+        daily_success: dailySuccessCount,
+        daily_failed: dailyFailCount,
       },
     });
   } catch (error) {

@@ -413,8 +413,8 @@ export default function GradeRangesPage() {
                       style={{ borderLeftWidth: '4px', borderLeftColor: range.color_code || 'hsl(var(--border))' }}
                     >
                       <div className="flex items-center gap-4 flex-1">
-                        <div className="flex items-center justify-center w-16 h-16 rounded-lg" style={{ backgroundColor: range.color_code + '20' }}>
-                          <span className="text-2xl font-bold" style={{ color: range.color_code }}>{range.grade_label}</span>
+                        <div className="flex items-center justify-center w-16 h-16 rounded-lg" style={{ backgroundColor: (range.color_code || '#000000') + '20' }}>
+                          <span className="text-2xl font-bold" style={{ color: range.color_code || '#000000' }}>{range.grade_label}</span>
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">

@@ -1,0 +1,420 @@
+-- Add Weekly Activity Data to Dashboard Function
+-- This adds real weekly activity data based on user progress
+
+DROP FUNCTION IF EXISTS public.get_user_dashboard_v3(UUID) CASCADE;
+
+CREATE OR REPLACE FUNCTION public.get_user_dashboard_v3(p_user_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tenant_id UUID;
+  v_result JSONB;
+  v_next_session RECORD;
+BEGIN
+  -- Get user's tenant_id
+  SELECT tenant_id INTO v_tenant_id
+  FROM users
+  WHERE id = p_user_id;
+
+  -- Get next upcoming session
+  SELECT
+    l.id,
+    l.title,
+    l.start_time
+  INTO v_next_session
+  FROM lessons l
+  JOIN modules m ON l.module_id = m.id
+  JOIN courses c ON m.course_id = c.id
+  JOIN enrollments e ON e.user_id = p_user_id AND e.status = 'active' AND e.tenant_id = v_tenant_id
+  JOIN products prod ON prod.id = e.product_id AND (
+    prod.course_id = c.id
+    OR
+    EXISTS (
+      SELECT 1 FROM program_courses pc
+      WHERE pc.program_id = prod.program_id
+        AND pc.course_id = c.id
+    )
+  )
+  WHERE l.tenant_id = v_tenant_id
+    AND l.start_time IS NOT NULL
+    AND l.start_time > NOW()
+    AND l.is_published = true
+    AND m.is_published = true
+    AND c.is_active = true
+  ORDER BY l.start_time ASC
+  LIMIT 1;
+
+  -- Build result
+  SELECT jsonb_build_object(
+    'enrollments', (
+      SELECT COALESCE(jsonb_agg(enrollment_data), '[]'::jsonb)
+      FROM (
+        SELECT jsonb_build_object(
+          'id', e.id,
+          'program_id', prod.program_id,
+          'course_id', prod.course_id,
+          'program_name', p.name,
+          'course_name', c.title,
+          'course_description', c.description,
+          'course_image', c.image_url,
+          'enrolled_at', e.enrolled_at,
+          'completed_at', e.completed_at,
+          'overall_progress', COALESCE(
+            (
+              SELECT ROUND(AVG(progress_percentage))
+              FROM user_progress up
+              WHERE up.user_id = p_user_id
+                AND up.enrollment_id = e.id
+            ), 0
+          ),
+          'completed_lessons', COALESCE(
+            (
+              SELECT COUNT(*)
+              FROM user_progress up
+              JOIN lessons l ON l.id = up.lesson_id
+              JOIN modules m ON m.id = l.module_id
+              WHERE up.user_id = p_user_id
+                AND up.enrollment_id = e.id
+                AND up.status = 'completed'
+                AND l.is_published = true
+                AND m.is_published = true
+            ), 0
+          ),
+          'total_lessons', COALESCE(
+            (
+              SELECT COUNT(*)
+              FROM lessons l
+              JOIN modules m ON l.module_id = m.id
+              WHERE m.course_id = COALESCE(prod.course_id, c.id)
+                AND l.is_published = true
+                AND m.is_published = true
+            ), 0
+          )
+        ) as enrollment_data
+        FROM enrollments e
+        JOIN products prod ON prod.id = e.product_id
+        LEFT JOIN programs p ON p.id = prod.program_id
+        LEFT JOIN courses c ON c.id = prod.course_id
+        WHERE e.user_id = p_user_id
+          AND e.status = 'active'
+          AND e.tenant_id = v_tenant_id
+          AND (c.is_active = true OR c.is_active IS NULL)
+        ORDER BY e.enrolled_at DESC
+        LIMIT 10
+      ) enrollments_subquery
+    ),
+    'upcoming_sessions', (
+      SELECT COALESCE(jsonb_agg(session_data ORDER BY session_start_time ASC), '[]'::jsonb)
+      FROM (
+        SELECT DISTINCT ON (l.id) jsonb_build_object(
+          'id', l.id,
+          'title', l.title,
+          'course_id', c.id,
+          'course_name', c.title,
+          'start_time', l.start_time,
+          'end_time', (l.start_time + (l.duration || ' minutes')::interval),
+          'instructor_name', CASE
+            WHEN u.first_name IS NOT NULL AND u.last_name IS NOT NULL
+            THEN u.first_name || ' ' || u.last_name
+            WHEN u.first_name IS NOT NULL
+            THEN u.first_name
+            ELSE u.email
+          END,
+          'zoom_meeting_id', l.zoom_meeting_id,
+          'daily_room_url', zs.daily_room_url,
+          'daily_room_name', zs.daily_room_name,
+          'meeting_platform', CASE
+            WHEN l.zoom_meeting_id IS NOT NULL THEN 'zoom'
+            WHEN zs.daily_room_name IS NOT NULL THEN 'daily'
+            ELSE NULL
+          END
+        ) as session_data,
+        l.start_time as session_start_time,
+        l.id
+        FROM lessons l
+        JOIN modules m ON l.module_id = m.id
+        JOIN courses c ON m.course_id = c.id
+        JOIN enrollments e ON e.user_id = p_user_id AND e.status = 'active' AND e.tenant_id = v_tenant_id
+        JOIN products prod ON prod.id = e.product_id AND (
+          prod.course_id = c.id
+          OR
+          EXISTS (
+            SELECT 1 FROM program_courses pc
+            WHERE pc.program_id = prod.program_id
+              AND pc.course_id = c.id
+          )
+        )
+        LEFT JOIN users u ON u.id = c.instructor_id
+        LEFT JOIN zoom_sessions zs ON zs.lesson_id = l.id
+        WHERE l.tenant_id = v_tenant_id
+          AND l.start_time IS NOT NULL
+          AND l.start_time > NOW()
+          AND (l.zoom_meeting_id IS NOT NULL OR zs.daily_room_name IS NOT NULL)
+          AND l.is_published = true
+          AND m.is_published = true
+          AND c.is_active = true
+        ORDER BY l.id, l.start_time ASC
+        LIMIT 5
+      ) sessions_subquery
+    ),
+    'recent_attendance', (
+      SELECT COALESCE(jsonb_agg(attendance_data ORDER BY att_date DESC), '[]'::jsonb)
+      FROM (
+        SELECT
+          jsonb_build_object(
+            'id', a.id,
+            'course_id', a.course_id,
+            'course_name', c.title,
+            'lesson_id', a.lesson_id,
+            'lesson_title', l.title,
+            'attendance_date', a.attendance_date,
+            'status', a.status,
+            'notes', a.notes
+          ) as attendance_data,
+          a.attendance_date as att_date
+        FROM attendance a
+        JOIN courses c ON c.id = a.course_id
+        LEFT JOIN lessons l ON l.id = a.lesson_id
+        WHERE a.student_id = p_user_id
+          AND a.tenant_id = v_tenant_id
+          AND c.is_active = true
+        ORDER BY a.attendance_date DESC
+        LIMIT 30
+      ) attendance_subquery
+    ),
+    'pending_assignments', '[]'::jsonb,
+    'stats', jsonb_build_object(
+      -- Legacy stats (for backwards compatibility)
+      'total_courses', (
+        SELECT COUNT(DISTINCT c.id)
+        FROM enrollments e
+        JOIN products prod ON prod.id = e.product_id
+        LEFT JOIN courses c ON (
+          c.id = prod.course_id
+          OR
+          EXISTS (
+            SELECT 1 FROM program_courses pc
+            WHERE pc.program_id = prod.program_id
+              AND pc.course_id = c.id
+          )
+        )
+        WHERE e.user_id = p_user_id
+          AND e.status = 'active'
+          AND e.tenant_id = v_tenant_id
+          AND c.id IS NOT NULL
+          AND c.is_active = true
+          AND c.is_published = true
+      ),
+      'completed_lessons', (
+        SELECT COUNT(*)
+        FROM user_progress up
+        JOIN lessons l ON l.id = up.lesson_id
+        JOIN modules m ON m.id = l.module_id
+        WHERE up.user_id = p_user_id
+          AND up.status = 'completed'
+          AND up.tenant_id = v_tenant_id
+          AND l.is_published = true
+          AND m.is_published = true
+      ),
+      'in_progress_lessons', (
+        SELECT COUNT(*)
+        FROM user_progress up
+        JOIN lessons l ON l.id = up.lesson_id
+        JOIN modules m ON m.id = l.module_id
+        WHERE up.user_id = p_user_id
+          AND up.status = 'in_progress'
+          AND up.tenant_id = v_tenant_id
+          AND l.is_published = true
+          AND m.is_published = true
+      ),
+      'pending_assignments', 0,
+      'total_attendance', (
+        SELECT COUNT(*)
+        FROM attendance a
+        WHERE a.student_id = p_user_id
+          AND a.tenant_id = v_tenant_id
+      ),
+      'attendance_present', (
+        SELECT COUNT(*)
+        FROM attendance a
+        WHERE a.student_id = p_user_id
+          AND a.tenant_id = v_tenant_id
+          AND a.status = 'present'
+      ),
+      'attendance_rate', (
+        SELECT CASE
+          WHEN COUNT(*) > 0 THEN
+            ROUND((COUNT(*) FILTER (WHERE status = 'present')::NUMERIC / COUNT(*) * 100), 1)
+          ELSE 0
+        END
+        FROM attendance a
+        WHERE a.student_id = p_user_id
+          AND a.tenant_id = v_tenant_id
+      ),
+      -- NEW IMPROVED STATS
+      'total_hours_spent', COALESCE((
+        SELECT ROUND((SUM(time_spent_seconds) / 3600.0)::NUMERIC, 1)
+        FROM user_progress up
+        JOIN lessons l ON l.id = up.lesson_id
+        JOIN modules m ON m.id = l.module_id
+        WHERE up.user_id = p_user_id
+          AND up.tenant_id = v_tenant_id
+          AND l.is_published = true
+          AND m.is_published = true
+      ), 0),
+      'completion_rate', (
+        SELECT CASE
+          WHEN COUNT(DISTINCT c.id) > 0 THEN
+            ROUND((COUNT(DISTINCT c.id) FILTER (WHERE e.completed_at IS NOT NULL)::NUMERIC /
+                   COUNT(DISTINCT c.id) * 100), 1)
+          ELSE 0
+        END
+        FROM enrollments e
+        JOIN products prod ON prod.id = e.product_id
+        LEFT JOIN courses c ON (
+          c.id = prod.course_id
+          OR
+          EXISTS (
+            SELECT 1 FROM program_courses pc
+            WHERE pc.program_id = prod.program_id
+              AND pc.course_id = c.id
+          )
+        )
+        WHERE e.user_id = p_user_id
+          AND e.tenant_id = v_tenant_id
+          AND c.id IS NOT NULL
+          AND c.is_active = true
+      ),
+      'completed_courses', (
+        SELECT COUNT(DISTINCT c.id)
+        FROM enrollments e
+        JOIN products prod ON prod.id = e.product_id
+        LEFT JOIN courses c ON (
+          c.id = prod.course_id
+          OR
+          EXISTS (
+            SELECT 1 FROM program_courses pc
+            WHERE pc.program_id = prod.program_id
+              AND pc.course_id = c.id
+          )
+        )
+        WHERE e.user_id = p_user_id
+          AND e.completed_at IS NOT NULL
+          AND e.tenant_id = v_tenant_id
+          AND c.id IS NOT NULL
+      ),
+      'upcoming_sessions_count', (
+        SELECT COUNT(DISTINCT l.id)
+        FROM lessons l
+        JOIN modules m ON l.module_id = m.id
+        JOIN courses c ON m.course_id = c.id
+        JOIN enrollments e ON e.user_id = p_user_id AND e.status = 'active' AND e.tenant_id = v_tenant_id
+        JOIN products prod ON prod.id = e.product_id AND (
+          prod.course_id = c.id
+          OR
+          EXISTS (
+            SELECT 1 FROM program_courses pc
+            WHERE pc.program_id = prod.program_id
+              AND pc.course_id = c.id
+          )
+        )
+        WHERE l.tenant_id = v_tenant_id
+          AND l.start_time IS NOT NULL
+          AND l.start_time >= CURRENT_DATE
+          AND l.start_time < CURRENT_DATE + INTERVAL '7 days'
+          AND l.is_published = true
+          AND m.is_published = true
+          AND c.is_active = true
+      ),
+      'next_session_time', v_next_session.start_time,
+      'next_session_title', v_next_session.title,
+      -- Streak stats
+      'current_streak', 0,
+      'longest_streak', 0,
+      'last_activity_date', (
+        SELECT MAX(up.updated_at)::DATE
+        FROM user_progress up
+        WHERE up.user_id = p_user_id
+          AND up.tenant_id = v_tenant_id
+      )
+    ),
+    'recent_activity', (
+      SELECT COALESCE(jsonb_agg(activity_data ORDER BY activity_timestamp DESC), '[]'::jsonb)
+      FROM (
+        SELECT jsonb_build_object(
+          'id', up.id,
+          'type', 'lesson_progress',
+          'lesson_title', l.title,
+          'course_name', c.title,
+          'status', up.status,
+          'timestamp', up.updated_at
+        ) as activity_data,
+        up.updated_at as activity_timestamp
+        FROM user_progress up
+        JOIN lessons l ON l.id = up.lesson_id
+        JOIN modules m ON l.module_id = m.id
+        JOIN courses c ON m.course_id = c.id
+        WHERE up.user_id = p_user_id
+          AND up.tenant_id = v_tenant_id
+          AND l.is_published = true
+          AND m.is_published = true
+          AND c.is_active = true
+        ORDER BY up.updated_at DESC
+        LIMIT 5
+      ) activity_subquery
+    ),
+    -- NEW: Weekly Activity Data
+    'weekly_activity', (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'day', day_name,
+          'hours', COALESCE(daily_hours, 0),
+          'lessons', COALESCE(daily_lessons, 0)
+        ) ORDER BY day_index
+      )
+      FROM (
+        SELECT
+          CASE day_index
+            WHEN 0 THEN 'Mon'
+            WHEN 1 THEN 'Tue'
+            WHEN 2 THEN 'Wed'
+            WHEN 3 THEN 'Thu'
+            WHEN 4 THEN 'Fri'
+            WHEN 5 THEN 'Sat'
+            WHEN 6 THEN 'Sun'
+          END as day_name,
+          day_index,
+          COALESCE(
+            ROUND((SUM(up.time_spent_seconds) / 3600.0)::NUMERIC, 1),
+            0
+          ) as daily_hours,
+          COUNT(DISTINCT up.lesson_id) as daily_lessons
+        FROM generate_series(0, 6) as day_index
+        LEFT JOIN user_progress up ON
+          up.user_id = p_user_id
+          AND up.tenant_id = v_tenant_id
+          AND EXTRACT(DOW FROM up.updated_at::DATE) = (day_index + 1) % 7
+          AND up.updated_at >= CURRENT_DATE - INTERVAL '7 days'
+        GROUP BY day_index
+        ORDER BY day_index
+      ) weekly_data
+    )
+  ) INTO v_result;
+
+  RETURN v_result;
+END;
+$$;
+
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION public.get_user_dashboard_v3(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_dashboard_v3(UUID) TO anon;
+
+-- Add comment
+COMMENT ON FUNCTION public.get_user_dashboard_v3(UUID) IS 'Dashboard V3 - Improved student-focused statistics with weekly activity';
+
+-- Force PostgREST to reload schema cache
+NOTIFY pgrst, 'reload schema';

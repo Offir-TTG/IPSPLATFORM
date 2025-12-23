@@ -744,7 +744,29 @@ export default function ProgramsPage() {
                     gap: '1rem',
                     alignItems: isMobile ? 'stretch' : 'flex-start'
                   }}>
-                    {/* Program Info - Left Side */}
+                    {/* Program Image - Left Side */}
+                    {program.image_url && (
+                      <div style={{
+                        width: isMobile ? '100%' : '120px',
+                        height: isMobile ? '180px' : '120px',
+                        flexShrink: 0,
+                        borderRadius: 'var(--radius)',
+                        overflow: 'hidden',
+                        backgroundColor: 'hsl(var(--muted))'
+                      }}>
+                        <img
+                          src={program.image_url}
+                          alt={program.name}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover'
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Program Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{
                         display: 'flex',

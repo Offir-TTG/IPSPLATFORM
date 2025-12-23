@@ -45,14 +45,6 @@ export async function GET(
     const lessonId = searchParams.get('lesson_id');
     const studentId = searchParams.get('student_id');
 
-    console.log('🔍 GET attendance API called:', {
-      courseId: params.id,
-      tenantId: userData.tenant_id,
-      date,
-      lessonId,
-      studentId
-    });
-
     // Build query
     let query = supabase
       .from('attendance')
@@ -91,16 +83,6 @@ export async function GET(
         { status: 500 }
       );
     }
-
-    console.log('📊 Attendance query result:', {
-      count: attendance?.length || 0,
-      records: attendance?.map(a => ({
-        student_id: a.student_id,
-        lesson_id: a.lesson_id,
-        status: a.status,
-        date: a.attendance_date
-      }))
-    });
 
     return NextResponse.json({ success: true, data: attendance });
   } catch (error) {
@@ -152,14 +134,6 @@ export async function POST(
     const body: BulkAttendanceInput = await request.json();
     const { course_id, lesson_id, attendance_date, records } = body;
 
-    console.log('💾 POST attendance request:', {
-      course_id,
-      lesson_id,
-      attendance_date,
-      recordsCount: records.length,
-      records
-    });
-
     // Validate course_id matches params
     if (course_id !== params.id) {
       return NextResponse.json(
@@ -195,22 +169,31 @@ export async function POST(
     }
 
     // Prepare records for upsert
-    const attendanceRecords = records.map((record) => ({
-      tenant_id: userData.tenant_id,
-      course_id: params.id,
-      lesson_id: record.lesson_id || lesson_id || null,
-      student_id: record.student_id,
-      attendance_date,
-      status: record.status,
-      notes: record.notes || null,
-      recorded_by: user.id,
-    }));
+    const attendanceRecords = records.map((record) => {
+      const data: any = {
+        tenant_id: userData.tenant_id,
+        course_id: params.id,
+        lesson_id: record.lesson_id || lesson_id || null,
+        student_id: record.student_id,
+        attendance_date,
+        status: record.status,
+        notes: record.notes || null,
+        recorded_by: user.id,
+      };
 
-    // Upsert attendance records
+      // Include ID if provided (for updates)
+      if (record.id) {
+        data.id = record.id;
+      }
+
+      return data;
+    });
+
+    // Upsert attendance records - when ID is provided, Supabase updates; otherwise inserts
     const { data: upsertedRecords, error: upsertError } = await supabase
       .from('attendance')
       .upsert(attendanceRecords, {
-        onConflict: 'tenant_id,course_id,lesson_id,student_id,attendance_date',
+        onConflict: 'id',
         ignoreDuplicates: false,
       })
       .select();
@@ -232,11 +215,6 @@ export async function POST(
         { status: 500 }
       );
     }
-
-    console.log('✅ Attendance saved successfully:', {
-      count: upsertedRecords?.length || 0,
-      records: upsertedRecords
-    });
 
     return NextResponse.json({
       success: true,

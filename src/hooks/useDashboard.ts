@@ -1,11 +1,36 @@
 import { useQuery } from '@tanstack/react-query';
 
 export interface DashboardStats {
+  // Legacy fields (keeping for backwards compatibility)
   total_courses: number;
   completed_lessons: number;
   in_progress_lessons: number;
   pending_assignments: number;
-  total_hours_spent: number;
+  total_attendance: number;
+  attendance_present: number;
+  attendance_rate: number;
+
+  // New improved stats
+  total_hours_spent: number; // Total study hours (all time)
+  completion_rate: number; // Course completion percentage
+  completed_courses: number; // Number of completed courses
+  upcoming_sessions_count: number; // Sessions this week
+  next_session_time: string | null; // Next session datetime
+  next_session_title: string | null; // Next session title
+
+  // Streak and engagement
+  current_streak: number; // Current learning streak (days)
+  longest_streak: number; // Longest learning streak (days)
+  last_activity_date: string | null; // Last learning activity date
+
+  // Total lessons across all enrollments
+  total_lessons?: number;
+}
+
+export interface WeeklyActivityData {
+  day: string;
+  hours: number;
+  lessons: number;
 }
 
 export interface Enrollment {
@@ -21,16 +46,21 @@ export interface Enrollment {
   overall_progress: number;
   completed_lessons: number;
   total_lessons: number;
+  total_hours?: number; // Total duration of all lessons in hours
 }
 
 export interface UpcomingSession {
   id: string;
   title: string;
+  course_id: string;
   course_name: string;
   start_time: string;
   end_time: string;
   instructor_name: string | null;
-  zoom_meeting_id: string;
+  zoom_meeting_id: string | null;
+  daily_room_url: string | null;
+  daily_room_name: string | null;
+  meeting_platform: 'zoom' | 'daily' | null;
 }
 
 export interface PendingAssignment {
@@ -41,6 +71,17 @@ export interface PendingAssignment {
   max_score: number;
   status: 'pending' | 'submitted' | 'graded';
   is_overdue: boolean;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  course_id: string;
+  course_name: string;
+  lesson_id: string | null;
+  lesson_title: string | null;
+  attendance_date: string; // DATE format (YYYY-MM-DD)
+  status: 'present' | 'absent' | 'late' | 'excused';
+  notes: string | null;
 }
 
 export interface RecentActivity {
@@ -56,8 +97,10 @@ export interface DashboardData {
   enrollments: Enrollment[];
   upcoming_sessions: UpcomingSession[];
   pending_assignments: PendingAssignment[];
+  recent_attendance: AttendanceRecord[];
   stats: DashboardStats;
   recent_activity: RecentActivity[];
+  weekly_activity?: WeeklyActivityData[];
 }
 
 async function fetchDashboard(): Promise<DashboardData> {

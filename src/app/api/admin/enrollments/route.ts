@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     // Get query parameters for filtering
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get('product_id');
+    const programId = searchParams.get('program_id');
     const userId = searchParams.get('user_id');
     const status = searchParams.get('status');
     const paymentStatus = searchParams.get('paymentStatus');
@@ -202,6 +203,15 @@ export async function GET(request: NextRequest) {
         e.user_email.toLowerCase().includes(searchLower) ||
         e.product_name.toLowerCase().includes(searchLower)
       );
+    }
+
+    // Apply program_id filter if provided (filter by program within product)
+    if (programId) {
+      enrollments = enrollments.filter((e: any) => {
+        const enrollment: any = data?.find((d: any) => d.id === e.id);
+        // Check if product has a program reference that matches the programId
+        return enrollment?.product?.program?.id === programId;
+      });
     }
 
     return NextResponse.json({ enrollments });

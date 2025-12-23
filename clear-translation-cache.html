@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Translation Cache</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+            display: none;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Translation Cache Manager</h1>
+
+        <div class="info">
+            <strong>Current Settings:</strong>
+            <pre id="currentSettings"></pre>
+        </div>
+
+        <h2>Actions:</h2>
+
+        <button onclick="clearCache()">Clear Translation Cache</button>
+        <button onclick="setHebrewLanguage()">Set Admin Language to Hebrew</button>
+        <button onclick="setEnglishLanguage()">Set Admin Language to English</button>
+        <button onclick="clearAllAndReload()">Clear Cache & Set Hebrew & Reload</button>
+
+        <div class="success" id="successMsg"></div>
+
+        <h2>Cache Contents:</h2>
+        <pre id="cacheContents"></pre>
+    </div>
+
+    <script>
+        function updateDisplay() {
+            const settings = {
+                admin_language: localStorage.getItem('admin_language') || 'not set',
+                user_language: localStorage.getItem('user_language') || 'not set',
+            };
+            document.getElementById('currentSettings').textContent = JSON.stringify(settings, null, 2);
+
+            // Show all translation cache keys
+            const cacheKeys = Object.keys(localStorage)
+                .filter(key => key.startsWith('translations_'))
+                .map(key => {
+                    const value = localStorage.getItem(key);
+                    try {
+                        const parsed = JSON.parse(value);
+                        return {
+                            key,
+                            version: parsed.version,
+                            timestamp: new Date(parsed.timestamp).toLocaleString(),
+                            translationCount: Object.keys(parsed.data).length
+                        };
+                    } catch {
+                        return { key, error: 'Invalid JSON' };
+                    }
+                });
+            document.getElementById('cacheContents').textContent = JSON.stringify(cacheKeys, null, 2);
+        }
+
+        function showSuccess(message) {
+            const msg = document.getElementById('successMsg');
+            msg.textContent = message;
+            msg.style.display = 'block';
+            setTimeout(() => { msg.style.display = 'none'; }, 3000);
+        }
+
+        function clearCache() {
+            const keys = Object.keys(localStorage).filter(key => key.startsWith('translations_'));
+            keys.forEach(key => localStorage.removeItem(key));
+            showSuccess(`Cleared ${keys.length} cache entries`);
+            updateDisplay();
+        }
+
+        function setHebrewLanguage() {
+            localStorage.setItem('admin_language', 'he');
+            localStorage.setItem('user_language', 'he');
+            showSuccess('Set language to Hebrew (he)');
+            updateDisplay();
+        }
+
+        function setEnglishLanguage() {
+            localStorage.setItem('admin_language', 'en');
+            localStorage.setItem('user_language', 'en');
+            showSuccess('Set language to English (en)');
+            updateDisplay();
+        }
+
+        function clearAllAndReload() {
+            clearCache();
+            setHebrewLanguage();
+            setTimeout(() => {
+                alert('Cache cleared and language set to Hebrew. Page will reload.');
+                window.location.reload();
+            }, 500);
+        }
+
+        // Initial display
+        updateDisplay();
+    </script>
+</body>
+</html>

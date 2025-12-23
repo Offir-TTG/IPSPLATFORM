@@ -27,6 +27,7 @@ import {
   AlertCircle,
   ExternalLink,
   Eye,
+  ChevronDown,
 } from 'lucide-react';
 import {
   Accordion,
@@ -65,6 +66,31 @@ const ZoomRecordingPlayer = dynamicImport(() => import('@/components/zoom/ZoomRe
   ),
 });
 
+// Dynamically import Daily.co components
+const DailyMeetingSDK = dynamicImport(() => import('@/components/daily/DailyMeetingSDK'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full min-h-[400px] bg-gray-900 rounded-lg">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+        <p className="text-white">Loading meeting...</p>
+      </div>
+    </div>
+  ),
+});
+
+const DailyRecordingPlayer = dynamicImport(() => import('@/components/daily/DailyRecordingPlayer'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full min-h-[400px] bg-gray-900 rounded-lg">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+        <p className="text-white">Loading recording...</p>
+      </div>
+    </div>
+  ),
+});
+
 interface LessonTopic {
   id: string;
   title: string;
@@ -89,6 +115,10 @@ interface Lesson {
   recording_url: string | null;
   start_time: string | null;
   status: string | null;
+  platform?: 'zoom' | 'daily' | null;
+  daily_room_name: string | null;
+  daily_room_url: string | null;
+  daily_room_id: string | null;
   lesson_topics: LessonTopic[];
 }
 
@@ -152,7 +182,7 @@ interface CourseData {
 export default function CourseDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { t, direction } = useUserLanguage();
+  const { t, direction, language } = useUserLanguage();
   const courseId = params.id as string;
 
   const [loading, setLoading] = useState(true);
@@ -165,6 +195,27 @@ export default function CourseDetailPage() {
     file_type: string;
     file_name: string;
   } | null>(null);
+
+  // Helper functions for platform detection
+  function getLessonPlatform(lesson: Lesson): 'zoom' | 'daily' | null {
+    if (lesson.platform) return lesson.platform;
+    if (lesson.daily_room_name || lesson.daily_room_url) return 'daily';
+    if (lesson.zoom_meeting_id || lesson.zoom_join_url) return 'zoom';
+    return null;
+  }
+
+  function hasLiveMeeting(lesson: Lesson): boolean {
+    const platform = getLessonPlatform(lesson);
+    return platform === 'zoom'
+      ? !!(lesson.zoom_meeting_id && lesson.zoom_join_url)
+      : platform === 'daily'
+        ? !!lesson.daily_room_url
+        : false;
+  }
+
+  function hasRecording(lesson: Lesson): boolean {
+    return !!lesson.recording_url;
+  }
 
   useEffect(() => {
     loadCourse();
@@ -183,9 +234,6 @@ export default function CourseDetailPage() {
       }
 
       const result = await response.json();
-      console.log('Course data loaded:', result.data);
-      console.log('Modules:', result.data?.modules);
-      console.log('First lesson topics:', result.data?.modules?.[0]?.lessons?.[0]?.lesson_topics);
       setCourseData(result.data);
     } catch (error: any) {
       console.error('Error loading course:', error);
@@ -202,6 +250,14 @@ export default function CourseDetailPage() {
     const progress = courseData.progress.lesson_progress.find(p => p.lesson_id === lessonId);
     if (!progress) return 'not_completed';
     return progress.status === 'completed' ? 'completed' : 'not_completed';
+  }
+
+  // Check if HTML content has meaningful text (not just empty tags)
+  function hasHtmlContent(html: string | null | undefined): boolean {
+    if (!html) return false;
+    // Remove HTML tags and check if there's any text content
+    const textContent = html.replace(/<[^>]*>/g, '').trim();
+    return textContent.length > 0;
   }
 
   function getLessonIcon(lessonId: string) {
@@ -559,7 +615,7 @@ export default function CourseDetailPage() {
                       <p>{t('user.courses.content.empty', 'אין תוכן זמין עדיין')}</p>
                     </div>
                   ) : (
-                    <Accordion type="multiple" defaultValue={modules.length > 0 ? [modules[0].id] : []} className="space-y-4">
+                    <Accordion type="multiple" defaultValue={[]} className="space-y-4">
                       {modules.map((module, moduleIndex) => (
                         <AccordionItem key={module.id} value={module.id} className="border-2 rounded-lg">
                           <Card className="border-0">
@@ -595,10 +651,11 @@ export default function CourseDetailPage() {
                                     </Badge>
                                   )}
                                 </div>
-                                {module.description && (
-                                  <p className="text-sm text-muted-foreground ltr:text-left rtl:text-right">
-                                    {module.description}
-                                  </p>
+                                {hasHtmlContent(module.description) && (
+                                  <div
+                                    className="text-sm text-muted-foreground ltr:text-left rtl:text-right prose prose-sm max-w-none dark:prose-invert"
+                                    dangerouslySetInnerHTML={{ __html: module.description || '' }}
+                                  />
                                 )}
                               </div>
                             </AccordionTrigger>
@@ -610,37 +667,52 @@ export default function CourseDetailPage() {
                                     {t('user.courses.content.noLessons', 'No lessons available')}
                                   </p>
                                 ) : (
-                                  module.lessons.map((lesson, lessonIndex) => (
-                                    <div key={lesson.id} className="border-2 rounded-xl overflow-hidden bg-card">
-                                      {/* Lesson Header */}
-                                      <div className="p-5 bg-gradient-to-r from-primary/5 to-primary/10 border-b">
-                                        <div className="flex items-start justify-between gap-4">
-                                          <div className="flex items-start gap-3 flex-1">
-                                            <div className="flex items-center gap-2 flex-shrink-0 mt-1">
-                                              <Switch
-                                                id={`lesson-${lesson.id}`}
-                                                checked={getLessonStatus(lesson.id) === 'completed'}
-                                                onCheckedChange={() => toggleLessonCompletion(lesson.id)}
-                                              />
-                                              <Label
-                                                htmlFor={`lesson-${lesson.id}`}
-                                                className="text-xs font-medium cursor-pointer sr-only"
-                                              >
-                                                {getLessonStatus(lesson.id) === 'completed'
-                                                  ? t('user.courses.markIncomplete', 'Mark as incomplete')
-                                                  : t('user.courses.markComplete', 'Mark as complete')}
-                                              </Label>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-2 mb-2">
-                                                <h4 className="font-bold text-lg">{lesson.title}</h4>
+                                  <Accordion type="multiple" defaultValue={[]} className="space-y-2">
+                                    {module.lessons.map((lesson, lessonIndex) => (
+                                      <AccordionItem key={lesson.id} value={lesson.id} className="border-2 rounded-xl overflow-hidden bg-card">
+                                        {/* Lesson Header - Collapsible Trigger */}
+                                        <AccordionTrigger className="hover:no-underline p-5 bg-gradient-to-r from-primary/5 to-primary/10 [&[data-state=open]]:border-b">
+                                          <div className="flex items-start justify-between gap-4 w-full">
+                                            <div className="flex items-start gap-3 flex-1">
+                                              <div className="flex items-center gap-2 flex-shrink-0 mt-1" onClick={(e) => e.stopPropagation()}>
+                                                <Switch
+                                                  id={`lesson-${lesson.id}`}
+                                                  checked={getLessonStatus(lesson.id) === 'completed'}
+                                                  onCheckedChange={() => toggleLessonCompletion(lesson.id)}
+                                                />
+                                                <Label
+                                                  htmlFor={`lesson-${lesson.id}`}
+                                                  className="text-xs font-medium cursor-pointer sr-only"
+                                                >
+                                                  {getLessonStatus(lesson.id) === 'completed'
+                                                    ? t('user.courses.markIncomplete', 'Mark as incomplete')
+                                                    : t('user.courses.markComplete', 'Mark as complete')}
+                                                </Label>
                                               </div>
-                                              {lesson.description && (
-                                                <p className="text-sm text-muted-foreground leading-relaxed">
-                                                  {lesson.description}
-                                                </p>
-                                              )}
-                                              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                                              <div className="flex-1 min-w-0 text-left">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                  <h4 className="font-bold text-lg">{lesson.title}</h4>
+                                                </div>
+                                                {lesson.description && (
+                                                  <p className="text-sm text-muted-foreground leading-relaxed">
+                                                    {lesson.description}
+                                                  </p>
+                                                )}
+                                                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                                                {lesson.start_time && (
+                                                  <div className="flex items-center gap-1.5">
+                                                    <Calendar className="h-3.5 w-3.5" />
+                                                    <span className="font-medium">
+                                                      {new Date(lesson.start_time).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                        year: 'numeric',
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                      })}
+                                                    </span>
+                                                  </div>
+                                                )}
                                                 {lesson.lesson_topics.length > 0 && (
                                                   <div className="flex items-center gap-1.5">
                                                     <BookOpen className="h-3.5 w-3.5" />
@@ -661,23 +733,13 @@ export default function CourseDetailPage() {
                                               </div>
                                             </div>
                                           </div>
-                                          <Badge
-                                            variant={
-                                              getLessonStatus(lesson.id) === 'completed'
-                                                ? 'default'
-                                                : 'secondary'
-                                            }
-                                            className="flex-shrink-0"
-                                          >
-                                            {getLessonStatus(lesson.id) === 'completed'
-                                              ? t('user.courses.status.completed', 'Completed')
-                                              : t('user.courses.status.notCompleted', 'Not Completed')}
-                                          </Badge>
-                                        </div>
-                                      </div>
+                                          </div>
+                                        </AccordionTrigger>
 
-                                      {/* Zoom Meeting & Recording Tabs */}
-                                      {lesson.zoom_meeting_id && lesson.zoom_join_url && (
+                                        {/* Lesson Content - Collapsible */}
+                                        <AccordionContent className="p-0">
+                                          {/* Meeting & Recording Tabs - Supports both Zoom and Daily.co */}
+                                      {hasLiveMeeting(lesson) && (
                                         <div className="p-5 border-b bg-muted/20">
                                           <Tabs defaultValue="live" className="w-full">
                                             <TabsList className="grid w-full grid-cols-2 mb-4">
@@ -693,97 +755,162 @@ export default function CourseDetailPage() {
 
                                             {/* Live Meeting Tab */}
                                             <TabsContent value="live" className="space-y-4">
-                                              {!activeMeetings.has(lesson.id) ? (
-                                                <div className="space-y-3">
-                                                  {/* Meeting Info Card */}
-                                                  <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800">
-                                                    <div className="flex items-start gap-3 mb-3">
-                                                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 text-white flex-shrink-0">
-                                                        <PlayCircle className="h-5 w-5" />
-                                                      </div>
-                                                      <div className="flex-1">
-                                                        <h5 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
-                                                          {t('user.courses.zoomMeeting', 'Zoom Meeting')}
-                                                        </h5>
-                                                        <p className="text-sm text-blue-700 dark:text-blue-300">
-                                                          {t('user.courses.clickToJoin', 'Click the button below to join the live meeting')}
-                                                        </p>
-                                                      </div>
-                                                    </div>
-
-                                                    {/* Meeting Details */}
-                                                    <div className="space-y-2 mb-4">
-                                                      {lesson.start_time && (
-                                                        <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
-                                                          <Calendar className="h-4 w-4" />
-                                                          <span className="font-medium">
-                                                            {new Date(lesson.start_time).toLocaleString()}
-                                                          </span>
+                                              {getLessonPlatform(lesson) === 'zoom' && (
+                                                !activeMeetings.has(lesson.id) ? (
+                                                  <div className="space-y-3">
+                                                    {/* Zoom Meeting Info Card */}
+                                                    <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800">
+                                                      <div className="flex items-start gap-3 mb-3">
+                                                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 text-white flex-shrink-0">
+                                                          <PlayCircle className="h-5 w-5" />
                                                         </div>
-                                                      )}
-                                                      {lesson.zoom_passcode && (
-                                                        <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
-                                                          <span>{t('user.courses.passcode', 'Passcode')}:</span>
-                                                          <span className="font-mono font-bold bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">
-                                                            {lesson.zoom_passcode}
-                                                          </span>
+                                                        <div className="flex-1">
+                                                          <h5 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                                                            {t('user.courses.zoomMeeting', 'Zoom Meeting')}
+                                                          </h5>
+                                                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                                                            {t('user.courses.clickToJoin', 'Click the button below to join the live meeting')}
+                                                          </p>
                                                         </div>
-                                                      )}
+                                                      </div>
+                                                      <div className="space-y-2 mb-4">
+                                                        {lesson.start_time && (
+                                                          <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
+                                                            <Calendar className="h-4 w-4" />
+                                                            <span className="font-medium">
+                                                              {new Date(lesson.start_time).toLocaleString()}
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        {lesson.zoom_passcode && (
+                                                          <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
+                                                            <span>{t('user.courses.passcode', 'Passcode')}:</span>
+                                                            <span className="font-mono font-bold bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">
+                                                              {lesson.zoom_passcode}
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                      <Button
+                                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                                                        size="lg"
+                                                        onClick={() => handleJoinZoom(lesson.id)}
+                                                      >
+                                                        <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                                                        {t('user.courses.joinMeeting', 'Join Meeting')}
+                                                      </Button>
                                                     </div>
+                                                  </div>
+                                                ) : (
+                                                  <div className="space-y-3">
+                                                    <div className="w-full rounded-lg overflow-hidden bg-black border-2">
+                                                      <ZoomMeetingSDK
+                                                        meetingNumber={lesson.zoom_meeting_id!}
+                                                        password={lesson.zoom_passcode || ''}
+                                                        role={0}
+                                                        onMeetingEnd={() => {
+                                                          setActiveMeetings(prev => {
+                                                            const updated = new Set(prev);
+                                                            updated.delete(lesson.id);
+                                                            return updated;
+                                                          });
+                                                          toast.success(t('user.courses.meetingEnded', 'Meeting has ended'));
+                                                        }}
+                                                        onError={(error) => {
+                                                          toast.error(error.message);
+                                                          setActiveMeetings(prev => {
+                                                            const updated = new Set(prev);
+                                                            updated.delete(lesson.id);
+                                                            return updated;
+                                                          });
+                                                        }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                )
+                                              )}
 
-                                                    {/* Join Button */}
-                                                    <Button
-                                                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                                                      size="lg"
-                                                      onClick={() => handleJoinZoom(lesson.id)}
-                                                    >
-                                                      <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
-                                                      {t('user.courses.joinMeeting', 'Join Meeting')}
-                                                    </Button>
+                                              {getLessonPlatform(lesson) === 'daily' && (
+                                                !activeMeetings.has(lesson.id) ? (
+                                                  <div className="space-y-3">
+                                                    {/* Daily.co Meeting Info Card */}
+                                                    <div className="p-4 rounded-lg bg-purple-50 dark:bg-purple-950/30 border-2 border-purple-200 dark:border-purple-800">
+                                                      <div className="flex items-start gap-3 mb-3">
+                                                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-purple-600 text-white flex-shrink-0">
+                                                          <PlayCircle className="h-5 w-5" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                          <h5 className="font-semibold text-purple-900 dark:text-purple-100 mb-1">
+                                                            {t('user.courses.dailyMeeting', 'Daily.co Meeting')}
+                                                          </h5>
+                                                          <p className="text-sm text-purple-700 dark:text-purple-300">
+                                                            {t('user.courses.dailyMeetingInfo', 'Click the button below to join the Daily.co meeting')}
+                                                          </p>
+                                                        </div>
+                                                      </div>
+                                                      <div className="space-y-2 mb-4">
+                                                        {lesson.start_time && (
+                                                          <div className="flex items-center gap-2 text-sm text-purple-800 dark:text-purple-200">
+                                                            <Calendar className="h-4 w-4" />
+                                                            <span className="font-medium">
+                                                              {new Date(lesson.start_time).toLocaleString()}
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                      <Button
+                                                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                                                        size="lg"
+                                                        onClick={() => {
+                                                          setActiveMeetings(prev => {
+                                                            const updated = new Set(prev);
+                                                            updated.add(lesson.id);
+                                                            return updated;
+                                                          });
+                                                        }}
+                                                      >
+                                                        <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                                                        {t('user.courses.joinDailyMeeting', 'Join Daily.co Meeting')}
+                                                      </Button>
+                                                    </div>
                                                   </div>
-                                                </div>
-                                              ) : (
-                                                <div className="space-y-3">
-                                                  {/* Embedded Zoom Meeting */}
-                                                  <div className="w-full rounded-lg overflow-hidden bg-black border-2">
-                                                    <ZoomMeetingSDK
-                                                      meetingNumber={lesson.zoom_meeting_id!}
-                                                      password={lesson.zoom_passcode || ''}
-                                                      role={0}
-                                                      onMeetingEnd={() => {
-                                                        // Remove from active meetings when ended
-                                                        setActiveMeetings(prev => {
-                                                          const updated = new Set(prev);
-                                                          updated.delete(lesson.id);
-                                                          return updated;
-                                                        });
-                                                        toast.success(t('user.courses.meetingEnded', 'Meeting has ended'));
-                                                      }}
-                                                      onError={(error) => {
-                                                        toast.error(error.message);
-                                                        // Remove from active meetings on error
-                                                        setActiveMeetings(prev => {
-                                                          const updated = new Set(prev);
-                                                          updated.delete(lesson.id);
-                                                          return updated;
-                                                        });
-                                                      }}
-                                                    />
+                                                ) : (
+                                                  <div className="space-y-3">
+                                                    {/* Daily.co Meeting */}
+                                                    <div className="w-full rounded-lg overflow-hidden bg-black border-2">
+                                                      <DailyMeetingSDK
+                                                        lessonId={lesson.id}
+                                                        onError={(error) => {
+                                                          toast.error(error.message);
+                                                          setActiveMeetings(prev => {
+                                                            const updated = new Set(prev);
+                                                            updated.delete(lesson.id);
+                                                            return updated;
+                                                          });
+                                                        }}
+                                                      />
+                                                    </div>
                                                   </div>
-                                                </div>
+                                                )
                                               )}
                                             </TabsContent>
 
                                             {/* Recording Tab */}
                                             <TabsContent value="recording" className="space-y-4">
-                                              {lesson.recording_url ? (
-                                                <ZoomRecordingPlayer
-                                                  recordingUrl={lesson.recording_url}
-                                                  lessonTitle={lesson.title}
-                                                  onError={(error) => {
-                                                    toast.error(error.message);
-                                                  }}
-                                                />
+                                              {hasRecording(lesson) ? (
+                                                getLessonPlatform(lesson) === 'zoom' ? (
+                                                  <ZoomRecordingPlayer
+                                                    recordingUrl={lesson.recording_url!}
+                                                    lessonTitle={lesson.title}
+                                                    onError={(error) => toast.error(error.message)}
+                                                  />
+                                                ) : (
+                                                  <DailyRecordingPlayer
+                                                    recordingUrl={lesson.recording_url!}
+                                                    lessonTitle={lesson.title}
+                                                    onError={(error) => toast.error(error.message)}
+                                                  />
+                                                )
                                               ) : (
                                                 <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
                                                   <AlertCircle className="h-5 w-5 text-amber-600" />
@@ -978,8 +1105,10 @@ export default function CourseDetailPage() {
                                           </div>
                                         </div>
                                       )}
-                                    </div>
-                                  ))
+                                        </AccordionContent>
+                                      </AccordionItem>
+                                    ))}
+                                  </Accordion>
                                 )}
                               </div>
                             </CardContent>
@@ -1085,9 +1214,20 @@ export default function CourseDetailPage() {
 
                   {/* Mark All Complete Toggle */}
                   <div className="pt-4 border-t">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5">
+                    <div className={`flex items-center justify-between p-3 rounded-lg ${
+                      progress.total_lessons === 0
+                        ? 'bg-muted/30 opacity-50'
+                        : 'bg-primary/5'
+                    }`}>
                       <div className="flex flex-col">
-                        <Label htmlFor="mark-all-complete" className="font-medium cursor-pointer">
+                        <Label
+                          htmlFor="mark-all-complete"
+                          className={`font-medium ${
+                            progress.total_lessons === 0
+                              ? 'cursor-not-allowed'
+                              : 'cursor-pointer'
+                          }`}
+                        >
                           {t('user.courses.markAllComplete', 'Mark All Complete')}
                         </Label>
                         <span className="text-xs text-muted-foreground">
@@ -1184,9 +1324,16 @@ export default function CourseDetailPage() {
                           {t('user.courses.statistics.studyTime', 'Study Time')}
                         </span>
                       </div>
-                      <span className="text-xl font-bold text-pink-600">
-                        {Math.round((courseData?.statistics?.total_study_time || 0) / 60)}h
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-xl font-bold text-pink-600">
+                          {Math.round((courseData?.statistics?.total_study_time || 0) / 60)}
+                          {' '}{t('user.courses.statistics.hours', 'h')}
+                        </span>
+                        <span className="text-xs text-pink-600/70">
+                          {Math.round((courseData?.statistics?.total_study_time || 0) / 45)}
+                          {' '}{t('user.courses.statistics.academicHours', 'academic hrs')}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Materials */}

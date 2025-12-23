@@ -6,7 +6,8 @@ import { WelcomeHero } from '@/components/user/dashboard/WelcomeHero';
 import { StatsCards } from '@/components/user/dashboard/StatsCards';
 import { ContinueLearning } from '@/components/user/dashboard/ContinueLearning';
 import { UpcomingSessions } from '@/components/user/dashboard/UpcomingSessions';
-import { PendingAssignments } from '@/components/user/dashboard/PendingAssignments';
+import { Attendance } from '@/components/user/dashboard/Attendance';
+import { ProgressOverview } from '@/components/user/dashboard/ProgressOverview';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -97,22 +98,44 @@ export default function DashboardPage() {
     return null;
   }
 
+  // Calculate total lessons and hours from enrollments
+  const totalLessons = data.enrollments?.reduce((sum, enrollment) => sum + (enrollment.total_lessons || 0), 0) || 0;
+
+  // Calculate total hours from enrollments (if total_hours is available, otherwise estimate)
+  let totalHours = data.enrollments?.reduce((sum, enrollment) => sum + (enrollment.total_hours || 0), 0) || 0;
+
+  // If total_hours not available from DB, estimate from lessons (average 90 min per lesson)
+  if (totalHours === 0 && totalLessons > 0) {
+    totalHours = Math.round((totalLessons * 90) / 60 * 10) / 10; // Convert to hours, round to 1 decimal
+  }
+
+  const enhancedStats = {
+    ...data.stats,
+    total_lessons: totalLessons,
+    total_hours_spent: totalHours > 0 ? totalHours : data.stats.total_hours_spent,
+  };
+
   return (
     <div className="min-h-screen">
       <div className="space-y-8 pb-12">
         {/* Welcome Hero */}
-        <WelcomeHero userName={userName} stats={data.stats} />
+        <WelcomeHero userName={userName} stats={enhancedStats} />
 
         {/* Stats Cards */}
-        <StatsCards stats={data.stats} />
+        <StatsCards stats={enhancedStats} />
 
-        {/* Main Content */}
-        <ContinueLearning enrollments={data.enrollments} />
+        {/* Progress and Courses Grid */}
+        <div className="grid gap-6 lg:grid-cols-3">
+          <ProgressOverview stats={enhancedStats} />
+          <div className="lg:col-span-2">
+            <ContinueLearning />
+          </div>
+        </div>
 
-        {/* Bottom Grid */}
+        {/* Bottom Grid - Sessions and Attendance */}
         <div className="grid gap-6 lg:grid-cols-2">
           <UpcomingSessions sessions={data.upcoming_sessions} />
-          <PendingAssignments assignments={data.pending_assignments} />
+          <Attendance attendance={data.recent_attendance} />
         </div>
       </div>
     </div>

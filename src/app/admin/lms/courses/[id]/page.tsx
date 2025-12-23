@@ -159,7 +159,7 @@ function SortableModule({
   onDeleteLesson: (lessonId: string) => void;
   onEditLessonContent: (lessonId: string, lessonTitle: string) => void;
   onOpenZoomMeeting: (lessonId: string) => void;
-  onCreateZoomMeeting: (lessonId: string) => void;
+  onCreateZoomMeeting: (lessonId: string, platform?: 'zoom' | 'daily') => void;
   creatingZoomFor: string | null;
   t: (key: string, fallback: string) => string;
   direction: 'ltr' | 'rtl';
@@ -339,106 +339,166 @@ function SortableLesson({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-2 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
+      className={`group relative p-4 rounded-lg border border-border bg-card hover:shadow-md transition-all ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
     >
-      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing touch-none">
-        <GripVertical className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+      {/* Drag Handle - Positioned on the left edge */}
+      <div
+        {...attributes}
+        {...listeners}
+        className={`absolute ${isRtl ? 'right-0' : 'left-0'} top-0 bottom-0 w-8 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none opacity-0 group-hover:opacity-100 transition-opacity`}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
       </div>
-      <div className="flex items-center gap-2 flex-1">
-        <GraduationCap className="h-4 w-4 text-blue-600" />
-        <div className="flex-1">
-          <span className="text-sm font-medium">{lesson.title}</span>
-          {lesson.description && (
-            <p className="text-xs text-muted-foreground mt-1">{lesson.description}</p>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {lesson.duration && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            {lesson.duration}m
+
+      {/* Main content with left/right padding for drag handle */}
+      <div className={`flex items-start gap-4 ${isRtl ? 'pr-8' : 'pl-8'}`}>
+        {/* Icon */}
+        <div className="flex-shrink-0 mt-0.5">
+          <div className="h-8 w-8 rounded-md bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
+            <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </div>
-        )}
-        {((lesson as any).lesson_topics?.length > 0) && (
-          <Badge variant="outline" className="text-xs border-blue-500 text-blue-700 dark:text-blue-400">
-            <BookOpen className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
-            {(lesson as any).lesson_topics.length} {t('lms.builder.topics', 'Topics')}
-          </Badge>
-        )}
-        {lesson.is_published ? (
-          <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
-            {t('lms.builder.published', 'Published')}
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="text-xs">
-            {t('lms.builder.draft', 'Draft')}
-          </Badge>
-        )}
-        {lesson.zoom_meeting_id ? (
-          <div className="flex items-center gap-1">
-            {lesson.zoom_session?.has_recording && (
-              <Badge variant="secondary" className="text-xs">
-                <Video className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
-                {t('lms.builder.recorded', 'Recorded')}
-              </Badge>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 space-y-2.5">
+          {/* Title Row */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-medium leading-tight">{lesson.title}</h4>
+              {lesson.description && (
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{lesson.description}</p>
+              )}
+            </div>
+
+            {/* Status Badge */}
+            <div className="flex-shrink-0">
+              {lesson.is_published ? (
+                <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
+                  {t('lms.builder.published', 'Published')}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs">
+                  {t('lms.builder.draft', 'Draft')}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Meta Info Row - Date, Duration, Topics, Zoom */}
+          <div className="flex items-center gap-3 flex-wrap text-xs">
+            {/* Date and Time - Most Important */}
+            {lesson.start_time && (
+              <div className="flex items-center gap-1 font-medium text-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                <span>
+                  {new Date(lesson.start_time).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                  {' • '}
+                  {new Date(lesson.start_time).toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+              </div>
             )}
+
+            {/* Duration */}
+            {lesson.duration && (
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <span>({lesson.duration}m)</span>
+              </div>
+            )}
+
+            {/* Topics */}
+            {((lesson as any).lesson_topics?.length > 0) && (
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <BookOpen className="h-3 w-3" />
+                <span>{(lesson as any).lesson_topics.length} {t('lms.builder.topics', 'Topics')}</span>
+              </div>
+            )}
+
+            {/* Video Meeting Status */}
+            {(lesson.zoom_meeting_id || lesson.zoom_session?.daily_room_name) && (
+              <div className="flex items-center gap-1.5">
+                <Video className={`h-3 w-3 ${lesson.zoom_session?.platform === 'daily' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`} />
+                <span className={lesson.zoom_session?.platform === 'daily' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}>
+                  {lesson.zoom_session?.platform === 'daily' ? 'Daily.co' : 'Zoom'}
+                </span>
+                {lesson.zoom_session?.has_recording && (
+                  <span className="text-muted-foreground">• {t('lms.builder.recorded', 'Recorded')}</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons Row - Always Visible */}
+          <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+            {/* Video Meeting Actions */}
+            {(lesson.zoom_meeting_id || lesson.zoom_session?.daily_room_name) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => onOpenZoomMeeting(lesson.id)}
+              >
+                <ExternalLink className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+                {lesson.zoom_session?.platform === 'daily'
+                  ? t('lms.builder.open_daily', 'Open Daily.co')
+                  : t('lms.builder.open_zoom', 'Open Zoom')}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => onCreateZoomMeeting(lesson.id, 'daily')}
+                disabled={creatingZoomFor === lesson.id}
+              >
+                {creatingZoomFor === lesson.id ? (
+                  <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
+                ) : (
+                  <VideoOff className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+                )}
+                {t('lms.builder.add_daily', 'Add Daily.co')}
+              </Button>
+            )}
+
+            {/* Edit Content Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => onEditContent(lesson.id, lesson.title)}
+            >
+              <BookOpen className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+              {t('lms.topics.edit_content', 'Content')}
+            </Button>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Edit & Delete Buttons */}
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-2 text-xs text-green-600 hover:text-green-700"
-              onClick={() => onOpenZoomMeeting(lesson.id)}
+              className="h-7 w-7 p-0"
+              onClick={() => onEdit(lesson)}
             >
-              <ExternalLink className="h-3 w-3 mr-1" />
-              Zoom
+              <Edit2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => onDelete(lesson.id)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100"
-            onClick={() => onCreateZoomMeeting(lesson.id)}
-            disabled={creatingZoomFor === lesson.id}
-          >
-            {creatingZoomFor === lesson.id ? (
-              <>
-                <Loader2 className={isRtl ? 'h-3 w-3 ml-1 animate-spin' : 'h-3 w-3 mr-1 animate-spin'} />
-                {t('common.creating', 'Creating...')}
-              </>
-            ) : (
-              <>
-                <VideoOff className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
-                {t('lms.builder.add_zoom', 'Add Zoom')}
-              </>
-            )}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="opacity-0 group-hover:opacity-100 h-7 px-2 text-xs"
-          onClick={() => onEditContent(lesson.id, lesson.title)}
-        >
-          <BookOpen className={isRtl ? 'h-3 w-3 ml-1' : 'h-3 w-3 mr-1'} />
-          {t('lms.topics.edit_content', 'Edit Content')}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
-          onClick={() => onEdit(lesson)}
-        >
-          <Edit2 className="h-3 w-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 text-destructive hover:text-destructive"
-          onClick={() => onDelete(lesson.id)}
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
+        </div>
       </div>
     </div>
   );
@@ -511,10 +571,13 @@ export default function CourseBuilderPage() {
     duration_minutes: '60',
     timezone: 'Asia/Jerusalem', // Default timezone
     is_published: true,
-    // Zoom settings
-    create_zoom: false,
+    // Video meeting settings
+    create_meeting: false,
+    meeting_platform: 'daily' as 'zoom' | 'daily', // Platform selection
+    create_zoom: false, // Keep for backward compatibility
     zoom_topic: '', // Custom Zoom meeting topic
     zoom_agenda: '',
+    daily_room_name: '', // Custom Daily.co room name
   });
 
   const [bulkModuleForm, setBulkModuleForm] = useState({
@@ -547,11 +610,19 @@ export default function CourseBuilderPage() {
     end_count: '5', // Number of occurrences
     end_date: '', // Or end by specific date
 
+    // Video meeting settings
+    create_meeting: true, // Create video meetings
+    meeting_platform: 'zoom' as 'zoom' | 'daily', // Platform selection
+
     // Zoom settings
     create_zoom: true,
     zoom_topic_pattern: '{series_name} - Session {n}', // Pattern for Zoom meeting names
     zoom_agenda: '',
     zoom_recurring: true, // Create as Zoom recurring meeting
+
+    // Daily.co settings
+    create_daily: false,
+    daily_room_pattern: '{series_name}-session-{n}', // Pattern for Daily.co room names
 
     // Zoom Security Settings
     zoom_passcode: '', // Meeting passcode (optional)
@@ -567,6 +638,9 @@ export default function CourseBuilderPage() {
 
     // Zoom Recording Settings
     zoom_auto_recording: 'none', // Auto recording: 'none', 'local', 'cloud'
+
+    // Publish settings
+    is_published: false, // Publish lessons immediately
     zoom_record_speaker_view: false, // Record active speaker with shared screen
     zoom_recording_disclaimer: false, // Show recording disclaimer
   });
@@ -585,6 +659,8 @@ export default function CourseBuilderPage() {
     { key: '{date}', label: 'Date', labelKey: 'lms.lesson.token_date', description: 'Lesson date (YYYY-MM-DD)', descriptionKey: 'lms.lesson.token_date_desc', category: 'date' },
     { key: '{date_short}', label: 'Short Date', labelKey: 'lms.lesson.token_date_short', description: 'Short date format (DD/MM)', descriptionKey: 'lms.lesson.token_date_short_desc', category: 'date' },
     { key: '{date_long}', label: 'Long Date', labelKey: 'lms.lesson.token_date_long', description: 'Full date with day name', descriptionKey: 'lms.lesson.token_date_long_desc', category: 'date' },
+    { key: '{dd}', label: 'Day', labelKey: 'lms.lesson.token_dd', description: 'Day of month (01-31)', descriptionKey: 'lms.lesson.token_dd_desc', category: 'date' },
+    { key: '{mm}', label: 'Month #', labelKey: 'lms.lesson.token_mm', description: 'Month number (01-12)', descriptionKey: 'lms.lesson.token_mm_desc', category: 'date' },
     { key: '{time}', label: 'Time', labelKey: 'lms.lesson.token_time', description: 'Lesson time (HH:MM)', descriptionKey: 'lms.lesson.token_time_desc', category: 'time' },
     { key: '{time_12h}', label: '12h Time', labelKey: 'lms.lesson.token_time_12h', description: 'Time in 12-hour format', descriptionKey: 'lms.lesson.token_time_12h_desc', category: 'time' },
     { key: '{day}', label: 'Day Name', labelKey: 'lms.lesson.token_day', description: 'Day of week name', descriptionKey: 'lms.lesson.token_day_desc', category: 'date' },
@@ -607,6 +683,57 @@ export default function CourseBuilderPage() {
     setFormValue: (value: string) => void
   ) => {
     setFormValue(currentValue + (currentValue && !currentValue.endsWith(' ') ? ' ' : '') + token);
+  };
+
+  // Helper function to replace tokens in a pattern
+  const replaceTokens = (pattern: string, lessonNumber: number, lessonDate: Date | null) => {
+    let result = pattern;
+
+    // Replace {n} with lesson number
+    result = result.replace(/\{n\}/g, lessonNumber.toString());
+
+    // Replace {series_name} with course name
+    result = result.replace(/\{series_name\}/g, course?.title || 'lesson');
+    result = result.replace(/\{course_name\}/g, course?.title || 'lesson');
+
+    if (lessonDate) {
+      // Format date tokens
+      const year = lessonDate.getFullYear();
+      const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
+      const day = String(lessonDate.getDate()).padStart(2, '0');
+      const hours = String(lessonDate.getHours()).padStart(2, '0');
+      const minutes = String(lessonDate.getMinutes()).padStart(2, '0');
+
+      // {date} - YYYY-MM-DD
+      result = result.replace(/\{date\}/g, `${year}-${month}-${day}`);
+
+      // {date_short} - DD/MM
+      result = result.replace(/\{date_short\}/g, `${day}/${month}`);
+
+      // {date_long} - Full date with day name
+      const dayName = lessonDate.toLocaleDateString('en-US', { weekday: 'long' });
+      const monthName = lessonDate.toLocaleDateString('en-US', { month: 'long' });
+      result = result.replace(/\{date_long\}/g, `${dayName}, ${monthName} ${day}, ${year}`);
+
+      // {time} - HH:MM
+      result = result.replace(/\{time\}/g, `${hours}:${minutes}`);
+
+      // {time_12h} - 12-hour format
+      const hours12 = lessonDate.getHours() % 12 || 12;
+      const ampm = lessonDate.getHours() >= 12 ? 'PM' : 'AM';
+      result = result.replace(/\{time_12h\}/g, `${hours12}:${minutes} ${ampm}`);
+
+      // {day} - Day of week
+      result = result.replace(/\{day\}/g, dayName);
+
+      // {month} - Month name
+      result = result.replace(/\{month\}/g, monthName);
+
+      // {year} - Year
+      result = result.replace(/\{year\}/g, year.toString());
+    }
+
+    return result;
   };
 
   useEffect(() => {
@@ -638,7 +765,8 @@ export default function CourseBuilderPage() {
 
       // Load modules for this course (with cache busting)
       console.log('[loadCourse] Fetching modules for course:', params.id);
-      const modulesResponse = await fetch(`/api/lms/modules?course_id=${params.id}&include_lessons=true`, {
+      const timestamp = Date.now();
+      const modulesResponse = await fetch(`/api/lms/modules?course_id=${params.id}&include_lessons=true&_t=${timestamp}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -652,20 +780,45 @@ export default function CourseBuilderPage() {
       });
 
       if (modulesData.success && modulesData.data) {
-        // Map zoom_sessions array to zoom_session object
+        // Map zoom_sessions to zoom_session object
+        // NOTE: Supabase returns zoom_sessions as an object (not array) for one-to-one relationships
         const mappedModules = modulesData.data.map((m: any) => ({
           ...m,
           isExpanded: true, // Open modules by default
-          lessons: m.lessons?.map((lesson: any) => ({
-            ...lesson,
-            zoom_session: lesson.zoom_sessions?.[0] ? {
-              id: lesson.zoom_sessions[0].id,
-              meeting_id: lesson.zoom_sessions[0].zoom_meeting_id,
-              join_url: lesson.zoom_sessions[0].join_url,
-              start_url: lesson.zoom_sessions[0].start_url,
-              has_recording: lesson.zoom_sessions[0].recording_status === 'ready',
-            } : null,
-          })) || [],
+          lessons: m.lessons?.map((lesson: any) => {
+            // Handle both object and array cases
+            const sessionData = Array.isArray(lesson.zoom_sessions)
+              ? lesson.zoom_sessions[0]
+              : lesson.zoom_sessions;
+
+            const zoomSession = sessionData ? {
+              id: sessionData.id,
+              meeting_id: sessionData.zoom_meeting_id,
+              join_url: sessionData.join_url,
+              start_url: sessionData.start_url,
+              has_recording: sessionData.recording_status === 'ready',
+              // Daily.co fields
+              daily_room_name: sessionData.daily_room_name,
+              daily_room_url: sessionData.daily_room_url,
+              platform: sessionData.platform,
+            } : null;
+
+            // Debug logging for lessons with zoom_sessions
+            if (sessionData) {
+              console.log('[loadCourse] Lesson with session:', {
+                lessonId: lesson.id,
+                lessonTitle: lesson.title,
+                platform: sessionData.platform,
+                daily_room_name: sessionData.daily_room_name,
+                zoom_meeting_id: sessionData.zoom_meeting_id,
+              });
+            }
+
+            return {
+              ...lesson,
+              zoom_session: zoomSession,
+            };
+          }) || [],
         }));
         setModules(mappedModules);
       } else {
@@ -1045,9 +1198,15 @@ export default function CourseBuilderPage() {
       return;
     }
 
-    if (lessonForm.create_zoom && !lessonForm.zoom_topic.trim()) {
-      showMessage('error', t('lms.builder.zoom_topic_required', 'Zoom meeting topic is required when creating Zoom meeting'));
-      return;
+    if (lessonForm.create_meeting) {
+      if (lessonForm.meeting_platform === 'zoom' && !lessonForm.zoom_topic.trim()) {
+        showMessage('error', t('lms.builder.zoom_topic_required', 'Zoom meeting topic is required when creating Zoom meeting'));
+        return;
+      }
+      if (lessonForm.meeting_platform === 'daily' && !lessonForm.daily_room_name.trim()) {
+        showMessage('error', t('lms.builder.daily_room_name_required', 'Daily.co room name is required when creating Daily.co room'));
+        return;
+      }
     }
 
     try {
@@ -1079,28 +1238,64 @@ export default function CourseBuilderPage() {
       if (result.success && result.data) {
         const lessonData = result.data;
 
-        // Create Zoom meeting if requested (only for new lessons)
-        if (!isEditing && lessonForm.create_zoom) {
+        // Create video meeting if requested (only for new lessons)
+        let meetingCreated = false;
+        if (!isEditing && lessonForm.create_meeting) {
           try {
-            const zoomResponse = await fetch('/api/lms/zoom/meetings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lesson_id: lessonData.id,
-                topic: lessonForm.zoom_topic,
-                agenda: lessonForm.zoom_agenda || null,
-                start_time: lessonForm.start_time,
-                duration: parseInt(lessonForm.duration_minutes),
-              }),
-            });
+            if (lessonForm.meeting_platform === 'daily') {
+              // Replace tokens in Daily.co room name
+              const lessonDate = lessonForm.start_time ? new Date(lessonForm.start_time) : null;
+              const lessonNumber = (selectedModule.lessons?.length || 0) + 1;
+              const roomNameWithTokens = replaceTokens(lessonForm.daily_room_name.trim(), lessonNumber, lessonDate);
 
-            const zoomResult = await zoomResponse.json();
-            if (!zoomResult.success) {
-              showMessage('warning', t('lms.builder.lesson_created_zoom_failed', `Lesson created but Zoom meeting failed: ${zoomResult.error}`), 5000);
+              // Create Daily.co room
+              const dailyResponse = await fetch('/api/daily/create-room', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  lessonId: lessonData.id,
+                  customRoomName: roomNameWithTokens,
+                }),
+              });
+
+              const dailyResult = await dailyResponse.json();
+              if (!dailyResult.success && !dailyResult.roomName) {
+                showMessage('warning', t('lms.builder.lesson_created_daily_failed', 'Lesson created but Daily.co room creation failed'), 5000);
+              } else {
+                meetingCreated = true;
+              }
+            } else {
+              // Replace tokens in Zoom topic
+              const lessonDate = lessonForm.start_time ? new Date(lessonForm.start_time) : null;
+              const lessonNumber = (selectedModule.lessons?.length || 0) + 1;
+              const zoomTopicWithTokens = replaceTokens(lessonForm.zoom_topic, lessonNumber, lessonDate);
+
+              // Create Zoom meeting
+              const zoomResponse = await fetch('/api/lms/zoom/meetings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  lesson_id: lessonData.id,
+                  topic: zoomTopicWithTokens,
+                  agenda: lessonForm.zoom_agenda || null,
+                  start_time: lessonForm.start_time,
+                  duration: parseInt(lessonForm.duration_minutes),
+                }),
+              });
+
+              const zoomResult = await zoomResponse.json();
+              if (!zoomResult.success) {
+                showMessage('warning', t('lms.builder.lesson_created_zoom_failed', `Lesson created but Zoom meeting failed: ${zoomResult.error}`), 5000);
+              } else {
+                meetingCreated = true;
+              }
             }
-          } catch (zoomError) {
-            console.error('Failed to create Zoom meeting:', zoomError);
-            showMessage('warning', t('lms.builder.lesson_created_zoom_error', 'Lesson created but Zoom meeting creation failed'), 5000);
+          } catch (error) {
+            console.error('Failed to create meeting:', error);
+            const errorMsg = lessonForm.meeting_platform === 'daily'
+              ? t('lms.builder.lesson_created_daily_error', 'Lesson created but Daily.co room creation failed')
+              : t('lms.builder.lesson_created_zoom_error', 'Lesson created but Zoom meeting creation failed');
+            showMessage('warning', errorMsg, 5000);
           }
         }
 
@@ -1136,25 +1331,30 @@ export default function CourseBuilderPage() {
           }
         }
 
-        // Update modules state
-        setModules(modules.map(m => {
-          if (m.id === selectedModule.id) {
-            if (isEditing) {
-              // Update existing lesson
-              return {
-                ...m,
-                lessons: (m.lessons || []).map(l => l.id === editingLesson.id ? lessonData : l),
-              };
-            } else {
-              // Add new lesson
-              return {
-                ...m,
-                lessons: [...(m.lessons || []), lessonData],
-              };
+        // If a meeting was created, reload the course to get the updated session data
+        if (meetingCreated) {
+          await loadCourse();
+        } else {
+          // Update modules state only if we didn't reload
+          setModules(modules.map(m => {
+            if (m.id === selectedModule.id) {
+              if (isEditing) {
+                // Update existing lesson
+                return {
+                  ...m,
+                  lessons: (m.lessons || []).map(l => l.id === editingLesson.id ? lessonData : l),
+                };
+              } else {
+                // Add new lesson
+                return {
+                  ...m,
+                  lessons: [...(m.lessons || []), lessonData],
+                };
+              }
             }
-          }
-          return m;
-        }));
+            return m;
+          }));
+        }
 
         setShowLessonDialog(false);
         setEditingLesson(null);
@@ -1165,15 +1365,23 @@ export default function CourseBuilderPage() {
           duration_minutes: '60',
           timezone: 'Asia/Jerusalem',
           is_published: true,
+          create_meeting: false,
+          meeting_platform: 'daily',
           create_zoom: false,
           zoom_topic: '',
           zoom_agenda: '',
+          daily_room_name: '',
         });
 
-        showMessage('success', isEditing
+        const successMsg = isEditing
           ? t('lms.builder.lesson_updated', 'Lesson updated successfully')
-          : (lessonForm.create_zoom ? t('lms.builder.lesson_zoom_created', 'Lesson and Zoom meeting created successfully') : t('lms.builder.lesson_created', 'Lesson created successfully'))
-        );
+          : (lessonForm.create_meeting
+              ? (lessonForm.meeting_platform === 'daily'
+                  ? t('lms.builder.lesson_daily_created', 'Lesson and Daily.co room created successfully')
+                  : t('lms.builder.lesson_zoom_created', 'Lesson and Zoom meeting created successfully'))
+              : t('lms.builder.lesson_created', 'Lesson created successfully'));
+
+        showMessage('success', successMsg);
       } else {
         showMessage('error', result.error || t('lms.builder.lesson_save_failed', 'Failed to save lesson'), 5000);
       }
@@ -1275,9 +1483,12 @@ export default function CourseBuilderPage() {
       duration_minutes: duration.toString(),
       timezone: lesson.timezone || 'Asia/Jerusalem',
       is_published: lesson.is_published,
-      create_zoom: false, // Don't show Zoom creation option in edit mode
+      create_meeting: false, // Don't show meeting creation option in edit mode
+      meeting_platform: 'daily',
+      create_zoom: false,
       zoom_topic: '',
       zoom_agenda: '',
+      daily_room_name: '',
     });
 
     // Open the dialog
@@ -1286,59 +1497,79 @@ export default function CourseBuilderPage() {
 
   const handleOpenZoomMeeting = async (lessonId: string) => {
     try {
-      // Fetch the Zoom session data for this lesson
+      // Find the lesson to check platform
+      let lesson: any = null;
+      for (const module of modules) {
+        const found = module.lessons?.find(l => l.id === lessonId);
+        if (found) {
+          lesson = found;
+          break;
+        }
+      }
+
+      // If Daily.co room, open room URL directly
+      if (lesson?.zoom_session?.platform === 'daily' && lesson.zoom_session?.daily_room_url) {
+        window.open(lesson.zoom_session.daily_room_url, '_blank');
+        return;
+      }
+
+      // Otherwise, fetch Zoom session data
       const response = await fetch(`/api/lms/lessons/${lessonId}/zoom-session`);
       const result = await response.json();
 
       if (result.success && result.data?.start_url) {
         window.open(result.data.start_url, '_blank');
       } else {
-        showMessage('error', t('lms.builder.zoom_url_not_found', 'Zoom meeting URL not found'), 3000);
+        showMessage('error', t('lms.builder.zoom_url_not_found', 'Meeting URL not found'), 3000);
       }
     } catch (error) {
-      console.error('Error opening Zoom meeting:', error);
-      showMessage('error', t('lms.builder.zoom_open_failed', 'Failed to open Zoom meeting'), 3000);
+      console.error('Error opening meeting:', error);
+      showMessage('error', t('lms.builder.zoom_open_failed', 'Failed to open meeting'), 3000);
     }
   };
 
-  const handleCreateZoomMeeting = async (lessonId: string) => {
+  const handleCreateZoomMeeting = async (lessonId: string, platform: 'zoom' | 'daily' = 'zoom') => {
     try {
       setCreatingZoomFor(lessonId);
 
-      const response = await fetch(`/api/admin/lessons/${lessonId}/zoom/create`, {
+      const endpoint = platform === 'daily'
+        ? `/api/daily/create-room`
+        : `/api/admin/lessons/${lessonId}/zoom/create`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: platform === 'daily' ? JSON.stringify({ lessonId }) : undefined,
       });
 
       const result = await response.json();
 
-      if (result.success && result.data) {
-        // Update the lesson with zoom session data
-        setModules(modules.map(m => ({
-          ...m,
-          lessons: m.lessons?.map(l =>
-            l.id === lessonId
-              ? {
-                  ...l,
-                  zoom_session: {
-                    id: result.data.id,
-                    meeting_id: result.data.zoom_meeting_id,
-                    join_url: result.data.zoom_join_url,
-                    start_url: result.data.zoom_start_url,
-                    has_recording: false,
-                  }
-                }
-              : l
-          ) || [],
-        })));
+      if (result.success || result.roomName) {
+        console.log(`[${platform}] Meeting created, reloading course data...`, result);
 
-        showMessage('success', t('lms.builder.zoom_created', 'Zoom meeting created successfully'));
+        // Small delay to ensure database write is complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Reload course to get updated session data from database
+        await loadCourse();
+
+        if (platform === 'daily') {
+          showMessage('success', t('lms.builder.daily_created', 'Daily.co room created successfully'));
+        } else {
+          showMessage('success', t('lms.builder.zoom_created', 'Zoom meeting created successfully'));
+        }
       } else {
-        showMessage('error', result.error || t('lms.builder.zoom_create_failed', 'Failed to create Zoom meeting'), 5000);
+        const errorMsg = platform === 'daily'
+          ? t('lms.builder.daily_create_failed', 'Failed to create Daily.co room')
+          : t('lms.builder.zoom_create_failed', 'Failed to create Zoom meeting');
+        showMessage('error', result.error || errorMsg, 5000);
       }
     } catch (error) {
-      console.error('Failed to create Zoom meeting:', error);
-      showMessage('error', t('lms.builder.zoom_create_failed', 'Failed to create Zoom meeting'), 5000);
+      console.error(`Failed to create ${platform} meeting:`, error);
+      const errorMsg = platform === 'daily'
+        ? t('lms.builder.daily_create_failed', 'Failed to create Daily.co room')
+        : t('lms.builder.zoom_create_failed', 'Failed to create Zoom meeting');
+      showMessage('error', errorMsg, 5000);
     } finally {
       setCreatingZoomFor(null);
     }
@@ -1559,6 +1790,11 @@ export default function CourseBuilderPage() {
       return;
     }
 
+    if (bulkLessonForm.create_daily && !bulkLessonForm.daily_room_pattern.trim()) {
+      showMessage('error', t('lms.builder.daily_room_pattern_required', 'Daily.co room pattern is required when creating Daily.co rooms'));
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -1606,9 +1842,16 @@ export default function CourseBuilderPage() {
           series_name: bulkLessonForm.series_name,
           lesson_dates: lessonDateStrings,
           title_pattern: bulkLessonForm.titlePattern,
-          duration: parseInt(bulkLessonForm.duration_minutes),
+          duration_minutes: parseInt(bulkLessonForm.duration_minutes),
           timezone: bulkLessonForm.timezone,
           starting_order: selectedModule.lessons?.length || 0,
+
+          // Video meeting settings
+          meeting_platform: bulkLessonForm.meeting_platform,
+
+          // Daily.co settings
+          create_daily_rooms: bulkLessonForm.create_daily,
+          daily_room_pattern: bulkLessonForm.daily_room_pattern,
 
           // Zoom basic settings
           create_zoom_meetings: bulkLessonForm.create_zoom,
@@ -1633,22 +1876,17 @@ export default function CourseBuilderPage() {
           zoom_auto_recording: bulkLessonForm.zoom_auto_recording,
           zoom_record_speaker_view: bulkLessonForm.zoom_record_speaker_view,
           zoom_recording_disclaimer: bulkLessonForm.zoom_recording_disclaimer,
+
+          // Publish settings
+          is_published: bulkLessonForm.is_published,
         }),
       });
 
       const result = await response.json();
 
       if (result.success && result.data) {
-        // Update the module with new lessons
-        setModules(modules.map(m => {
-          if (m.id === selectedModule.id) {
-            return {
-              ...m,
-              lessons: [...(m.lessons || []), ...result.data],
-            };
-          }
-          return m;
-        }));
+        // Reload course to get fresh data including zoom_sessions
+        await loadCourse();
 
         setShowBulkLessonDialog(false);
         setBulkLessonForm({
@@ -1683,6 +1921,12 @@ export default function CourseBuilderPage() {
           zoom_auto_recording: 'none',
           zoom_record_speaker_view: false,
           zoom_recording_disclaimer: false,
+          // Reset publish settings
+          is_published: false,
+          create_meeting: true,
+          meeting_platform: 'zoom',
+          create_daily: false,
+          daily_room_pattern: '{series_name}-session-{n}',
         });
 
         const zoomMsg = bulkLessonForm.create_zoom ? ' with Zoom meetings' : '';
@@ -1800,6 +2044,23 @@ export default function CourseBuilderPage() {
               direction={direction}
             />
 
+            {/* Course Description */}
+            {course?.description && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className={isRtl ? 'text-right' : ''}>
+                    {t('lms.builder.course_description', 'Course Description')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div
+                    className={`text-muted-foreground prose prose-sm max-w-none dark:prose-invert ${isRtl ? 'text-right' : 'text-left'}`}
+                    dangerouslySetInnerHTML={{ __html: course.description }}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Course Structure Section */}
             <div className="flex flex-col lg:flex-row gap-6">
                 {/* Module Builder with Drag & Drop */}
@@ -1903,9 +2164,12 @@ export default function CourseBuilderPage() {
                                   duration_minutes: '60',
                                   timezone: 'Asia/Jerusalem',
                                   is_published: true,
+                                  create_meeting: false,
+                                  meeting_platform: 'daily',
                                   create_zoom: false,
                                   zoom_topic: '',
                                   zoom_agenda: '',
+                                  daily_room_name: '',
                                 });
                                 setShowLessonDialog(true);
                               }}
@@ -2390,61 +2654,132 @@ export default function CourseBuilderPage() {
               </div>
             </div>
 
-            {/* Zoom Integration */}
+            {/* Video Meeting Integration */}
             {!editingLesson && (
               <div className="space-y-4 border-t pt-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className={`space-y-1 flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
                     <h3 className="text-sm font-semibold">
-                      {t('lms.lesson.zoom_integration_title', 'Zoom Integration')}
+                      {t('lms.lesson.meeting_integration_title', 'Video Meeting Integration')}
                     </h3>
                     <p className="text-xs text-muted-foreground">
-                      {t('lms.lesson.zoom_integration_desc', 'Create a Zoom meeting automatically for this lesson')}
+                      {t('lms.lesson.meeting_integration_desc', 'Create a video meeting automatically for this lesson')}
                     </p>
                   </div>
                   <Switch
-                    checked={lessonForm.create_zoom}
+                    checked={lessonForm.create_meeting}
                     onCheckedChange={(checked) =>
                       setLessonForm({
                         ...lessonForm,
-                        create_zoom: checked,
-                        zoom_topic: checked && !lessonForm.zoom_topic ? lessonForm.title : lessonForm.zoom_topic,
+                        create_meeting: checked,
+                        create_zoom: checked && lessonForm.meeting_platform === 'zoom',
+                        zoom_topic: checked && lessonForm.meeting_platform === 'zoom' && !lessonForm.zoom_topic ? lessonForm.title : lessonForm.zoom_topic,
+                        daily_room_name: checked && lessonForm.meeting_platform === 'daily' && !lessonForm.daily_room_name ? lessonForm.title : lessonForm.daily_room_name,
                       })
                     }
                   />
                 </div>
 
-              {lessonForm.create_zoom && (
-                <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`}>
+              {lessonForm.create_meeting && (
+                <>
+                  {/* Platform Selection */}
                   <div className="space-y-2">
                     <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.zoom_topic_label', 'Zoom Meeting Topic')} <span className="text-destructive">*</span>
+                      {t('lms.lesson.meeting_platform_label', 'Meeting Platform')} <span className="text-destructive">*</span>
                     </Label>
-                    <Input
-                      value={lessonForm.zoom_topic}
-                      onChange={(e) => setLessonForm({ ...lessonForm, zoom_topic: e.target.value })}
-                      placeholder={t('lms.lesson.zoom_topic_placeholder', 'e.g., Introduction to Parenting - Session 1')}
-                      className={isRtl ? 'text-right' : 'text-left'}
+                    <select
+                      value={lessonForm.meeting_platform}
+                      onChange={(e) => setLessonForm({
+                        ...lessonForm,
+                        meeting_platform: e.target.value as 'zoom' | 'daily',
+                        create_zoom: e.target.value === 'zoom',
+                        daily_room_name: e.target.value === 'daily' && !lessonForm.daily_room_name ? lessonForm.title : lessonForm.daily_room_name,
+                        zoom_topic: e.target.value === 'zoom' && !lessonForm.zoom_topic ? lessonForm.title : lessonForm.zoom_topic,
+                      })}
+                      className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
                       dir={direction}
-                    />
-                    <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.zoom_topic_help', 'This will be the visible meeting name in Zoom')}
-                    </p>
+                    >
+                      <option value="daily">{t('lms.lesson.platform_daily', 'Daily.co')}</option>
+                      <option value="zoom">{t('lms.lesson.platform_zoom', 'Zoom')}</option>
+                    </select>
                   </div>
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.zoom_agenda_label', 'Zoom Meeting Agenda (Optional)')}
-                    </Label>
-                    <Textarea
-                      value={lessonForm.zoom_agenda}
-                      onChange={(e) => setLessonForm({ ...lessonForm, zoom_agenda: e.target.value })}
-                      rows={2}
-                      placeholder={t('lms.lesson.zoom_agenda_placeholder', 'e.g., Today we will cover basic parenting techniques...')}
-                      className={isRtl ? 'text-right' : 'text-left'}
-                      dir={direction}
-                    />
-                  </div>
-                </div>
+
+                  {/* Platform-specific settings */}
+                  {lessonForm.meeting_platform === 'daily' && (
+                    <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`}>
+                      <div className="space-y-2">
+                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.daily_room_name_label', 'Daily.co Room Name')} <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          value={lessonForm.daily_room_name}
+                          onChange={(e) => setLessonForm({ ...lessonForm, daily_room_name: e.target.value })}
+                          placeholder={t('lms.lesson.daily_room_name_placeholder', 'e.g., Introduction to Parenting - Session 1')}
+                          className={isRtl ? 'text-right' : 'text-left'}
+                          dir={direction}
+                        />
+                        <TokenInserter
+                          tokens={lessonTokens}
+                          onInsertToken={(token) =>
+                            insertToken(lessonForm.daily_room_name, token, (value) =>
+                              setLessonForm({ ...lessonForm, daily_room_name: value })
+                            )
+                          }
+                          direction={direction}
+                          isRtl={isRtl}
+                          t={t}
+                        />
+                        <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.daily_room_name_help', 'This will be used to identify the room (only Latin characters, numbers, and hyphens)')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {lessonForm.meeting_platform === 'zoom' && (
+                    <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`}>
+                      <div className="space-y-2">
+                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.zoom_topic_label', 'Zoom Meeting Topic')} <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          value={lessonForm.zoom_topic}
+                          onChange={(e) => setLessonForm({ ...lessonForm, zoom_topic: e.target.value })}
+                          placeholder={t('lms.lesson.zoom_topic_placeholder', 'e.g., Introduction to Parenting - Session 1')}
+                          className={isRtl ? 'text-right' : 'text-left'}
+                          dir={direction}
+                        />
+                        <TokenInserter
+                          tokens={zoomTokens}
+                          onInsertToken={(token) =>
+                            insertToken(lessonForm.zoom_topic, token, (value) =>
+                              setLessonForm({ ...lessonForm, zoom_topic: value })
+                            )
+                          }
+                          direction={direction}
+                          isRtl={isRtl}
+                          t={t}
+                        />
+                        <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.zoom_topic_help', 'This will be the visible meeting name in Zoom')}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.zoom_agenda_label', 'Zoom Meeting Agenda (Optional)')}
+                        </Label>
+                        <Textarea
+                          value={lessonForm.zoom_agenda}
+                          onChange={(e) => setLessonForm({ ...lessonForm, zoom_agenda: e.target.value })}
+                          rows={2}
+                          placeholder={t('lms.lesson.zoom_agenda_placeholder', 'e.g., Today we will cover basic parenting techniques...')}
+                          className={isRtl ? 'text-right' : 'text-left'}
+                          dir={direction}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
               </div>
             )}
@@ -2832,32 +3167,93 @@ export default function CourseBuilderPage() {
               </div>
             </div>
 
-            {/* Zoom Integration */}
+            {/* Video Meeting Integration */}
             <div className="space-y-4 border-t pt-4" dir={direction}>
               <div className={`flex items-start gap-4 ${isRtl ? 'flex-row-reverse justify-start' : 'justify-between'}`} dir={direction}>
                 <div className={`space-y-1 flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
                   <h3 className="text-sm font-semibold">
-                    {t('lms.lesson.bulk_zoom_title', 'Zoom Integration')}
+                    {t('lms.lesson.bulk_meeting_title', 'Video Meeting Integration')}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {t('lms.lesson.bulk_zoom_desc', 'Automatically create Zoom meetings for each lesson')}
+                    {t('lms.lesson.bulk_meeting_desc', 'Automatically create video meetings for each lesson')}
                   </p>
                 </div>
                 <Switch
-                  checked={bulkLessonForm.create_zoom}
+                  checked={bulkLessonForm.create_meeting}
                   onCheckedChange={(checked) =>
                     setBulkLessonForm({
                       ...bulkLessonForm,
-                      create_zoom: checked,
-                      zoom_topic_pattern: checked && !bulkLessonForm.zoom_topic_pattern
+                      create_meeting: checked,
+                      create_zoom: checked && bulkLessonForm.meeting_platform === 'zoom',
+                      create_daily: checked && bulkLessonForm.meeting_platform === 'daily',
+                      zoom_topic_pattern: checked && bulkLessonForm.meeting_platform === 'zoom' && !bulkLessonForm.zoom_topic_pattern
                         ? '{series_name} - Session {n}'
                         : bulkLessonForm.zoom_topic_pattern,
+                      daily_room_pattern: checked && bulkLessonForm.meeting_platform === 'daily' && !bulkLessonForm.daily_room_pattern
+                        ? '{series_name}-session-{n}'
+                        : bulkLessonForm.daily_room_pattern,
                     })
                   }
                 />
               </div>
 
-              {bulkLessonForm.create_zoom && (
+              {bulkLessonForm.create_meeting && (
+                <>
+                  {/* Platform Selection */}
+                  <div className="space-y-2">
+                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {t('lms.lesson.meeting_platform_label', 'Meeting Platform')} <span className="text-destructive">*</span>
+                    </Label>
+                    <select
+                      value={bulkLessonForm.meeting_platform}
+                      onChange={(e) => setBulkLessonForm({
+                        ...bulkLessonForm,
+                        meeting_platform: e.target.value as 'zoom' | 'daily',
+                        create_zoom: e.target.value === 'zoom',
+                        create_daily: e.target.value === 'daily',
+                      })}
+                      className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
+                      dir={direction}
+                    >
+                      <option value="zoom">{t('lms.lesson.platform_zoom', 'Zoom')}</option>
+                      <option value="daily">{t('lms.lesson.platform_daily', 'Daily.co')}</option>
+                    </select>
+                  </div>
+
+                  {/* Daily.co Settings */}
+                  {bulkLessonForm.meeting_platform === 'daily' && (
+                    <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`} dir={direction}>
+                      <div className="space-y-2">
+                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.daily_room_pattern_label', 'Daily.co Room Name Pattern')} <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          value={bulkLessonForm.daily_room_pattern}
+                          onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, daily_room_pattern: e.target.value })}
+                          placeholder={t('lms.lesson.daily_room_pattern_placeholder', '{series_name}-session-{n}')}
+                          className={isRtl ? 'text-right' : 'text-left'}
+                          dir={direction}
+                        />
+                        <TokenInserter
+                          tokens={lessonTokens}
+                          onInsertToken={(token) =>
+                            insertToken(bulkLessonForm.daily_room_pattern, token, (value) =>
+                              setBulkLessonForm({ ...bulkLessonForm, daily_room_pattern: value })
+                            )
+                          }
+                          direction={direction}
+                          isRtl={isRtl}
+                          t={t}
+                        />
+                        <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                          {t('lms.lesson.daily_room_pattern_help', 'Use tokens to create unique room names. Only Latin characters, numbers, and hyphens allowed.')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Zoom Settings */}
+                  {bulkLessonForm.meeting_platform === 'zoom' && (
                 <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`} dir={direction}>
                   <div className="space-y-2">
                     <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
@@ -3074,7 +3470,29 @@ export default function CourseBuilderPage() {
                     </div>
                   </div>
                 </div>
+                  )}
+                </>
               )}
+            </div>
+
+            {/* Publish Settings */}
+            <div className="space-y-4 border-t pt-4" dir={direction}>
+              <div className={`flex items-start gap-4 ${isRtl ? 'flex-row-reverse justify-start' : 'justify-between'}`} dir={direction}>
+                <div className={`space-y-1 flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                  <h3 className="text-sm font-semibold">
+                    {t('lms.lesson.publish_title', 'Publish Lessons')}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t('lms.lesson.publish_desc', 'Make lessons visible to students immediately')}
+                  </p>
+                </div>
+                <Switch
+                  checked={bulkLessonForm.is_published}
+                  onCheckedChange={(checked) =>
+                    setBulkLessonForm({ ...bulkLessonForm, is_published: checked })
+                  }
+                />
+              </div>
             </div>
 
             {/* Preview */}
@@ -3083,15 +3501,17 @@ export default function CourseBuilderPage() {
                 {t('lms.lesson.preview_title', 'Preview')}
               </h4>
               <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.lesson.preview_text', 'This will create {count} lessons {pattern} starting from {date} at {time}{zoom}')
+                {t('lms.lesson.preview_text', 'This will create {count} lessons {pattern} starting from {date} at {time}{meeting}')
                   .replace('{count}', bulkLessonForm.end_count)
                   .replace('{pattern}', bulkLessonForm.recurrence_pattern === 'weekly'
                     ? t('lms.lesson.preview_weekly', 'weekly')
                     : t('lms.lesson.preview_daily', 'daily'))
                   .replace('{date}', bulkLessonForm.start_date)
                   .replace('{time}', bulkLessonForm.start_time)
-                  .replace('{zoom}', bulkLessonForm.create_zoom
-                    ? t('lms.lesson.preview_with_zoom', ', each with a Zoom meeting')
+                  .replace('{meeting}', bulkLessonForm.create_meeting
+                    ? (bulkLessonForm.meeting_platform === 'daily'
+                        ? t('lms.lesson.preview_with_daily', ', each with a Daily.co room')
+                        : t('lms.lesson.preview_with_zoom', ', each with a Zoom meeting'))
                     : '')}
               </p>
             </div>

@@ -515,9 +515,7 @@ export default function GradingScalesPage() {
                 )}
                 {scaleToDelete.grade_ranges && scaleToDelete.grade_ranges.length > 0 && (
                   <p className="text-sm text-muted-foreground mt-2" suppressHydrationWarning>
-                    {t('admin.grading.scales.delete.rangesWarning', 'This will also delete {count} grade ranges', {
-                      count: scaleToDelete.grade_ranges.length.toString(),
-                    }).replace('{count}', scaleToDelete.grade_ranges.length.toString())}
+                    {t('admin.grading.scales.delete.rangesWarning', 'This will also delete {count} grade ranges').replace('{count}', scaleToDelete.grade_ranges.length.toString())}
                   </p>
                 )}
               </div>
