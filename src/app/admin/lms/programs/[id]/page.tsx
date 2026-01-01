@@ -89,7 +89,7 @@ export default function ProgramDetailPage() {
   const isRtl = direction === 'rtl';
   const programId = params.id as string;
 
-  const [activeTab, setActiveTab] = useState<'courses' | 'students' | 'instructor'>('courses');
+  const [activeTab, setActiveTab] = useState<'courses' | 'students'>('courses');
   const [program, setProgram] = useState<Program | null>(null);
   const [programCourses, setProgramCourses] = useState<ProgramCourse[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -109,9 +109,6 @@ export default function ProgramDetailPage() {
   const [courseToRemove, setCourseToRemove] = useState<ProgramCourse | null>(null);
   const [studentToUnenroll, setStudentToUnenroll] = useState<Student | null>(null);
   const [saving, setSaving] = useState(false);
-  const [bridgeLink, setBridgeLink] = useState<any>(null);
-  const [loadingBridge, setLoadingBridge] = useState(false);
-  const [creatingBridge, setCreatingBridge] = useState(false);
 
   // Helper function to strip HTML tags
   const stripHtml = (html: string) => {
@@ -157,12 +154,6 @@ export default function ProgramDetailPage() {
     setFilteredUsers(filtered);
   }, [userSearchTerm, allUsers]);
 
-  // Load bridge link when Instructor Access tab is active
-  useEffect(() => {
-    if (activeTab === 'instructor') {
-      loadBridgeLink();
-    }
-  }, [activeTab]);
 
   const loadProgramData = async () => {
     try {
@@ -488,69 +479,6 @@ export default function ProgramDetailPage() {
     }
   };
 
-  const loadBridgeLink = async () => {
-    setLoadingBridge(true);
-    try {
-      const res = await fetch(`/api/admin/programs/${programId}/bridge`);
-      const data = await res.json();
-
-      if (data.success && data.data) {
-        setBridgeLink(data.data);
-      } else {
-        setBridgeLink(null);
-      }
-    } catch (error) {
-      console.error('Error loading bridge link:', error);
-      setBridgeLink(null);
-    } finally {
-      setLoadingBridge(false);
-    }
-  };
-
-  const handleCreateBridgeLink = async () => {
-    setCreatingBridge(true);
-    try {
-      const res = await fetch(`/api/admin/programs/${programId}/bridge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      const data = await res.json();
-
-      if (data.success && data.data) {
-        setBridgeLink(data.data);
-        toast({
-          title: t('lms.program_detail.toast_success', 'Success'),
-          description: t('lms.program_detail.bridge_toast_created', 'Instructor bridge link created successfully')
-        });
-      } else {
-        toast({
-          title: t('lms.program_detail.toast_error', 'Error'),
-          description: data.error || t('lms.program_detail.bridge_create_error', 'Failed to create bridge link'),
-          variant: 'destructive'
-        });
-      }
-    } catch (error) {
-      console.error('Error creating bridge link:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.bridge_create_error', 'Failed to create bridge link'),
-        variant: 'destructive'
-      });
-    } finally {
-      setCreatingBridge(false);
-    }
-  };
-
-  const copyBridgeLink = () => {
-    if (bridgeLink?.bridge_url) {
-      navigator.clipboard.writeText(bridgeLink.bridge_url);
-      toast({
-        title: t('lms.program_detail.toast_copied', 'Copied!'),
-        description: t('lms.program_detail.bridge_copied', 'Bridge link copied to clipboard')
-      });
-    }
-  };
 
   if (loading) {
     return (
@@ -636,14 +564,6 @@ export default function ProgramDetailPage() {
           >
             <Users className="h-4 w-4" />
             {t('lms.program_detail.tab_students', 'Students')} ({students.length})
-          </Button>
-          <Button
-            variant={activeTab === 'instructor' ? 'default' : 'ghost'}
-            onClick={() => setActiveTab('instructor')}
-            className="gap-2"
-          >
-            <Link2 className="h-4 w-4" />
-            {t('lms.program_detail.tab_instructor_access', 'Instructor Access')}
           </Button>
         </div>
 
@@ -780,140 +700,6 @@ export default function ProgramDetailPage() {
           </Card>
         )}
 
-        {/* Instructor Access Tab */}
-        {activeTab === 'instructor' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('lms.program_detail.bridge_title', 'Instructor Bridge Link')}</CardTitle>
-              <CardDescription>
-                {t('lms.program_detail.bridge_description', 'Generate a permanent link for instructors to access their live Zoom sessions')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loadingBridge ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : bridgeLink ? (
-                <div className="space-y-6">
-                  <div className="rounded-lg border bg-muted/30 p-6">
-                    <div className="space-y-4">
-                      <div>
-                        <Label className="text-sm font-medium mb-2 block">
-                          {t('lms.program_detail.bridge_url_label', 'Bridge URL')}
-                        </Label>
-                        <div className="flex gap-2">
-                          <Input
-                            value={bridgeLink.bridge_url}
-                            readOnly
-                            className="font-mono text-sm"
-                            dir="ltr"
-                          />
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={copyBridgeLink}
-                            title={t('lms.program_detail.bridge_copy_tooltip', 'Copy to clipboard')}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => window.open(bridgeLink.bridge_url, '_blank')}
-                            title={t('lms.program_detail.bridge_open_tooltip', 'Open in new tab')}
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">{t('lms.program_detail.bridge_slug', 'Slug')}</p>
-                          <p className="font-mono" dir="ltr">{bridgeLink.bridge_slug}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">{t('lms.program_detail.bridge_created', 'Created')}</p>
-                          <p>{new Date(bridgeLink.created_at).toLocaleDateString()}</p>
-                        </div>
-                        {bridgeLink.last_used_at && (
-                          <>
-                            <div>
-                              <p className="text-muted-foreground">{t('lms.program_detail.bridge_last_used', 'Last Used')}</p>
-                              <p>{new Date(bridgeLink.last_used_at).toLocaleDateString()}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">{t('lms.program_detail.bridge_usage_count', 'Usage Count')}</p>
-                              <p>{bridgeLink.usage_count || 0}</p>
-                            </div>
-                          </>
-                        )}
-                        {bridgeLink.instructor && (
-                          <div className="col-span-2">
-                            <p className="text-muted-foreground">{t('lms.program_detail.bridge_instructor', 'Instructor')}</p>
-                            <p>
-                              {bridgeLink.instructor.first_name} {bridgeLink.instructor.last_name}
-                              {' '}
-                              <span className="text-muted-foreground">
-                                ({bridgeLink.instructor.email})
-                              </span>
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 p-4">
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0">
-                        <Link2 className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div className="text-sm text-blue-900 dark:text-blue-100">
-                        <p className="font-medium mb-1">{t('lms.program_detail.bridge_how_title', 'How it works')}</p>
-                        <ul className="space-y-1 text-blue-800 dark:text-blue-200">
-                          <li>• {t('lms.program_detail.bridge_how_point1', 'This link automatically routes instructors to their current or next scheduled lesson')}</li>
-                          <li>• {t('lms.program_detail.bridge_how_point2', 'The system checks lesson times within a 15-minute window before and 30 minutes after start')}</li>
-                          <li>• {t('lms.program_detail.bridge_how_point3', 'If a session is live, instructors are auto-redirected to the Zoom start URL')}</li>
-                          <li>• {t('lms.program_detail.bridge_how_point4', 'The link is permanent and can be bookmarked for easy access')}</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                    <Link2 className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="text-lg font-medium mb-2">
-                    {t('lms.program_detail.bridge_empty_title', 'No Bridge Link Created')}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-                    {t('lms.program_detail.bridge_empty_description', 'Create a permanent bridge link for instructors to access their live sessions. The link will automatically direct them to the correct Zoom meeting.')}
-                  </p>
-                  <Button
-                    onClick={handleCreateBridgeLink}
-                    disabled={creatingBridge}
-                  >
-                    {creatingBridge ? (
-                      <>
-                        <Loader2 className={isRtl ? 'ml-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4 animate-spin'} />
-                        {t('lms.program_detail.bridge_creating', 'Creating Link...')}
-                      </>
-                    ) : (
-                      <>
-                        <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                        {t('lms.program_detail.bridge_create_button', 'Generate Bridge Link')}
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {/* Add Course Dialog */}
         <Dialog open={showAddCourseDialog} onOpenChange={(open) => {

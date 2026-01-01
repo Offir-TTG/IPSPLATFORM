@@ -84,22 +84,56 @@ export async function GET(request: NextRequest) {
       ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
       : 0;
 
-    // Get recent paid schedules
-    const { data: recentPayments } = await supabase
+    // Get recent paid schedules (fetch separately and join manually since no FK exists)
+    const { data: paidSchedules } = await supabase
       .from('payment_schedules')
-      .select(`
-        id,
-        amount,
-        status,
-        paid_date,
-        enrollments!inner(
-          users(first_name, last_name, email)
-        )
-      `)
+      .select('id, amount, status, paid_date, enrollment_id')
       .eq('tenant_id', tenantId)
       .eq('status', 'paid')
       .order('paid_date', { ascending: false })
       .limit(5);
+
+    // Get enrollment and user data for recent payments
+    let recentPayments: any[] = [];
+    if (paidSchedules && paidSchedules.length > 0) {
+      const enrollmentIds = paidSchedules.map(s => s.enrollment_id).filter(Boolean);
+
+      if (enrollmentIds.length > 0) {
+        const { data: enrollmentsData } = await supabase
+          .from('enrollments')
+          .select('id, user_id')
+          .in('id', enrollmentIds);
+
+        const userIds = enrollmentsData?.map(e => e.user_id).filter(Boolean) || [];
+
+        if (userIds.length > 0) {
+          const { data: usersData } = await supabase
+            .from('users')
+            .select('id, first_name, last_name, email')
+            .in('id', userIds);
+
+          // Create lookup maps
+          const userMap = new Map(usersData?.map(u => [u.id, u]) || []);
+          const enrollmentMap = new Map(enrollmentsData?.map(e => [e.id, e]) || []);
+
+          // Join the data
+          recentPayments = paidSchedules.map(schedule => {
+            const enrollment = enrollmentMap.get(schedule.enrollment_id);
+            const user = enrollment ? userMap.get(enrollment.user_id) : null;
+
+            return {
+              id: schedule.id,
+              amount: schedule.amount,
+              status: schedule.status,
+              paid_date: schedule.paid_date,
+              enrollments: {
+                users: user || null
+              }
+            };
+          }).filter(p => p.enrollments.users !== null); // Only include payments with valid users
+        }
+      }
+    }
 
     return NextResponse.json({
       totalRevenue,

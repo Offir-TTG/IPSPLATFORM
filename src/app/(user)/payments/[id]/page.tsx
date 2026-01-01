@@ -107,8 +107,31 @@ export default function PaymentDetailsPage() {
       pending: 'secondary',
       failed: 'destructive',
       overdue: 'destructive',
+      completed: 'default',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status}</Badge>;
+
+    const statusLabels: Record<string, string> = {
+      paid: t('user.payments.status.paid', 'Paid'),
+      pending: t('user.payments.status.pending', 'Pending'),
+      failed: t('user.payments.status.failed', 'Failed'),
+      overdue: t('user.payments.status.overdue', 'Overdue'),
+      completed: t('user.payments.status.completed', 'Completed'),
+    };
+
+    return <Badge variant={variants[status] || 'outline'}>{statusLabels[status] || status}</Badge>;
+  };
+
+  const translatePaymentType = (paymentType: string) => {
+    const normalizedType = paymentType?.toLowerCase() || 'unknown';
+    const typeLabels: Record<string, string> = {
+      deposit: t('user.payments.paymentType.deposit', 'Deposit'),
+      installment: t('user.payments.paymentType.installment', 'Installment'),
+      subscription: t('user.payments.paymentType.subscription', 'Subscription'),
+      full: t('user.payments.paymentType.full', 'Full Payment'),
+      unknown: t('user.payments.paymentType.unknown', 'Unknown'),
+    };
+
+    return typeLabels[normalizedType] || t(`user.payments.paymentType.${normalizedType}`, paymentType);
   };
 
   if (loading) {
@@ -222,8 +245,8 @@ export default function PaymentDetailsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-medium">{t('user.payments.detail.paymentNum', `Payment #${schedule.payment_number}`)}</p>
-                      <Badge variant="outline" className="capitalize">
-                        {schedule.payment_type}
+                      <Badge variant="outline">
+                        {translatePaymentType(schedule.payment_type)}
                       </Badge>
                       {getStatusBadge(schedule.status)}
                     </div>
@@ -271,7 +294,7 @@ export default function PaymentDetailsPage() {
                   <div className="flex items-center gap-4">
                     <CheckCircle2 className="h-5 w-5 text-green-500" />
                     <div>
-                      <p className="font-medium capitalize">{payment.payment_method}</p>
+                      <p className="font-medium">{translatePaymentType(payment.payment_method)}</p>
                       <p className="text-sm text-muted-foreground">
                         {formatDate(payment.created_at)}
                       </p>

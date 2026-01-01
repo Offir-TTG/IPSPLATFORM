@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
     const search = searchParams.get('search');
+    const productId = searchParams.get('productId');
 
     let query = supabase
       .from('payment_schedules')
@@ -154,9 +155,19 @@ export async function GET(request: NextRequest) {
     }) || [];
 
     let filteredTransactions = transactions;
+
+    // Filter by product
+    if (productId) {
+      filteredTransactions = filteredTransactions.filter((t: any) => {
+        const enrollment = enrollmentMap.get(t.enrollment_id);
+        return enrollment?.product_id === productId;
+      });
+    }
+
+    // Filter by search
     if (search) {
       const searchLower = search.toLowerCase();
-      filteredTransactions = transactions.filter((t: any) =>
+      filteredTransactions = filteredTransactions.filter((t: any) =>
         t.user_name.toLowerCase().includes(searchLower) ||
         t.user_email.toLowerCase().includes(searchLower) ||
         t.product_name.toLowerCase().includes(searchLower) ||

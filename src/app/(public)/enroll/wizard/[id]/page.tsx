@@ -304,17 +304,19 @@ export default function EnrollmentWizardPage() {
   }, [wizardData.profileCompleted, wizardData.signatureCompleted, wizardData.paymentCompleted, wizardData.passwordCompleted]);
 
   // Auto-complete enrollment when returning from successful payment
-  // DISABLED: Now we have a password step, so don't auto-complete
-  // User must create password first (for new users) or click complete (for existing users)
-  // useEffect(() => {
-  //   if (currentStep === 'complete' && isReturningFromPaymentRef.current && !processing) {
-  //     console.log('[Wizard] Auto-completing enrollment after payment...');
-  //     const timer = setTimeout(() => {
-  //       handleComplete();
-  //     }, 2000);
-  //     return () => clearTimeout(timer);
-  //   }
-  // }, [currentStep, processing]);
+  // For EXISTING users: Auto-complete immediately and redirect to login page
+  // For NEW users: Show password step first, then complete
+  useEffect(() => {
+    const isExistingUser = !!enrollment?.user_id;
+
+    if (currentStep === 'complete' && isReturningFromPaymentRef.current && !processing && isExistingUser) {
+      console.log('[Wizard] Auto-completing enrollment for existing user after payment...');
+      const timer = setTimeout(() => {
+        handleComplete();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, processing, enrollment?.user_id]);
 
   // Load Google Maps Script on mount
   useEffect(() => {
@@ -524,6 +526,12 @@ export default function EnrollmentWizardPage() {
     // 2. New user (user_id NULL): Show profile step, then password step to create account
 
     const isExistingUser = !!enrollment.user_id;
+    console.log('[Wizard] 🔍 isExistingUser check:', {
+      user_id: enrollment.user_id,
+      isExistingUser,
+      willSkipProfile: isExistingUser,
+      willSkipPassword: isExistingUser
+    });
 
     // Use in-memory wizard state instead of database to avoid cache issues
     // Step 1: Profile completion (ONLY for new users - existing users skip this)
@@ -824,8 +832,9 @@ export default function EnrollmentWizardPage() {
         router.push('/dashboard?enrollment=complete');
       } else {
         // EXISTING USER: They need to login themselves (we don't have their password)
-        // Redirect to success page that tells them to login
-        router.push(`/enroll/success?message=${encodeURIComponent('Enrollment complete! Please login to access your dashboard.')}`);
+        // Redirect directly to login page with enrollment completion message
+        const enrollmentEmail = enrollment?.wizard_profile_data?.email || '';
+        router.push(`/login?email=${encodeURIComponent(enrollmentEmail)}&message=${encodeURIComponent('Enrollment complete! Please login to access your dashboard.')}`);
       }
     } catch (err: any) {
       console.error('[Wizard] Complete error:', err);
@@ -1374,12 +1383,14 @@ export default function EnrollmentWizardPage() {
             <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6 space-y-4 max-w-md mx-auto shadow-lg">
               <div className="flex items-center justify-center gap-2 text-emerald-700">
                 <CheckCircle2 className="h-5 w-5" />
-                <span className="font-semibold">All steps completed</span>
+                <span className="font-semibold" suppressHydrationWarning>
+                  {t('enrollment.wizard.complete.allSteps', 'All steps completed')}
+                </span>
               </div>
-              <p className="text-sm text-emerald-600/80">
+              <p className="text-sm text-emerald-600/80" suppressHydrationWarning>
                 {processing
-                  ? 'Finalizing your enrollment...'
-                  : 'Click below to access your dashboard and start your journey'
+                  ? t('enrollment.wizard.complete.finalizing', 'Finalizing your enrollment...')
+                  : t('enrollment.wizard.complete.clickBelow', 'Click below to access your dashboard and start your journey')
                 }
               </p>
             </div>

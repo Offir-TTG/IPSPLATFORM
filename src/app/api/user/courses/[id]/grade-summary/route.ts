@@ -75,12 +75,15 @@ export const GET = withAuth(
         ? (totalPointsEarned / totalPointsPossible) * 100
         : 0;
 
-      // Determine letter grade
-      let letterGrade = 'F';
-      if (overallGrade >= 90) letterGrade = 'A';
-      else if (overallGrade >= 80) letterGrade = 'B';
-      else if (overallGrade >= 70) letterGrade = 'C';
-      else if (overallGrade >= 60) letterGrade = 'D';
+      // Determine letter grade (only if there are graded assignments)
+      let letterGrade = null;
+      if (totalPointsPossible > 0) {
+        if (overallGrade >= 90) letterGrade = 'A';
+        else if (overallGrade >= 80) letterGrade = 'B';
+        else if (overallGrade >= 70) letterGrade = 'C';
+        else if (overallGrade >= 60) letterGrade = 'D';
+        else letterGrade = 'F';
+      }
 
       return NextResponse.json({
         success: true,

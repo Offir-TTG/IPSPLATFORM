@@ -10,7 +10,7 @@ import type { Tenant } from '@/lib/tenant/types';
 
 // CACHE VERSION: Increment this number when you need to invalidate all translation caches
 // This forces all clients to fetch fresh translations from the API
-const TRANSLATION_CACHE_VERSION = 8;
+const TRANSLATION_CACHE_VERSION = 12;
 
 // Maximum cache age in milliseconds (1 hour)
 const MAX_CACHE_AGE = 60 * 60 * 1000;
@@ -73,20 +73,31 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
-  // Helper function to get initial language from localStorage
-  const getInitialLanguage = (key: string, defaultLang: string = 'he'): string => {
+export function AppProvider({ children }: { children: React.ReactNode}) {
+  // Helper function to get initial language from localStorage with fallback hierarchy
+  const getInitialLanguage = (key: string): string => {
     if (typeof window !== 'undefined') {
+      // 1. Check localStorage (runtime selection)
       const value = localStorage.getItem(key);
       if (value) return value;
 
-      // Fallback: user_language → admin_language → default
+      // 2. Check user's preferred_language from localStorage cache (set during app init)
+      const userPreferredLang = localStorage.getItem('user_preferred_language');
+      if (userPreferredLang && userPreferredLang !== 'null') return userPreferredLang;
+
+      // 3. Fallback: user_language → admin_language
       if (key === 'user_language') {
         const adminLang = localStorage.getItem('admin_language');
         if (adminLang) return adminLang;
       }
+
+      // 4. Check tenant's default_language from localStorage cache (set during app init)
+      const tenantDefaultLang = localStorage.getItem('tenant_default_language');
+      if (tenantDefaultLang && tenantDefaultLang !== 'null') return tenantDefaultLang;
     }
-    return defaultLang;
+
+    // 5. Final fallback to English (universal default)
+    return 'en';
   };
 
   const getInitialDirection = (lang: string): Direction => {
@@ -238,6 +249,95 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     initTenant();
   }, []);
+
+  // Fetch and cache language preferences (tenant default + user preference)
+  useEffect(() => {
+    const fetchLanguagePreferences = async () => {
+      if (typeof window === 'undefined') return;
+
+      try {
+        // Fetch tenant's default language
+        const tenantResponse = await fetch('/api/admin/tenant');
+        if (tenantResponse.ok) {
+          const tenantData = await tenantResponse.json();
+          if (tenantData.success && tenantData.data.default_language) {
+            const newTenantDefaultLang = tenantData.data.default_language;
+            const oldTenantDefaultLang = localStorage.getItem('tenant_default_language');
+
+            // Update cached tenant default language
+            localStorage.setItem('tenant_default_language', newTenantDefaultLang);
+
+            // If tenant default language changed, we need to update the UI language for users with Auto preference
+            if (oldTenantDefaultLang && oldTenantDefaultLang !== newTenantDefaultLang) {
+              // Fetch user's preferred language to check if it's null (Auto)
+              const userResponse = await fetch('/api/user/profile');
+              if (userResponse.ok) {
+                const userData = await userResponse.json();
+                const userPreferredLang = userData.data.preferences?.regional?.language;
+
+                // If user has Auto preference (null), update the language
+                if (userPreferredLang === null) {
+                  console.log('[Language] Tenant default changed and user has Auto preference, updating language to:', newTenantDefaultLang);
+                  setUserLanguageState(newTenantDefaultLang);
+                  const newDirection = getInitialDirection(newTenantDefaultLang);
+                  setUserDirection(newDirection);
+                  localStorage.removeItem('user_language'); // Clear runtime override to use new default
+
+                  // Update document direction
+                  if (typeof document !== 'undefined') {
+                    document.documentElement.lang = newTenantDefaultLang;
+                    document.documentElement.dir = newDirection;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Fetch user's preferred language
+        const userResponse = await fetch('/api/user/profile');
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          if (userData.success && userData.data.preferences?.regional?.language !== undefined) {
+            const userLang = userData.data.preferences.regional.language;
+            localStorage.setItem('user_preferred_language', userLang || 'null');
+
+            // If user has a specific preference, use it; if null, use tenant default
+            if (userLang === null) {
+              const tenantDefaultLang = localStorage.getItem('tenant_default_language');
+              if (tenantDefaultLang && tenantDefaultLang !== 'null') {
+                console.log('[Language] User has Auto preference, applying tenant default:', tenantDefaultLang);
+                setUserLanguageState(tenantDefaultLang);
+                const newDirection = getInitialDirection(tenantDefaultLang);
+                setUserDirection(newDirection);
+
+                // Update document direction
+                if (typeof document !== 'undefined') {
+                  document.documentElement.lang = tenantDefaultLang;
+                  document.documentElement.dir = newDirection;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Silently fail - we'll use defaults
+        console.debug('Could not fetch language preferences:', error);
+      }
+    };
+
+    // Only fetch after tenant is loaded
+    if (!tenantLoading) {
+      fetchLanguagePreferences();
+
+      // Set up periodic check every 30 seconds to detect tenant default language changes
+      const intervalId = setInterval(() => {
+        fetchLanguagePreferences();
+      }, 30000); // 30 seconds
+
+      return () => clearInterval(intervalId);
+    }
+  }, [tenantLoading]);
 
   // Listen for localStorage changes from other tabs/browsers
   // This detects when wizard might interfere with admin

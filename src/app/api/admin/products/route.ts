@@ -200,6 +200,8 @@ export async function POST(request: NextRequest) {
         currency: body.currency || 'USD',
         payment_plan: body.payment_plan,
         payment_start_date: body.payment_start_date || null,
+        default_payment_plan_id: body.default_payment_plan_id || null,
+        alternative_payment_plan_ids: body.alternative_payment_plan_ids || [],
         enrollment_invitation_template_key: body.enrollment_invitation_template_key,
         enrollment_confirmation_template_key: body.enrollment_confirmation_template_key,
         enrollment_reminder_template_key: body.enrollment_reminder_template_key,

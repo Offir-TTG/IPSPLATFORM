@@ -1,0 +1,307 @@
+'use client';
+
+export const dynamic = 'force-dynamic';
+
+import { useState } from 'react';
+import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import {
+  Bell,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Trash2,
+  Check,
+  AlertCircle,
+  Info,
+  Loader2,
+} from 'lucide-react';
+import { useUserLanguage } from '@/context/AppContext';
+import { useNotifications } from '@/hooks/useNotifications';
+import type { Notification, NotificationPriority, NotificationCategory } from '@/types/notifications';
+import Link from 'next/link';
+
+const PRIORITY_COLORS: Record<NotificationPriority, string> = {
+  urgent: 'text-red-600 bg-red-50 border-red-200',
+  high: 'text-orange-600 bg-orange-50 border-orange-200',
+  medium: 'text-yellow-600 bg-yellow-50 border-yellow-200',
+  low: 'text-blue-600 bg-blue-50 border-blue-200',
+};
+
+const PRIORITY_ICONS: Record<NotificationPriority, any> = {
+  urgent: AlertCircle,
+  high: AlertCircle,
+  medium: Bell,
+  low: Info,
+};
+
+const CATEGORY_LABELS: Record<NotificationCategory, string> = {
+  lesson: 'Lesson',
+  assignment: 'Assignment',
+  payment: 'Payment',
+  enrollment: 'Enrollment',
+  attendance: 'Attendance',
+  achievement: 'Achievement',
+  announcement: 'Announcement',
+  system: 'System',
+};
+
+export default function NotificationsPage() {
+  const { t } = useUserLanguage();
+  const [activeTab, setActiveTab] = useState('all');
+
+  // Fetch notifications with real-time updates
+  const {
+    notifications,
+    total,
+    unreadCount,
+    isLoading,
+    error,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
+    isMarkingAsRead,
+    isMarkingAllAsRead,
+    isDeleting,
+  } = useNotifications();
+
+  // Filter notifications based on active tab
+  const filteredNotifications = notifications.filter((notif) => {
+    if (activeTab === 'all') return true;
+    if (activeTab === 'unread') return !notif.is_read;
+    if (activeTab === 'read') return notif.is_read;
+    return true;
+  });
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInMins = Math.floor(diffInMs / (1000 * 60));
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+    if (diffInMins < 1) return t('user.notifications.time.justNow', 'Just now');
+    if (diffInMins < 60) return t('user.notifications.time.minutesAgo', `${diffInMins} minutes ago`);
+    if (diffInHours < 24) return t('user.notifications.time.hoursAgo', `${diffInHours} hours ago`);
+    return t('user.notifications.time.daysAgo', `${diffInDays} days ago`);
+  };
+
+  const NotificationItem = ({ notification }: { notification: Notification & { is_read: boolean } }) => {
+    const PriorityIcon = PRIORITY_ICONS[notification.priority];
+    const priorityColor = PRIORITY_COLORS[notification.priority];
+
+    return (
+      <div
+        className={`p-4 border rounded-lg transition-all ${
+          notification.is_read ? 'bg-background opacity-70' : 'bg-muted/30 border-primary/20'
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          {/* Priority Icon */}
+          <div className={`p-2 rounded-lg ${priorityColor}`}>
+            <PriorityIcon className="h-5 w-5" />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold text-sm">{notification.title}</h3>
+                  {!notification.is_read && (
+                    <span className="h-2 w-2 rounded-full bg-primary"></span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mb-2">{notification.message}</p>
+
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {formatTimeAgo(notification.created_at)}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-muted text-xs">
+                    {CATEGORY_LABELS[notification.category]}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1">
+                {!notification.is_read && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => markAsRead(notification.id)}
+                    disabled={isMarkingAsRead}
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => deleteNotification(notification.id)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            {notification.action_url && (
+              <Link href={notification.action_url} className="inline-block mt-2">
+                <Button variant="link" size="sm" className="p-0 h-auto">
+                  {notification.action_label || t('user.notifications.viewDetails', 'View Details')}
+                  <ExternalLink className="ltr:ml-1 rtl:mr-1 h-3 w-3" />
+                </Button>
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>
+            {t('user.notifications.title', 'Notifications')}
+          </h1>
+          <p className="text-muted-foreground" suppressHydrationWarning>
+            {t('user.notifications.subtitle', 'Stay updated with your learning journey')}
+          </p>
+        </div>
+
+        {unreadCount > 0 && (
+          <Button
+            onClick={() => markAllAsRead()}
+            disabled={isMarkingAllAsRead}
+            variant="outline"
+          >
+            {isMarkingAllAsRead ? (
+              <>
+                <Loader2 className="ltr:mr-2 rtl:ml-2 h-4 w-4 animate-spin" />
+                <span suppressHydrationWarning>
+                  {t('user.notifications.markingAllRead', 'Marking...')}
+                </span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
+                <span suppressHydrationWarning>
+                  {t('user.notifications.markAllRead', 'Mark All as Read')}
+                </span>
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                {t('user.notifications.stats.total', 'Total')}
+              </p>
+              <p className="text-2xl font-bold">{total}</p>
+            </div>
+            <Bell className="h-8 w-8 text-muted-foreground" />
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-primary/5 border-primary/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                {t('user.notifications.stats.unread', 'Unread')}
+              </p>
+              <p className="text-2xl font-bold text-primary">{unreadCount}</p>
+            </div>
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+              <Bell className="h-5 w-5 text-primary" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                {t('user.notifications.stats.read', 'Read')}
+              </p>
+              <p className="text-2xl font-bold">{total - unreadCount}</p>
+            </div>
+            <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Notifications List */}
+      <Card>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="border-b px-6 pt-6">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="all" className="flex items-center gap-2">
+                <span suppressHydrationWarning>{t('user.notifications.tabs.all', 'All')}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-muted">
+                  {total}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="unread" className="flex items-center gap-2">
+                <span suppressHydrationWarning>{t('user.notifications.tabs.unread', 'Unread')}</span>
+                {unreadCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
+                    {unreadCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="read" className="flex items-center gap-2">
+                <span suppressHydrationWarning>{t('user.notifications.tabs.read', 'Read')}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-muted">
+                  {total - unreadCount}
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value={activeTab} className="p-6 space-y-3">
+            {isLoading ? (
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                <p className="text-sm text-muted-foreground mt-2" suppressHydrationWarning>
+                  {t('common.loading', 'Loading...')}
+                </p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12">
+                <AlertCircle className="h-8 w-8 mx-auto text-destructive mb-2" />
+                <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                  {t('user.notifications.error', 'Failed to load notifications')}
+                </p>
+              </div>
+            ) : filteredNotifications.length === 0 ? (
+              <div className="text-center py-12">
+                <Bell className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                  {t('user.notifications.noNotifications', 'No notifications')}
+                </p>
+              </div>
+            ) : (
+              filteredNotifications.map((notification) => (
+                <NotificationItem key={notification.id} notification={notification} />
+              ))
+            )}
+          </TabsContent>
+        </Tabs>
+      </Card>
+    </div>
+  );
+}

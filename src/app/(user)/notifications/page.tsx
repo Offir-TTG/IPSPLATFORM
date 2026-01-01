@@ -2,606 +2,516 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 import {
-  Video,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Bell,
-  Calendar,
-  FileText,
   CheckCircle2,
   Clock,
   ExternalLink,
   Trash2,
   Check,
   AlertCircle,
-  Gift,
-  Trophy,
-  MessageSquare
+  Info,
+  Loader2,
 } from 'lucide-react';
 import { useUserLanguage } from '@/context/AppContext';
+import { useNotifications } from '@/hooks/useNotifications';
+import type { Notification, NotificationPriority, NotificationCategory } from '@/types/notifications';
+import Link from 'next/link';
 
-// MOCKUP DATA
-const mockNotifications = [
-  {
-    id: '1',
-    type: 'zoom_meeting',
-    title: 'Zoom Meeting Starting Soon',
-    message: 'Your live session "Server Components Deep Dive" starts in 15 minutes',
-    course: 'Advanced React Patterns',
-    time: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    read: false,
-    priority: 'high',
-    actionLabel: 'user.notifications.actions.joinMeeting',
-    actionUrl: 'https://zoom.us/j/123456789',
-    metadata: {
-      meeting_id: '123 456 789',
-      instructor: 'Dr. Sarah Johnson'
-    }
-  },
-  {
-    id: '2',
-    type: 'zoom_meeting',
-    title: 'Live Session Tomorrow',
-    message: 'Don\'t forget: "Introduction to Node.js" scheduled for tomorrow at 10:00 AM',
-    course: 'Node.js & Express - REST APIs',
-    time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    read: false,
-    priority: 'medium',
-    actionLabel: 'user.notifications.actions.viewDetails',
-    actionUrl: '#',
-    metadata: {
-      meeting_id: '987 654 321',
-      instructor: 'Alex Martinez'
-    }
-  },
-  {
-    id: '3',
-    type: 'assignment_due',
-    title: 'Assignment Due Soon',
-    message: 'Complete your "Build a REST API" project - Due in 2 days',
-    course: 'Node.js & Express - REST APIs',
-    time: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-    read: false,
-    priority: 'high',
-    actionLabel: 'user.notifications.actions.startAssignment',
-    actionUrl: '#'
-  },
-  {
-    id: '4',
-    type: 'achievement',
-    title: 'New Achievement Unlocked!',
-    message: 'Congratulations! You\'ve earned the "5-Day Streak" badge',
-    course: null,
-    time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    read: true,
-    priority: 'low',
-    actionLabel: 'user.notifications.actions.viewAchievements',
-    actionUrl: '#'
-  },
-  {
-    id: '5',
-    type: 'course_update',
-    title: 'New Content Available',
-    message: '3 new lessons added to "Advanced React Patterns & Performance"',
-    course: 'Advanced React Patterns',
-    time: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    read: true,
-    priority: 'low',
-    actionLabel: 'user.notifications.actions.viewCourse',
-    actionUrl: '#'
-  },
-  {
-    id: '6',
-    type: 'zoom_recording',
-    title: 'Recording Available',
-    message: 'Recording for "React Performance Optimization" is now available',
-    course: 'Advanced React Patterns',
-    time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    read: false,
-    priority: 'medium',
-    actionLabel: 'user.notifications.actions.watchRecording',
-    actionUrl: '#'
-  },
-  {
-    id: '7',
-    type: 'message',
-    title: 'New Message from Instructor',
-    message: 'Dr. Sarah Johnson: "Great work on your last assignment!"',
-    course: 'Advanced React Patterns',
-    time: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    read: true,
-    priority: 'medium',
-    actionLabel: 'user.notifications.actions.viewMessage',
-    actionUrl: '#'
-  },
-  {
-    id: '8',
-    type: 'certificate',
-    title: 'Certificate Ready!',
-    message: 'Your certificate for "Professional Portrait Photography" is ready to download',
-    course: 'Professional Portrait Photography',
-    time: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    read: false,
-    priority: 'high',
-    actionLabel: 'user.notifications.actions.downloadCertificate',
-    actionUrl: '#'
-  }
-];
-
-const getNotificationIcon = (type: string) => {
-  switch (type) {
-    case 'zoom_meeting':
-    case 'zoom_recording':
-      return <Video className="h-5 w-5" />;
-    case 'assignment_due':
-      return <FileText className="h-5 w-5" />;
-    case 'achievement':
-      return <Trophy className="h-5 w-5" />;
-    case 'course_update':
-      return <Bell className="h-5 w-5" />;
-    case 'message':
-      return <MessageSquare className="h-5 w-5" />;
-    case 'certificate':
-      return <Gift className="h-5 w-5" />;
-    default:
-      return <Bell className="h-5 w-5" />;
-  }
+const PRIORITY_COLORS: Record<NotificationPriority, string> = {
+  urgent: 'text-destructive bg-destructive/10 border-destructive/20',
+  high: 'text-warning bg-warning/10 border-warning/20',
+  medium: 'text-info bg-info/10 border-info/20',
+  low: 'text-primary bg-primary/10 border-primary/20',
 };
 
-const getNotificationColor = (type: string) => {
-  switch (type) {
-    case 'zoom_meeting':
-      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400';
-    case 'assignment_due':
-      return 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400';
-    case 'achievement':
-      return 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400';
-    case 'course_update':
-      return 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400';
-    case 'message':
-      return 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400';
-    case 'certificate':
-      return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400';
-    case 'zoom_recording':
-      return 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400';
-    default:
-      return 'bg-gray-100 dark:bg-gray-900/30 text-gray-600 dark:text-gray-400';
-  }
+const PRIORITY_ICONS: Record<NotificationPriority, any> = {
+  urgent: AlertCircle,
+  high: AlertCircle,
+  medium: Bell,
+  low: Info,
 };
 
-const getTimeAgo = (dateString: string, t: (key: string, fallback?: string) => string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  // Future dates
-  if (diffMs > 0) {
-    if (diffMins < 60) return `${t('user.notifications.time.in', 'In')} ${diffMins} ${t('user.notifications.time.minutes', 'minutes')}`;
-    if (diffHours < 24) return `${t('user.notifications.time.in', 'In')} ${diffHours} ${t('user.notifications.time.hours', 'hours')}`;
-    if (diffDays === 1) return t('user.notifications.time.tomorrow', 'Tomorrow');
-    return `${t('user.notifications.time.in', 'In')} ${diffDays} ${t('user.notifications.time.days', 'days')}`;
-  }
-
-  // Past dates
-  const absDiffMins = Math.abs(diffMins);
-  const absDiffHours = Math.abs(diffHours);
-  const absDiffDays = Math.abs(diffDays);
-
-  if (absDiffMins < 60) return `${absDiffMins} ${t('user.notifications.time.minutesAgo', 'minutes ago')}`;
-  if (absDiffHours < 24) return `${absDiffHours} ${t('user.notifications.time.hoursAgo', 'hours ago')}`;
-  if (absDiffDays === 1) return t('user.notifications.time.yesterday', 'Yesterday');
-  return `${absDiffDays} ${t('user.notifications.time.daysAgo', 'days ago')}`;
-};
+// Category labels will be dynamically translated using t() function
 
 export default function NotificationsPage() {
   const { t } = useUserLanguage();
-  const [notifications, setNotifications] = useState(mockNotifications);
   const [activeTab, setActiveTab] = useState('all');
+  const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  const filteredNotifications = notifications.filter(notification => {
-    if (activeTab === 'all') return true;
-    if (activeTab === 'unread') return !notification.read;
-    if (activeTab === 'zoom') return notification.type.includes('zoom');
-    return true;
-  });
+  // State for deleted notifications
+  const [deletedNotifications, setDeletedNotifications] = useState<Notification[]>([]);
+  const [deletedCount, setDeletedCount] = useState(0);
+  const [loadingDeleted, setLoadingDeleted] = useState(false);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-  const zoomCount = notifications.filter(n => n.type.includes('zoom')).length;
+  // Fetch notifications with real-time updates
+  const {
+    notifications,
+    total,
+    unreadCount,
+    isLoading,
+    error,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
+    isMarkingAsRead,
+    isMarkingAllAsRead,
+    isDeleting,
+  } = useNotifications();
 
-  const markAsRead = (id: string) => {
-    setNotifications(notifications.map(n =>
-      n.id === id ? { ...n, read: true } : n
-    ));
+  // Fetch deleted count on page load
+  useEffect(() => {
+    fetchDeletedCount();
+  }, []);
+
+  // Fetch deleted notifications when deleted tab is active
+  useEffect(() => {
+    if (activeTab === 'deleted') {
+      fetchDeletedNotifications();
+    }
+  }, [activeTab]);
+
+  const fetchDeletedCount = async () => {
+    try {
+      const response = await fetch('/api/notifications/deleted?limit=0');
+      const data = await response.json();
+      setDeletedCount(data.total || 0);
+    } catch (error) {
+      console.error('Error fetching deleted count:', error);
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const fetchDeletedNotifications = async () => {
+    setLoadingDeleted(true);
+    try {
+      const response = await fetch('/api/notifications/deleted');
+      const data = await response.json();
+      setDeletedNotifications(data.notifications || []);
+      setDeletedCount(data.total || 0);
+    } catch (error) {
+      console.error('Error fetching deleted notifications:', error);
+    } finally {
+      setLoadingDeleted(false);
+    }
   };
 
-  const deleteNotification = (id: string) => {
-    setNotifications(notifications.filter(n => n.id !== id));
+  // Filter notifications based on active tab
+  const filteredNotifications = activeTab === 'deleted'
+    ? deletedNotifications
+    : notifications.filter((notif) => {
+        if (activeTab === 'all') return true;
+        if (activeTab === 'unread') return !notif.is_read;
+        if (activeTab === 'read') return notif.is_read;
+        return true;
+      });
+
+  // Handle delete confirmation
+  const handleDeleteClick = (notification: Notification) => {
+    setNotificationToDelete(notification);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (notificationToDelete) {
+      deleteNotification(notificationToDelete.id);
+      setIsDeleteDialogOpen(false);
+      setNotificationToDelete(null);
+    }
+  };
+
+  const getCategoryLabel = (category: NotificationCategory): string => {
+    const key = `user.notifications.category.${category}`;
+    const fallback = category.charAt(0).toUpperCase() + category.slice(1);
+    return t(key, fallback);
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInMins = Math.floor(diffInMs / (1000 * 60));
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+    if (diffInMins < 1) return t('user.notifications.time.justNow', 'Just now');
+    if (diffInMins < 60) {
+      const template = t('user.notifications.time.minutesAgo', `${diffInMins} minutes ago`);
+      return template.replace('{count}', diffInMins.toString());
+    }
+    if (diffInHours < 24) {
+      const template = t('user.notifications.time.hoursAgo', `${diffInHours} hours ago`);
+      return template.replace('{count}', diffInHours.toString());
+    }
+    const template = t('user.notifications.time.daysAgo', `${diffInDays} days ago`);
+    return template.replace('{count}', diffInDays.toString());
+  };
+
+  const NotificationItem = ({ notification }: { notification: Notification }) => {
+    const PriorityIcon = PRIORITY_ICONS[notification.priority];
+    const priorityColor = PRIORITY_COLORS[notification.priority];
+    const isRead = notification.is_read ?? false;
+
+    return (
+      <div
+        className={`group relative overflow-hidden rounded-xl border transition-all duration-300 ${
+          isRead
+            ? 'bg-card border-border/50 hover:border-border/70'
+            : 'bg-gradient-to-br from-primary/5 to-transparent border-primary/20 shadow-sm hover:shadow-md hover:border-primary/30'
+        }`}
+      >
+        {/* Visual indicators for read/unread */}
+        {!isRead ? (
+          <div className="absolute top-0 ltr:left-0 rtl:right-0 w-1 h-full bg-gradient-to-b from-primary to-primary/50"></div>
+        ) : (
+          <div className="absolute top-0 ltr:left-0 rtl:right-0 w-1 h-full bg-gradient-to-b from-success to-success/50"></div>
+        )}
+
+        <div className="p-5 ltr:pl-6 rtl:pr-6">
+          <div className="flex items-start gap-4">
+            {/* Priority Icon */}
+            <div className={`relative flex-shrink-0 p-2.5 rounded-xl transition-all duration-300 ${
+              isRead
+                ? 'bg-success/10 text-success'
+                : `shadow-sm ${priorityColor} group-hover:scale-110`
+            }`}>
+              <PriorityIcon className="h-5 w-5" />
+              {!isRead && (
+                <span className="absolute -top-1 ltr:-right-1 rtl:-left-1 h-3 w-3 rounded-full bg-primary border-2 border-background animate-pulse"></span>
+              )}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <h3 className={`text-sm leading-tight transition-all ${
+                      !isRead
+                        ? 'font-semibold text-foreground'
+                        : 'font-medium text-foreground'
+                    }`}>
+                      {notification.title}
+                    </h3>
+                  </div>
+                  <p className="text-sm leading-relaxed mb-3 text-muted-foreground">
+                    {notification.message}
+                  </p>
+
+                  {/* Meta Information */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      {formatTimeAgo(notification.created_at)}
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-muted/60 text-foreground">
+                      {getCategoryLabel(notification.category)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 lg:opacity-100 transition-opacity">
+                  {!isRead && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => markAsRead(notification.id)}
+                      disabled={isMarkingAsRead}
+                      className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                      title={t('user.notifications.markRead', 'Mark as read')}
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteClick(notification)}
+                    disabled={isDeleting}
+                    className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                    title={t('user.notifications.delete', 'Delete')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              {notification.action_url && (
+                <Link href={notification.action_url} className="inline-block mt-2">
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0 h-auto text-primary hover:text-primary/80 font-medium group/link"
+                  >
+                    {notification.action_label || t('user.notifications.viewDetails', 'View Details')}
+                    <ExternalLink className="ltr:ml-1.5 rtl:mr-1.5 h-3.5 w-3.5 group-hover/link:translate-x-0.5 transition-transform" />
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="min-h-screen pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 style={{
-            fontSize: 'var(--font-size-3xl)',
-            fontFamily: 'var(--font-family-heading)',
-            fontWeight: 'var(--font-weight-bold)',
-            color: 'hsl(var(--text-heading))',
-            marginBottom: '0.5rem'
-          }}>{t('user.notifications.title')}</h1>
-          <p style={{
-            color: 'hsl(var(--text-muted))',
-            fontSize: 'var(--font-size-base)',
-            fontFamily: 'var(--font-family-primary)'
-          }}>
-            {t('user.notifications.subtitle')}
-          </p>
-        </div>
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 style={{
+              fontSize: 'var(--font-size-3xl)',
+              fontFamily: 'var(--font-family-heading)',
+              fontWeight: 'var(--font-weight-bold)',
+              color: 'hsl(var(--text-heading))',
+              marginBottom: '0.5rem'
+            }} suppressHydrationWarning>
+              {t('user.notifications.title', 'Notifications')}
+            </h1>
+            <p style={{
+              color: 'hsl(var(--text-muted))',
+              fontSize: 'var(--font-size-base)',
+              fontFamily: 'var(--font-family-primary)'
+            }} suppressHydrationWarning>
+              {t('user.notifications.subtitle', 'Stay updated with your learning journey')}
+            </p>
+          </div>
 
-        {unreadCount > 0 && (
-          <button
-            onClick={markAllAsRead}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              paddingInlineStart: '0.75rem',
-              paddingInlineEnd: '0.75rem',
-              paddingTop: '0.5rem',
-              paddingBottom: '0.5rem',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: 'calc(var(--radius) * 1.5)',
-              backgroundColor: 'transparent',
-              color: 'hsl(var(--text-body))',
-              cursor: 'pointer',
-              fontSize: 'var(--font-size-sm)',
-              fontFamily: 'var(--font-family-primary)',
-              transition: 'background-color 0.2s'
-            }}
-            className="hover:bg-accent"
-          >
-            <Check className="h-4 w-4" />
-            {t('user.notifications.markAllRead')}
-          </button>
-        )}
+          {unreadCount > 0 && (
+            <Button
+              onClick={() => {
+                console.log('[NotificationsPage] Mark All button clicked, unreadCount:', unreadCount);
+                markAllAsRead();
+              }}
+              disabled={isMarkingAllAsRead}
+            >
+              {isMarkingAllAsRead ? (
+                <>
+                  <Loader2 className="ltr:mr-2 rtl:ml-2 h-4 w-4 animate-spin" />
+                  <span suppressHydrationWarning>
+                    {t('user.notifications.markingAllRead', 'Marking...')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
+                  <span suppressHydrationWarning>
+                    {t('user.notifications.markAllRead', 'Mark All as Read')}
+                  </span>
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3 mb-8">
         <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <Bell className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
+          <div className="flex items-center justify-between">
             <div>
               <p style={{
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-muted))'
-              }}>{t('user.notifications.stats.total')}</p>
+                color: 'hsl(var(--text-muted))',
+                marginBottom: '0.25rem'
+              }} suppressHydrationWarning>
+                {t('user.notifications.stats.total', 'Total')}
+              </p>
               <p style={{
-                fontSize: 'var(--font-size-2xl)',
+                fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
                 fontWeight: 'var(--font-weight-bold)',
                 color: 'hsl(var(--text-heading))'
-              }}>{notifications.length}</p>
+              }}>{total}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+              backgroundColor: 'hsl(var(--accent))'
+            }}>
+              <Bell className="h-6 w-6" style={{ color: 'hsl(var(--accent-foreground))' }} />
             </div>
           </div>
         </Card>
 
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-              <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-            </div>
+        <Card className="p-4 ltr:border-l-4 rtl:border-r-4" style={{ borderColor: 'hsl(var(--primary))' }}>
+          <div className="flex items-center justify-between">
             <div>
               <p style={{
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-muted))'
-              }}>{t('user.notifications.stats.unread')}</p>
+                color: 'hsl(var(--text-muted))',
+                marginBottom: '0.25rem'
+              }} suppressHydrationWarning>
+                {t('user.notifications.stats.unread', 'Unread')}
+              </p>
               <p style={{
-                fontSize: 'var(--font-size-2xl)',
+                fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
                 fontWeight: 'var(--font-weight-bold)',
-                color: 'hsl(var(--text-heading))'
+                color: 'hsl(var(--primary))'
               }}>{unreadCount}</p>
             </div>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+              backgroundColor: 'hsl(var(--primary) / 0.1)'
+            }}>
+              <Bell className="h-6 w-6" style={{ color: 'hsl(var(--primary))' }} />
+            </div>
           </div>
         </Card>
 
         <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-              <Video className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            </div>
+          <div className="flex items-center justify-between">
             <div>
               <p style={{
                 fontSize: 'var(--font-size-sm)',
                 fontFamily: 'var(--font-family-primary)',
-                color: 'hsl(var(--text-muted))'
-              }}>{t('user.notifications.stats.zoom')}</p>
+                color: 'hsl(var(--text-muted))',
+                marginBottom: '0.25rem'
+              }} suppressHydrationWarning>
+                {t('user.notifications.stats.read', 'Read')}
+              </p>
               <p style={{
-                fontSize: 'var(--font-size-2xl)',
+                fontSize: 'var(--font-size-3xl)',
                 fontFamily: 'var(--font-family-heading)',
                 fontWeight: 'var(--font-weight-bold)',
                 color: 'hsl(var(--text-heading))'
-              }}>{zoomCount}</p>
+              }}>{total - unreadCount}</p>
+            </div>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+              backgroundColor: 'hsl(var(--success) / 0.1)'
+            }}>
+              <CheckCircle2 className="h-6 w-6" style={{ color: 'hsl(var(--success))' }} />
             </div>
           </div>
         </Card>
       </div>
-
-      {/* Tabs Filter */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-        <TabsList className="grid w-full max-w-md grid-cols-3">
-          <TabsTrigger value="all">
-            {t('user.notifications.tabs.all')} ({notifications.length})
-          </TabsTrigger>
-          <TabsTrigger value="unread">
-            {t('user.notifications.tabs.unread')} ({unreadCount})
-          </TabsTrigger>
-          <TabsTrigger value="zoom">
-            {t('user.notifications.tabs.zoom')} ({zoomCount})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       {/* Notifications List */}
-      <div className="space-y-3">
-        {filteredNotifications.map((notification) => (
-          <Card
-            key={notification.id}
-            className={`p-5 transition-all hover:shadow-md ${
-              !notification.read ? 'bg-blue-50/50 dark:bg-blue-950/20 ltr:border-l-4 ltr:border-l-blue-500 rtl:border-r-4 rtl:border-r-blue-500' : ''
-            }`}
-          >
-            <div className="flex gap-4">
-              {/* Icon */}
-              <div className={`p-3 rounded-lg ${getNotificationColor(notification.type)} flex-shrink-0`}>
-                {getNotificationIcon(notification.type)}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-4 mb-2">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 style={{
-                        fontSize: 'var(--font-size-base)',
-                        fontFamily: 'var(--font-family-heading)',
-                        fontWeight: 'var(--font-weight-semibold)',
-                        color: 'hsl(var(--text-heading))'
-                      }}>{notification.title}</h3>
-                      {!notification.read && (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          paddingInlineStart: '0.625rem',
-                          paddingInlineEnd: '0.625rem',
-                          paddingTop: '0.25rem',
-                          paddingBottom: '0.25rem',
-                          backgroundColor: 'hsl(var(--primary))',
-                          color: 'hsl(var(--primary-foreground))',
-                          borderRadius: 'calc(var(--radius) * 1.5)',
-                          fontSize: 'var(--font-size-xs)',
-                          fontFamily: 'var(--font-family-primary)',
-                          fontWeight: 'var(--font-weight-medium)'
-                        }}>{t('user.notifications.badge.new')}</span>
-                      )}
-                      {notification.priority === 'high' && (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          paddingInlineStart: '0.625rem',
-                          paddingInlineEnd: '0.625rem',
-                          paddingTop: '0.25rem',
-                          paddingBottom: '0.25rem',
-                          backgroundColor: 'hsl(var(--destructive))',
-                          color: 'hsl(var(--destructive-foreground))',
-                          borderRadius: 'calc(var(--radius) * 1.5)',
-                          fontSize: 'var(--font-size-xs)',
-                          fontFamily: 'var(--font-family-primary)',
-                          fontWeight: 'var(--font-weight-medium)'
-                        }}>{t('user.notifications.badge.urgent')}</span>
-                      )}
-                    </div>
-                    <p style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-muted))',
-                      marginBottom: '0.5rem'
-                    }}>
-                      {notification.message}
-                    </p>
-                    {notification.course && (
-                      <span style={{
-                        display: 'inline-block',
-                        paddingInlineStart: '0.625rem',
-                        paddingInlineEnd: '0.625rem',
-                        paddingTop: '0.25rem',
-                        paddingBottom: '0.25rem',
-                        border: '1px solid hsl(var(--border))',
-                        backgroundColor: 'transparent',
-                        color: 'hsl(var(--text-body))',
-                        borderRadius: 'calc(var(--radius) * 1.5)',
-                        fontSize: 'var(--font-size-xs)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)'
-                      }}>
-                        {notification.course}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-1">
-                    {!notification.read && (
-                      <button
-                        onClick={() => markAsRead(notification.id)}
-                        title={t('user.notifications.actions.markRead')}
-                        style={{
-                          padding: '0.25rem',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: 'hsl(var(--text-body))',
-                          transition: 'background-color 0.2s',
-                          borderRadius: 'calc(var(--radius))'
-                        }}
-                        className="hover:bg-accent"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => deleteNotification(notification.id)}
-                      title={t('user.notifications.actions.delete')}
-                      style={{
-                        padding: '0.25rem',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'hsl(var(--text-body))',
-                        transition: 'background-color 0.2s',
-                        borderRadius: 'calc(var(--radius))'
-                      }}
-                      className="hover:bg-accent"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Metadata for Zoom meetings */}
-                {notification.type === 'zoom_meeting' && notification.metadata && (
-                  <Card className="p-3 mb-3 bg-muted/50">
-                    <div className="flex items-center gap-4" style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      color: 'hsl(var(--text-body))'
-                    }}>
-                      <div className="flex items-center gap-1">
-                        <Video className="h-4 w-4" style={{ color: 'hsl(var(--text-muted))' }} />
-                        <span className="font-mono">{notification.metadata.meeting_id}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" style={{ color: 'hsl(var(--text-muted))' }} />
-                        <span>{new Date(notification.time).toLocaleDateString()} at {new Date(notification.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    </div>
-                  </Card>
-                )}
-
-                {/* Footer */}
-                <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                  <div className="flex items-center gap-1" style={{
-                    fontSize: 'var(--font-size-xs)',
-                    fontFamily: 'var(--font-family-primary)',
-                    color: 'hsl(var(--text-muted))'
-                  }}>
-                    <Clock className="h-3 w-3" />
-                    <span>{getTimeAgo(notification.time, t)}</span>
-                  </div>
-
-                  {notification.priority === 'high' ? (
-                    <button
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.25rem',
-                        paddingInlineStart: '0.75rem',
-                        paddingInlineEnd: '0.75rem',
-                        paddingTop: '0.375rem',
-                        paddingBottom: '0.375rem',
-                        backgroundColor: 'hsl(var(--primary))',
-                        color: 'hsl(var(--primary-foreground))',
-                        borderRadius: 'calc(var(--radius) * 1.5)',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        transition: 'opacity 0.2s'
-                      }}
-                      className="hover:opacity-90"
-                    >
-                      {t(notification.actionLabel)}
-                      {notification.type === 'zoom_meeting' && (
-                        <ExternalLink className="h-3 w-3 ltr:ml-1 rtl:mr-1" />
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      style={{
-                        paddingInlineStart: '0.75rem',
-                        paddingInlineEnd: '0.75rem',
-                        paddingTop: '0.375rem',
-                        paddingBottom: '0.375rem',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 'calc(var(--radius) * 1.5)',
-                        backgroundColor: 'transparent',
-                        color: 'hsl(var(--text-body))',
-                        cursor: 'pointer',
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        transition: 'background-color 0.2s'
-                      }}
-                      className="hover:bg-accent"
-                    >
-                      {t(notification.actionLabel)}
-                      {notification.type === 'zoom_meeting' && (
-                        <ExternalLink className="h-3 w-3 ltr:ml-1 rtl:mr-1" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* Empty State */}
-      {filteredNotifications.length === 0 && (
-        <Card className="p-12 text-center">
-          <div className="max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{
-              backgroundColor: 'hsl(var(--muted))'
-            }}>
-              <Bell className="h-8 w-8" style={{ color: 'hsl(var(--text-muted))' }} />
-            </div>
-            <h3 style={{
-              fontSize: 'var(--font-size-lg)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-semibold)',
-              color: 'hsl(var(--text-heading))',
-              marginBottom: '0.5rem'
-            }}>{t('user.notifications.empty.title')}</h3>
-            <p style={{
-              color: 'hsl(var(--text-muted))',
-              fontSize: 'var(--font-size-base)',
-              fontFamily: 'var(--font-family-primary)'
-            }}>
-              {activeTab === 'all'
-                ? t('user.notifications.empty.allCaughtUp')
-                : `${t('user.notifications.empty.noFilteredNotifications')} (${activeTab})`
-              }
-            </p>
+      <Card>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="border-b px-6 pt-6">
+            <TabsList>
+              <TabsTrigger value="all" suppressHydrationWarning>
+                {t('user.notifications.tabs.all', 'All')} ({total})
+              </TabsTrigger>
+              <TabsTrigger value="unread" suppressHydrationWarning>
+                {t('user.notifications.tabs.unread', 'Unread')} ({unreadCount})
+              </TabsTrigger>
+              <TabsTrigger value="read" suppressHydrationWarning>
+                {t('user.notifications.tabs.read', 'Read')} ({total - unreadCount})
+              </TabsTrigger>
+              <TabsTrigger value="deleted" suppressHydrationWarning>
+                {t('user.notifications.tabs.deleted', 'Deleted')} ({deletedCount})
+              </TabsTrigger>
+            </TabsList>
           </div>
-        </Card>
-      )}
+
+          <TabsContent value={activeTab} className="p-6 space-y-3">
+            {(isLoading || (activeTab === 'deleted' && loadingDeleted)) ? (
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" style={{ color: 'hsl(var(--primary))' }} />
+                <p style={{
+                  color: 'hsl(var(--text-muted))',
+                  fontSize: 'var(--font-size-sm)',
+                  fontFamily: 'var(--font-family-primary)'
+                }} suppressHydrationWarning>
+                  {t('common.loading', 'Loading...')}
+                </p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{
+                  backgroundColor: 'hsl(var(--destructive) / 0.1)'
+                }}>
+                  <AlertCircle className="h-8 w-8" style={{ color: 'hsl(var(--destructive))' }} />
+                </div>
+                <p style={{
+                  fontSize: 'var(--font-size-base)',
+                  fontFamily: 'var(--font-family-heading)',
+                  fontWeight: 'var(--font-weight-semibold)',
+                  color: 'hsl(var(--text-heading))',
+                  marginBottom: '0.5rem'
+                }} suppressHydrationWarning>
+                  {t('user.notifications.error', 'Failed to load notifications')}
+                </p>
+              </div>
+            ) : filteredNotifications.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{
+                  backgroundColor: 'hsl(var(--muted))'
+                }}>
+                  <Bell className="h-8 w-8" style={{ color: 'hsl(var(--muted-foreground))' }} />
+                </div>
+                <p style={{
+                  fontSize: 'var(--font-size-base)',
+                  fontFamily: 'var(--font-family-heading)',
+                  fontWeight: 'var(--font-weight-semibold)',
+                  color: 'hsl(var(--text-heading))'
+                }} suppressHydrationWarning>
+                  {t('user.notifications.noNotifications', 'No notifications')}
+                </p>
+              </div>
+            ) : (
+              filteredNotifications.map((notification) => (
+                <NotificationItem key={notification.id} notification={notification} />
+              ))
+            )}
+          </TabsContent>
+        </Tabs>
+      </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle suppressHydrationWarning>
+              {t('user.notifications.deleteDialog.title', 'Delete Notification?')}
+            </AlertDialogTitle>
+            <AlertDialogDescription suppressHydrationWarning>
+              {t('user.notifications.deleteDialog.description', 'Are you sure you want to delete this notification? This action cannot be undone.')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {notificationToDelete && (
+            <div className="rounded-lg border bg-muted/50 p-3 my-2">
+              <p className="font-medium text-sm mb-1">{notificationToDelete.title}</p>
+              <p className="text-xs text-muted-foreground line-clamp-2">{notificationToDelete.message}</p>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel suppressHydrationWarning>
+              {t('user.notifications.deleteDialog.cancel', 'Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="ltr:mr-2 rtl:ml-2 h-4 w-4 animate-spin" />}
+              <span suppressHydrationWarning>
+                {t('user.notifications.deleteDialog.confirm', 'Delete')}
+              </span>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

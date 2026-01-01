@@ -31,10 +31,18 @@ export async function GET(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Get course
+    // Get course with instructor details
     const { data: course, error: courseError } = await supabase
       .from('courses')
-      .select('*')
+      .select(`
+        *,
+        instructor:users!courses_instructor_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
       .eq('id', id)
       .eq('tenant_id', userData.tenant_id)
       .single();

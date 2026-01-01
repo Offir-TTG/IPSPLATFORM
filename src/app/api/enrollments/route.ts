@@ -166,7 +166,9 @@ export async function GET(request: NextRequest) {
           type,
           title,
           price,
-          currency
+          currency,
+          payment_model,
+          payment_plan
         )
       `)
       .eq('user_id', targetUserId)
@@ -176,7 +178,11 @@ export async function GET(request: NextRequest) {
     // Apply filters
     if (status) {
       query = query.eq('status', status);
+    } else {
+      // Only show active and completed enrollments by default (exclude draft, pending, cancelled)
+      query = query.in('status', ['active', 'completed']);
     }
+
     if (paymentStatus) {
       query = query.eq('payment_status', paymentStatus);
     }

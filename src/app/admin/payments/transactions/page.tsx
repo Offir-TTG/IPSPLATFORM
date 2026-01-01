@@ -27,6 +27,9 @@ import {
   AlertCircle,
   DollarSign,
   ArrowLeft,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 
 interface Transaction {
@@ -46,6 +49,7 @@ interface Transaction {
   failure_reason?: string;
   created_at: string;
   metadata?: any;
+  payment_number?: number;
 }
 
 interface TransactionFilters {
@@ -54,6 +58,7 @@ interface TransactionFilters {
   dateTo?: string;
   paymentMethod?: string;
   search?: string;
+  productId?: string;
 }
 
 export default function TransactionsPage() {
@@ -68,10 +73,46 @@ export default function TransactionsPage() {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [sortField, setSortField] = useState<keyof Transaction | null>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [products, setProducts] = useState<Array<{ id: string; title: string }>>([]);
 
   useEffect(() => {
     fetchTransactions();
   }, [filters]);
+
+  // Fetch products for the dropdown filter
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch('/api/admin/products', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Failed to fetch products:', response.status, errorData);
+          return;
+        }
+
+        const responseData = await response.json();
+
+        // The API returns products in the 'data' field, not 'products'
+        if (responseData.success && responseData.data && Array.isArray(responseData.data)) {
+          const mappedProducts = responseData.data.map((p: any) => ({ id: p.id, title: p.title }));
+          setProducts(mappedProducts);
+        } else {
+          console.error('Products API check failed:', responseData);
+        }
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      }
+    };
+    fetchProducts();
+  }, []);
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -88,6 +129,7 @@ export default function TransactionsPage() {
       if (filters.dateTo) params.append('dateTo', filters.dateTo);
       if (filters.paymentMethod) params.append('paymentMethod', filters.paymentMethod);
       if (filters.search) params.append('search', filters.search);
+      if (filters.productId) params.append('productId', filters.productId);
 
       const response = await fetch(`/api/admin/payments/transactions?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch transactions');
@@ -171,17 +213,17 @@ export default function TransactionsPage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+        return <CheckCircle2 className="h-4 w-4" style={{ color: 'hsl(var(--success))' }} />;
       case 'pending':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+        return <AlertCircle className="h-4 w-4" style={{ color: 'hsl(var(--warning))' }} />;
       case 'failed':
-        return <XCircle className="h-4 w-4 text-red-500" />;
+        return <XCircle className="h-4 w-4" style={{ color: 'hsl(var(--destructive))' }} />;
       case 'refunded':
-        return <RotateCcw className="h-4 w-4 text-gray-500" />;
+        return <RotateCcw className="h-4 w-4 text-muted-foreground" />;
       case 'partially_refunded':
-        return <RotateCcw className="h-4 w-4 text-orange-500" />;
+        return <RotateCcw className="h-4 w-4" style={{ color: 'hsl(var(--warning))' }} />;
       default:
-        return <AlertCircle className="h-4 w-4 text-gray-500" />;
+        return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -205,23 +247,17 @@ export default function TransactionsPage() {
     return <Badge variant={variants[status] || 'outline'} suppressHydrationWarning>{statusLabels[status] || status}</Badge>;
   };
 
-  const translatePaymentMethod = (method: string) => {
-    const normalizedMethod = method?.toLowerCase().replace(/[\s-]/g, '_') || 'unknown';
-    const methodLabels: Record<string, string> = {
-      card: t('admin.payments.paymentMethod.card', 'Card'),
-      credit_card: t('admin.payments.paymentMethod.credit_card', 'Credit Card'),
-      bank_transfer: t('admin.payments.paymentMethod.bank_transfer', 'Bank Transfer'),
-      cash: t('admin.payments.paymentMethod.cash', 'Cash'),
-      check: t('admin.payments.paymentMethod.check', 'Check'),
-      cheque: t('admin.payments.paymentMethod.cheque', 'Cheque'),
-      paypal: t('admin.payments.paymentMethod.paypal', 'PayPal'),
-      stripe: t('admin.payments.paymentMethod.stripe', 'Stripe'),
-      online: t('admin.payments.paymentMethod.online', 'Online'),
-      manual: t('admin.payments.paymentMethod.manual', 'Manual'),
-      unknown: t('admin.payments.paymentMethod.unknown', 'Unknown'),
+  const translatePaymentType = (paymentType: string) => {
+    const normalizedType = paymentType?.toLowerCase() || 'unknown';
+    const typeLabels: Record<string, string> = {
+      deposit: t('admin.payments.paymentType.deposit', 'Deposit'),
+      installment: t('admin.payments.paymentType.installment', 'Installment'),
+      subscription: t('admin.payments.paymentType.subscription', 'Subscription'),
+      full: t('admin.payments.paymentType.full', 'Full Payment'),
+      unknown: t('admin.payments.paymentType.unknown', 'Unknown'),
     };
 
-    return methodLabels[normalizedMethod] || t(`admin.payments.paymentMethod.${normalizedMethod}`, method);
+    return typeLabels[normalizedType] || t(`admin.payments.paymentType.${normalizedType}`, paymentType);
   };
 
   const formatDate = (dateString: string) => {
@@ -246,6 +282,62 @@ export default function TransactionsPage() {
       }
     ).format(amount);
   };
+
+  const handleSort = (field: keyof Transaction) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: keyof Transaction) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="h-4 w-4 opacity-50" />;
+    }
+    return sortDirection === 'asc'
+      ? <ArrowUp className="h-4 w-4" />
+      : <ArrowDown className="h-4 w-4" />;
+  };
+
+  const sortedTransactions = React.useMemo(() => {
+    // First, add payment_number from metadata to each transaction
+    const transactionsWithPaymentNumber = transactions.map(t => ({
+      ...t,
+      payment_number: t.metadata?.payment_number || null
+    }));
+
+    if (!sortField) return transactionsWithPaymentNumber;
+
+    return [...transactionsWithPaymentNumber].sort((a, b) => {
+      let aValue = a[sortField];
+      let bValue = b[sortField];
+
+      // Handle null/undefined values
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
+
+      // Convert to comparable values
+      if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+      if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [transactions, sortField, sortDirection]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(sortedTransactions.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTransactions = sortedTransactions.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, sortField, sortDirection]);
 
   // Show loading state while translations are loading
   if (translationsLoading) {
@@ -340,7 +432,7 @@ export default function TransactionsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium" suppressHydrationWarning>{t('admin.payments.transactions.completed', 'Completed')}</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <CheckCircle2 className="h-4 w-4" style={{ color: 'hsl(var(--success))' }} />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold" suppressHydrationWarning>
@@ -371,7 +463,7 @@ export default function TransactionsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-5">
+            <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <Label suppressHydrationWarning>{t('admin.payments.transactions.search', 'Search')}</Label>
                 <Input
@@ -379,6 +471,35 @@ export default function TransactionsPage() {
                   value={filters.search || ''}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                 />
+              </div>
+
+              <div>
+                <Label suppressHydrationWarning>
+                  {t('common.product', 'Product')}
+                  {products.length > 0 && <span className="text-xs text-muted-foreground" style={{ marginLeft: isRtl ? '0' : '0.5rem', marginRight: isRtl ? '0.5rem' : '0' }}>({products.length})</span>}
+                </Label>
+                <Select
+                  value={filters.productId || 'all'}
+                  onValueChange={(value) => setFilters({ ...filters, productId: value === 'all' ? undefined : value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('common.allProducts', 'All Products')} />
+                  </SelectTrigger>
+                  <SelectContent dir={direction}>
+                    <SelectItem value="all" suppressHydrationWarning>{t('common.allProducts', 'All Products')}</SelectItem>
+                    {products.length === 0 ? (
+                      <SelectItem value="loading" disabled>
+                        {t('common.loading', 'Loading...')}
+                      </SelectItem>
+                    ) : (
+                      products.map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.title}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
@@ -438,17 +559,74 @@ export default function TransactionsPage() {
               <table className="w-full" dir={direction}>
                 <thead className="border-b">
                   <tr className={isRtl ? 'text-right' : 'text-left'}>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.user', 'User')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.product', 'Product')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.amount', 'Amount')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.method', 'Payment Method')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.status', 'Status')}</th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('created_at')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</span>
+                        {getSortIcon('created_at')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('user_name')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.user', 'User')}</span>
+                        {getSortIcon('user_name')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('product_name')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.product', 'Product')}</span>
+                        {getSortIcon('product_name')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('payment_number')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.installmentNumber', 'Installment #')}</span>
+                        {getSortIcon('payment_number')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('amount')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.amount', 'Amount')}</span>
+                        {getSortIcon('amount')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('payment_method')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.paymentType', 'Payment Type')}</span>
+                        {getSortIcon('payment_method')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('status')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.transactions.table.status', 'Status')}</span>
+                        {getSortIcon('status')}
+                      </button>
+                    </th>
                     <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.payments.transactions.table.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((transaction) => (
+                  {paginatedTransactions.map((transaction) => (
                     <tr key={transaction.id} className="border-b hover:bg-muted/50">
                       <td className="p-4">
                         <div className="text-sm">{formatDate(transaction.created_at)}</div>
@@ -462,6 +640,11 @@ export default function TransactionsPage() {
                       <td className="p-4">
                         <div className="font-medium">{transaction.product_name}</div>
                       </td>
+                      <td className="p-4">
+                        <div className="text-sm">
+                          {transaction.metadata?.payment_number || '-'}
+                        </div>
+                      </td>
                       <td className={`p-4 ${isRtl ? 'text-right' : 'text-left'}`}>
                         <div className="font-medium" suppressHydrationWarning>
                           {formatCurrency(transaction.amount, transaction.currency)}
@@ -474,7 +657,7 @@ export default function TransactionsPage() {
                       </td>
                       <td className="p-4">
                         <Badge variant="outline" suppressHydrationWarning>
-                          {translatePaymentMethod(transaction.payment_method)}
+                          {translatePaymentType(transaction.payment_method)}
                         </Badge>
                       </td>
                       <td className="p-4">
@@ -515,7 +698,7 @@ export default function TransactionsPage() {
               </table>
             </div>
 
-            {transactions.length === 0 && !loadingTransactions && (
+            {sortedTransactions.length === 0 && !loadingTransactions && (
               <div className="py-12 text-center">
                 <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('admin.payments.transactions.noTransactionsFound', 'No Transactions Found')}</h3>
@@ -525,6 +708,77 @@ export default function TransactionsPage() {
               </div>
             )}
           </CardContent>
+
+          {/* Pagination Controls */}
+          {sortedTransactions.length > 0 && (
+            <div className={`border-t p-4 flex items-center justify-between ${isRtl ? 'flex-row-reverse' : ''}`}>
+              <div className="flex items-center gap-2">
+                <Label suppressHydrationWarning>{t('admin.payments.transactions.pagination.rowsPerPage', 'Rows per page:')}</Label>
+                <Select
+                  value={itemsPerPage.toString()}
+                  onValueChange={(value) => {
+                    setItemsPerPage(Number(value));
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent dir={direction}>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                  {t('admin.payments.transactions.pagination.showing', `Showing ${startIndex + 1}-${Math.min(endIndex, sortedTransactions.length)} of ${sortedTransactions.length}`)}
+                </span>
+              </div>
+
+              <div className={`flex items-center gap-1 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.first', 'First')}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.previous', 'Previous')}</span>
+                </Button>
+                <span className="text-sm px-4" suppressHydrationWarning>
+                  {t('admin.payments.transactions.pagination.page', `Page ${currentPage} of ${totalPages}`)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.next', 'Next')}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.last', 'Last')}</span>
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Refund Dialog */}
@@ -681,23 +935,17 @@ function TransactionDetailsDialog({
   const { t } = useAdminLanguage();
   if (!transaction) return null;
 
-  const translatePaymentMethod = (method: string) => {
-    const normalizedMethod = method?.toLowerCase().replace(/[\s-]/g, '_') || 'unknown';
-    const methodLabels: Record<string, string> = {
-      card: t('admin.payments.paymentMethod.card', 'Card'),
-      credit_card: t('admin.payments.paymentMethod.credit_card', 'Credit Card'),
-      bank_transfer: t('admin.payments.paymentMethod.bank_transfer', 'Bank Transfer'),
-      cash: t('admin.payments.paymentMethod.cash', 'Cash'),
-      check: t('admin.payments.paymentMethod.check', 'Check'),
-      cheque: t('admin.payments.paymentMethod.cheque', 'Cheque'),
-      paypal: t('admin.payments.paymentMethod.paypal', 'PayPal'),
-      stripe: t('admin.payments.paymentMethod.stripe', 'Stripe'),
-      online: t('admin.payments.paymentMethod.online', 'Online'),
-      manual: t('admin.payments.paymentMethod.manual', 'Manual'),
-      unknown: t('admin.payments.paymentMethod.unknown', 'Unknown'),
+  const translatePaymentType = (paymentType: string) => {
+    const normalizedType = paymentType?.toLowerCase() || 'unknown';
+    const typeLabels: Record<string, string> = {
+      deposit: t('admin.payments.paymentType.deposit', 'Deposit'),
+      installment: t('admin.payments.paymentType.installment', 'Installment'),
+      subscription: t('admin.payments.paymentType.subscription', 'Subscription'),
+      full: t('admin.payments.paymentType.full', 'Full Payment'),
+      unknown: t('admin.payments.paymentType.unknown', 'Unknown'),
     };
 
-    return methodLabels[normalizedMethod] || t(`admin.payments.paymentMethod.${normalizedMethod}`, method);
+    return typeLabels[normalizedType] || t(`admin.payments.paymentType.${normalizedType}`, paymentType);
   };
 
   return (
@@ -715,7 +963,16 @@ function TransactionDetailsDialog({
             <div>
               <Label className="text-muted-foreground" suppressHydrationWarning>{t('common.status', 'Status')}</Label>
               <div className="flex items-center gap-2 mt-1">
-                <Badge>{transaction.status}</Badge>
+                {(() => {
+                  const statusLabels: Record<string, string> = {
+                    completed: t('admin.payments.transactions.status.completed', 'Completed'),
+                    pending: t('admin.payments.transactions.status.pending', 'Pending'),
+                    failed: t('admin.payments.transactions.status.failed', 'Failed'),
+                    refunded: t('admin.payments.transactions.status.refunded', 'Refunded'),
+                    partially_refunded: t('admin.payments.transactions.status.partiallyRefunded', 'Partially Refunded'),
+                  };
+                  return <Badge suppressHydrationWarning>{statusLabels[transaction.status] || transaction.status}</Badge>;
+                })()}
               </div>
             </div>
             <div>
@@ -734,8 +991,8 @@ function TransactionDetailsDialog({
               </div>
             </div>
             <div>
-              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.method', 'Payment Method')}</Label>
-              <div suppressHydrationWarning>{translatePaymentMethod(transaction.payment_method)}</div>
+              <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.paymentType', 'Payment Type')}</Label>
+              <div suppressHydrationWarning>{translatePaymentType(transaction.payment_method)}</div>
             </div>
             <div>
               <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.table.date', 'Date')}</Label>
@@ -750,7 +1007,7 @@ function TransactionDetailsDialog({
             {transaction.refund_amount && (
               <div>
                 <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.refund.amount', 'Refund Amount')}</Label>
-                <div className="text-lg font-bold text-red-500" suppressHydrationWarning>
+                <div className="text-lg font-bold" style={{ color: 'hsl(var(--destructive))' }} suppressHydrationWarning>
                   {new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', { style: 'currency', currency: transaction.currency }).format(transaction.refund_amount)}
                 </div>
               </div>
@@ -758,7 +1015,7 @@ function TransactionDetailsDialog({
             {transaction.failure_reason && (
               <div className="col-span-2">
                 <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.details.failureReason', 'Failure Reason')}</Label>
-                <div className="text-red-500">{transaction.failure_reason}</div>
+                <div style={{ color: 'hsl(var(--destructive))' }}>{transaction.failure_reason}</div>
               </div>
             )}
           </div>
@@ -766,9 +1023,44 @@ function TransactionDetailsDialog({
           {transaction.metadata && Object.keys(transaction.metadata).length > 0 && (
             <div>
               <Label className="text-muted-foreground" suppressHydrationWarning>{t('admin.payments.transactions.details.metadata', 'Metadata')}</Label>
-              <pre className="mt-2 p-4 bg-muted rounded-md text-xs overflow-auto">
-                {JSON.stringify(transaction.metadata, null, 2)}
-              </pre>
+              <div className="mt-2 p-4 bg-muted rounded-md space-y-2">
+                {Object.entries(transaction.metadata).map(([key, value]) => {
+                  // Translate common metadata field names
+                  const fieldTranslations: Record<string, string> = {
+                    'payment_number': t('admin.payments.transactions.details.metadata.paymentNumber', 'Payment Number'),
+                    'payment_type': t('admin.payments.transactions.details.metadata.paymentType', 'Payment Type'),
+                    'paid_date': t('admin.payments.transactions.details.metadata.paidDate', 'Paid Date'),
+                    'scheduled_date': t('admin.payments.transactions.details.metadata.scheduledDate', 'Scheduled Date'),
+                    'enrollment_id': t('admin.payments.transactions.details.metadata.enrollmentId', 'Enrollment ID'),
+                    'schedule_id': t('admin.payments.transactions.details.metadata.scheduleId', 'Schedule ID'),
+                  };
+
+                  const translatedKey = fieldTranslations[key] || key.replace(/_/g, ' ');
+
+                  // Translate the value if it's a payment_type
+                  let displayValue: string;
+                  if (typeof value === 'object' && value !== null) {
+                    displayValue = JSON.stringify(value, null, 2);
+                  } else if (value === null) {
+                    displayValue = t('common.null', 'N/A');
+                  } else if (key === 'payment_type') {
+                    displayValue = translatePaymentType(String(value));
+                  } else {
+                    displayValue = String(value);
+                  }
+
+                  return (
+                    <div key={key} className="grid grid-cols-3 gap-2 text-sm">
+                      <div className="font-medium text-muted-foreground capitalize">
+                        {translatedKey}:
+                      </div>
+                      <div className="col-span-2 font-mono text-xs break-all">
+                        {displayValue}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

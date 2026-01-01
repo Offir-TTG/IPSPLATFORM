@@ -338,10 +338,10 @@ export async function POST(request: NextRequest) {
     let wizardProfileData: any = null;
 
     if (user_id) {
-      // Using existing user - verify they exist
+      // Using existing user - verify they exist and fetch their profile
       const { data: existingUser } = await supabase
         .from('users')
-        .select('id')
+        .select('id, email, first_name, last_name, phone, location')
         .eq('id', user_id)
         .eq('tenant_id', adminData.tenant_id)
         .single();
@@ -353,6 +353,22 @@ export async function POST(request: NextRequest) {
         );
       }
       finalUserId = user_id;
+
+      // Store existing user's profile in wizard_profile_data
+      // This allows wizard to skip profile step if user profile is complete
+      wizardProfileData = {
+        email: existingUser.email,
+        first_name: existingUser.first_name || '',
+        last_name: existingUser.last_name || '',
+        phone: existingUser.phone || '',
+        address: existingUser.location || '', // Using location field from users table
+      };
+
+      console.log('[Admin Enrollment] Fetched existing user profile for wizard:', {
+        email: existingUser.email,
+        has_phone: !!existingUser.phone,
+        has_location: !!existingUser.location,
+      });
     } else {
       // NO USER_ID - Memory-based wizard approach
       // Check if email already exists first
@@ -443,23 +459,41 @@ export async function POST(request: NextRequest) {
       payment_start_date: body.payment_start_date || product.payment_start_date || null, // Admin override or copy from product
     };
 
-    // Save email and name for invitation purposes (to pre-fill the form for user)
-    // Don't save phone and address because the wizard checks for ALL fields:
-    // - If email, first_name, last_name, phone, address are ALL present → profile marked complete (skip step)
-    // - If phone or address are missing → profile NOT complete (show profile step)
-    // This allows admin to provide known info (email, name) while user fills the rest
-    if (!finalUserId && wizardProfileData) {
-      enrollmentData.wizard_profile_data = {
-        email: wizardProfileData.email,
-        first_name: wizardProfileData.first_name || '',
-        last_name: wizardProfileData.last_name || ''
-        // DO NOT include phone, address - user will fill these in wizard
-      };
-      console.log('[Admin Enrollment] Saving email and name for invitation:', {
-        email: wizardProfileData.email,
-        first_name: wizardProfileData.first_name,
-        last_name: wizardProfileData.last_name
-      });
+    // Save wizard profile data for both new and existing users
+    // - For EXISTING users (finalUserId set): Store complete profile from users table
+    //   If profile is complete (has phone, address) → wizard will skip profile step
+    //   If profile is incomplete → wizard will show profile step
+    // - For NEW users (!finalUserId): Store only email and name
+    //   Wizard will always show profile step for phone and address
+    if (wizardProfileData) {
+      if (finalUserId) {
+        // Existing user - store complete profile
+        enrollmentData.wizard_profile_data = {
+          email: wizardProfileData.email,
+          first_name: wizardProfileData.first_name || '',
+          last_name: wizardProfileData.last_name || '',
+          phone: wizardProfileData.phone || '',
+          address: wizardProfileData.address || ''
+        };
+        console.log('[Admin Enrollment] Saving existing user complete profile for wizard:', {
+          email: wizardProfileData.email,
+          has_phone: !!wizardProfileData.phone,
+          has_address: !!wizardProfileData.address
+        });
+      } else {
+        // New user - store only email and name (user fills phone/address in wizard)
+        enrollmentData.wizard_profile_data = {
+          email: wizardProfileData.email,
+          first_name: wizardProfileData.first_name || '',
+          last_name: wizardProfileData.last_name || ''
+          // DO NOT include phone, address - user will fill these in wizard
+        };
+        console.log('[Admin Enrollment] Saving email and name for new user invitation:', {
+          email: wizardProfileData.email,
+          first_name: wizardProfileData.first_name,
+          last_name: wizardProfileData.last_name
+        });
+      }
     }
 
     const { data, error } = await supabase

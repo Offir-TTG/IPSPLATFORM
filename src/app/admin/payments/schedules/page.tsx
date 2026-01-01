@@ -32,6 +32,8 @@ import {
   User,
   Package,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Download,
   ArrowLeft,
 } from 'lucide-react';
@@ -86,6 +88,8 @@ export default function SchedulesPage() {
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const totalPages = Math.ceil(totalSchedules / itemsPerPage);
   const [products, setProducts] = useState<Array<{ id: string; title: string }>>([]);
+  const [sortField, setSortField] = useState<keyof PaymentSchedule | null>('scheduled_date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     fetchSchedules();
@@ -317,21 +321,21 @@ export default function SchedulesPage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'paid':
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+        return <CheckCircle2 className="h-4 w-4" style={{ color: 'hsl(var(--success))' }} />;
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
+        return <Clock className="h-4 w-4" style={{ color: 'hsl(var(--warning))' }} />;
       case 'adjusted':
-        return <Calendar className="h-4 w-4 text-blue-500" />;
+        return <Calendar className="h-4 w-4" style={{ color: 'hsl(var(--primary))' }} />;
       case 'overdue':
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
+        return <AlertCircle className="h-4 w-4" style={{ color: 'hsl(var(--destructive))' }} />;
       case 'failed':
-        return <XCircle className="h-4 w-4 text-red-500" />;
+        return <XCircle className="h-4 w-4" style={{ color: 'hsl(var(--destructive))' }} />;
       case 'paused':
-        return <Pause className="h-4 w-4 text-gray-500" />;
+        return <Pause className="h-4 w-4 text-muted-foreground" />;
       case 'cancelled':
-        return <X className="h-4 w-4 text-gray-500" />;
+        return <X className="h-4 w-4 text-muted-foreground" />;
       default:
-        return <Clock className="h-4 w-4 text-gray-500" />;
+        return <Clock className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -375,6 +379,45 @@ export default function SchedulesPage() {
       }
     ).format(amount);
   };
+
+  const handleSort = (field: keyof PaymentSchedule) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: keyof PaymentSchedule) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="h-4 w-4 opacity-50" />;
+    }
+    return sortDirection === 'asc'
+      ? <ArrowUp className="h-4 w-4" />
+      : <ArrowDown className="h-4 w-4" />;
+  };
+
+  const sortedSchedules = React.useMemo(() => {
+    if (!sortField) return schedules;
+
+    return [...schedules].sort((a, b) => {
+      let aValue = a[sortField];
+      let bValue = b[sortField];
+
+      // Handle null/undefined values
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
+
+      // Convert to comparable values
+      if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+      if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [schedules, sortField, sortDirection]);
 
   // Show loading state while translations are loading
   if (translationsLoading) {
@@ -648,10 +691,7 @@ export default function SchedulesPage() {
           <CardContent className="p-0">
             <div className="overflow-x-auto overflow-y-visible" dir={direction}>
               <table className="w-full">
-                <thead style={{
-                  borderBottom: '1px solid hsl(var(--border))',
-                  backgroundColor: 'hsl(var(--muted) / 0.3)'
-                }}>
+                <thead className="border-b">
                   <tr className={isRtl ? 'text-right' : 'text-left'}>
                     <th className="p-4">
                       <Checkbox
@@ -659,45 +699,65 @@ export default function SchedulesPage() {
                         onCheckedChange={toggleAllSchedules}
                       />
                     </th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('common.user', 'User')}</th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('common.product', 'Product')}</th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('admin.payments.schedules.paymentNumber', 'Payment #')}</th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('common.amount', 'Amount')}</th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('common.status', 'Status')}</th>
-                    <th className="p-4" style={{
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'hsl(var(--text-heading))'
-                    }} suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('user_name')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('common.user', 'User')}</span>
+                        {getSortIcon('user_name')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('product_name')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('common.product', 'Product')}</span>
+                        {getSortIcon('product_name')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('payment_number')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.schedules.paymentNumber', 'Payment #')}</span>
+                        {getSortIcon('payment_number')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('amount')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('common.amount', 'Amount')}</span>
+                        {getSortIcon('amount')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('scheduled_date')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</span>
+                        {getSortIcon('scheduled_date')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium">
+                      <button
+                        onClick={() => handleSort('status')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('common.status', 'Status')}</span>
+                        {getSortIcon('status')}
+                      </button>
+                    </th>
+                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {schedules.map((schedule) => (
+                  {sortedSchedules.map((schedule) => (
                     <tr
                       key={schedule.id}
                       className="border-b transition-colors hover:bg-muted/50"
@@ -796,56 +856,77 @@ export default function SchedulesPage() {
         </Card>
 
         {/* Pagination */}
-        {schedules.length > 0 && (
-          <div className="flex items-center justify-between flex-wrap gap-4" dir={direction}>
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.schedules.page', 'Page')} {currentPage} {t('admin.payments.schedules.of', 'of')} {totalPages}
-              </div>
+        {totalSchedules > 0 && (
+          <Card>
+            <div className={`p-4 flex items-center justify-between ${isRtl ? 'flex-row-reverse' : ''}`}>
               <div className="flex items-center gap-2">
-                <Label htmlFor="page-size" className="text-sm text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
-                  {t('admin.payments.schedules.itemsPerPage', 'Items per page')}:
-                </Label>
+                <Label suppressHydrationWarning>{t('admin.payments.transactions.pagination.rowsPerPage', 'Rows per page:')}</Label>
                 <Select
                   value={itemsPerPage.toString()}
                   onValueChange={(value) => {
                     setItemsPerPage(Number(value));
-                    setCurrentPage(1); // Reset to first page when changing page size
+                    setCurrentPage(1);
                   }}
                 >
-                  <SelectTrigger id="page-size" className="w-20">
+                  <SelectTrigger className="w-20">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent dir={direction}>
+                    <SelectItem value="5">5</SelectItem>
                     <SelectItem value="10">10</SelectItem>
                     <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
                     <SelectItem value="50">50</SelectItem>
                     <SelectItem value="100">100</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                  {t('admin.payments.transactions.pagination.showing', `Showing ${((currentPage - 1) * itemsPerPage) + 1}-${Math.min(currentPage * itemsPerPage, totalSchedules)} of ${totalSchedules}`)}
+                </span>
+              </div>
+
+              <div className={`flex items-center gap-1 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.first', 'First')}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.previous', 'Previous')}</span>
+                </Button>
+                <span className="text-sm px-4" suppressHydrationWarning>
+                  {t('admin.payments.transactions.pagination.page', `Page ${currentPage} of ${totalPages}`)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.next', 'Next')}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.last', 'Last')}</span>
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(currentPage - 1)}
-                disabled={currentPage === 1 || loadingSchedules}
-              >
-                <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
-                <span suppressHydrationWarning>{t('common.previous', 'Previous')}</span>
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setCurrentPage(currentPage + 1)}
-                disabled={currentPage === totalPages || loadingSchedules}
-              >
-                <span suppressHydrationWarning>{t('common.next', 'Next')}</span>
-                <ArrowLeft className={`h-4 w-4 ltr:ml-2 rtl:mr-2 ${isRtl ? '' : 'rotate-180'}`} />
-              </Button>
-            </div>
-          </div>
+          </Card>
         )}
 
         {/* Adjust Date Dialog */}

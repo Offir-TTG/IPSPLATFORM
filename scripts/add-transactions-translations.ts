@@ -40,24 +40,39 @@ const translations = [
 
   // Status
   { key: 'admin.payments.transactions.status.completed', en: 'Completed', he: 'הושלם' },
-  { key: 'admin.payments.transactions.status.pending', en: 'Pending', he: 'ממתין' },
+  { key: 'admin.payments.transactions.status.pending', en: 'Pending', he: 'בהמתנה' },
   { key: 'admin.payments.transactions.status.failed', en: 'Failed', he: 'נכשל' },
   { key: 'admin.payments.transactions.status.refunded', en: 'Refunded', he: 'הוחזר' },
   { key: 'admin.payments.transactions.status.partiallyRefunded', en: 'Partially Refunded', he: 'הוחזר חלקית' },
 
-  // Payment Types (deposit, installment, subscription, full)
+  // Payment Types (deposit, installment, subscription, full) - Admin
   { key: 'admin.payments.paymentType.deposit', en: 'Deposit', he: 'מקדמה' },
   { key: 'admin.payments.paymentType.installment', en: 'Installment', he: 'תשלום' },
   { key: 'admin.payments.paymentType.subscription', en: 'Subscription', he: 'מנוי' },
   { key: 'admin.payments.paymentType.full', en: 'Full Payment', he: 'תשלום מלא' },
   { key: 'admin.payments.paymentType.unknown', en: 'Unknown', he: 'לא ידוע' },
 
+  // Payment Types - User
+  { key: 'user.payments.paymentType.deposit', en: 'Deposit', he: 'מקדמה' },
+  { key: 'user.payments.paymentType.installment', en: 'Installment', he: 'תשלום' },
+  { key: 'user.payments.paymentType.subscription', en: 'Subscription', he: 'מנוי' },
+  { key: 'user.payments.paymentType.full', en: 'Full Payment', he: 'תשלום מלא' },
+  { key: 'user.payments.paymentType.unknown', en: 'Unknown', he: 'לא ידוע' },
+
+  // Payment Status - User
+  { key: 'user.payments.status.paid', en: 'Paid', he: 'שולם' },
+  { key: 'user.payments.status.pending', en: 'Pending', he: 'בהמתנה' },
+  { key: 'user.payments.status.failed', en: 'Failed', he: 'נכשל' },
+  { key: 'user.payments.status.overdue', en: 'Overdue', he: 'באיחור' },
+  { key: 'user.payments.status.completed', en: 'Completed', he: 'הושלם' },
+
   // Table
   { key: 'admin.payments.transactions.table.date', en: 'Date', he: 'תאריך' },
   { key: 'admin.payments.transactions.table.user', en: 'User', he: 'משתמש' },
   { key: 'admin.payments.transactions.table.product', en: 'Product', he: 'מוצר' },
+  { key: 'admin.payments.transactions.table.installmentNumber', en: 'Installment #', he: 'מספר תשלום' },
   { key: 'admin.payments.transactions.table.amount', en: 'Amount', he: 'סכום' },
-  { key: 'admin.payments.transactions.table.method', en: 'Payment Method', he: 'אמצעי תשלום' },
+  { key: 'admin.payments.transactions.table.paymentType', en: 'Payment Type', he: 'סוג תשלום' },
   { key: 'admin.payments.transactions.table.status', en: 'Status', he: 'סטטוס' },
   { key: 'admin.payments.transactions.table.actions', en: 'Actions', he: 'פעולות' },
   { key: 'admin.payments.transactions.refundedAmount', en: 'Refunded', he: 'הוחזר' },
@@ -87,7 +102,22 @@ const translations = [
   { key: 'admin.payments.transactions.details.stripePaymentIntent', en: 'Stripe Payment Intent', he: 'כוונת תשלום Stripe' },
   { key: 'admin.payments.transactions.details.failureReason', en: 'Failure Reason', he: 'סיבת כישלון' },
   { key: 'admin.payments.transactions.details.metadata', en: 'Metadata', he: 'מטא-דאטה' },
+  { key: 'admin.payments.transactions.details.metadata.paymentNumber', en: 'Payment Number', he: 'מספר תשלום' },
+  { key: 'admin.payments.transactions.details.metadata.paymentType', en: 'Payment Type', he: 'סוג תשלום' },
+  { key: 'admin.payments.transactions.details.metadata.paidDate', en: 'Paid Date', he: 'תאריך תשלום' },
+  { key: 'admin.payments.transactions.details.metadata.scheduledDate', en: 'Scheduled Date', he: 'תאריך מתוכנן' },
+  { key: 'admin.payments.transactions.details.metadata.enrollmentId', en: 'Enrollment ID', he: 'מזהה הרשמה' },
+  { key: 'admin.payments.transactions.details.metadata.scheduleId', en: 'Schedule ID', he: 'מזהה לוח זמנים' },
   { key: 'admin.payments.transactions.details.close', en: 'Close', he: 'סגור' },
+
+  // Pagination
+  { key: 'admin.payments.transactions.pagination.rowsPerPage', en: 'Rows per page:', he: 'שורות בעמוד:' },
+  { key: 'admin.payments.transactions.pagination.showing', en: 'Showing', he: 'מציג' },
+  { key: 'admin.payments.transactions.pagination.page', en: 'Page', he: 'עמוד' },
+  { key: 'admin.payments.transactions.pagination.first', en: 'First', he: 'ראשון' },
+  { key: 'admin.payments.transactions.pagination.previous', en: 'Previous', he: 'קודם' },
+  { key: 'admin.payments.transactions.pagination.next', en: 'Next', he: 'הבא' },
+  { key: 'admin.payments.transactions.pagination.last', en: 'Last', he: 'אחרון' },
 
   // Common
   { key: 'common.status', en: 'Status', he: 'סטטוס' },
@@ -98,6 +128,7 @@ const translations = [
   { key: 'common.success', en: 'Success', he: 'הצלחה' },
   { key: 'common.error', en: 'Error', he: 'שגיאה' },
   { key: 'common.back', en: 'Back', he: 'חזרה' },
+  { key: 'common.null', en: 'N/A', he: 'לא זמין' },
 ];
 
 async function addTranslations() {

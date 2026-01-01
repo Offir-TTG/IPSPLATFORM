@@ -99,6 +99,7 @@ export async function GET(
 
     return NextResponse.json({
       id: enrollment.id,
+      user_id: enrollment.user_id, // CRITICAL: Include user_id so frontend can determine if existing user
       product_name: product.title,
       product_type: product.type,
       total_amount: enrollment.total_amount,

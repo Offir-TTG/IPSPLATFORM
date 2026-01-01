@@ -42,6 +42,7 @@ import {
   Calendar,
   Sparkles,
   XCircle,
+  Info,
 } from 'lucide-react';
 
 export default function ProductsPage() {
@@ -51,6 +52,7 @@ export default function ProductsPage() {
   const [mounted, setMounted] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [paymentPlans, setPaymentPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -75,6 +77,18 @@ export default function ProductsPage() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Fetch payment plans
+  const fetchPaymentPlans = async () => {
+    try {
+      const response = await fetch('/api/admin/payments/plans');
+      if (!response.ok) throw new Error('Failed to fetch payment plans');
+      const data = await response.json();
+      setPaymentPlans(data || []);
+    } catch (error) {
+      console.error('Error fetching payment plans:', error);
+    }
+  };
 
   // Fetch products
   const fetchProducts = async () => {
@@ -106,6 +120,7 @@ export default function ProductsPage() {
   };
 
   useEffect(() => {
+    fetchPaymentPlans();
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter, paymentModelFilter, activeFilter]);
@@ -232,6 +247,20 @@ export default function ProductsPage() {
       case 'free': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
     }
+  };
+
+  // Get payment plan names for a product
+  const getProductPaymentPlanNames = (product: Product): string[] => {
+    if (!product.alternative_payment_plan_ids || product.alternative_payment_plan_ids.length === 0) {
+      return [];
+    }
+
+    return product.alternative_payment_plan_ids
+      .map(planId => {
+        const plan = paymentPlans.find(p => p.id === planId);
+        return plan?.name || null;
+      })
+      .filter(Boolean) as string[];
   };
 
   // Show loading while translations are loading
@@ -384,9 +413,23 @@ export default function ProductsPage() {
                       <Badge className={getProductTypeColor(product.type)}>
                         {t(`products.type.${product.type}`, product.type)}
                       </Badge>
-                      <Badge className={getPaymentModelColor(product.payment_model)}>
-                        {t(`products.payment_model.${product.payment_model}`, product.payment_model)}
-                      </Badge>
+                      {/* Show payment plan names if using templates, otherwise show payment model */}
+                      {(() => {
+                        const planNames = getProductPaymentPlanNames(product);
+                        if (planNames.length > 0) {
+                          return planNames.map((planName, idx) => (
+                            <Badge key={idx} className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                              {planName}
+                            </Badge>
+                          ));
+                        } else {
+                          return (
+                            <Badge className={getPaymentModelColor(product.payment_model)}>
+                              {t(`products.payment_model.${product.payment_model}`, product.payment_model)}
+                            </Badge>
+                          );
+                        }
+                      })()}
                       {!product.is_active && (
                         <Badge variant="outline" className="border-gray-400 text-gray-600">
                           {t('admin.payments.products.inactive', 'Inactive')}
@@ -500,7 +543,7 @@ export default function ProductsPage() {
 // Product Form Component
 function ProductForm({ product, onSave, onCancel, t }: {
   product: Product | null;
-  onSave: (product: ProductFormData) => void;
+  onSave: (product: ProductFormData) => Promise<void>;
   onCancel: () => void;
   t: (key: string, fallback: string) => string;
 }) {
@@ -521,9 +564,22 @@ function ProductForm({ product, onSave, onCancel, t }: {
   // Payment plan selection state
   const [useTemplates, setUseTemplates] = useState(false);
 
+  // Payment configuration mode: 'custom' or 'template'
+  const [configMode, setConfigMode] = useState<'custom' | 'template'>('custom');
+
   // Error states for inline display
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Submitting state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Enrollment stats for warning
+  const [enrollmentStats, setEnrollmentStats] = useState<{
+    active_enrollments: number;
+    pending_invitations: number;
+    total: number;
+  } | null>(null);
 
   // Active tab state
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -641,11 +697,30 @@ function ProductForm({ product, onSave, onCancel, t }: {
       });
 
       // Set useTemplates based on whether product has payment plan references
-      setUseTemplates(!!product.default_payment_plan_id);
+      // Check both default_payment_plan_id (legacy) and alternative_payment_plan_ids
+      const hasTemplates = !!product.default_payment_plan_id || (product.alternative_payment_plan_ids && product.alternative_payment_plan_ids.length > 0);
+      setUseTemplates(hasTemplates);
+
+      // Set config mode based on whether product uses templates
+      setConfigMode(hasTemplates ? 'template' : 'custom');
+
+      // Fetch enrollment stats for warning display
+      if (product.id) {
+        fetch(`/api/admin/payments/products/${product.id}/enrollment-stats`)
+          .then(res => res.json())
+          .then(data => setEnrollmentStats(data))
+          .catch(err => {
+            console.error('Failed to fetch enrollment stats:', err);
+            setEnrollmentStats(null);
+          });
+      }
+    } else {
+      // Reset enrollment stats when creating new product
+      setEnrollmentStats(null);
     }
   }, [product]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Reset errors
@@ -724,7 +799,13 @@ function ProductForm({ product, onSave, onCancel, t }: {
       cleanedData.price = undefined;
     }
 
-    onSave(cleanedData);
+    // Set submitting state
+    setIsSubmitting(true);
+    try {
+      await onSave(cleanedData);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Memoized callbacks for ContentSelector to prevent infinite loops
@@ -859,125 +940,228 @@ function ProductForm({ product, onSave, onCancel, t }: {
 
         {/* Pricing Tab */}
         <TabsContent value="pricing" className="space-y-4 mt-4">
-          {/* Payment Model */}
-          <div>
-            <Label suppressHydrationWarning>{t('products.payment_model', 'Payment Model')} *</Label>
-            <Select
-              value={formData.payment_model}
-              onValueChange={(value: PaymentModel) => setFormData({ ...formData, payment_model: value, payment_plan: {} })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                <SelectItem value="one_time"><span suppressHydrationWarning>{t('products.payment_model.one_time', 'One-time Payment')}</span></SelectItem>
-                <SelectItem value="deposit_then_plan"><span suppressHydrationWarning>{t('products.payment_model.deposit_then_plan', 'Deposit + Installments')}</span></SelectItem>
-                <SelectItem value="subscription"><span suppressHydrationWarning>{t('products.payment_model.subscription', 'Subscription')}</span></SelectItem>
-                <SelectItem value="free"><span suppressHydrationWarning>{t('products.payment_model.free', 'Free')}</span></SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Price and Currency - Always at top */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="price" suppressHydrationWarning>{t('products.price', 'Price')} *</Label>
+              <Input
+                id="price"
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.price || ''}
+                onChange={(e) => {
+                  setFormData({ ...formData, price: parseFloat(e.target.value) || 0 });
+                  if (validationErrors.price) {
+                    setValidationErrors({ ...validationErrors, price: '' });
+                  }
+                }}
+                className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.price ? 'border-destructive' : ''}`}
+              />
+              {validationErrors.price && (
+                <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                  {validationErrors.price}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="currency" suppressHydrationWarning>{t('products.currency', 'Currency')} *</Label>
+              <Select
+                value={formData.currency}
+                onValueChange={(value) => setFormData({ ...formData, currency: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
+                  <SelectItem value="USD"><span suppressHydrationWarning>USD</span></SelectItem>
+                  <SelectItem value="EUR"><span suppressHydrationWarning>EUR</span></SelectItem>
+                  <SelectItem value="GBP"><span suppressHydrationWarning>GBP</span></SelectItem>
+                  <SelectItem value="ILS"><span suppressHydrationWarning>ILS</span></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Price and Currency */}
-          {formData.payment_model !== 'free' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="price" suppressHydrationWarning>{t('products.price', 'Price')} *</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.price || ''}
-                  onChange={(e) => {
-                    setFormData({ ...formData, price: parseFloat(e.target.value) || 0 });
-                    if (validationErrors.price) {
-                      setValidationErrors({ ...validationErrors, price: '' });
-                    }
-                  }}
-                  className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.price ? 'border-destructive' : ''}`}
+          {/* Payment Configuration Mode - Radio Buttons */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base" suppressHydrationWarning>
+                {t('products.pricing.configuration_title', 'Payment Configuration')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Custom Plan Option */}
+              <div
+                className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
+                  configMode === 'custom' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                }`}
+                onClick={() => {
+                  setConfigMode('custom');
+                  setUseTemplates(false);
+                  setFormData({
+                    ...formData,
+                    default_payment_plan_id: undefined,
+                    alternative_payment_plan_ids: [],
+                  });
+                }}
+              >
+                <input
+                  type="radio"
+                  name="config_mode"
+                  value="custom"
+                  checked={configMode === 'custom'}
+                  onChange={() => {}}
+                  className="mt-1"
                 />
-                {validationErrors.price && (
-                  <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {validationErrors.price}
+                <div className="flex-1">
+                  <Label className="text-base font-medium cursor-pointer" suppressHydrationWarning>
+                    {t('products.pricing.create_custom', 'Create Custom Plan')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+                    {t('products.pricing.create_custom_desc', 'Define payment terms directly for this product')}
                   </p>
-                )}
+                </div>
               </div>
+
+              {/* Template Plan Option */}
+              <div
+                className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
+                  configMode === 'template' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                }`}
+                onClick={() => {
+                  setConfigMode('template');
+                  setUseTemplates(true);
+                  // Clear custom payment configuration when switching to templates
+                  setFormData({
+                    ...formData,
+                    payment_model: 'one_time', // Set to one_time as default
+                    payment_plan: {}, // Clear custom plan config
+                  });
+                }}
+              >
+                <input
+                  type="radio"
+                  name="config_mode"
+                  value="template"
+                  checked={configMode === 'template'}
+                  onChange={() => {}}
+                  className="mt-1"
+                />
+                <div className="flex-1">
+                  <Label className="text-base font-medium cursor-pointer" suppressHydrationWarning>
+                    {t('products.pricing.use_template', 'Use Existing Payment Plan Template')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+                    {t('products.pricing.use_template_desc', 'Select from pre-configured payment plans')}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Custom Plan Configuration */}
+          {configMode === 'custom' && (
+            <>
+              {/* Payment Type */}
               <div>
-                <Label htmlFor="currency" suppressHydrationWarning>{t('products.currency', 'Currency')} *</Label>
+                <Label suppressHydrationWarning>{t('products.pricing.payment_type', 'Payment Type')} *</Label>
                 <Select
-                  value={formData.currency}
-                  onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                  value={formData.payment_model}
+                  onValueChange={(value: PaymentModel) => setFormData({ ...formData, payment_model: value, payment_plan: {} })}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="USD"><span suppressHydrationWarning>USD</span></SelectItem>
-                    <SelectItem value="EUR"><span suppressHydrationWarning>EUR</span></SelectItem>
-                    <SelectItem value="GBP"><span suppressHydrationWarning>GBP</span></SelectItem>
-                    <SelectItem value="ILS"><span suppressHydrationWarning>ILS</span></SelectItem>
+                    <SelectItem value="one_time"><span suppressHydrationWarning>{t('products.pricing.one_time', 'One-time Payment')}</span></SelectItem>
+                    <SelectItem value="deposit_then_plan"><span suppressHydrationWarning>{t('products.pricing.deposit_installments', 'Deposit + Installments')}</span></SelectItem>
+                    <SelectItem value="subscription"><span suppressHydrationWarning>{t('products.pricing.subscription', 'Subscription')}</span></SelectItem>
+                    <SelectItem value="free"><span suppressHydrationWarning>{t('products.payment_model.free', 'Free')}</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
+
+              {/* Payment Plan Configuration Component */}
+              {formData.payment_model !== 'free' && formData.payment_model !== 'one_time' && (
+                <PaymentPlanConfigComponent
+                  value={formData.payment_plan}
+                  onChange={(config) => setFormData({ ...formData, payment_plan: config })}
+                  paymentModel={formData.payment_model}
+                  productPrice={formData.price || 0}
+                  currency={formData.currency || 'USD'}
+                  t={t}
+                />
+              )}
+
+              {/* Payment Start Date - Only for installments and subscription */}
+              {(formData.payment_model === 'deposit_then_plan' || formData.payment_model === 'subscription') && (
+                <div>
+                  <Label htmlFor="payment_start_date" suppressHydrationWarning>
+                    {t('admin.products.payment_start_date', 'Payment Start Date')}
+                  </Label>
+                  <Input
+                    type="date"
+                    id="payment_start_date"
+                    value={formData.payment_start_date || ''}
+                    onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+                    {t('admin.products.payment_start_date_help', 'Default date when first payment is due for new enrollments. Works for all payment models.')}
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Payment Start Date - For ALL payment models */}
-          {formData.payment_model !== 'free' && (
-            <div>
-              <Label htmlFor="payment_start_date" suppressHydrationWarning>
-                {t('admin.products.payment_start_date', 'Payment Start Date')}
-              </Label>
-              <Input
-                type="date"
-                id="payment_start_date"
-                value={formData.payment_start_date || ''}
-                onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
-                min={new Date().toISOString().split('T')[0]}
+          {/* Template Mode - Payment Plan Selector */}
+          {configMode === 'template' && (
+            <>
+              {/* Warning Alert - Only show when editing existing product with enrollments */}
+              {product && enrollmentStats && enrollmentStats.total > 0 && (
+                <Alert variant="default" className="border-amber-500 bg-amber-50 dark:bg-amber-950">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-900 dark:text-amber-100" suppressHydrationWarning>
+                    {t('products.payment_plans.change_warning_title', 'Note: Payment Plan Changes')}
+                  </AlertTitle>
+                  <AlertDescription className="text-amber-800 dark:text-amber-200">
+                    <p className="mb-2" suppressHydrationWarning>
+                      {t('products.payment_plans.change_warning_desc',
+                        'Changes to payment plans only affect NEW enrollments. Existing enrollments (including pending invitations) will keep their original payment terms.')}
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      {enrollmentStats.active_enrollments > 0 && (
+                        <li suppressHydrationWarning>
+                          {t('products.payment_plans.active_enrollments_using_plans',
+                            'Active enrollments using current plans: {count}')
+                            .replace('{count}', enrollmentStats.active_enrollments.toString())}
+                        </li>
+                      )}
+                      {enrollmentStats.pending_invitations > 0 && (
+                        <li suppressHydrationWarning>
+                          {t('products.payment_plans.pending_invitations',
+                            'Pending invitations: {count}')
+                            .replace('{count}', enrollmentStats.pending_invitations.toString())}
+                        </li>
+                      )}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <PaymentPlanSelector
+                useTemplates={true}
+                onUseTemplatesChange={() => {}}
+                defaultPlanId={formData.default_payment_plan_id}
+                onDefaultPlanIdChange={(planId) => setFormData({ ...formData, default_payment_plan_id: planId })}
+                alternativePlanIds={formData.alternative_payment_plan_ids}
+                onAlternativePlanIdsChange={(planIds) => setFormData({ ...formData, alternative_payment_plan_ids: planIds })}
+                allowPlanSelection={true}
+                onAllowPlanSelectionChange={() => {}}
+                t={t}
               />
-              <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.products.payment_start_date_help', 'Default date when first payment is due for new enrollments. Works for all payment models.')}
-              </p>
-            </div>
-          )}
-
-          {/* Payment Plan Configuration - Only show when NOT using templates */}
-          {!useTemplates && (
-            <PaymentPlanConfigComponent
-              value={formData.payment_plan}
-              onChange={(config) => setFormData({ ...formData, payment_plan: config })}
-              paymentModel={formData.payment_model}
-              productPrice={formData.price || 0}
-              currency={formData.currency || 'USD'}
-              t={t}
-            />
-          )}
-
-          {/* Payment Plan Selection - Template Mode */}
-          {formData.payment_model !== 'free' && (
-            <PaymentPlanSelector
-              useTemplates={useTemplates}
-              onUseTemplatesChange={(use) => {
-                setUseTemplates(use);
-                if (!use) {
-                  // Clear payment plan references when switching to embedded mode
-                  setFormData({
-                    ...formData,
-                    default_payment_plan_id: undefined,
-                    alternative_payment_plan_ids: [],
-                    allow_plan_selection: true,
-                  });
-                }
-              }}
-              defaultPlanId={formData.default_payment_plan_id}
-              onDefaultPlanIdChange={(planId) => setFormData({ ...formData, default_payment_plan_id: planId })}
-              alternativePlanIds={formData.alternative_payment_plan_ids}
-              onAlternativePlanIdsChange={(planIds) => setFormData({ ...formData, alternative_payment_plan_ids: planIds })}
-              allowPlanSelection={formData.allow_plan_selection ?? true}
-              onAllowPlanSelectionChange={(allow) => setFormData({ ...formData, allow_plan_selection: allow })}
-              t={t}
-            />
+            </>
           )}
         </TabsContent>
 
@@ -1010,14 +1194,18 @@ function ProductForm({ product, onSave, onCancel, t }: {
       </Tabs>
 
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
           <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
         </Button>
-        <Button type="submit">
+        <Button type="submit" disabled={isSubmitting}>
           <span suppressHydrationWarning>
-            {product
-              ? t('common.save', 'Save Changes')
-              : t('common.create', 'Create Product')}
+            {isSubmitting
+              ? (product
+                  ? t('common.saving', 'Saving...')
+                  : t('common.creating', 'Creating...'))
+              : (product
+                  ? t('common.save', 'Save Changes')
+                  : t('common.create', 'Create Product'))}
           </span>
         </Button>
       </DialogFooter>

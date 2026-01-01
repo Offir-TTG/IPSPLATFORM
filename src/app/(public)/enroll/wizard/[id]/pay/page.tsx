@@ -42,6 +42,20 @@ export default function WizardPaymentPage() {
   const enrollmentToken = searchParams?.get('token');
   const scheduleId = searchParams?.get('schedule');
 
+  // Translate payment type
+  const translatePaymentType = (paymentType: string) => {
+    const normalizedType = paymentType?.toLowerCase() || 'unknown';
+    const typeLabels: Record<string, string> = {
+      deposit: t('user.payments.paymentType.deposit', 'Deposit'),
+      installment: t('user.payments.paymentType.installment', 'Installment'),
+      subscription: t('user.payments.paymentType.subscription', 'Subscription'),
+      full: t('user.payments.paymentType.full', 'Full Payment'),
+      one_time: t('user.payments.paymentType.oneTime', 'One-Time Payment'),
+      unknown: t('user.payments.paymentType.unknown', 'Unknown'),
+    };
+    return typeLabels[normalizedType] || t(`user.payments.paymentType.${normalizedType}`, paymentType);
+  };
+
   useEffect(() => {
     if (!enrollmentToken) {
       setError('Invalid enrollment token');
@@ -224,7 +238,7 @@ export default function WizardPaymentPage() {
             </div>
             <div className="flex justify-between py-2 border-b">
               <span className="text-muted-foreground">{t('user.payments.checkout.paymentType', 'Payment Type')}</span>
-              <span className="font-medium capitalize">{paymentInfo.payment_type}</span>
+              <span className="font-medium">{translatePaymentType(paymentInfo.payment_type)}</span>
             </div>
             <div className="flex justify-between py-2 border-b">
               <span className="text-muted-foreground">{t('user.payments.checkout.paymentNumber', 'Payment Number')}</span>

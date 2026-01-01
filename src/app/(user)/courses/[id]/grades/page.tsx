@@ -191,7 +191,7 @@ export default function StudentGradesPage() {
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${getLetterGradeColor(summary.overall_grade)}`}>
-                {summary.letter_grade || 'N/A'}
+                {summary.letter_grade || '0'}
               </div>
               <p className="text-xs text-muted-foreground">
                 {summary.overall_grade.toFixed(1)}%

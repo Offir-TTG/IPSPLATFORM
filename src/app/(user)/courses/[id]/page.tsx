@@ -217,6 +217,50 @@ export default function CourseDetailPage() {
     return !!lesson.recording_url;
   }
 
+  // Helper to parse lesson duration to minutes
+  function parseDurationToMinutes(duration: string | null): number {
+    if (!duration || typeof duration !== 'string') return 60; // Default 1 hour
+
+    try {
+      const parts = duration.split(':');
+      const hours = parseInt(parts[0] || '0', 10);
+      const minutes = parseInt(parts[1] || '0', 10);
+      return hours * 60 + minutes;
+    } catch {
+      return 60; // Default on error
+    }
+  }
+
+  // Check if a lesson's session has ended (3 hours after scheduled end time)
+  function hasSessionEnded(lesson: Lesson): boolean {
+    if (!lesson.start_time) return false;
+
+    const now = new Date();
+    const sessionStart = new Date(lesson.start_time);
+    const durationMinutes = parseDurationToMinutes(lesson.duration);
+
+    // Session ends 3 hours after scheduled end time
+    const sessionEnd = new Date(sessionStart.getTime() + (durationMinutes + 180) * 60 * 1000);
+
+    return now > sessionEnd;
+  }
+
+  // Check if user can join the session (30 min before to 3 hours after)
+  function canJoinSession(lesson: Lesson): boolean {
+    if (!lesson.start_time) return true; // If no start time, allow joining
+
+    const now = new Date();
+    const sessionStart = new Date(lesson.start_time);
+    const durationMinutes = parseDurationToMinutes(lesson.duration);
+
+    // Can join 30 minutes before
+    const earlyJoin = new Date(sessionStart.getTime() - 30 * 60 * 1000);
+    // Session ends 3 hours after scheduled end
+    const sessionEnd = new Date(sessionStart.getTime() + (durationMinutes + 180) * 60 * 1000);
+
+    return now >= earlyJoin && now <= sessionEnd;
+  }
+
   useEffect(() => {
     loadCourse();
   }, [courseId]);
@@ -605,10 +649,15 @@ export default function CourseDetailPage() {
 
               {/* Course Content - Modules and Lessons */}
               <Card>
-                <CardHeader>
-                  <CardTitle>{t('user.courses.content.title', 'תוכן הקורס')}</CardTitle>
+                <CardHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/20">
+                      <BookOpen className="h-5 w-5 text-primary" />
+                    </div>
+                    <CardTitle className="text-xl">{t('user.courses.content.title', 'תוכן הקורס')}</CardTitle>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 pt-6">
                   {modules.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -689,12 +738,12 @@ export default function CourseDetailPage() {
                                                     : t('user.courses.markComplete', 'Mark as complete')}
                                                 </Label>
                                               </div>
-                                              <div className="flex-1 min-w-0 text-left">
+                                              <div className="flex-1 min-w-0 ltr:text-left rtl:text-right">
                                                 <div className="flex items-center gap-2 mb-2">
                                                   <h4 className="font-bold text-lg">{lesson.title}</h4>
                                                 </div>
                                                 {lesson.description && (
-                                                  <p className="text-sm text-muted-foreground leading-relaxed">
+                                                  <p className="text-sm text-muted-foreground leading-relaxed ltr:text-left rtl:text-right">
                                                     {lesson.description}
                                                   </p>
                                                 )}
@@ -741,9 +790,13 @@ export default function CourseDetailPage() {
                                           {/* Meeting & Recording Tabs - Supports both Zoom and Daily.co */}
                                       {hasLiveMeeting(lesson) && (
                                         <div className="p-5 border-b bg-muted/20">
-                                          <Tabs defaultValue="live" className="w-full">
+                                          <Tabs defaultValue={hasSessionEnded(lesson) ? "recording" : "live"} className="w-full">
                                             <TabsList className="grid w-full grid-cols-2 mb-4">
-                                              <TabsTrigger value="live" className="gap-2">
+                                              <TabsTrigger
+                                                value="live"
+                                                className="gap-2"
+                                                disabled={hasSessionEnded(lesson)}
+                                              >
                                                 <PlayCircle className="h-4 w-4" />
                                                 {t('user.courses.liveMeeting', 'Live Meeting')}
                                               </TabsTrigger>
@@ -791,14 +844,25 @@ export default function CourseDetailPage() {
                                                           </div>
                                                         )}
                                                       </div>
-                                                      <Button
-                                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                                                        size="lg"
-                                                        onClick={() => handleJoinZoom(lesson.id)}
-                                                      >
-                                                        <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
-                                                        {t('user.courses.joinMeeting', 'Join Meeting')}
-                                                      </Button>
+                                                      {!canJoinSession(lesson) ? (
+                                                        <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
+                                                          <AlertCircle className="h-5 w-5 text-amber-600" />
+                                                          <AlertDescription className="text-amber-800 dark:text-amber-200">
+                                                            {hasSessionEnded(lesson)
+                                                              ? t('user.courses.sessionEnded', 'This session has ended. Please check the Recording tab.')
+                                                              : t('user.courses.sessionNotStarted', 'This session is not available yet. You can join 30 minutes before the scheduled start time.')}
+                                                          </AlertDescription>
+                                                        </Alert>
+                                                      ) : (
+                                                        <Button
+                                                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                                                          size="lg"
+                                                          onClick={() => handleJoinZoom(lesson.id)}
+                                                        >
+                                                          <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                                                          {t('user.courses.joinMeeting', 'Join Meeting')}
+                                                        </Button>
+                                                      )}
                                                     </div>
                                                   </div>
                                                 ) : (
@@ -858,20 +922,31 @@ export default function CourseDetailPage() {
                                                           </div>
                                                         )}
                                                       </div>
-                                                      <Button
-                                                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                                                        size="lg"
-                                                        onClick={() => {
-                                                          setActiveMeetings(prev => {
-                                                            const updated = new Set(prev);
-                                                            updated.add(lesson.id);
-                                                            return updated;
-                                                          });
-                                                        }}
-                                                      >
-                                                        <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
-                                                        {t('user.courses.joinDailyMeeting', 'Join Daily.co Meeting')}
-                                                      </Button>
+                                                      {!canJoinSession(lesson) ? (
+                                                        <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
+                                                          <AlertCircle className="h-5 w-5 text-amber-600" />
+                                                          <AlertDescription className="text-amber-800 dark:text-amber-200">
+                                                            {hasSessionEnded(lesson)
+                                                              ? t('user.courses.sessionEnded', 'This session has ended. Please check the Recording tab.')
+                                                              : t('user.courses.sessionNotStarted', 'This session is not available yet. You can join 30 minutes before the scheduled start time.')}
+                                                          </AlertDescription>
+                                                        </Alert>
+                                                      ) : (
+                                                        <Button
+                                                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                                                          size="lg"
+                                                          onClick={() => {
+                                                            setActiveMeetings(prev => {
+                                                              const updated = new Set(prev);
+                                                              updated.add(lesson.id);
+                                                              return updated;
+                                                            });
+                                                          }}
+                                                        >
+                                                          <ExternalLink className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                                                          {t('user.courses.joinDailyMeeting', 'Join Daily.co Meeting')}
+                                                        </Button>
+                                                      )}
                                                     </div>
                                                   </div>
                                                 ) : (
@@ -1120,6 +1195,71 @@ export default function CourseDetailPage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Course Materials */}
+              {materials.length > 0 && (
+                <Card>
+                  <CardHeader className="bg-gradient-to-r from-indigo-500/10 via-indigo-500/5 to-background border-b">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-indigo-500/20">
+                        <Download className="h-5 w-5 text-indigo-600" />
+                      </div>
+                      <CardTitle className="text-xl">{t('user.courses.materials.title', 'Course Materials')}</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2 pt-6">
+                    {materials.map(material => (
+                      <div
+                        key={material.id}
+                        className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                      >
+                        {getFileTypeIcon(material.file_type)}
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-sm mb-1">{material.title}</h4>
+                          {material.description && (
+                            <p className="text-xs text-muted-foreground mb-2">
+                              {material.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {material.category && (
+                              <Badge variant="secondary" className="text-xs">
+                                {translateMaterialCategory(material.category)}
+                              </Badge>
+                            )}
+                            <span>{formatFileSize(material.file_size)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {canPreviewFile(material.file_type) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleViewMaterial({
+                                title: material.title,
+                                file_url: material.file_url,
+                                file_type: material.file_type,
+                                file_name: material.file_name
+                              })}
+                              title={t('user.courses.materials.view', 'View')}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDownloadMaterial(material.file_url, material.file_name)}
+                            title={t('user.courses.materials.download', 'Download')}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Sidebar */}
@@ -1353,66 +1493,6 @@ export default function CourseDetailPage() {
                   </div>
                 </CardContent>
               </Card>
-
-              {/* Course Materials */}
-              {materials.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t('user.courses.materials.title', 'Course Materials')}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {materials.map(material => (
-                      <div
-                        key={material.id}
-                        className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-                      >
-                        {getFileTypeIcon(material.file_type)}
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-sm mb-1">{material.title}</h4>
-                          {material.description && (
-                            <p className="text-xs text-muted-foreground mb-2">
-                              {material.description}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            {material.category && (
-                              <Badge variant="secondary" className="text-xs">
-                                {translateMaterialCategory(material.category)}
-                              </Badge>
-                            )}
-                            <span>{formatFileSize(material.file_size)}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {canPreviewFile(material.file_type) && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleViewMaterial({
-                                title: material.title,
-                                file_url: material.file_url,
-                                file_type: material.file_type,
-                                file_name: material.file_name
-                              })}
-                              title={t('user.courses.materials.view', 'View')}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDownloadMaterial(material.file_url, material.file_name)}
-                            title={t('user.courses.materials.download', 'Download')}
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
 
               {/* Quick Actions */}
               <Card>

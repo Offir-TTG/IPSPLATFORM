@@ -43,6 +43,8 @@ import {
   ExternalLink,
   CheckCircle,
   Award,
+  Link2,
+  Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -84,6 +86,14 @@ interface Course {
   description: string | null;
   program_id: string;
   is_active: boolean;
+  instructor_id: string | null;
+  image_url?: string | null;
+  instructor?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  } | null;
 }
 
 interface Module {
@@ -645,6 +655,12 @@ export default function CourseBuilderPage() {
     zoom_recording_disclaimer: false, // Show recording disclaimer
   });
 
+  // Bridge link state
+  const [bridgeLink, setBridgeLink] = useState<any>(null);
+  const [loadingBridge, setLoadingBridge] = useState(false);
+  const [creatingBridge, setCreatingBridge] = useState(false);
+  const [showBridgeDialog, setShowBridgeDialog] = useState(false);
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -739,6 +755,13 @@ export default function CourseBuilderPage() {
   useEffect(() => {
     loadCourse();
   }, [params.id]);
+
+  // Load bridge link when dialog opens
+  useEffect(() => {
+    if (showBridgeDialog && course?.id) {
+      loadBridgeLink();
+    }
+  }, [showBridgeDialog, course?.id]);
 
   const loadCourse = async () => {
     try {
@@ -1764,6 +1787,63 @@ export default function CourseBuilderPage() {
     }
   };
 
+  // Bridge link functions
+  const loadBridgeLink = async () => {
+    if (!course?.id) return;
+
+    setLoadingBridge(true);
+    try {
+      const res = await fetch(`/api/admin/lms/courses/${course.id}/bridge`);
+      const data = await res.json();
+
+      if (data.success && data.data) {
+        setBridgeLink(data.data);
+      } else {
+        setBridgeLink(null);
+      }
+    } catch (error) {
+      console.error('Error loading bridge link:', error);
+      setBridgeLink(null);
+    } finally {
+      setLoadingBridge(false);
+    }
+  };
+
+  const handleCreateBridgeLink = async () => {
+    if (!course?.id) return;
+
+    setCreatingBridge(true);
+    try {
+      const res = await fetch(`/api/admin/lms/courses/${course.id}/bridge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await res.json();
+      console.log('[Bridge Link] API Response:', data);
+
+      if (data.success && data.data) {
+        setBridgeLink(data.data);
+        showMessage('success', t('lms.course_detail.bridge_created', 'Instructor bridge link created successfully'));
+      } else {
+        console.error('[Bridge Link] Error:', data.error);
+        showMessage('error', data.error || t('lms.course_detail.bridge_error', 'Failed to create bridge link'));
+      }
+    } catch (error) {
+      console.error('Error creating bridge link:', error);
+      showMessage('error', t('lms.course_detail.bridge_error', 'Failed to create bridge link'));
+    } finally {
+      setCreatingBridge(false);
+    }
+  };
+
+  const copyBridgeLink = () => {
+    if (bridgeLink?.bridge_url) {
+      navigator.clipboard.writeText(bridgeLink.bridge_url);
+      showMessage('success', t('lms.course_detail.bridge_copied', 'Bridge link copied to clipboard!'));
+    }
+  };
+
   const handleBulkCreateLessons = async () => {
     if (!selectedModule) {
       showMessage('error', t('lms.builder.select_module_first', 'Please select a module first'));
@@ -2000,6 +2080,15 @@ export default function CourseBuilderPage() {
                 <Award className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                 <span className="hidden sm:inline">{t('lms.builder.grading', 'Grading')}</span>
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 md:flex-none"
+                onClick={() => setShowBridgeDialog(true)}
+              >
+                <Link2 className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
+                <span className="hidden sm:inline">{t('lms.course_detail.instructor_access_title', 'Instructor Access')}</span>
+              </Button>
               <Button variant="outline" size="sm" className="flex-1 md:flex-none">
                 <Eye className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                 <span className="hidden sm:inline">{t('lms.builder.preview', 'Preview')}</span>
@@ -2057,6 +2146,18 @@ export default function CourseBuilderPage() {
                     className={`text-muted-foreground prose prose-sm max-w-none dark:prose-invert ${isRtl ? 'text-right' : 'text-left'}`}
                     dangerouslySetInnerHTML={{ __html: course.description }}
                   />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Instructor Information */}
+            {course?.instructor && (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <GraduationCap className="h-4 w-4" />
+                    <span>{t('user.courses.instructor', 'Instructor')}: {course.instructor.first_name} {course.instructor.last_name}</span>
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -3592,6 +3693,134 @@ export default function CourseBuilderPage() {
             </Button>
             <Button variant="destructive" onClick={confirmDeleteLesson}>
               {t('common.delete', 'Delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bridge Link Dialog */}
+      <Dialog open={showBridgeDialog} onOpenChange={setShowBridgeDialog}>
+        <DialogContent className="max-w-2xl" dir={direction}>
+          <DialogHeader>
+            <DialogTitle className={isRtl ? 'text-right' : ''}>
+              <div className="flex items-center gap-2">
+                <Link2 className="h-5 w-5 text-primary" />
+                {t('lms.course_detail.instructor_access_title', 'Instructor Access')}
+              </div>
+            </DialogTitle>
+            <DialogDescription className={isRtl ? 'text-right' : ''}>
+              {t('lms.course_detail.instructor_access_description', 'Generate a permanent link for instructors to access their Zoom meetings')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingBridge ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : bridgeLink ? (
+            <div className="space-y-4 py-4">
+              {/* Bridge Status Badge */}
+              <div className="flex items-center gap-2">
+                <Badge variant={bridgeLink.is_active ? 'default' : 'secondary'}>
+                  {bridgeLink.is_active
+                    ? t('lms.course_detail.bridge_active', 'Active')
+                    : t('lms.course_detail.bridge_inactive', 'Inactive')}
+                </Badge>
+                <span className="text-sm text-muted-foreground">
+                  {t('lms.course_detail.bridge_slug', 'Slug')}: {bridgeLink.bridge_slug}
+                </span>
+              </div>
+
+              {/* Bridge URL */}
+              <div className="space-y-2">
+                <Label className={isRtl ? 'text-right block' : ''}>
+                  {t('lms.course_detail.bridge_url_label', 'Bridge URL')}
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={bridgeLink.bridge_url}
+                    readOnly
+                    className={`font-mono text-sm ${isRtl ? 'text-right' : ''}`}
+                    dir={direction}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyBridgeLink}
+                    className="shrink-0"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(bridgeLink.bridge_url, '_blank')}
+                    className="shrink-0"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Instructor Info */}
+              {bridgeLink.instructor && (
+                <div className={`text-sm ${isRtl ? 'text-right' : ''}`}>
+                  <span className="text-muted-foreground">
+                    {t('lms.course_detail.bridge_instructor', 'Instructor')}:{' '}
+                  </span>
+                  <span className="font-medium">
+                    {bridgeLink.instructor.first_name} {bridgeLink.instructor.last_name}
+                  </span>
+                </div>
+              )}
+
+              {/* Grace Period Info */}
+              <div className={`flex gap-4 text-sm ${isRtl ? 'flex-row-reverse' : ''}`}>
+                <span className="text-muted-foreground">
+                  {t('lms.course_detail.bridge_grace_before', 'Grace before')}:{' '}
+                  <span className="font-medium">{bridgeLink.grace_before_minutes || 15}m</span>
+                </span>
+                <span className="text-muted-foreground">
+                  {t('lms.course_detail.bridge_grace_after', 'Grace after')}:{' '}
+                  <span className="font-medium">{bridgeLink.grace_after_minutes || 30}m</span>
+                </span>
+              </div>
+
+              {/* How it works info */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950 p-4">
+                <p className={`text-sm font-medium mb-2 ${isRtl ? 'text-right' : ''}`}>
+                  {t('lms.course_detail.bridge_how_it_works', 'How it works')}
+                </p>
+                <p className={`text-sm text-blue-900 dark:text-blue-100 ${isRtl ? 'text-right' : ''}`}>
+                  {t('lms.course_detail.bridge_explanation', 'The instructor can use this permanent link to automatically join the correct Zoom meeting based on the current time. The system will redirect them to the meeting that is currently active or upcoming within the grace period.')}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Link2 className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p className="text-muted-foreground mb-4">
+                {t('lms.course_detail.bridge_not_created', 'No instructor bridge link created yet')}
+              </p>
+              <Button onClick={handleCreateBridgeLink} disabled={creatingBridge}>
+                {creatingBridge ? (
+                  <>
+                    <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                    {t('lms.course_detail.bridge_creating', 'Creating...')}
+                  </>
+                ) : (
+                  <>
+                    <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
+                    {t('lms.course_detail.bridge_create', 'Create Bridge Link')}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBridgeDialog(false)}>
+              {t('common.close', 'Close')}
             </Button>
           </DialogFooter>
         </DialogContent>

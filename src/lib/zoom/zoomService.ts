@@ -364,11 +364,11 @@ export class ZoomService {
   }
 
   /**
-   * Generate a unique bridge slug for program and instructor
+   * Generate a unique bridge slug for course and instructor
    */
-  generateBridgeSlug(programName: string, instructorName: string): string {
+  generateBridgeSlug(courseName: string, instructorName: string): string {
     // Clean and format the slug
-    const cleanProgram = programName
+    const cleanCourse = courseName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
@@ -381,14 +381,14 @@ export class ZoomService {
     // Add random suffix to ensure uniqueness
     const randomSuffix = Math.random().toString(36).substring(2, 6);
 
-    return `${cleanProgram}-${cleanInstructor}-${randomSuffix}`;
+    return `${cleanCourse}-${cleanInstructor}-${randomSuffix}`;
   }
 
   /**
-   * Create instructor bridge link for a program
+   * Create instructor bridge link for a course
    */
   async createInstructorBridgeLink(
-    programId: string,
+    courseId: string,
     instructorId: string
   ): Promise<{
     success: boolean;
@@ -398,15 +398,15 @@ export class ZoomService {
     try {
       const supabase = createAdminClient();
 
-      // Get program and instructor details
-      const { data: program, error: programError } = await supabase
-        .from('programs')
-        .select('name, tenant_id')
-        .eq('id', programId)
+      // Get course and instructor details
+      const { data: course, error: courseError } = await supabase
+        .from('courses')
+        .select('title, tenant_id')
+        .eq('id', courseId)
         .single();
 
-      if (programError || !program) {
-        return { success: false, error: 'Program not found' };
+      if (courseError || !course) {
+        return { success: false, error: 'Course not found' };
       }
 
       const { data: instructor, error: instructorError } = await supabase
@@ -423,7 +423,7 @@ export class ZoomService {
       const { data: existingBridge } = await supabase
         .from('instructor_bridge_links')
         .select('*')
-        .eq('program_id', programId)
+        .eq('course_id', courseId)
         .eq('instructor_id', instructorId)
         .single();
 
@@ -433,7 +433,7 @@ export class ZoomService {
 
       // Generate unique slug
       const slug = this.generateBridgeSlug(
-        program.name,
+        course.title,
         `${instructor.first_name} ${instructor.last_name}`
       );
 
@@ -441,8 +441,8 @@ export class ZoomService {
       const { data: bridgeLink, error: insertError } = await supabase
         .from('instructor_bridge_links')
         .insert({
-          tenant_id: program.tenant_id,
-          program_id: programId,
+          tenant_id: course.tenant_id,
+          course_id: courseId,
           instructor_id: instructorId,
           bridge_slug: slug,
           is_active: true,
@@ -453,7 +453,11 @@ export class ZoomService {
         .single();
 
       if (insertError) {
-        return { success: false, error: 'Failed to create bridge link' };
+        console.error('Database error creating bridge link:', insertError);
+        return {
+          success: false,
+          error: insertError.message || 'Failed to create bridge link'
+        };
       }
 
       return { success: true, data: bridgeLink };

@@ -1271,4 +1271,142 @@ If you have questions, please contact support.
       },
     },
   },
+
+  // ============================================================================
+  // NOTIFICATION TEMPLATES
+  // ============================================================================
+  {
+    key: 'notification.generic',
+    name: 'Generic Notification',
+    category: 'system',
+    description: 'Generic template for in-app notifications sent via email',
+    variables: [
+      { name: 'userName', description: 'User first name', example: 'John', required: true, type: 'string' },
+      { name: 'notificationTitle', description: 'Notification title from admin', example: 'New Assignment Posted', required: true, type: 'string' },
+      { name: 'notificationMessage', description: 'Notification message from admin', example: 'A new assignment has been posted...', required: true, type: 'string' },
+      { name: 'priority', description: 'Notification priority', example: 'urgent', required: true, type: 'string' },
+      { name: 'category', description: 'Notification category', example: 'lesson', required: true, type: 'string' },
+      { name: 'actionUrl', description: 'Link to relevant action', example: 'https://...', required: false, type: 'url' },
+      { name: 'actionLabel', description: 'Action button label', example: 'View Details', required: false, type: 'string' },
+      { name: 'organizationName', description: 'Organization name', example: 'IPS Platform', required: true, type: 'string' },
+    ],
+    versions: {
+      en: {
+        subject: '{{notificationTitle}}',
+        bodyHtml: `
+<div style="padding: 20px;">
+  {{#if (eq priority "urgent")}}
+  <div style="background: #fee2e2; border: 2px solid #ef4444; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <p style="margin: 0; color: #991b1b; font-weight: 600; display: flex; align-items: center;">
+      <span style="font-size: 20px; margin-right: 8px;">⚠️</span> Urgent Notification
+    </p>
+  </div>
+  {{else if (eq priority "high")}}
+  <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <p style="margin: 0; color: #92400e; font-weight: 600; display: flex; align-items: center;">
+      <span style="font-size: 20px; margin-right: 8px;">🔔</span> High Priority
+    </p>
+  </div>
+  {{/if}}
+
+  <h2 style="color: #1f2937; margin-bottom: 8px;">{{notificationTitle}}</h2>
+
+  <p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">Hello {{userName}},</p>
+
+  <div style="background: #f9fafb; border-left: 4px solid {{primaryColor}}; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0; color: #374151; white-space: pre-wrap;">{{notificationMessage}}</p>
+  </div>
+
+  {{#if actionUrl}}
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="{{actionUrl}}" class="button" style="background: linear-gradient(135deg, {{primaryColor}} 0%, {{secondaryColor}} 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
+      {{#if actionLabel}}{{actionLabel}}{{else}}View Details{{/if}}
+    </a>
+  </div>
+  {{/if}}
+
+  <p style="text-align: center; color: #9ca3af; font-size: 13px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+    {{organizationName}}<br/>
+    This is an automated notification from your learning platform.
+  </p>
+</div>
+        `,
+        bodyText: `
+{{#if (eq priority "urgent")}}⚠️ URGENT NOTIFICATION{{else if (eq priority "high")}}🔔 HIGH PRIORITY{{/if}}
+
+{{notificationTitle}}
+
+Hello {{userName}},
+
+{{notificationMessage}}
+
+{{#if actionUrl}}
+{{#if actionLabel}}{{actionLabel}}{{else}}View Details{{/if}}: {{actionUrl}}
+{{/if}}
+
+---
+{{organizationName}}
+This is an automated notification from your learning platform.
+        `,
+      },
+      he: {
+        subject: '{{notificationTitle}}',
+        bodyHtml: `
+<div style="padding: 20px; direction: rtl;">
+  {{#if (eq priority "urgent")}}
+  <div style="background: #fee2e2; border: 2px solid #ef4444; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <p style="margin: 0; color: #991b1b; font-weight: 600; display: flex; align-items: center;">
+      <span style="font-size: 20px; margin-left: 8px;">⚠️</span> התראה דחופה
+    </p>
+  </div>
+  {{else if (eq priority "high")}}
+  <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <p style="margin: 0; color: #92400e; font-weight: 600; display: flex; align-items: center;">
+      <span style="font-size: 20px; margin-left: 8px;">🔔</span> עדיפות גבוהה
+    </p>
+  </div>
+  {{/if}}
+
+  <h2 style="color: #1f2937; margin-bottom: 8px;">{{notificationTitle}}</h2>
+
+  <p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">שלום {{userName}},</p>
+
+  <div style="background: #f9fafb; border-right: 4px solid {{primaryColor}}; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0; color: #374151; white-space: pre-wrap;">{{notificationMessage}}</p>
+  </div>
+
+  {{#if actionUrl}}
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="{{actionUrl}}" class="button" style="background: linear-gradient(135deg, {{primaryColor}} 0%, {{secondaryColor}} 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
+      {{#if actionLabel}}{{actionLabel}}{{else}}צפה בפרטים{{/if}}
+    </a>
+  </div>
+  {{/if}}
+
+  <p style="text-align: center; color: #9ca3af; font-size: 13px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+    {{organizationName}}<br/>
+    זוהי התראה אוטומטית מפלטפורמת הלמידה שלך.
+  </p>
+</div>
+        `,
+        bodyText: `
+{{#if (eq priority "urgent")}}⚠️ התראה דחופה{{else if (eq priority "high")}}🔔 עדיפות גבוהה{{/if}}
+
+{{notificationTitle}}
+
+שלום {{userName}},
+
+{{notificationMessage}}
+
+{{#if actionUrl}}
+{{#if actionLabel}}{{actionLabel}}{{else}}צפה בפרטים{{/if}}: {{actionUrl}}
+{{/if}}
+
+---
+{{organizationName}}
+זוהי התראה אוטומטית מפלטפורמת הלמידה שלך.
+        `,
+      },
+    },
+  },
 ];

@@ -24,6 +24,8 @@ import {
   AlertTriangle,
   UserCheck,
   Package,
+  CheckCircle2,
+  ArrowRight,
 } from 'lucide-react';
 
 interface PaymentStats {
@@ -190,7 +192,7 @@ export default function PaymentsPage() {
                 ${stats.pendingAmount.toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.fromPayments', `From ${stats.pendingPayments} payments`)}
+                {t('admin.payments.fromPayments', `From ${stats.pendingPayments} payments`).replace('{count}', stats.pendingPayments.toString())}
               </p>
             </CardContent>
           </Card>
@@ -343,22 +345,98 @@ export default function PaymentsPage() {
               </CardHeader>
             </Card>
           </Link>
+
+          <Link href="/admin/payments/pdf-template">
+            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                    <FileText className="h-5 w-5 text-rose-600" />
+                  </div>
+                  <div className="flex-1">
+                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.pdfTemplate.title', 'PDF Template')}</CardTitle>
+                  </div>
+                </div>
+                <CardDescription className="mt-2" suppressHydrationWarning>
+                  {t('admin.payments.cards.pdfTemplate.description', 'Configure PDF branding for payment receipts')}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
         </div>
 
         {/* Recent Activity */}
         <Card>
-          <CardHeader>
-            <CardTitle suppressHydrationWarning>{t('admin.payments.recentActivity', 'Recent Activity')}</CardTitle>
-            <CardDescription suppressHydrationWarning>
-              {t('admin.payments.recentActivityDesc', 'Latest payment transactions and updates')}
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <div>
+              <CardTitle suppressHydrationWarning>{t('admin.payments.recentActivity', 'Recent Activity')}</CardTitle>
+              <CardDescription suppressHydrationWarning>
+                {t('admin.payments.recentActivityDesc', 'Latest payment transactions and updates')}
+              </CardDescription>
+            </div>
+            {stats.recentPayments && stats.recentPayments.length > 0 && (
+              <Link href="/admin/payments/transactions">
+                <Button variant="ghost" size="sm">
+                  <span suppressHydrationWarning>{t('common.viewAll', 'View All')}</span>
+                  <ArrowRight className={`h-4 w-4 ${isRtl ? 'mr-2' : 'ml-2'}`} />
+                </Button>
+              </Link>
+            )}
           </CardHeader>
           <CardContent>
-            <div className="text-center py-8 text-muted-foreground">
-              <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p className="text-sm" suppressHydrationWarning>{t('admin.payments.noRecentActivity', 'No recent activity')}</p>
-              <p className="text-xs mt-1" suppressHydrationWarning>{t('admin.payments.transactionsWillAppear', 'Payment transactions will appear here')}</p>
-            </div>
+            {!stats.recentPayments || stats.recentPayments.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm" suppressHydrationWarning>{t('admin.payments.noRecentActivity', 'No recent activity')}</p>
+                <p className="text-xs mt-1" suppressHydrationWarning>{t('admin.payments.transactionsWillAppear', 'Payment transactions will appear here')}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {stats.recentPayments.map((payment: any) => {
+                  // Handle nested Supabase structure: enrollments { users { ... } }
+                  const enrollment = payment.enrollments;
+                  const user = enrollment?.users;
+                  const userName = user ? `${user.first_name} ${user.last_name}` : 'Unknown User';
+                  const userEmail = user?.email || '';
+                  const amount = parseFloat(payment.amount || 0);
+                  const paidDate = payment.paid_date ? new Date(payment.paid_date) : null;
+
+                  return (
+                    <div
+                      key={payment.id}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                          <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{userName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+                        </div>
+                      </div>
+                      <div className={`${isRtl ? 'ml-4' : 'mr-4'} text-right flex-shrink-0`}>
+                        <p className="font-semibold" style={{ color: 'hsl(var(--success))' }}>
+                          {new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+                            style: 'currency',
+                            currency: 'USD',
+                          }).format(amount)}
+                        </p>
+                        {paidDate && (
+                          <p className="text-xs text-muted-foreground">
+                            {new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            }).format(paidDate)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

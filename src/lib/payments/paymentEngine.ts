@@ -20,13 +20,13 @@ import type {
  * 1. Forced plan (if set)
  * 2. Auto-detection rules (by priority)
  * 3. Default plan (if set)
- * 4. Error if none found
+ * 4. Return null if none found (will use product's embedded payment configuration)
  */
 export async function detectPaymentPlan(
   product: Product,
   tenantId: string,
   userMetadata?: Record<string, any>
-): Promise<PaymentPlan> {
+): Promise<PaymentPlan | null> {
   const supabase = await createClient();
 
   // 1. Check for forced plan
@@ -79,8 +79,9 @@ export async function detectPaymentPlan(
     }
   }
 
-  // 4. No plan found - error
-  throw new Error('No payment plan could be determined for this product');
+  // 4. No template plan found - return null to use product's embedded payment configuration
+  console.log(`[PaymentEngine] No payment plan template found, will use product's embedded payment configuration`);
+  return null;
 }
 
 /**

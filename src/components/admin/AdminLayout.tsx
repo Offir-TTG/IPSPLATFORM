@@ -30,6 +30,8 @@ import {
   TrendingUp,
   BarChart3,
   Award,
+  Building2,
+  Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Toaster } from '@/components/ui/toaster';
 import { supabase } from '@/lib/supabase/client';
 
 interface AdminLayoutProps {
@@ -52,11 +55,17 @@ interface NavItem {
   icon: any;
   href: string;
   badge?: number;
+  translation_key?: string;
+  visible?: boolean;
+  order?: number;
 }
 
 interface NavSection {
   titleKey: string;
   items: NavItem[];
+  translation_key?: string;
+  visible?: boolean;
+  order?: number;
 }
 
 export function AdminLayout({ children }: AdminLayoutProps) {
@@ -75,6 +84,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     last_name?: string;
     role?: string;
   } | null>(null);
+  const [tenantLogo, setTenantLogo] = useState<string | null>(null);
+  const [tenantName, setTenantName] = useState<string>('Admin');
+  const [customNavSections, setCustomNavSections] = useState<NavSection[] | null>(null);
 
   useEffect(() => {
     // Mark as mounted (client-side only)
@@ -112,6 +124,41 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     }
 
     loadUser();
+  }, []);
+
+  useEffect(() => {
+    async function loadTenantLogo() {
+      try {
+        const response = await fetch('/api/admin/tenant');
+        const data = await response.json();
+
+        if (data.success) {
+          setTenantLogo(data.data.logo_url || null);
+          setTenantName(data.data.name || 'Admin');
+        }
+      } catch (error) {
+        console.error('Error loading tenant logo:', error);
+      }
+    }
+
+    loadTenantLogo();
+  }, []);
+
+  useEffect(() => {
+    async function loadNavigationConfig() {
+      try {
+        const response = await fetch('/api/admin/navigation');
+        const data = await response.json();
+
+        if (data.success && data.data.sections) {
+          setCustomNavSections(data.data.sections);
+        }
+      } catch (error) {
+        console.error('Error loading navigation config:', error);
+      }
+    }
+
+    loadNavigationConfig();
   }, []);
 
   // Don't render translated content until mounted and translations loaded
@@ -173,6 +220,56 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   // The inline script in layout.tsx sets document.dir before React loads
   // No JavaScript state needed - CSS handles everything
 
+  // Icon mapping for navigation items
+  const iconMap: Record<string, any> = {
+    'dashboard': LayoutDashboard,
+    'programs': BookOpen,
+    'courses': GraduationCap,
+    'enrollments': UserPlus,
+    'grading': Award,
+    'users': Users,
+    'organization': Building2,
+    'languages': Languages,
+    'translations': FileText,
+    'settings': Settings,
+    'theme': Palette,
+    'features': Flag,
+    'integrations': Plug,
+    'navigation': Navigation,
+    'emails': Mail,
+    'payments': CreditCard,
+    'audit': Shield,
+    'notifications': Bell,
+  };
+
+  // Translation key mapping for navigation items
+  const navKeyMap: Record<string, string> = {
+    'overview': 'admin.nav.overview',
+    'learning': 'admin.nav.learning',
+    'users': 'admin.nav.users_access',
+    'configuration': 'admin.nav.configuration',
+    'business': 'admin.nav.business',
+    'security': 'admin.nav.security',
+    'communications': 'admin.nav.communications',
+    'dashboard': 'admin.nav.dashboard',
+    'programs': 'admin.nav.lms_programs',
+    'courses': 'admin.nav.lms_courses',
+    'enrollments': 'admin.nav.enrollments',
+    'grading': 'admin.nav.grading',
+    'organization': 'admin.nav.organization',
+    'languages': 'admin.nav.languages',
+    'translations': 'admin.nav.translations',
+    'settings': 'admin.nav.settings',
+    'theme': 'admin.nav.theme',
+    'features': 'admin.nav.features',
+    'integrations': 'admin.nav.integrations',
+    'navigation': 'admin.nav.navigation',
+    'emails': 'admin.nav.emails',
+    'payments': 'admin.nav.payments',
+    'audit': 'admin.nav.audit',
+    'notifications': 'admin.nav.notifications',
+  };
+
   const baseNavSections: NavSection[] = [
     {
       titleKey: 'admin.nav.overview',
@@ -196,8 +293,15 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
     {
+      titleKey: 'admin.nav.communications',
+      items: [
+        { key: 'admin.nav.notifications', icon: Bell, href: '/admin/notifications' },
+      ],
+    },
+    {
       titleKey: 'admin.nav.configuration',
       items: [
+        { key: 'admin.nav.organization', icon: Building2, href: '/admin/settings/organization' },
         { key: 'admin.nav.languages', icon: Languages, href: '/admin/config/languages' },
         { key: 'admin.nav.translations', icon: FileText, href: '/admin/config/translations' },
         { key: 'admin.nav.settings', icon: Settings, href: '/admin/config/settings' },
@@ -206,7 +310,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.integrations', icon: Plug, href: '/admin/config/integrations' },
         { key: 'admin.nav.navigation', icon: Navigation, href: '/admin/config/navigation' },
         { key: 'admin.nav.emails', icon: Mail, href: '/admin/emails' },
-        { key: 'admin.nav.keap.dashboard', icon: User, href: '/admin/keap' },
       ],
     },
     {
@@ -215,12 +318,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.payments', icon: CreditCard, href: '/admin/payments' },
       ],
     },
-//    {
-//      titleKey: 'admin.nav.keap',
-//      items: [
-//        { key: 'admin.nav.keap.dashboard', icon: Users, href: '/admin/keap' },
-//      ],
-//    },
     {
       titleKey: 'admin.nav.security',
       items: [
@@ -229,7 +326,24 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     },
   ];
 
-  const navSections = baseNavSections;
+  // Apply custom navigation config if available
+  let navSections = baseNavSections;
+  if (customNavSections && customNavSections.length > 0) {
+    navSections = customNavSections
+      .filter(section => section.visible)
+      .sort((a, b) => a.order - b.order)
+      .map(section => ({
+        titleKey: section.translation_key,
+        items: section.items
+          .filter(item => item.visible)
+          .sort((a, b) => a.order - b.order)
+          .map(item => ({
+            key: item.translation_key,
+            icon: item.icon ? (iconMap[item.icon] || Settings) : Settings,
+            href: item.href,
+          }))
+      }));
+  }
 
   const isActive = (href: string) => pathname === href;
 
@@ -317,21 +431,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <div className="space-y-0.5">
                 <DropdownMenuItem asChild>
                   <Link
-                    href="/profile"
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
-                  >
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{t('admin.nav.profile', 'Profile & Settings')}</p>
-                      <p className="text-xs text-muted-foreground">{t('admin.nav.manageAccount', 'Manage your account')}</p>
-                    </div>
-                  </Link>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem asChild>
-                  <Link
                     href="/admin/settings/organization"
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
                   >
@@ -398,15 +497,25 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           {/* Logo/Brand */}
           <div className="p-6 border-b">
             <Link href="/admin/dashboard" className="flex items-center gap-2">
-              <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center">
-                <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
-              </div>
+              {tenantLogo ? (
+                <div className="h-10 w-10 flex items-center justify-center">
+                  <img
+                    src={tenantLogo}
+                    alt={tenantName}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center">
+                  <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
+                </div>
+              )}
               <div>
                 <h2 className="font-bold" style={{
                   color: 'hsl(var(--sidebar-foreground))',
                   fontSize: 'var(--font-size-lg)',
                   fontFamily: 'var(--font-family-heading)'
-                }}>{t('platform.name', 'Admin')}</h2>
+                }}>{tenantName}</h2>
                 <p style={{
                   color: 'hsl(var(--sidebar-foreground))',
                   opacity: 0.7,
@@ -605,21 +714,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <div className="space-y-0.5">
                   <DropdownMenuItem asChild>
                     <Link
-                      href="/profile"
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
-                    >
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
-                        <User className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{t('admin.nav.profile', 'Profile & Settings')}</p>
-                        <p className="text-xs text-muted-foreground">{t('admin.nav.manageAccount', 'Manage your account')}</p>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-
-                  <DropdownMenuItem asChild>
-                    <Link
                       href="/admin/settings/organization"
                       className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
                     >
@@ -676,6 +770,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           {children}
         </div>
       </main>
+      <Toaster />
     </div>
   );
 }

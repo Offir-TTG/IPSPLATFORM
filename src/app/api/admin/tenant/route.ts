@@ -24,6 +24,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Tenant not found' }, { status: 404 });
     }
 
+    // Fetch complete tenant data directly from table to ensure we get all fields
+    const { data: fullTenant, error: tenantError } = await supabase
+      .from('tenants')
+      .select('*')
+      .eq('id', tenant.id)
+      .single();
+
+    if (tenantError || !fullTenant) {
+      console.error('Error fetching full tenant data:', tenantError);
+      return NextResponse.json({ success: false, error: 'Failed to fetch tenant data' }, { status: 500 });
+    }
+
     // Get user's role in this tenant
     const { data: tenantUser } = await supabase
       .from('tenant_users')
@@ -42,7 +54,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        ...tenant,
+        ...fullTenant,
         userRole: tenantUser.role,
       },
     });

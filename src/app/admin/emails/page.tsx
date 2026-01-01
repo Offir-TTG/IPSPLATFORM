@@ -226,7 +226,7 @@ export default function EmailDashboardPage() {
                   {t('emails.templates.customize', 'Customize Templates')}
                 </h4>
                 <p className="text-sm text-muted-foreground">
-                  {t('emails.templates.customize_description', 'Edit the 4 system templates or create your own custom templates')}
+                  {t('emails.templates.customize_description', 'Edit the system templates or create your own custom templates')}
                 </p>
               </div>
             </div>

@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Label } from '@/components/ui/label';
 import {
   User,
   Mail,
@@ -39,6 +40,7 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
+  FileBarChart,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
@@ -47,7 +49,10 @@ import { Switch } from '@/components/ui/switch';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { EditableProfileCard } from '@/components/user/EditableProfileCard';
+import { LanguagePreferenceDialog } from '@/components/user/LanguagePreferenceDialog';
+import { NotificationPreferences } from '@/components/user/NotificationPreferences';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 interface Enrollment {
   id: string;
@@ -109,9 +114,20 @@ export default function ProfilePage() {
   const [paymentPages, setPaymentPages] = useState<Record<string, number>>({});
   const PAYMENTS_PER_PAGE = 10;
 
+  // Billing sub-tab state
+  const [billingSubTab, setBillingSubTab] = useState('enrollments');
+
+  // PDF Export state
+  const [exportingEnrollmentId, setExportingEnrollmentId] = useState<string | null>(null);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
+  const [selectedDocType, setSelectedDocType] = useState<'invoice' | 'schedule' | 'both'>('invoice');
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'he'>((language as 'en' | 'he') || 'en');
+
   // Dialog states
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [isLanguageDialogOpen, setIsLanguageDialogOpen] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -271,6 +287,63 @@ export default function ProfilePage() {
     }
   };
 
+  // Handler to open export dialog
+  const handleOpenExportDialog = (enrollmentId: string) => {
+    setSelectedEnrollmentId(enrollmentId);
+    setSelectedDocType('invoice');
+    const lang = (language === 'he' ? 'he' : 'en') as 'en' | 'he';
+    setSelectedLanguage(lang);
+    setShowExportDialog(true);
+  };
+
+  // Handler to export PDF with selected document type
+  const handleExportPDF = async () => {
+    if (!selectedEnrollmentId) return;
+
+    setExportingEnrollmentId(selectedEnrollmentId);
+    setShowExportDialog(false);
+
+    try {
+      const response = await fetch(`/api/user/enrollments/${selectedEnrollmentId}/export-pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentType: selectedDocType,
+          language: selectedLanguage,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+
+      // Set filename based on document type
+      const prefix = selectedDocType === 'invoice' ? 'invoice' :
+                     selectedDocType === 'schedule' ? 'payment-schedule' : 'combined';
+      a.download = `${prefix}-${selectedEnrollmentId.substring(0, 8)}-${new Date().toISOString().split('T')[0]}.pdf`;
+
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success(t('user.profile.billing.pdfExported', 'PDF exported successfully'));
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error(t('user.profile.billing.pdfExportError', 'Failed to export PDF'));
+    } finally {
+      setExportingEnrollmentId(null);
+      setSelectedEnrollmentId(null);
+    }
+  };
+
   // Handler to deactivate account
   const handleDeactivateAccount = async () => {
     setIsDeactivating(true);
@@ -326,17 +399,55 @@ export default function ProfilePage() {
       const data = await response.json();
 
       if (data.enrollments) {
-        const formatted = data.enrollments.map((e: any) => ({
-          id: e.id,
-          product_name: e.products.title || e.products.product_name,
-          product_type: e.products.type || e.products.product_type,
-          total_amount: e.total_amount,
-          paid_amount: e.paid_amount,
-          payment_status: e.payment_status,
-          enrolled_date: e.enrolled_date || e.created_at,
-          currency: e.products.currency || 'ILS',
-          payment_plan_name: e.payment_plans?.plan_name || t('user.profile.billing.fullPayment', 'Full Payment'),
-        }));
+        const formatted = data.enrollments.map((e: any) => {
+          // Debug: Log the enrollment data
+          console.log('[Profile] Enrollment data:', {
+            id: e.id,
+            payment_plan_id: e.payment_plan_id,
+            payment_plans: e.payment_plans,
+            product_title: e.products?.title,
+            product_payment_model: e.products?.payment_model,
+            product_payment_plan: e.products?.payment_plan
+          });
+
+          // Derive payment plan name:
+          // 1. Use payment_plans template if enrollment has payment_plan_id
+          // 2. Otherwise, derive from product's payment_model and payment_plan
+          let paymentPlanName = t('user.profile.billing.fullPayment', 'Full Payment');
+
+          if (e.payment_plan_id && e.payment_plans?.plan_name) {
+            // Using payment plan template
+            paymentPlanName = e.payment_plans.plan_name;
+          } else if (e.products?.payment_model && e.products?.payment_plan) {
+            // Derive from product's embedded payment configuration
+            const model = e.products.payment_model;
+            const plan = e.products.payment_plan;
+
+            if (model === 'one_time') {
+              paymentPlanName = t('user.profile.billing.oneTimePayment', 'One-Time Payment');
+            } else if (model === 'deposit_then_plan') {
+              const installments = plan.installments || 1;
+              paymentPlanName = t('user.profile.billing.depositPlusInstallments', `Deposit + ${installments} Installments`);
+            } else if (model === 'subscription') {
+              const interval = plan.subscription_interval || 'monthly';
+              paymentPlanName = t('user.profile.billing.subscription', 'Subscription') + ` (${interval})`;
+            } else if (model === 'free') {
+              paymentPlanName = t('user.profile.billing.free', 'Free');
+            }
+          }
+
+          return {
+            id: e.id,
+            product_name: e.products.title || e.products.product_name,
+            product_type: e.products.type || e.products.product_type,
+            total_amount: e.total_amount,
+            paid_amount: e.paid_amount,
+            payment_status: e.payment_status,
+            enrolled_date: e.enrolled_date || e.created_at,
+            currency: e.products.currency || 'ILS',
+            payment_plan_name: paymentPlanName,
+          };
+        });
         setEnrollments(formatted);
 
         // Fetch payment schedules for all enrollments
@@ -349,8 +460,14 @@ export default function ProfilePage() {
             const scheduleRes = await fetch(`/api/enrollments/${enrollment.id}/payment`);
             const scheduleData = await scheduleRes.json();
 
+            // Debug: Log the schedule data
+            console.log('[Profile] Schedule data for enrollment', enrollment.id, ':', {
+              payment_plan: scheduleData.payment_plan
+            });
+
             // Update enrollment with actual payment plan information
             if (scheduleData.payment_plan) {
+              console.log('[Profile] Updating enrollment payment plan name to:', scheduleData.payment_plan.plan_name);
               updatedEnrollments[i] = {
                 ...enrollment,
                 payment_plan_name: scheduleData.payment_plan.plan_name || t('user.profile.billing.fullPayment', 'Full Payment'),
@@ -611,7 +728,7 @@ export default function ProfilePage() {
                 <p className="text-muted-foreground">{t('user.profile.billing.loading', 'Loading billing data...')}</p>
               </div>
             </Card>
-          ) : enrollments.length === 0 ? (
+          ) : enrollments.length === 0 && invoices.length === 0 ? (
             <Card className="p-12 text-center border-2 border-dashed">
               <div className="flex justify-center mb-4">
                 <div className="rounded-full bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-6">
@@ -675,13 +792,43 @@ export default function ProfilePage() {
                 </Card>
               </div>
 
-              {/* Enrollments List with Integrated Payment History */}
-              <Card className="p-6">
-                <h3 className="text-xl font-bold mb-6">
-                  {t('user.profile.billing.myEnrollments', 'My Enrollments')}
-                </h3>
+              {/* Billing Sub-Tabs */}
+              <Tabs value={billingSubTab} onValueChange={setBillingSubTab}>
+                <TabsList className="grid w-full max-w-md grid-cols-2">
+                  <TabsTrigger value="enrollments">
+                    <BookOpen className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                    {t('user.profile.billing.enrollmentsTab', 'Enrollments')}
+                  </TabsTrigger>
+                  <TabsTrigger value="invoices">
+                    <Receipt className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                    {t('user.profile.billing.invoicesTab', 'Stripe Invoices')}
+                  </TabsTrigger>
+                </TabsList>
 
-                <Accordion type="multiple" className="space-y-4">
+                {/* Enrollments Tab Content */}
+                <TabsContent value="enrollments" className="mt-6">
+                  <Card className="p-6">
+                    <h3 className="text-xl font-bold mb-6">
+                      {t('user.profile.billing.myEnrollments', 'My Enrollments')}
+                    </h3>
+
+                    {enrollments.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
+                        <h4 className="text-lg font-semibold mb-2">
+                          {t('user.profile.billing.noEnrollments', 'No Enrollments Yet')}
+                        </h4>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          {t('user.profile.billing.noEnrollmentsDesc', "You haven't enrolled in any programs yet.")}
+                        </p>
+                        <Button variant="outline" asChild>
+                          <Link href="/courses">
+                            {t('user.profile.billing.browseCourses', 'Browse Courses')}
+                          </Link>
+                        </Button>
+                      </div>
+                    ) : (
+                      <Accordion type="multiple" className="space-y-4">
                   {enrollments.map((enrollment) => {
                     const enrollmentPayments = paymentSchedules.filter(
                       schedule => schedule.product_name === enrollment.product_name
@@ -823,6 +970,29 @@ export default function ProfilePage() {
                                 </AccordionTrigger>
                               </>
                             )}
+
+                            {/* Export PDF Button */}
+                            <Separator className="mt-3" />
+                            <div className="flex gap-2 p-4 justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenExportDialog(enrollment.id)}
+                                disabled={exportingEnrollmentId === enrollment.id}
+                              >
+                                {exportingEnrollmentId === enrollment.id ? (
+                                  <>
+                                    <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                                    {t('user.profile.billing.exportingPdf', 'Exporting...')}
+                                  </>
+                                ) : (
+                                  <>
+                                    <FileText className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                                    {t('user.profile.billing.exportPdf', 'Export PDF')}
+                                  </>
+                                )}
+                              </Button>
+                            </div>
                           </div>
 
                           {/* Payment History Content */}
@@ -923,11 +1093,14 @@ export default function ProfilePage() {
                       </AccordionItem>
                     );
                   })}
-                </Accordion>
-              </Card>
+                      </Accordion>
+                    )}
+                  </Card>
+                </TabsContent>
 
-              {/* Invoices Section */}
-              <Card className="p-6" dir={isRtl ? 'rtl' : 'ltr'}>
+                {/* Invoices Tab Content */}
+                <TabsContent value="invoices" className="mt-6">
+                  <Card className="p-6" dir={isRtl ? 'rtl' : 'ltr'}>
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-bold">
                     {t('user.invoices.title', 'My Invoices')}
@@ -1042,7 +1215,9 @@ export default function ProfilePage() {
                     ))}
                   </div>
                 )}
-              </Card>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </TabsContent>
@@ -1128,34 +1303,7 @@ export default function ProfilePage() {
 
         {/* PREFERENCES TAB */}
         <TabsContent value="preferences" className="space-y-6">
-          <Card className="p-6">
-            <h3 className="text-xl font-bold mb-6">{t('user.profile.preferences.notifications')}</h3>
-
-            <div className="space-y-4">
-              {[
-                { key: 'lesson_reminders' as const, label: t('user.profile.preferences.lesson_reminders'), description: t('user.profile.preferences.lesson_reminders_desc') },
-                { key: 'achievement_updates' as const, label: t('user.profile.preferences.achievement_updates'), description: t('user.profile.preferences.achievement_updates_desc') },
-                { key: 'assignment_due_dates' as const, label: t('user.profile.preferences.assignment_due_dates'), description: t('user.profile.preferences.assignment_due_dates_desc') },
-                { key: 'course_announcements' as const, label: t('user.profile.preferences.course_announcements'), description: t('user.profile.preferences.course_announcements_desc') }
-              ].map((pref) => (
-                <div key={pref.key} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Bell className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <p className="font-medium">{pref.label}</p>
-                      <p className="text-sm text-muted-foreground">{pref.description}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={notificationPrefs[pref.key]}
-                    onCheckedChange={(checked) => {
-                      setNotificationPrefs(prev => ({ ...prev, [pref.key]: checked }));
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </Card>
+          <NotificationPreferences />
 
           <Card className="p-6">
             <h3 className="text-xl font-bold mb-6">{t('user.profile.preferences.regional_settings')}</h3>
@@ -1167,16 +1315,26 @@ export default function ProfilePage() {
                   <div>
                     <p className="font-medium">{t('user.profile.preferences.language')}</p>
                     <p className="text-sm text-muted-foreground">
-                      {preferences.regional.language === 'en' ? 'English' : 'עברית'}
+                      {preferences.regional.language === null
+                        ? t('user.profile.preferences.languageAuto', 'Auto (Organization Default)')
+                        : preferences.regional.language === 'en'
+                        ? 'English'
+                        : preferences.regional.language === 'he'
+                        ? 'עברית'
+                        : preferences.regional.language === 'es'
+                        ? 'Español'
+                        : preferences.regional.language === 'fr'
+                        ? 'Français'
+                        : preferences.regional.language}
                     </p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => setIsLanguageDialogOpen(true)}>
                   {t('user.profile.preferences.change')}
                 </Button>
               </div>
 
-              <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
                 <div className="flex items-center gap-3">
                   <Clock className="h-5 w-5 text-muted-foreground" />
                   <div>
@@ -1184,7 +1342,7 @@ export default function ProfilePage() {
                     <p className="text-sm text-muted-foreground">{preferences.regional.timezone}</p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" disabled>
                   {t('user.profile.preferences.change')}
                 </Button>
               </div>
@@ -1393,6 +1551,213 @@ export default function ProfilePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Export PDF Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent className="sm:max-w-lg" dir={isRtl ? 'rtl' : 'ltr'}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              {t('user.profile.billing.exportPdfDialog.title', 'Export Payment Document')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('user.profile.billing.exportPdfDialog.description', 'Choose which document to export')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Document Type Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-foreground">
+                {t('user.profile.billing.exportPdfDialog.documentType', 'Document Type')}
+              </Label>
+              <div className="grid gap-3">
+                <div
+                  className={cn(
+                    "relative flex items-start gap-3 rounded-lg border-2 p-4 cursor-pointer transition-all",
+                    selectedDocType === 'invoice'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/50 hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedDocType('invoice')}
+                >
+                  <div className={cn(
+                    "flex-shrink-0 rounded-lg p-2",
+                    selectedDocType === 'invoice' ? "bg-primary/10" : "bg-muted"
+                  )}>
+                    <FileBarChart className={cn(
+                      "h-5 w-5",
+                      selectedDocType === 'invoice' ? "text-primary" : "text-muted-foreground"
+                    )} />
+                  </div>
+                  <div className={`flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    <p className="font-semibold text-sm mb-1">
+                      {t('user.profile.billing.exportPdfDialog.invoice', 'Invoice')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('user.profile.billing.exportPdfDialog.invoiceDesc', 'Summary of charges and payment details')}
+                    </p>
+                  </div>
+                  {selectedDocType === 'invoice' && (
+                    <CheckCircle2 className={cn("absolute top-3 h-5 w-5 text-primary", isRtl ? "left-3" : "right-3")} />
+                  )}
+                </div>
+
+                <div
+                  className={cn(
+                    "relative flex items-start gap-3 rounded-lg border-2 p-4 cursor-pointer transition-all",
+                    selectedDocType === 'schedule'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/50 hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedDocType('schedule')}
+                >
+                  <div className={cn(
+                    "flex-shrink-0 rounded-lg p-2",
+                    selectedDocType === 'schedule' ? "bg-primary/10" : "bg-muted"
+                  )}>
+                    <Calendar className={cn(
+                      "h-5 w-5",
+                      selectedDocType === 'schedule' ? "text-primary" : "text-muted-foreground"
+                    )} />
+                  </div>
+                  <div className={`flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    <p className="font-semibold text-sm mb-1">
+                      {t('user.profile.billing.exportPdfDialog.schedule', 'Payment Schedule')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('user.profile.billing.exportPdfDialog.scheduleDesc', 'Detailed payment plan and installments')}
+                    </p>
+                  </div>
+                  {selectedDocType === 'schedule' && (
+                    <CheckCircle2 className={cn("absolute top-3 h-5 w-5 text-primary", isRtl ? "left-3" : "right-3")} />
+                  )}
+                </div>
+
+                <div
+                  className={cn(
+                    "relative flex items-start gap-3 rounded-lg border-2 p-4 cursor-pointer transition-all",
+                    selectedDocType === 'both'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/50 hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedDocType('both')}
+                >
+                  <div className={cn(
+                    "flex-shrink-0 rounded-lg p-2",
+                    selectedDocType === 'both' ? "bg-primary/10" : "bg-muted"
+                  )}>
+                    <FileText className={cn(
+                      "h-5 w-5",
+                      selectedDocType === 'both' ? "text-primary" : "text-muted-foreground"
+                    )} />
+                  </div>
+                  <div className={`flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    <p className="font-semibold text-sm mb-1">
+                      {t('user.profile.billing.exportPdfDialog.both', 'Both Documents')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('user.profile.billing.exportPdfDialog.bothDesc', 'Invoice and payment schedule combined')}
+                    </p>
+                  </div>
+                  {selectedDocType === 'both' && (
+                    <CheckCircle2 className={cn("absolute top-3 h-5 w-5 text-primary", isRtl ? "left-3" : "right-3")} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Language Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-foreground">
+                {t('user.profile.billing.exportPdfDialog.language', 'Language')}
+              </Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  className={cn(
+                    "relative flex items-center justify-center gap-2 rounded-lg border-2 p-3 cursor-pointer transition-all",
+                    selectedLanguage === 'en'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/50 hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedLanguage('en')}
+                >
+                  <Globe className={cn(
+                    "h-4 w-4",
+                    selectedLanguage === 'en' ? "text-primary" : "text-muted-foreground"
+                  )} />
+                  <span className={cn(
+                    "font-medium text-sm",
+                    selectedLanguage === 'en' ? "text-primary" : "text-foreground"
+                  )}>
+                    {t('user.profile.billing.exportPdfDialog.english', 'English')}
+                  </span>
+                  {selectedLanguage === 'en' && (
+                    <CheckCircle2 className={cn("absolute top-2 h-4 w-4 text-primary", isRtl ? "left-2" : "right-2")} />
+                  )}
+                </div>
+                <div
+                  className={cn(
+                    "relative flex items-center justify-center gap-2 rounded-lg border-2 p-3 cursor-pointer transition-all",
+                    selectedLanguage === 'he'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/50 hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedLanguage('he')}
+                >
+                  <Globe className={cn(
+                    "h-4 w-4",
+                    selectedLanguage === 'he' ? "text-primary" : "text-muted-foreground"
+                  )} />
+                  <span className={cn(
+                    "font-medium text-sm",
+                    selectedLanguage === 'he' ? "text-primary" : "text-foreground"
+                  )}>
+                    {t('user.profile.billing.exportPdfDialog.hebrew', 'Hebrew')}
+                  </span>
+                  {selectedLanguage === 'he' && (
+                    <CheckCircle2 className={cn("absolute top-2 h-4 w-4 text-primary", isRtl ? "left-2" : "right-2")} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Export Button */}
+            <Button
+              onClick={handleExportPDF}
+              disabled={exportingEnrollmentId !== null}
+              className="w-full h-11 font-semibold"
+              size="lg"
+            >
+              {exportingEnrollmentId ? (
+                <>
+                  <Loader2 className={`h-5 w-5 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                  <span>{t('user.profile.billing.exportingPdf', 'Exporting...')}</span>
+                </>
+              ) : (
+                <>
+                  <Download className={`h-5 w-5 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                  <span>{t('user.profile.billing.exportPdfDialog.export', 'Export PDF')}</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Language Preference Dialog */}
+      <LanguagePreferenceDialog
+        open={isLanguageDialogOpen}
+        onOpenChange={setIsLanguageDialogOpen}
+        currentLanguage={profileData?.preferences.regional.language || null}
+        onLanguageChanged={() => {
+          // Refresh profile data after language change
+          queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+        }}
+      />
     </div>
   );
 }

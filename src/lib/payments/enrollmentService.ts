@@ -52,8 +52,109 @@ export async function processEnrollment(
     throw new Error('Product is not active');
   }
 
-  // 2. Detect payment plan
-  const paymentPlan = await detectPaymentPlan(product, tenant_id, user_metadata);
+  // 2. Detect payment plan or use product's embedded configuration
+  let detectedPlanTemplate = await detectPaymentPlan(product, tenant_id, user_metadata);
+  let paymentPlan: PaymentPlan;
+  let usingSyntheticPlan = false;
+
+  if (detectedPlanTemplate) {
+    // Using payment plan template
+    paymentPlan = detectedPlanTemplate;
+    console.log(`[EnrollmentService] Using payment plan template: ${paymentPlan.plan_name}`);
+  } else {
+    // No template - create synthetic plan from product's payment configuration
+    console.log(`[EnrollmentService] Creating synthetic payment plan from product configuration`);
+
+    // Fetch product with payment model to create synthetic payment plan
+    const { data: productWithPaymentInfo } = await supabase
+      .from('products')
+      .select('payment_model, payment_plan')
+      .eq('id', product_id)
+      .eq('tenant_id', tenant_id)
+      .single();
+
+    if (!productWithPaymentInfo) {
+      throw new Error('Product payment configuration not found');
+    }
+
+    const paymentModel = productWithPaymentInfo.payment_model;
+    const paymentConfig = productWithPaymentInfo.payment_plan || {};
+
+    // Create synthetic payment plan based on product's payment model
+    if (paymentModel === 'one_time') {
+      paymentPlan = {
+        id: null as any,
+        tenant_id,
+        plan_name: 'One-Time Payment',
+        plan_type: 'one_time',
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    } else if (paymentModel === 'deposit_then_plan') {
+      paymentPlan = {
+        id: null as any,
+        tenant_id,
+        plan_name: `Deposit + ${paymentConfig.installments || 1} Installments`,
+        plan_type: 'deposit',
+        deposit_type: paymentConfig.deposit_type || 'percentage',
+        deposit_amount: paymentConfig.deposit_amount,
+        deposit_percentage: paymentConfig.deposit_percentage,
+        installment_count: paymentConfig.installments || 1,
+        installment_frequency: paymentConfig.frequency || 'monthly',
+        custom_frequency_days: paymentConfig.custom_frequency_days,
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    } else if (paymentModel === 'subscription') {
+      paymentPlan = {
+        id: null as any,
+        tenant_id,
+        plan_name: 'Subscription',
+        plan_type: 'subscription',
+        subscription_frequency: paymentConfig.subscription_interval || 'monthly',
+        subscription_trial_days: paymentConfig.trial_days,
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    } else if (paymentModel === 'free') {
+      paymentPlan = {
+        id: null as any,
+        tenant_id,
+        plan_name: 'Free',
+        plan_type: 'one_time',
+        currency: product.currency,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    } else {
+      throw new Error(`Unsupported payment model: ${paymentModel}`);
+    }
+
+    usingSyntheticPlan = true;
+  }
 
   // 3. Calculate amounts
   const totalAmount = product.price;
@@ -95,7 +196,7 @@ export async function processEnrollment(
       product_id,
       program_id: product.product_type === 'program' ? product.product_id : null,
       course_id: product.product_type === 'course' ? product.product_id : null,
-      payment_plan_id: paymentPlan.id,
+      payment_plan_id: usingSyntheticPlan ? null : paymentPlan.id, // Only set if using template, not synthetic plan
       total_amount: totalAmount,
       paid_amount: 0,
       payment_status: 'pending',
@@ -107,6 +208,7 @@ export async function processEnrollment(
         ...metadata,
         enrollment_processed_at: new Date().toISOString(),
         auto_detected_plan: !product.forced_payment_plan_id,
+        using_product_payment_config: usingSyntheticPlan, // Track if using product's embedded config
       },
     })
     .select()

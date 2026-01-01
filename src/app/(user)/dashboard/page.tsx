@@ -5,8 +5,7 @@ import { useDashboard } from '@/hooks/useDashboard';
 import { WelcomeHero } from '@/components/user/dashboard/WelcomeHero';
 import { StatsCards } from '@/components/user/dashboard/StatsCards';
 import { ContinueLearning } from '@/components/user/dashboard/ContinueLearning';
-import { UpcomingSessions } from '@/components/user/dashboard/UpcomingSessions';
-import { Attendance } from '@/components/user/dashboard/Attendance';
+import { SessionsAndAttendanceTabs } from '@/components/user/dashboard/SessionsAndAttendanceTabs';
 import { ProgressOverview } from '@/components/user/dashboard/ProgressOverview';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -132,10 +131,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Bottom Grid - Sessions and Attendance */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <UpcomingSessions sessions={data.upcoming_sessions} />
-          <Attendance attendance={data.recent_attendance} />
+        {/* Sessions and Attendance Tabs */}
+        <div className="pt-4">
+          <SessionsAndAttendanceTabs
+            sessions={data.upcoming_sessions}
+            attendance={data.recent_attendance}
+          />
         </div>
       </div>
     </div>

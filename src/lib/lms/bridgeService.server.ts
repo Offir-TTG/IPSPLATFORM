@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 export interface BridgeLink {
   id: string;
   tenant_id: string;
-  program_id: string;
+  course_id: string;
   instructor_id: string | null;
   bridge_slug: string;
   is_active: boolean;
@@ -87,17 +87,17 @@ export const bridgeService = {
       const windowStart = new Date(now.getTime() - graceBeforeMinutes * 60 * 1000);
       const windowEnd = new Date(now.getTime() + graceAfterMinutes * 60 * 1000);
 
-      // Find all courses in this program
-      const { data: courses } = await supabase
-        .from('courses')
+      // Get module IDs for this course
+      const { data: modules } = await supabase
+        .from('modules')
         .select('id')
-        .eq('program_id', bridgeLink.program_id);
+        .eq('course_id', bridgeLink.course_id);
 
-      if (!courses || courses.length === 0) {
-        return { success: false, error: 'No courses found in this program' };
+      if (!modules || modules.length === 0) {
+        return { success: false, error: 'No modules found in this course' };
       }
 
-      const courseIds = courses.map(c => c.id);
+      const moduleIds = modules.map(m => m.id);
 
       // Find lessons in the time window with their Zoom sessions
       const { data: lessons, error } = await supabase
@@ -107,7 +107,7 @@ export const bridgeService = {
           title,
           start_time,
           duration,
-          course_id,
+          module_id,
           zoom_sessions (
             id,
             zoom_meeting_id,
@@ -115,7 +115,7 @@ export const bridgeService = {
             start_url
           )
         `)
-        .in('course_id', courseIds)
+        .in('module_id', moduleIds)
         .gte('start_time', windowStart.toISOString())
         .lte('start_time', windowEnd.toISOString())
         .not('zoom_sessions', 'is', null)
@@ -126,11 +126,11 @@ export const bridgeService = {
       }
 
       if (!lessons || lessons.length === 0) {
-        // Find the next upcoming lesson across all courses in the program
+        // Find the next upcoming lesson in this course
         const { data: upcomingLessons } = await supabase
           .from('lessons')
           .select('id, title, start_time')
-          .in('course_id', courseIds)
+          .in('module_id', moduleIds)
           .gt('start_time', now.toISOString())
           .order('start_time', { ascending: true })
           .limit(1);
@@ -187,7 +187,7 @@ export const bridgeService = {
    * Create a new bridge link
    */
   async createBridgeLink(params: {
-    program_id: string;
+    course_id: string;
     instructor_id?: string;
     custom_slug?: string;
     grace_before_minutes?: number;
@@ -196,15 +196,15 @@ export const bridgeService = {
     try {
       const supabase = await createClient();
 
-      // Get tenant_id from program
-      const { data: program } = await supabase
-        .from('programs')
+      // Get tenant_id from course
+      const { data: course } = await supabase
+        .from('courses')
         .select('tenant_id')
-        .eq('id', params.program_id)
+        .eq('id', params.course_id)
         .single();
 
-      if (!program) {
-        return { success: false, error: 'Program not found' };
+      if (!course) {
+        return { success: false, error: 'Course not found' };
       }
 
       // Generate slug if not provided
@@ -213,8 +213,8 @@ export const bridgeService = {
       const { data, error } = await supabase
         .from('instructor_bridge_links')
         .insert({
-          tenant_id: program.tenant_id,
-          program_id: params.program_id,
+          tenant_id: course.tenant_id,
+          course_id: params.course_id,
           instructor_id: params.instructor_id || null,
           bridge_slug: slug,
           is_active: true,

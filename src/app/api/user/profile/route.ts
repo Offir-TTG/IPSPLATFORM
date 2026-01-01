@@ -39,8 +39,7 @@ export const GET = withAuth(
         );
       }
 
-      // Fetch user preferences (if we have a preferences table)
-      // For now, we'll use default preferences that will be stored in user metadata or a separate table later
+      // Build user preferences from user data
       const preferences = {
         notifications: {
           lesson_reminders: true,
@@ -49,8 +48,8 @@ export const GET = withAuth(
           course_announcements: true,
         },
         regional: {
-          language: 'en', // Could come from user metadata
-          timezone: 'Asia/Jerusalem', // Default timezone
+          language: userData.preferred_language || null, // User's saved language preference (null means use tenant default)
+          timezone: userData.timezone || 'Asia/Jerusalem', // User's timezone
         },
       };
 
@@ -136,6 +135,7 @@ export const PATCH = withAuth(
         bio,
         location,
         timezone,
+        preferred_language,
         website,
         linkedin_url,
         facebook_url,
@@ -161,6 +161,7 @@ export const PATCH = withAuth(
       if (bio !== undefined) updateData.bio = bio;
       if (location !== undefined) updateData.location = location;
       if (timezone !== undefined) updateData.timezone = timezone;
+      if (preferred_language !== undefined) updateData.preferred_language = preferred_language;
       if (website !== undefined) updateData.website = website;
       if (linkedin_url !== undefined) updateData.linkedin_url = linkedin_url;
       if (facebook_url !== undefined) updateData.facebook_url = facebook_url;

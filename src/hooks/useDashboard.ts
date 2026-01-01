@@ -104,10 +104,14 @@ export interface DashboardData {
 }
 
 async function fetchDashboard(): Promise<DashboardData> {
-  const response = await fetch('/api/user/dashboard', {
+  // Add timestamp to URL to prevent any caching
+  const response = await fetch(`/api/user/dashboard?t=${Date.now()}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     },
   });
 
@@ -124,13 +128,17 @@ async function fetchDashboard(): Promise<DashboardData> {
   return result.data;
 }
 
+// Cache version - increment this to force all clients to refetch dashboard data
+const DASHBOARD_CACHE_VERSION = 5;
+
 export function useDashboard() {
   return useQuery({
-    queryKey: ['dashboard'],
+    queryKey: ['dashboard', DASHBOARD_CACHE_VERSION],
     queryFn: fetchDashboard,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
-    refetchOnWindowFocus: false,
+    staleTime: 0, // No stale time - always fresh
+    gcTime: 0, // No garbage collection time - don't cache at all
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnMount: true, // Always refetch on mount
     retry: 1,
   });
 }

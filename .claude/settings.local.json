@@ -18,7 +18,8 @@
       "Bash(npx supabase:*)",
       "Bash(node add-dynamic-to-all.js:*)",
       "Bash(node:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []
