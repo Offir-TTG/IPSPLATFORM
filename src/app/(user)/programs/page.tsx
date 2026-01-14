@@ -15,13 +15,15 @@ import {
   Trophy,
   Loader2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Award
 } from 'lucide-react';
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useRouter } from 'next/navigation';
 
 interface Program {
   id: string;
@@ -40,6 +42,10 @@ interface Program {
   total_hours: number;
   hours_completed: number;
   certificate_eligible: boolean;
+  completion_benefit?: string;
+  completion_description?: string;
+  access_duration?: string;
+  access_description?: string;
   courses: Array<{
     id: string;
     title: string;
@@ -75,6 +81,7 @@ async function fetchPrograms(): Promise<Program[]> {
 
 export default function ProgramsPage() {
   const { t } = useUserLanguage();
+  const router = useRouter();
   const { data: programs, isLoading, error, refetch } = useQuery({
     queryKey: ['user-programs'],
     queryFn: fetchPrograms,
@@ -115,28 +122,13 @@ export default function ProgramsPage() {
     <div className="min-h-screen pb-12">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-2">
-          <h1 style={{
-            fontSize: 'var(--font-size-3xl)',
-            fontFamily: 'var(--font-family-heading)',
-            fontWeight: 'var(--font-weight-bold)',
-            color: 'hsl(var(--text-heading))'
-          }}>{t('user.programs.title', 'My Programs')}</h1>
-          <span style={{
-            paddingInlineStart: '0.75rem',
-            paddingInlineEnd: '0.75rem',
-            paddingTop: '0.375rem',
-            paddingBottom: '0.375rem',
-            backgroundColor: 'hsl(var(--secondary))',
-            color: 'hsl(var(--secondary-foreground))',
-            borderRadius: 'calc(var(--radius) * 1.5)',
-            fontSize: 'var(--font-size-sm)',
-            fontFamily: 'var(--font-family-primary)',
-            fontWeight: 'var(--font-weight-medium)'
-          }}>
-            {programs?.length || 0} {t('user.programs.activePrograms', 'Active Programs')}
-          </span>
-        </div>
+        <h1 style={{
+          fontSize: 'var(--font-size-3xl)',
+          fontFamily: 'var(--font-family-heading)',
+          fontWeight: 'var(--font-weight-bold)',
+          color: 'hsl(var(--text-heading))',
+          marginBottom: '0.5rem'
+        }}>{t('user.programs.title', 'My Programs')}</h1>
         <p style={{
           color: 'hsl(var(--text-muted))',
           fontSize: 'var(--font-size-base)',
@@ -287,15 +279,19 @@ export default function ProgramsPage() {
                       color: 'hsl(var(--text-heading))',
                       marginBottom: '0.5rem'
                     }}>{program.name}</h3>
-                    <div
-                      style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        color: 'hsl(var(--text-muted))',
-                        marginBottom: '0.75rem'
-                      }}
-                      dangerouslySetInnerHTML={{ __html: program.description }}
-                    />
+                    {program.description && (
+                      <div
+                        style={{
+                          fontSize: 'var(--font-size-sm)',
+                          fontFamily: 'var(--font-family-primary)',
+                          color: 'hsl(var(--text-muted))',
+                          marginBottom: '0.75rem',
+                          lineHeight: '1.6'
+                        }}
+                        className="line-clamp-3"
+                        dangerouslySetInnerHTML={{ __html: program.description }}
+                      />
+                    )}
 
                     {/* Instructor & Dates */}
                     <div className="flex flex-wrap gap-4 mb-4" style={{
@@ -315,6 +311,24 @@ export default function ProgramsPage() {
                         <Clock className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
                         <span>{program.hours_completed}/{program.total_hours} {t('user.programs.card.hours', 'hours')}</span>
                       </div>
+                      {program.completion_benefit && (
+                        <div className="flex items-center gap-1">
+                          <Award className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
+                          <span>
+                            {program.completion_benefit}
+                            {program.completion_description && `, ${program.completion_description}`}
+                          </span>
+                        </div>
+                      )}
+                      {program.access_duration && (
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
+                          <span>
+                            {program.access_duration}
+                            {program.access_description && `, ${program.access_description}`}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -419,6 +433,7 @@ export default function ProgramsPage() {
                 {/* Actions */}
                 <div className="flex gap-2">
                   <button
+                    onClick={() => router.push('/courses')}
                     style={{
                       flex: 1,
                       display: 'flex',
@@ -445,6 +460,7 @@ export default function ProgramsPage() {
                     <ArrowRight className="ltr:ml-2 rtl:mr-2 rtl:rotate-180 h-4 w-4" />
                   </button>
                   <button
+                    onClick={() => router.push('/courses')}
                     style={{
                       paddingInlineStart: '0.75rem',
                       paddingInlineEnd: '0.75rem',
@@ -495,6 +511,7 @@ export default function ProgramsPage() {
               {t('user.programs.empty.description', 'Browse our catalog and enroll in programs to start your learning journey')}
             </p>
             <button
+              onClick={() => router.push('/courses')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',

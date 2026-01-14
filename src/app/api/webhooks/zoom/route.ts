@@ -236,6 +236,95 @@ async function handleRecordingCompleted(payload: any) {
     meetingId: payload.object.id,
     recordingCount: payload.object.recording_files?.length || 0
   });
+
+  // Trigger recording.ready event
+  try {
+    const { processTriggerEvent } = await import('@/lib/email/triggerEngine');
+
+    // Get full lesson details
+    const { data: fullLesson } = await supabase
+      .from('lessons')
+      .select(`
+        id,
+        title,
+        course_id,
+        program_id,
+        start_time,
+        courses (
+          id,
+          title
+        ),
+        programs (
+          id,
+          title
+        )
+      `)
+      .eq('id', zoomSession.lesson_id)
+      .single();
+
+    // Get enrolled students for this lesson
+    if (fullLesson) {
+      // Get students based on course or program
+      const enrollmentQuery = supabase
+        .from('enrollments')
+        .select(`
+          user_id,
+          users (
+            email,
+            first_name,
+            last_name,
+            preferred_language
+          )
+        `)
+        .eq('tenant_id', lesson.tenant_id)
+        .eq('status', 'active');
+
+      if (fullLesson.course_id) {
+        enrollmentQuery.eq('course_id', fullLesson.course_id);
+      } else if (fullLesson.program_id) {
+        enrollmentQuery.eq('program_id', fullLesson.program_id);
+      }
+
+      const { data: enrollments } = await enrollmentQuery;
+
+      // Trigger event for each enrolled student
+      if (enrollments && enrollments.length > 0) {
+        for (const enrollment of enrollments) {
+          if (enrollment.users) {
+            await processTriggerEvent({
+              eventType: 'recording.ready',
+              tenantId: lesson.tenant_id,
+              eventData: {
+                lessonId: fullLesson.id,
+                lessonTitle: fullLesson.title,
+                courseId: fullLesson.course_id,
+                programId: fullLesson.program_id,
+                courseName: fullLesson.courses?.title || '',
+                programName: fullLesson.programs?.title || '',
+                meetingId: payload.object.id,
+                meetingTopic: payload.object.topic,
+                recordingFiles: payload.object.recording_files,
+                recordingCount: payload.object.recording_files?.length || 0,
+                userId: enrollment.user_id,
+                email: enrollment.users.email,
+                userName: enrollment.users.first_name,
+                languageCode: enrollment.users.preferred_language || 'en',
+              },
+              userId: enrollment.user_id,
+              metadata: {
+                zoomMeetingId: payload.object.id,
+                hostId: payload.object.host_id,
+              },
+            });
+          }
+        }
+        console.log(`[Zoom] Triggered recording.ready for ${enrollments.length} students`);
+      }
+    }
+  } catch (triggerError) {
+    console.error('Error processing recording.ready trigger:', triggerError);
+    // Don't fail webhook if trigger fails
+  }
 }
 
 // Handle transcript completed event

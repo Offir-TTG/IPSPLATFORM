@@ -1,4 +1,6 @@
 import { AppProvider } from '@/context/AppContext';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import { Toaster } from '@/components/ui/toaster';
 
 export default function PublicLayout({
   children,
@@ -7,9 +9,12 @@ export default function PublicLayout({
 }) {
   return (
     <AppProvider>
-      <div className="min-h-screen bg-background">
-        {children}
-      </div>
+      <ThemeProvider>
+        <div className="min-h-screen bg-background">
+          {children}
+        </div>
+        <Toaster />
+      </ThemeProvider>
     </AppProvider>
   );
 }

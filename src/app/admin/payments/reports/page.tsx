@@ -217,7 +217,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold" suppressHydrationWarning>{formatCurrency(data.summary.totalExpectedIncome)}</div>
+            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.totalExpectedIncome)}</div>
             <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
               {t('admin.payments.reports.allSchedules', 'All Schedules')}
             </p>
@@ -231,7 +231,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold" suppressHydrationWarning>{formatCurrency(data.summary.totalRevenue)}</div>
+            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.totalRevenue)}</div>
             <div className={`flex items-center text-sm mt-2 ${data.summary.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {data.summary.revenueGrowth >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
@@ -250,7 +250,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold" suppressHydrationWarning>{formatCurrency(data.summary.avgTransaction)}</div>
+            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.avgTransaction)}</div>
             <div className={`flex items-center text-sm mt-2 ${data.summary.avgGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {data.summary.avgGrowth >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
@@ -269,7 +269,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold" suppressHydrationWarning>{formatCurrency(data.summary.mrr)}</div>
+            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.mrr)}</div>
             <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
               {t('admin.payments.reports.monthlyRecurring', 'Monthly Recurring')}
             </p>
@@ -283,7 +283,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold" suppressHydrationWarning>{formatCurrency(data.summary.arr)}</div>
+            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.arr)}</div>
             <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
               {t('admin.payments.reports.arrDescription', 'Annual Recurring Revenue')}
             </p>
@@ -838,6 +838,15 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
     }).format(amount);
   };
 
+  const formatCurrencyCompact = (amount: number) => {
+    return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+      style: 'currency',
+      currency: 'USD',
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(amount);
+  };
+
   const translateMonth = (monthKey: string) => {
     return t(`common.months.${monthKey}`, monthKey);
   };
@@ -864,7 +873,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold" suppressHydrationWarning>{formatCurrency(data.currentMonth.expected)}</div>
+            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.currentMonth.expected)}</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.fromAllSources', 'From all sources')}</p>
           </CardContent>
         </Card>
@@ -876,7 +885,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-600" suppressHydrationWarning>{formatCurrency(data.currentMonth.received)}</div>
+            <div className="text-2xl font-bold text-green-600 break-words" suppressHydrationWarning>{formatCurrencyCompact(data.currentMonth.received)}</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.ofExpected', 'Of expected')}</p>
           </CardContent>
         </Card>
@@ -888,7 +897,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-amber-600" suppressHydrationWarning>{formatCurrency(data.currentMonth.pending)}</div>
+            <div className="text-2xl font-bold text-amber-600 break-words" suppressHydrationWarning>{formatCurrencyCompact(data.currentMonth.pending)}</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.remaining', 'Remaining')}</p>
           </CardContent>
         </Card>
@@ -1680,7 +1689,7 @@ function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolea
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-red-600">5</div>
+            <div className="text-2xl font-bold text-red-600">5</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.requiresAction', 'Requires action')}</p>
           </CardContent>
         </Card>
@@ -1692,7 +1701,7 @@ function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolea
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-amber-600">3</div>
+            <div className="text-2xl font-bold text-amber-600">3</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.toRetry', 'To retry')}</p>
           </CardContent>
         </Card>
@@ -1704,7 +1713,7 @@ function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolea
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">2</div>
+            <div className="text-2xl font-bold">2</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.temporarilyOnHold', 'Temporarily on hold')}</p>
           </CardContent>
         </Card>
@@ -1716,7 +1725,7 @@ function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolea
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">7</div>
+            <div className="text-2xl font-bold">7</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.subscriptionsThisMonth', 'Subscriptions this month')}</p>
           </CardContent>
         </Card>

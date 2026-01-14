@@ -96,6 +96,12 @@ export interface Product {
   requires_signature: boolean;
   signature_template_id?: string;
 
+  // Product benefits & access
+  completion_benefit?: string;        // What users receive upon completion (e.g., "Certificate", "Digital Badge")
+  completion_description?: string;    // Description of when/how they receive it (e.g., "Upon completion", "After finishing all modules")
+  access_duration?: string;           // How long users have access (e.g., "Lifetime access", "1 year")
+  access_description?: string;        // Description of access terms (e.g., "Learn at your own pace", "Full access to all materials")
+
   // Payment configuration
   payment_model: PaymentModel;
   price?: number;           // NULL if payment_model = 'free'
@@ -163,6 +169,12 @@ export interface ProductFormData {
   // DocuSign
   requires_signature: boolean;
   signature_template_id?: string;
+
+  // Product benefits & access
+  completion_benefit?: string;
+  completion_description?: string;
+  access_duration?: string;
+  access_description?: string;
 
   // Payment
   payment_model: PaymentModel;

@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { LoadingState } from '@/components/admin/LoadingState';
 import { useAdminLanguage } from '@/context/AppContext';
 import {
   Users,
@@ -116,15 +117,7 @@ export default function AdminDashboardPage() {
   };
 
   if (loading) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-muted-foreground" suppressHydrationWarning>
-            {t('common.loading', 'Loading...')}
-          </div>
-        </div>
-      </AdminLayout>
-    );
+    return <LoadingState variant="page" withLayout={true} />;
   }
 
   if (!stats) {

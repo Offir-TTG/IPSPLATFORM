@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { LoadingState } from '@/components/admin/LoadingState';
 import { useAdminLanguage } from '@/context/AppContext';
 import { Award, Plus, Edit, Trash2, CheckCircle, XCircle, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -234,8 +235,8 @@ export default function GradingScalesPage() {
         {/* Scales List */}
         {loading ? (
           <Card>
-            <CardContent className="p-12 text-center">
-              <p suppressHydrationWarning>{t('common.loading', 'Loading...')}</p>
+            <CardContent className="p-12">
+              <LoadingState variant="inline" />
             </CardContent>
           </Card>
         ) : scales.length === 0 ? (

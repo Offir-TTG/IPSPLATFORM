@@ -35,6 +35,7 @@ export async function GET(
         token_expires_at,
         status,
         enrollment_token,
+        enrollment_type,
         wizard_profile_data,
         user:users!enrollments_user_id_fkey (
           id,
@@ -162,7 +163,8 @@ export async function GET(
       payment_model: product.payment_model,
       token_expires_at: enrollment.token_expires_at,
       status: enrollment.status,
-      user_email: userEmail // Show email so user can verify it's for them
+      user_email: userEmail, // Show email so user can verify it's for them
+      enrollment_type: enrollment.enrollment_type // 'admin_invited' or 'self_enrolled'
     });
 
   } catch (error) {

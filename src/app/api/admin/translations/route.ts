@@ -50,51 +50,52 @@ export async function GET(request: NextRequest) {
       countQuery = countQuery.eq('category', category);
     }
 
-    // If searching, first find all matching translation keys
-    let matchingKeys: string[] | undefined;
+    // Step 1: Get unique translation keys with filters
+    let keysQuery = supabase
+      .from('translations')
+      .select('translation_key, category')
+      .eq('tenant_id', tenant.id);
+
+    if (category && category !== 'all') {
+      keysQuery = keysQuery.eq('category', category);
+    }
+
+    // If searching, filter by search term
     if (search) {
-      const { data: matchingTranslations } = await supabase
-        .from('translations')
-        .select('translation_key')
-        .eq('tenant_id', tenant.id)
-        .or(`translation_key.ilike.%${search}%,translation_value.ilike.%${search}%`);
-
-      if (matchingTranslations) {
-        matchingKeys = Array.from(new Set(matchingTranslations.map(t => t.translation_key)));
-      }
+      keysQuery = keysQuery.or(`translation_key.ilike.%${search}%,translation_value.ilike.%${search}%`);
     }
 
-    // Build count query
-    if (matchingKeys && matchingKeys.length > 0) {
-      countQuery = countQuery.in('translation_key', matchingKeys);
+    const { data: allKeys, error: keysError } = await keysQuery;
+
+    if (keysError) {
+      return NextResponse.json(
+        { success: false, error: keysError.message },
+        { status: 500 }
+      );
     }
 
-    const { count } = await countQuery;
+    // Get unique translation keys
+    const uniqueKeys = Array.from(new Set(allKeys?.map(t => t.translation_key) || []));
+    const totalUniqueKeys = uniqueKeys.length;
 
-    // Get paginated data - filter by tenant_id
+    // Step 2: Paginate the unique keys
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedKeys = uniqueKeys.slice(startIndex, endIndex);
+
+    // Step 3: Fetch ALL languages for the paginated keys
     let query = supabase
       .from('translations')
       .select('*')
-      .eq('tenant_id', tenant.id);
+      .eq('tenant_id', tenant.id)
+      .in('translation_key', paginatedKeys)
+      .order('category')
+      .order('translation_key')
+      .order('language_code');
 
     if (languageCode) {
       query = query.eq('language_code', languageCode);
     }
-
-    if (category && category !== 'all') {
-      query = query.eq('category', category);
-    }
-
-    // Apply search filter by matching keys
-    if (matchingKeys && matchingKeys.length > 0) {
-      query = query.in('translation_key', matchingKeys);
-    }
-
-    // Order and paginate
-    query = query
-      .order('category')
-      .order('translation_key')
-      .range((page - 1) * pageSize, page * pageSize - 1);
 
     const { data: translations, error } = await query;
 
@@ -111,8 +112,8 @@ export async function GET(request: NextRequest) {
       pagination: {
         page,
         pageSize,
-        total: count || 0,
-        totalPages: Math.ceil((count || 0) / pageSize),
+        total: totalUniqueKeys,
+        totalPages: Math.ceil(totalUniqueKeys / pageSize),
       },
     });
   } catch (error) {

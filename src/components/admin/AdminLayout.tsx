@@ -16,6 +16,7 @@ import {
   Menu as MenuIcon,
   X,
   ChevronRight,
+  ChevronLeft,
   Plug,
   Navigation,
   Users,
@@ -32,6 +33,8 @@ import {
   Award,
   Building2,
   Bell,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -69,11 +72,12 @@ interface NavSection {
 }
 
 export function AdminLayout({ children }: AdminLayoutProps) {
-  const { t, language, loading: translationsLoading } = useAdminLanguage();
+  const { t, language, direction, loading: translationsLoading } = useAdminLanguage();
   const { isSuperAdmin } = useTenant();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -487,7 +491,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         className={`
           admin-sidebar
           ${hydrated ? 'hydrated' : ''}
-          fixed top-0 bottom-0 z-40 w-64
+          fixed top-0 bottom-0 z-40 transition-all duration-300
+          ${sidebarCollapsed ? 'w-16' : 'w-64'}
           ${sidebarOpen ? 'translate-x-0' : ''}
           lg:translate-x-0
         `}
@@ -496,48 +501,65 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <div className="h-full flex flex-col">
           {/* Logo/Brand */}
           <div className="p-6 border-b">
-            <Link href="/admin/dashboard" className="flex items-center gap-2">
-              {tenantLogo ? (
-                <div className="h-10 w-10 flex items-center justify-center">
-                  <img
-                    src={tenantLogo}
-                    alt={tenantName}
-                    className="max-h-full max-w-full object-contain"
-                  />
-                </div>
-              ) : (
-                <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center">
-                  <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
-                </div>
-              )}
-              <div>
-                <h2 className="font-bold" style={{
-                  color: 'hsl(var(--sidebar-foreground))',
-                  fontSize: 'var(--font-size-lg)',
-                  fontFamily: 'var(--font-family-heading)'
-                }}>{tenantName}</h2>
-                <p style={{
-                  color: 'hsl(var(--sidebar-foreground))',
-                  opacity: 0.7,
-                  fontSize: 'var(--font-size-xs)',
-                  fontFamily: 'var(--font-family-primary)'
-                }}>{t('admin.subtitle', 'Control Panel')}</p>
+            {sidebarCollapsed ? (
+              <div className="flex items-center justify-center">
+                <button
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="p-2 hover:bg-accent rounded-md transition-colors hidden lg:flex items-center justify-center"
+                  aria-label="Expand sidebar"
+                  title={t('nav.expandSidebar', 'Expand sidebar')}
+                >
+                  <PanelLeft className="h-5 w-5" />
+                </button>
               </div>
-            </Link>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <Link href="/admin/dashboard" className="flex items-center gap-2">
+                  {tenantLogo ? (
+                    <div className="h-10 w-10 flex items-center justify-center flex-shrink-0">
+                      <img
+                        src={tenantLogo}
+                        alt={tenantName}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                      <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
+                    </div>
+                  )}
+                  <h2 className="font-bold" style={{
+                    color: 'hsl(var(--sidebar-foreground))',
+                    fontSize: 'var(--font-size-lg)',
+                    fontFamily: 'var(--font-family-heading)'
+                  }}>{tenantName}</h2>
+                </Link>
+                <button
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className="p-1.5 hover:bg-accent rounded-md transition-colors hidden lg:flex items-center justify-center"
+                  aria-label="Collapse sidebar"
+                  title={t('nav.collapseSidebar', 'Collapse sidebar')}
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto p-4 space-y-6">
             {navSections.map((section, idx) => (
               <div key={idx}>
-                <h3 className="font-semibold uppercase tracking-wider mb-2 px-3" style={{
-                  color: 'hsl(var(--sidebar-foreground))',
-                  opacity: 0.6,
-                  fontSize: 'var(--font-size-xs)',
-                  fontFamily: 'var(--font-family-primary)'
-                }}>
-                  {t(section.titleKey, section.titleKey.split('.').pop())}
-                </h3>
+                {!sidebarCollapsed && (
+                  <h3 className="font-semibold uppercase tracking-wider mb-2 px-3" style={{
+                    color: 'hsl(var(--sidebar-foreground))',
+                    opacity: 0.6,
+                    fontSize: 'var(--font-size-xs)',
+                    fontFamily: 'var(--font-family-primary)'
+                  }}>
+                    {t(section.titleKey, section.titleKey.split('.').pop())}
+                  </h3>
+                )}
                 <div className="space-y-1">
                   {section.items.map((item) => {
                     const Icon = item.icon;
@@ -551,6 +573,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                         className={`
                           flex items-center gap-3 px-3 py-2 rounded-md transition-colors
                           ${active ? 'font-medium' : ''}
+                          ${sidebarCollapsed ? 'justify-center' : ''}
                         `}
                         style={active ? {
                           backgroundColor: 'hsl(var(--sidebar-active))',
@@ -575,15 +598,20 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                             e.currentTarget.style.backgroundColor = 'transparent';
                           }
                         }}
+                        title={sidebarCollapsed ? t(item.key, item.key.split('.').pop()) : undefined}
                       >
                         <Icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="flex-1">{t(item.key, item.key.split('.').pop())}</span>
-                        {item.badge && (
-                          <span className="px-2 py-0.5 text-xs bg-destructive text-destructive-foreground rounded-full">
-                            {item.badge}
-                          </span>
+                        {!sidebarCollapsed && (
+                          <>
+                            <span className="flex-1">{t(item.key, item.key.split('.').pop())}</span>
+                            {item.badge && (
+                              <span className="px-2 py-0.5 text-xs bg-destructive text-destructive-foreground rounded-full">
+                                {item.badge}
+                              </span>
+                            )}
+                            {active && <ChevronRight className="h-4 w-4" />}
+                          </>
                         )}
-                        {active && <ChevronRight className="h-4 w-4" />}
                       </Link>
                     );
                   })}
@@ -593,35 +621,37 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           </nav>
 
           {/* User section */}
-          <div className="p-4 border-t">
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-primary">OO</span>
+          {!sidebarCollapsed && (
+            <div className="p-4 border-t">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-sm font-medium text-primary">OO</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate" style={{
+                    color: 'hsl(var(--sidebar-foreground))',
+                    fontSize: 'var(--font-size-sm)',
+                    fontFamily: 'var(--font-family-primary)'
+                  }}>Offir Omer</p>
+                  <p className="truncate" style={{
+                    color: 'hsl(var(--sidebar-foreground))',
+                    opacity: 0.6,
+                    fontSize: 'var(--font-size-xs)',
+                    fontFamily: 'var(--font-family-primary)'
+                  }}>Admin</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                  className="p-2 hover:bg-accent rounded-md transition-colors disabled:opacity-50"
+                  aria-label="Logout"
+                  title={t('nav.logout', 'Logout')}
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate" style={{
-                  color: 'hsl(var(--sidebar-foreground))',
-                  fontSize: 'var(--font-size-sm)',
-                  fontFamily: 'var(--font-family-primary)'
-                }}>Offir Omer</p>
-                <p className="truncate" style={{
-                  color: 'hsl(var(--sidebar-foreground))',
-                  opacity: 0.6,
-                  fontSize: 'var(--font-size-xs)',
-                  fontFamily: 'var(--font-family-primary)'
-                }}>Admin</p>
-              </div>
-              <button
-                onClick={handleLogout}
-                disabled={loggingOut}
-                className="p-2 hover:bg-accent rounded-md transition-colors disabled:opacity-50"
-                aria-label="Logout"
-                title={t('nav.logout', 'Logout')}
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
             </div>
-          </div>
+          )}
         </div>
       </aside>
 
@@ -634,7 +664,20 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       )}
 
       {/* Main content */}
-      <main className="admin-main min-h-screen">
+      <main
+        className="admin-main min-h-screen transition-all duration-300"
+        style={
+          direction === 'rtl'
+            ? {
+                marginRight: sidebarCollapsed ? '4rem' : '16rem',
+                marginLeft: 0,
+              }
+            : {
+                marginLeft: sidebarCollapsed ? '4rem' : '16rem',
+                marginRight: 0,
+              }
+        }
+      >
         {/* Desktop header */}
         <div className="hidden lg:flex sticky top-0 z-20 bg-card/80 backdrop-blur-sm border-b border-border px-6 py-4 items-center justify-between">
           <div className="flex items-center gap-4">

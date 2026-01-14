@@ -200,16 +200,22 @@ export default function CoursesPage() {
   const allCourses = courses || [];
 
   const filteredCourses = allCourses.filter(course => {
-    const status = getCourseStatus(course.overall_progress);
+    const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
     if (activeTab === 'all') return true;
     return status === activeTab;
   });
 
+  // Separate courses into program courses and standalone courses
+  const programCourses = filteredCourses.filter(c => c.program_id && c.program_name);
+  const standaloneCourses = filteredCourses.filter(c => !c.program_id || !c.program_name);
+
   const stats = {
     total: allCourses.length,
-    in_progress: allCourses.filter(c => getCourseStatus(c.overall_progress) === 'in_progress').length,
-    completed: allCourses.filter(c => getCourseStatus(c.overall_progress) === 'completed').length,
-    not_started: allCourses.filter(c => getCourseStatus(c.overall_progress) === 'not_started').length
+    in_progress: allCourses.filter(c => getCourseStatus(c.overall_progress || 0, c.completed_lessons || 0, c.total_lessons || 0) === 'in_progress').length,
+    completed: allCourses.filter(c => getCourseStatus(c.overall_progress || 0, c.completed_lessons || 0, c.total_lessons || 0) === 'completed').length,
+    not_started: allCourses.filter(c => getCourseStatus(c.overall_progress || 0, c.completed_lessons || 0, c.total_lessons || 0) === 'not_started').length,
+    programCourses: programCourses.length,
+    standaloneCourses: standaloneCourses.length
   };
 
   return (
@@ -349,8 +355,48 @@ export default function CoursesPage() {
 
       {/* Card View */}
       {viewMode === 'card' && (
-        <div className="grid gap-6 md:grid-cols-2">
-          {filteredCourses.map((course) => {
+        <div className="space-y-8">
+          {/* Program Courses Section */}
+          {programCourses.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <GraduationCap className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h2 style={{
+                    fontSize: 'var(--font-size-xl)',
+                    fontFamily: 'var(--font-family-heading)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    color: 'hsl(var(--text-heading))'
+                  }}>{t('user.courses.sections.programCourses', 'Program Courses')}</h2>
+                  <p style={{
+                    fontSize: 'var(--font-size-sm)',
+                    fontFamily: 'var(--font-family-primary)',
+                    color: 'hsl(var(--text-muted))'
+                  }}>{t('user.courses.sections.programCoursesDesc', 'Courses that are part of your enrolled programs')}</p>
+                </div>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '2.5rem',
+                  height: '2.5rem',
+                  paddingLeft: '0.75rem',
+                  paddingRight: '0.75rem',
+                  paddingTop: '0.375rem',
+                  paddingBottom: '0.375rem',
+                  backgroundColor: 'hsl(var(--primary))',
+                  color: 'hsl(var(--primary-foreground))',
+                  borderRadius: '9999px',
+                  fontSize: 'var(--font-size-base)',
+                  fontFamily: 'var(--font-family-primary)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  boxShadow: '0 2px 8px hsl(var(--primary) / 0.25)'
+                }}>{programCourses.length}</span>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2">
+                {programCourses.map((course) => {
           const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
           const courseImage = course.course_image || getDefaultImage(course.course_name);
 
@@ -744,18 +790,434 @@ export default function CoursesPage() {
             </Card>
           );
         })}
+              </div>
+            </div>
+          )}
+
+          {/* Standalone Courses Section */}
+          {standaloneCourses.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgb(34 197 94 / 0.1)' }}>
+                  <BookOpen className="h-5 w-5" style={{ color: 'rgb(34 197 94)' }} />
+                </div>
+                <div className="flex-1">
+                  <h2 style={{
+                    fontSize: 'var(--font-size-xl)',
+                    fontFamily: 'var(--font-family-heading)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    color: 'hsl(var(--text-heading))'
+                  }}>{t('user.courses.sections.standaloneCourses', 'Standalone Courses')}</h2>
+                  <p style={{
+                    fontSize: 'var(--font-size-sm)',
+                    fontFamily: 'var(--font-family-primary)',
+                    color: 'hsl(var(--text-muted))'
+                  }}>{t('user.courses.sections.standaloneCoursesDesc', 'Independent courses not part of any program')}</p>
+                </div>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '2.5rem',
+                  height: '2.5rem',
+                  paddingLeft: '0.75rem',
+                  paddingRight: '0.75rem',
+                  paddingTop: '0.375rem',
+                  paddingBottom: '0.375rem',
+                  backgroundColor: 'rgb(34 197 94)',
+                  color: 'white',
+                  borderRadius: '9999px',
+                  fontSize: 'var(--font-size-base)',
+                  fontFamily: 'var(--font-family-primary)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.25)'
+                }}>{standaloneCourses.length}</span>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2">
+                {standaloneCourses.map((course) => {
+                  const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
+                  const courseImage = course.course_image || getDefaultImage(course.course_name);
+                  return (
+                    <Card key={course.id} className="overflow-hidden group hover:shadow-xl transition-all duration-300">
+                      {/* Same card structure as program courses */}
+                      <div className="relative h-48 bg-muted overflow-hidden">
+                        <Image
+                          src={courseImage}
+                          alt={course.course_name}
+                          fill
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute top-4 ltr:right-4 rtl:left-4">
+                          {status === 'completed' && (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              paddingInlineStart: '0.625rem',
+                              paddingInlineEnd: '0.625rem',
+                              paddingTop: '0.25rem',
+                              paddingBottom: '0.25rem',
+                              backgroundColor: 'hsl(var(--success))',
+                              color: 'hsl(var(--success-foreground))',
+                              borderRadius: 'calc(var(--radius) * 1.5)',
+                              fontSize: 'var(--font-size-xs)',
+                              fontFamily: 'var(--font-family-primary)',
+                              fontWeight: 'var(--font-weight-medium)'
+                            }}>
+                              <CheckCircle2 className="h-3 w-3" />
+                              {t('user.courses.status.completed', 'Completed')}
+                            </span>
+                          )}
+                          {status === 'in_progress' && (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              paddingInlineStart: '0.625rem',
+                              paddingInlineEnd: '0.625rem',
+                              paddingTop: '0.25rem',
+                              paddingBottom: '0.25rem',
+                              backgroundColor: 'hsl(var(--warning))',
+                              color: 'hsl(var(--warning-foreground))',
+                              borderRadius: 'calc(var(--radius) * 1.5)',
+                              fontSize: 'var(--font-size-xs)',
+                              fontFamily: 'var(--font-family-primary)',
+                              fontWeight: 'var(--font-weight-medium)'
+                            }}>
+                              <PlayCircle className="h-3 w-3" />
+                              {t('user.courses.status.inProgress', 'In Progress')}
+                            </span>
+                          )}
+                          {status === 'not_started' && (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              paddingInlineStart: '0.625rem',
+                              paddingInlineEnd: '0.625rem',
+                              paddingTop: '0.25rem',
+                              paddingBottom: '0.25rem',
+                              backgroundColor: 'hsl(var(--secondary))',
+                              color: 'hsl(var(--secondary-foreground))',
+                              borderRadius: 'calc(var(--radius) * 1.5)',
+                              fontSize: 'var(--font-size-xs)',
+                              fontFamily: 'var(--font-family-primary)',
+                              fontWeight: 'var(--font-weight-medium)'
+                            }}>
+                              {t('user.courses.status.notStarted', 'Not Started')}
+                            </span>
+                          )}
+                        </div>
+                        {status === 'completed' && (
+                          <div className="absolute top-4 ltr:left-4 rtl:right-4">
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              paddingInlineStart: '0.625rem',
+                              paddingInlineEnd: '0.625rem',
+                              paddingTop: '0.25rem',
+                              paddingBottom: '0.25rem',
+                              backgroundColor: 'hsl(var(--warning))',
+                              color: 'hsl(var(--warning-foreground))',
+                              borderRadius: 'calc(var(--radius) * 1.5)',
+                              fontSize: 'var(--font-size-xs)',
+                              fontFamily: 'var(--font-family-primary)',
+                              fontWeight: 'var(--font-weight-medium)'
+                            }}>
+                              <Award className="h-3 w-3" />
+                              {t('user.courses.certificate', 'Certificate')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-6 flex flex-col" style={{ minHeight: '400px' }}>
+                        <div style={{ minHeight: '2rem', marginBottom: '0.5rem' }}></div>
+                        <h3 className="line-clamp-2 group-hover:text-primary transition-colors" style={{
+                          fontSize: 'var(--font-size-xl)',
+                          fontFamily: 'var(--font-family-heading)',
+                          fontWeight: 'var(--font-weight-bold)',
+                          color: 'hsl(var(--text-heading))',
+                          marginBottom: '0.5rem',
+                          minHeight: '3.5rem',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}>{course.course_name}</h3>
+                        <div style={{ minHeight: '3rem', marginBottom: '1rem' }}>
+                          {course.course_description && (
+                            <div
+                              className="line-clamp-2"
+                              style={{
+                                fontSize: 'var(--font-size-sm)',
+                                fontFamily: 'var(--font-family-primary)',
+                                color: 'hsl(var(--text-muted))'
+                              }}
+                              dangerouslySetInnerHTML={{
+                                __html: course.course_description.replace(/<p>/g, '').replace(/<\/p>/g, '')
+                              }}
+                            />
+                          )}
+                        </div>
+                        <div style={{ minHeight: '6rem', marginBottom: '1rem' }}>
+                          {status !== 'not_started' && (
+                            <div className="pb-4 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
+                              <div className="flex items-center justify-between mb-2">
+                                <span style={{
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  fontWeight: 'var(--font-weight-medium)',
+                                  color: 'hsl(var(--text-body))'
+                                }}>{t('user.courses.progress', 'Progress')}</span>
+                                <span style={{
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  fontWeight: 'var(--font-weight-bold)',
+                                  color: 'hsl(var(--primary))'
+                                }}>{course.overall_progress}%</span>
+                              </div>
+                              <Progress value={course.overall_progress} className="h-2 mb-2" />
+                              <div className="flex items-center justify-between" style={{
+                                fontSize: 'var(--font-size-xs)',
+                                fontFamily: 'var(--font-family-primary)',
+                                color: 'hsl(var(--text-muted))'
+                              }}>
+                                <span>{course.completed_lessons}/{course.total_lessons} {t('user.courses.lessons', 'lessons')}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ flex: 1 }}></div>
+                        <div className="flex items-center gap-4 mb-4" style={{
+                          fontSize: 'var(--font-size-xs)',
+                          fontFamily: 'var(--font-family-primary)',
+                          color: 'hsl(var(--text-muted))'
+                        }}>
+                          <div className="flex items-center gap-1">
+                            <Video className="h-3 w-3" />
+                            <span>{course.total_lessons} {t('user.courses.lessonsCount', 'lessons')}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            <span>{t('user.courses.enrolledOn', 'Enrolled on')} {new Date(course.enrolled_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            {status === 'completed' ? (
+                              <>
+                                <button style={{
+                                  flex: 1,
+                                  paddingInlineStart: '0.75rem',
+                                  paddingInlineEnd: '0.75rem',
+                                  paddingTop: '0.5rem',
+                                  paddingBottom: '0.5rem',
+                                  border: '1px solid hsl(var(--border))',
+                                  borderRadius: 'calc(var(--radius) * 1.5)',
+                                  backgroundColor: 'transparent',
+                                  color: 'hsl(var(--text-body))',
+                                  cursor: 'pointer',
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  fontWeight: 'var(--font-weight-medium)',
+                                  transition: 'background-color 0.2s'
+                                }} className="hover:bg-accent">
+                                  {t('user.courses.actions.review', 'Review Course')}
+                                </button>
+                                <button style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.5rem',
+                                  paddingInlineStart: '0.75rem',
+                                  paddingInlineEnd: '0.75rem',
+                                  paddingTop: '0.5rem',
+                                  paddingBottom: '0.5rem',
+                                  backgroundColor: 'hsl(var(--primary))',
+                                  color: 'hsl(var(--primary-foreground))',
+                                  borderRadius: 'calc(var(--radius) * 1.5)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  fontWeight: 'var(--font-weight-medium)',
+                                  transition: 'opacity 0.2s'
+                                }} className="hover:opacity-90">
+                                  <Award className="h-4 w-4" />
+                                  {t('user.courses.actions.getCertificate', 'Get Certificate')}
+                                </button>
+                              </>
+                            ) : status === 'not_started' ? (
+                              <button
+                                onClick={() => handleStartCourse(course.course_id || course.id)}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.5rem',
+                                  paddingInlineStart: '0.75rem',
+                                  paddingInlineEnd: '0.75rem',
+                                  paddingTop: '0.5rem',
+                                  paddingBottom: '0.5rem',
+                                  backgroundColor: 'hsl(var(--primary))',
+                                  color: 'hsl(var(--primary-foreground))',
+                                  borderRadius: 'calc(var(--radius) * 1.5)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  fontWeight: 'var(--font-weight-medium)',
+                                  transition: 'opacity 0.2s'
+                                }} className="hover:opacity-90">
+                                {t('user.courses.actions.startLearning', 'Start Learning')}
+                                <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => router.push(`/courses/${course.course_id || course.id}`)}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.5rem',
+                                  paddingInlineStart: '0.75rem',
+                                  paddingInlineEnd: '0.75rem',
+                                  paddingTop: '0.5rem',
+                                  paddingBottom: '0.5rem',
+                                  backgroundColor: 'hsl(var(--primary))',
+                                  color: 'hsl(var(--primary-foreground))',
+                                  borderRadius: 'calc(var(--radius) * 1.5)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  fontWeight: 'var(--font-weight-medium)',
+                                  transition: 'opacity 0.2s'
+                                }} className="hover:opacity-90">
+                                {t('user.courses.actions.continueLearning', 'Continue Learning')}
+                                <ChevronRight className="h-4 w-4 ltr:ml-1 rtl:mr-1 rtl:rotate-180" />
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                            <button
+                              onClick={() => router.push(`/courses/${course.course_id || course.id}/grades`)}
+                              style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.5rem',
+                                paddingInlineStart: '0.75rem',
+                                paddingInlineEnd: '0.75rem',
+                                paddingTop: '0.625rem',
+                                paddingBottom: '0.625rem',
+                                border: '2px solid hsl(var(--primary))',
+                                borderRadius: 'calc(var(--radius) * 1.5)',
+                                backgroundColor: 'hsl(var(--primary) / 0.05)',
+                                color: 'hsl(var(--primary))',
+                                cursor: 'pointer',
+                                fontSize: 'var(--font-size-sm)',
+                                fontFamily: 'var(--font-family-primary)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                transition: 'all 0.2s ease',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                              }}
+                              className="hover:bg-primary hover:text-primary-foreground">
+                              <GraduationCap className="h-5 w-5" />
+                              {t('user.courses.actions.viewGrades', 'View Grades')}
+                            </button>
+                            <button
+                              onClick={() => router.push(`/courses/${course.course_id || course.id}/attendance`)}
+                              style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.5rem',
+                                paddingInlineStart: '0.75rem',
+                                paddingInlineEnd: '0.75rem',
+                                paddingTop: '0.625rem',
+                                paddingBottom: '0.625rem',
+                                border: '2px solid hsl(var(--secondary))',
+                                borderRadius: 'calc(var(--radius) * 1.5)',
+                                backgroundColor: 'hsl(var(--secondary) / 0.05)',
+                                color: 'hsl(var(--secondary-foreground))',
+                                cursor: 'pointer',
+                                fontSize: 'var(--font-size-sm)',
+                                fontFamily: 'var(--font-family-primary)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                transition: 'all 0.2s ease',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                              }}
+                              className="hover:bg-secondary hover:text-secondary-foreground">
+                              <UserCheck className="h-5 w-5" />
+                              {t('user.courses.actions.viewAttendance', 'View Attendance')}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* List View */}
       {viewMode === 'list' && (
-        <div className="space-y-4">
-          {filteredCourses.map((course) => {
-            const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
-            const courseImage = course.course_image || getDefaultImage(course.course_name);
+        <div className="space-y-8">
+          {/* Program Courses Section */}
+          {programCourses.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <GraduationCap className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h2 style={{
+                    fontSize: 'var(--font-size-xl)',
+                    fontFamily: 'var(--font-family-heading)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    color: 'hsl(var(--text-heading))'
+                  }}>{t('user.courses.sections.programCourses', 'Program Courses')}</h2>
+                  <p style={{
+                    fontSize: 'var(--font-size-sm)',
+                    fontFamily: 'var(--font-family-primary)',
+                    color: 'hsl(var(--text-muted))'
+                  }}>{t('user.courses.sections.programCoursesDesc', 'Courses that are part of your enrolled programs')}</p>
+                </div>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '2.5rem',
+                  height: '2.5rem',
+                  paddingLeft: '0.75rem',
+                  paddingRight: '0.75rem',
+                  paddingTop: '0.375rem',
+                  paddingBottom: '0.375rem',
+                  backgroundColor: 'hsl(var(--primary))',
+                  color: 'hsl(var(--primary-foreground))',
+                  borderRadius: '9999px',
+                  fontSize: 'var(--font-size-base)',
+                  fontFamily: 'var(--font-family-primary)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  boxShadow: '0 2px 8px hsl(var(--primary) / 0.25)'
+                }}>{programCourses.length}</span>
+              </div>
+              <div className="space-y-4">
+                {programCourses.map((course) => {
+                  const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
+                  const courseImage = course.course_image || getDefaultImage(course.course_name);
 
-            return (
-              <Card key={course.id} className="overflow-hidden group hover:shadow-lg transition-all duration-300">
+                  return (
+                    <Card key={course.id} className="overflow-hidden group hover:shadow-lg transition-all duration-300">
                 <div className="flex items-center gap-4 p-4">
                   {/* Course Image - Smaller */}
                   <div className="relative h-24 w-24 md:h-32 md:w-32 flex-shrink-0 bg-muted overflow-hidden rounded-lg">
@@ -864,6 +1326,148 @@ export default function CoursesPage() {
               </Card>
             );
           })}
+              </div>
+            </div>
+          )}
+
+          {/* Standalone Courses Section */}
+          {standaloneCourses.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgb(34 197 94 / 0.1)' }}>
+                  <BookOpen className="h-5 w-5" style={{ color: 'rgb(34 197 94)' }} />
+                </div>
+                <div className="flex-1">
+                  <h2 style={{
+                    fontSize: 'var(--font-size-xl)',
+                    fontFamily: 'var(--font-family-heading)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    color: 'hsl(var(--text-heading))'
+                  }}>{t('user.courses.sections.standaloneCourses', 'Standalone Courses')}</h2>
+                  <p style={{
+                    fontSize: 'var(--font-size-sm)',
+                    fontFamily: 'var(--font-family-primary)',
+                    color: 'hsl(var(--text-muted))'
+                  }}>{t('user.courses.sections.standaloneCoursesDesc', 'Independent courses not part of any program')}</p>
+                </div>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '2.5rem',
+                  height: '2.5rem',
+                  paddingLeft: '0.75rem',
+                  paddingRight: '0.75rem',
+                  paddingTop: '0.375rem',
+                  paddingBottom: '0.375rem',
+                  backgroundColor: 'rgb(34 197 94)',
+                  color: 'white',
+                  borderRadius: '9999px',
+                  fontSize: 'var(--font-size-base)',
+                  fontFamily: 'var(--font-family-primary)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.25)'
+                }}>{standaloneCourses.length}</span>
+              </div>
+              <div className="space-y-4">
+                {standaloneCourses.map((course) => {
+                  const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
+                  const courseImage = course.course_image || getDefaultImage(course.course_name);
+
+                  return (
+                    <Card key={course.id} className="overflow-hidden group hover:shadow-lg transition-all duration-300">
+                <div className="flex items-center gap-4 p-4">
+                  {/* Course Image - Smaller */}
+                  <div className="relative h-24 w-24 md:h-32 md:w-32 flex-shrink-0 bg-muted overflow-hidden rounded-lg">
+                    <Image
+                      src={courseImage}
+                      alt={course.course_name}
+                      fill
+                      className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </div>
+
+                  {/* Course Info - Horizontal */}
+                  <div className="flex-1 min-w-0">
+                    {/* Title and Program */}
+                    <div className="mb-2">
+                      <h3 className="text-lg md:text-xl font-bold line-clamp-1 group-hover:text-primary transition-colors">
+                        {course.course_name}
+                      </h3>
+                    </div>
+
+                    {/* Stats Row */}
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
+                      <div className="flex items-center gap-1">
+                        <Video className="h-3 w-3" />
+                        <span>{course.total_lessons} {t('user.courses.lessonsCount', 'lessons')}</span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar (if started) */}
+                    {status !== 'not_started' && (
+                      <div className="mb-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium">{t('user.courses.progress', 'Progress')}</span>
+                          <span className="text-xs font-bold text-primary">{course.overall_progress}%</span>
+                        </div>
+                        <Progress value={course.overall_progress} className="h-2" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+
+                    {/* Action Button */}
+                    {status === 'completed' ? (
+                      <Button size="sm" variant="outline" className="gap-2">
+                        <Award className="h-4 w-4" />
+                        {t('user.courses.actions.getCertificate', 'Certificate')}
+                      </Button>
+                    ) : status === 'not_started' ? (
+                      <Button size="sm" onClick={() => handleStartCourse(course.course_id || course.id)} className="gap-2">
+                        {t('user.courses.actions.startLearning', 'Start')}
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => router.push(`/courses/${course.course_id || course.id}`)}
+                        className="gap-2"
+                      >
+                        {t('user.courses.actions.continueLearning', 'Continue')}
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    )}
+
+                    {/* Secondary Actions */}
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => router.push(`/courses/${course.course_id || course.id}/grades`)}
+                        className="h-8 px-2"
+                      >
+                        <GraduationCap className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => router.push(`/courses/${course.course_id || course.id}/attendance`)}
+                        className="h-8 px-2"
+                      >
+                        <UserCheck className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

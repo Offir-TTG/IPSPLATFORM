@@ -4,7 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { useAdminLanguage } from '@/context/AppContext';
+import { useAdminLanguage, useApp } from '@/context/AppContext';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Search,
   Edit2,
@@ -13,7 +14,6 @@ import {
   Loader2,
   Filter,
   Globe,
-  Check,
   AlertCircle,
   Languages,
   ChevronLeft,
@@ -47,6 +47,8 @@ interface PaginationInfo {
 
 export default function TranslationsPage() {
   const { t, availableLanguages } = useAdminLanguage();
+  const { clearTranslationCache } = useApp();
+  const { toast } = useToast();
   const [translations, setTranslations] = useState<Translation[]>([]);
   const [groupedTranslations, setGroupedTranslations] = useState<TranslationGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,8 +60,6 @@ export default function TranslationsPage() {
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo>({
     page: 1,
@@ -123,20 +123,31 @@ export default function TranslationsPage() {
       const result = await response.json();
 
       if (result.success) {
-        console.log('Loaded translations:', result.data);
-        console.log('Total records:', result.data.length);
         setTranslations(result.data);
         groupTranslations(result.data);
         extractCategories(result.data);
         if (result.pagination) {
           setPagination(result.pagination);
         }
+
+        // Return the data for verification in handleSave
+        return result.data;
       } else {
-        setError(result.error || 'Failed to load translations');
+        toast({
+          title: t('common.error', 'Error'),
+          description: result.error || t('admin.translations.loadFailed', 'Failed to load translations'),
+          variant: 'destructive',
+        });
+        return null;
       }
     } catch (err) {
       console.error('Load translations error:', err);
-      setError('Failed to load translations');
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.translations.loadFailed', 'Failed to load translations'),
+        variant: 'destructive',
+      });
+      return null;
     } finally {
       if (initialLoad) {
         setLoading(false);
@@ -170,7 +181,8 @@ export default function TranslationsPage() {
       group.translations[t.language_code] = t.translation_value;
     });
 
-    setGroupedTranslations(Array.from(grouped.values()));
+    const groupedArray = Array.from(grouped.values());
+    setGroupedTranslations(groupedArray);
   };
 
   const [editCategory, setEditCategory] = useState('');
@@ -181,8 +193,6 @@ export default function TranslationsPage() {
     setEditValues({ ...currentTranslations });
     setEditCategory(category);
     setEditContext(context);
-    setError('');
-    setSuccess('');
   };
 
   const handleCancelEdit = () => {
@@ -190,13 +200,18 @@ export default function TranslationsPage() {
     setEditValues({});
     setEditCategory('');
     setEditContext('');
-    setError('');
   };
 
   const handleSave = async (key: string) => {
+    console.log('[handleSave] Called with key:', key);
+    console.log('[handleSave] Edit values:', editValues);
+
     try {
       setSaving(true);
-      setError('');
+
+      // Store the key we're editing for later verification
+      const savedKey = key;
+      const expectedValues = { ...editValues };
 
       // Save each language translation
       const promises = Object.entries(editValues).map(([langCode, value]) =>
@@ -213,25 +228,111 @@ export default function TranslationsPage() {
         })
       );
 
+      console.log('[handleSave] Sending API requests...');
       const results = await Promise.all(promises);
+      console.log('[handleSave] API requests completed:', results.map(r => r.status));
+
+      // Check each response for errors
+      const responses = await Promise.all(results.map(r => r.json()));
+      console.log('[handleSave] API responses:', responses);
+      console.log('[handleSave] Full API response details:', JSON.stringify(responses, null, 2));
+
+      // Check if any response indicates an error (even with 200 status)
+      const hasApiError = responses.some(r => !r.success);
+      if (hasApiError) {
+        const errorResponses = responses.filter(r => !r.success);
+        console.error('❌ API returned errors:', errorResponses);
+        toast({
+          title: t('common.error', 'Error'),
+          description: errorResponses[0]?.error || t('admin.translations.saveFailed', 'Failed to save translation'),
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Log any errors
+      const failures = results.filter((r, i) => !r.ok);
+      if (failures.length > 0) {
+        console.error('Save failed for some translations:', responses.filter((_, i) => !results[i].ok));
+      }
+
       const allSuccess = results.every(r => r.ok);
+      console.log('[handleSave] All success:', allSuccess);
 
       if (allSuccess) {
-        setSuccess('Translations saved successfully');
+        console.log('[handleSave] Starting state update...');
+
+        // Clear translation cache to force fresh data from API
+        clearTranslationCache();
+        console.log('[handleSave] Cache cleared');
+
+        console.log('[handleSave] Current translations state length:', translations.length);
+
+        // Update the local state immediately with the saved values
+        // This ensures the UI updates even if the reload doesn't fetch all languages
+        const updatedTranslations = [...translations];
+
+        Object.entries(expectedValues).forEach(([langCode, value]) => {
+          const existingIndex = updatedTranslations.findIndex(
+            t => t.translation_key === savedKey && t.language_code === langCode
+          );
+
+          if (existingIndex >= 0) {
+            // Update existing translation
+            updatedTranslations[existingIndex] = {
+              ...updatedTranslations[existingIndex],
+              translation_value: value as string,
+            };
+          } else {
+            // Add new translation - ensure all required fields are included
+            updatedTranslations.push({
+              translation_key: savedKey,
+              language_code: langCode,
+              translation_value: value as string,
+              category: editCategory || savedKey.split('.')[0],
+              context: editContext || (savedKey.startsWith('admin.') ? 'admin' : 'user'),
+            });
+          }
+        });
+
+        // Update state with new translations
+        setTranslations(updatedTranslations);
+        console.log('[handleSave] State updated with', updatedTranslations.length, 'translations');
+
+        // Re-group with updated translations to update the table display
+        groupTranslations(updatedTranslations);
+        console.log('[handleSave] Regrouping completed');
+
+        // Reload from server to ensure we have the latest data from database
+        console.log('[handleSave] Reloading from server to confirm save');
+        await loadTranslations();
+
+        // Exit edit mode - UI now shows the saved data
+        toast({
+          title: t('common.success', 'Success'),
+          description: t('admin.translations.saveSuccess', 'Translations saved successfully'),
+        });
+        console.log('[handleSave] Success! Edit mode will now exit');
         setEditingKey(null);
         setEditValues({});
         setEditCategory('');
         setEditContext('');
-        await loadTranslations();
-
-        // Clear success message after 3 seconds
-        setTimeout(() => setSuccess(''), 3000);
       } else {
-        setError('Failed to save some translations');
+        const failedResponses = responses.filter((_, i) => !results[i].ok);
+        console.error('Translation save failed:', failedResponses);
+        toast({
+          title: t('common.error', 'Error'),
+          description: t('admin.translations.saveFailed', 'Failed to save some translations'),
+          variant: 'destructive',
+        });
       }
     } catch (err) {
       console.error('Save translations error:', err);
-      setError('Failed to save translations');
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.translations.saveFailed', 'Failed to save translations'),
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }
@@ -380,44 +481,6 @@ export default function TranslationsPage() {
             </div>
           </div>
         </div>
-
-        {/* Notifications */}
-        {error && (
-          <div style={{
-            backgroundColor: 'hsl(var(--destructive) / 0.1)',
-            border: '1px solid hsl(var(--destructive))',
-            color: 'hsl(var(--destructive))',
-            padding: '0.75rem 1rem',
-            borderRadius: 'calc(var(--radius) * 1.5)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            fontSize: 'var(--font-size-sm)',
-            fontFamily: 'var(--font-family-primary)'
-          }}>
-            <AlertCircle className="h-5 w-5" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {success && (
-          <div style={{
-            backgroundColor: 'hsl(142 76% 36% / 0.1)',
-            border: '1px solid hsl(142 76% 36%)',
-            color: 'hsl(142 76% 20%)',
-            padding: '0.75rem 1rem',
-            borderRadius: 'calc(var(--radius) * 1.5)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            fontSize: 'var(--font-size-sm)',
-            fontFamily: 'var(--font-family-primary)',
-            fontWeight: 'var(--font-weight-medium)'
-          }}>
-            <Check className="h-5 w-5" style={{ color: 'hsl(142 76% 36%)' }} />
-            <span>{success}</span>
-          </div>
-        )}
 
         {/* Filters */}
         <div style={{

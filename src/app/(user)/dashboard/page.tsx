@@ -7,6 +7,7 @@ import { StatsCards } from '@/components/user/dashboard/StatsCards';
 import { ContinueLearning } from '@/components/user/dashboard/ContinueLearning';
 import { SessionsAndAttendanceTabs } from '@/components/user/dashboard/SessionsAndAttendanceTabs';
 import { ProgressOverview } from '@/components/user/dashboard/ProgressOverview';
+import { PaymentSummary } from '@/components/user/dashboard/PaymentSummary';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -122,6 +123,9 @@ export default function DashboardPage() {
 
         {/* Stats Cards */}
         <StatsCards stats={enhancedStats} />
+
+        {/* Payment Summary */}
+        <PaymentSummary />
 
         {/* Progress and Courses Grid */}
         <div className="grid gap-6 lg:grid-cols-3">

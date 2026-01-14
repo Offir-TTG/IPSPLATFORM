@@ -37,6 +37,7 @@ interface EnrollmentData {
   token_expires_at: string;
   status: string;
   user_email: string;
+  enrollment_type?: string; // 'admin_invited' | 'self_enrolled'
 }
 
 export default function EnrollmentPage() {
@@ -243,14 +244,20 @@ export default function EnrollmentPage() {
           <div className="relative bg-gradient-to-r from-primary via-primary/90 to-primary/80 text-primary-foreground px-6 sm:px-8 py-8 sm:py-10">
             <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,transparent,black)]"></div>
             <div className="relative text-center">
-              <div className="w-20 h-20 bg-primary-foreground/10 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
-                <UserPlus className="h-10 w-10 text-primary-foreground" />
+              <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
+                <UserPlus className="h-10 w-10 text-primary" />
               </div>
-              <CardTitle className="text-2xl sm:text-3xl font-bold mb-2">
-                {t('enrollment.header.title', 'You\'re Invited!')}
+              <CardTitle className="text-2xl sm:text-3xl font-bold mb-2 text-white">
+                {enrollment.enrollment_type === 'self_enrolled'
+                  ? t('enrollment.header.title.selfEnrolled', 'Complete Your Enrollment')
+                  : t('enrollment.header.title', 'You\'re Invited!')
+                }
               </CardTitle>
-              <CardDescription className="text-primary-foreground/90 text-sm sm:text-base">
-                {t('enrollment.header.subtitle', 'You\'ve been invited to enroll in the following:')}
+              <CardDescription className="text-white/90 text-sm sm:text-base">
+                {enrollment.enrollment_type === 'self_enrolled'
+                  ? t('enrollment.header.subtitle.selfEnrolled', 'You\'re enrolling in the following:')
+                  : t('enrollment.header.subtitle', 'You\'ve been invited to enroll in the following:')
+                }
               </CardDescription>
             </div>
           </div>
@@ -303,23 +310,27 @@ export default function EnrollmentPage() {
               </Alert>
             )}
 
-            {/* User Email Verification */}
-            <Alert className="border-primary/20 bg-primary/5">
-              <Mail className="h-4 w-4 text-primary" />
-              <AlertDescription className="text-foreground">
-                <span className="font-medium">{t('enrollment.verification.sentTo', 'Invitation sent to:')}</span>{' '}
-                <span className="font-semibold">{enrollment.user_email}</span>
-              </AlertDescription>
-            </Alert>
+            {/* User Email Verification - Only show for admin-invited enrollments */}
+            {enrollment.enrollment_type === 'admin_invited' && (
+              <Alert className="border-primary/20 bg-primary/5">
+                <Mail className="h-4 w-4 text-primary" />
+                <AlertDescription className="text-foreground">
+                  <span className="font-medium">{t('enrollment.verification.sentTo', 'Invitation sent to:')}</span>{' '}
+                  <span className="font-semibold">{enrollment.user_email}</span>
+                </AlertDescription>
+              </Alert>
+            )}
 
-            {/* Expiration Warning */}
-            <Alert className={isExpiringSoon ? 'border-orange-500 bg-orange-50' : 'border-muted bg-muted/30'}>
-              <Clock className={`h-4 w-4 ${isExpiringSoon ? 'text-orange-600' : 'text-muted-foreground'}`} />
-              <AlertDescription className={isExpiringSoon ? 'text-orange-800 font-medium' : 'text-muted-foreground'}>
-                {isExpiringSoon && <strong>{t('enrollment.expiry.soon', '⚠️ Expiring soon!')} </strong>}
-                {t('enrollment.expiry.expires', 'This invitation expires')} {formatDistanceToNow(new Date(enrollment.token_expires_at), { addSuffix: true, locale: language === 'he' ? he : enUS })}
-              </AlertDescription>
-            </Alert>
+            {/* Expiration Warning - Only show for admin-invited enrollments */}
+            {enrollment.enrollment_type === 'admin_invited' && (
+              <Alert className={isExpiringSoon ? 'border-orange-500 bg-orange-50' : 'border-muted bg-muted/30'}>
+                <Clock className={`h-4 w-4 ${isExpiringSoon ? 'text-orange-600' : 'text-muted-foreground'}`} />
+                <AlertDescription className={isExpiringSoon ? 'text-orange-800 font-medium' : 'text-muted-foreground'}>
+                  {isExpiringSoon && <strong>{t('enrollment.expiry.soon', '⚠️ Expiring soon!')} </strong>}
+                  {t('enrollment.expiry.expires', 'This invitation expires')} {formatDistanceToNow(new Date(enrollment.token_expires_at), { addSuffix: true, locale: language === 'he' ? he : enUS })}
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* Action Buttons */}
             <div className="flex flex-col gap-3 pt-2">

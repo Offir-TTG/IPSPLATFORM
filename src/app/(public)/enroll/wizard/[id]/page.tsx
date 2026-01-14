@@ -130,15 +130,66 @@ export default function EnrollmentWizardPage() {
   const [lastNameError, setLastNameError] = useState<string | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [emailValidated, setEmailValidated] = useState(false); // Email validated as available
+  const [emailExistsDetected, setEmailExistsDetected] = useState(false); // Existing user email detected
 
   // Refs
   const addressInputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<any>(null);
   const isReturningFromDocuSignRef = useRef<boolean>(false);
   const isReturningFromPaymentRef = useRef<boolean>(false);
+  const userLinkingCompleteRef = useRef<boolean>(false); // Track if user linking finished
 
   useEffect(() => {
-    if (enrollmentToken) {
+    const initializeEnrollment = async () => {
+      if (!enrollmentToken) {
+        setError('Missing enrollment token. Please use the invitation link.');
+        setLoading(false);
+        return;
+      }
+
+      // CRITICAL: Link logged-in user to enrollment FIRST, before loading enrollment data
+      // This ensures enrollment.user_id is set when step determination runs
+      console.log('[Wizard] 🔍 Checking for logged-in user...');
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+      console.log('[Wizard] Auth check result:', {
+        hasUser: !!user,
+        userId: user?.id,
+        userEmail: user?.email,
+        authError: authError?.message
+      });
+
+      if (user) {
+        console.log('[Wizard] 🔗 Logged-in user detected - linking user to enrollment...', {
+          userId: user.id,
+          email: user.email
+        });
+
+        try {
+          const response = await fetch(`/api/enrollments/token/${enrollmentToken}/link-user`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            console.log('[Wizard] ✅ User linked successfully:', data);
+            // Add extra delay to ensure database is updated
+            console.log('[Wizard] ⏳ Waiting 500ms for database update...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+            console.log('[Wizard] ✅ Database update wait complete');
+          } else {
+            console.error('[Wizard] ❌ Failed to link user:', data);
+          }
+        } catch (err) {
+          console.error('[Wizard] ❌ Error linking user:', err);
+        }
+      } else {
+        console.log('[Wizard] ℹ️ No logged-in user detected - proceeding as guest');
+      }
+
       // Check if returning from DocuSign or Payment
       const urlParams = new URLSearchParams(window.location.search);
       const isReturningFromDocuSign = urlParams.get('docusign') === 'complete';
@@ -204,10 +255,9 @@ export default function EnrollmentWizardPage() {
         // Normal load - start with retry=0
         fetchEnrollmentData(0);
       }
-    } else {
-      setError('Missing enrollment token. Please use the invitation link.');
-      setLoading(false);
-    }
+    };
+
+    initializeEnrollment();
   }, [enrollmentId, enrollmentToken]);
 
   // Track if profile data has been loaded to avoid overwriting user input
@@ -251,6 +301,13 @@ export default function EnrollmentWizardPage() {
           profile: profileFromDb,
           profileCompleted: isProfileComplete // Only mark complete if all fields are present
         }));
+
+        // If user_id is set (existing user) OR profile has email, skip email validation
+        // Existing users don't need to validate email again
+        if (enrollment.user_id || profileFromDb.email) {
+          console.log('[Wizard] Skipping email validation - existing user or email already set');
+          setEmailValidated(true);
+        }
 
         setProfileDataLoaded(true);
       }
@@ -442,6 +499,49 @@ export default function EnrollmentWizardPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Check if email already exists in the system
+  // Returns true if email exists (user should login), false if available (can proceed)
+  const checkEmailExists = async (email: string): Promise<boolean> => {
+    console.log('[Wizard] ========== EMAIL CHECK START ==========');
+
+    // Skip check if user is currently logged in (they're returning from login)
+    // Check actual auth state, not just enrollment.user_id
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      console.log('[Wizard] ❌ Skipping email check - user is currently logged in');
+      return false;
+    }
+
+    // Validate email format first
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      console.log('[Wizard] ❌ Skipping email check - invalid format');
+      return false;
+    }
+
+    try {
+      console.log('[Wizard] 📧 Checking if email exists:', email);
+      const checkResponse = await fetch('/api/auth/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase().trim() })
+      });
+
+      if (checkResponse.ok) {
+        const checkData = await checkResponse.json();
+        console.log('[Wizard] ✅ Email check response:', checkData);
+        return checkData.exists || false;
+      } else {
+        console.error('[Wizard] ❌ Email check failed:', checkResponse.status);
+      }
+    } catch (error) {
+      console.error('[Wizard] ❌ Error checking email:', error);
+    }
+
+    console.log('[Wizard] ========== EMAIL CHECK END ==========');
+    return false;
   };
 
   // Handle manual step navigation (for back button)
@@ -823,16 +923,23 @@ export default function EnrollmentWizardPage() {
       const data = await response.json();
       console.log('[Wizard] Enrollment completed successfully:', data);
 
+      // Check if user is currently logged in
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+
       if (!isExistingUser) {
         // NEW USER: Auto-login with the new session
         if (data.session) {
           await supabase.auth.setSession(data.session);
         }
-        // Redirect to dashboard
+        console.log('[Wizard] Redirecting new user to dashboard');
+        router.push('/dashboard?enrollment=complete');
+      } else if (currentUser) {
+        // EXISTING USER WHO IS LOGGED IN: Go directly to dashboard
+        console.log('[Wizard] Redirecting logged-in existing user to dashboard');
         router.push('/dashboard?enrollment=complete');
       } else {
-        // EXISTING USER: They need to login themselves (we don't have their password)
-        // Redirect directly to login page with enrollment completion message
+        // EXISTING USER WHO IS NOT LOGGED IN: Redirect to login
+        console.log('[Wizard] Redirecting non-logged-in existing user to login');
         const enrollmentEmail = enrollment?.wizard_profile_data?.email || '';
         router.push(`/login?email=${encodeURIComponent(enrollmentEmail)}&message=${encodeURIComponent('Enrollment complete! Please login to access your dashboard.')}`);
       }
@@ -968,52 +1075,9 @@ export default function EnrollmentWizardPage() {
               </AlertDescription>
             </Alert>
 
-            {/* Profile Form */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="first_name" suppressHydrationWarning>
-                  {t('enrollment.wizard.profile.first_name', 'First Name')} *
-                </Label>
-                <Input
-                  id="first_name"
-                  type="text"
-                  value={profileData.first_name}
-                  onChange={(e) => {
-                    setProfileData({ ...profileData, first_name: e.target.value });
-                    if (firstNameError) setFirstNameError(null);
-                  }}
-                  required
-                  className={firstNameError ? 'border-destructive' : ''}
-                />
-                {firstNameError && (
-                  <p className="text-xs text-destructive mt-1.5">
-                    {firstNameError}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="last_name" suppressHydrationWarning>
-                  {t('enrollment.wizard.profile.last_name', 'Last Name')} *
-                </Label>
-                <Input
-                  id="last_name"
-                  type="text"
-                  value={profileData.last_name}
-                  onChange={(e) => {
-                    setProfileData({ ...profileData, last_name: e.target.value });
-                    if (lastNameError) setLastNameError(null);
-                  }}
-                  required
-                  className={lastNameError ? 'border-destructive' : ''}
-                />
-                {lastNameError && (
-                  <p className="text-xs text-destructive mt-1.5">
-                    {lastNameError}
-                  </p>
-                )}
-              </div>
-
+            {/* Profile Form - Email First (Full Width) */}
+            <div className="space-y-4">
+              {/* Email Field - Full Width at Top */}
               <div className="space-y-2">
                 <Label htmlFor="email" suppressHydrationWarning>
                   {t('enrollment.wizard.profile.email', 'Email')} *
@@ -1024,63 +1088,155 @@ export default function EnrollmentWizardPage() {
                   value={profileData.email}
                   onChange={(e) => {
                     setProfileData({ ...profileData, email: e.target.value });
-                    // Real-time validation
-                    if (e.target.value) {
-                      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                      if (!emailRegex.test(e.target.value)) {
-                        setEmailError('Please enter a valid email address');
-                      } else {
-                        setEmailError(null);
-                      }
-                    } else {
-                      setEmailError(null);
-                    }
+                    setEmailValidated(false); // Reset validation on change
+                    setEmailError(null); // Clear error on change
+                    setEmailExistsDetected(false); // Clear existing user flag
                   }}
-                  required
-                />
-                {emailError && (
-                  <p className="text-xs text-destructive mt-1.5">
-                    {emailError}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phone" suppressHydrationWarning>
-                  {t('enrollment.wizard.profile.phone', 'Phone')} *
-                </Label>
-                <PhoneInput
-                  international
-                  defaultCountry="US"
-                  value={profileData.phone}
-                  onChange={(value) => {
-                    // Limit to 17 characters (max for international phone numbers)
-                    const maxLength = 17;
-                    if (value && value.length > maxLength) {
-                      setPhoneError(`Phone number is too long (max ${maxLength} characters)`);
+                  onBlur={async (e) => {
+                    const emailValue = e.target.value.trim();
+                    if (!emailValue) {
+                      setEmailError(null);
+                      setEmailExistsDetected(false);
                       return;
                     }
 
-                    setProfileData({ ...profileData, phone: value || '' });
+                    // Validate email format
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(emailValue)) {
+                      setEmailError(t('enrollment.wizard.profile.email.invalid', 'Please enter a valid email address'));
+                      setEmailValidated(false);
+                      setEmailExistsDetected(false);
+                      return;
+                    }
 
-                    // Real-time validation
-                    if (value && value.length > 5) {
-                      if (!isValidPhoneNumber(value)) {
-                        setPhoneError(t('enrollment.wizard.profile.phone.invalid.simple', 'Please enter a valid phone number'));
-                      } else {
-                        setPhoneError(null);
-                      }
-                    } else if (!value) {
-                      setPhoneError(null);
+                    // Check if email already exists
+                    const exists = await checkEmailExists(emailValue);
+                    if (exists) {
+                      setEmailError(t('enrollment.wizard.profile.email.exists', 'An account with this email already exists. Please login to enroll.'));
+                      setEmailValidated(false);
+                      setEmailExistsDetected(true); // Mark that existing user was detected
+                    } else {
+                      setEmailError(null);
+                      setEmailValidated(true); // Email is available, enable other fields
+                      setEmailExistsDetected(false);
                     }
                   }}
-                  placeholder="+1 234 567 8900"
-                  className="phone-input-wizard"
-                  smartCaret={true}
-                  numberInputProps={{
-                    maxLength: 17
-                  }}
+                  required
+                  className={emailError ? 'border-destructive' : ''}
                 />
+                {emailError && (
+                  <div className="text-xs text-destructive mt-1.5">
+                    {emailError.includes('login') || emailError.includes('התחבר') ? (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span>{emailError.split('.')[0]}.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Store enrollment info for return after login
+                            sessionStorage.setItem('enrollment_return_id', enrollmentId);
+                            sessionStorage.setItem('enrollment_return_token', enrollmentToken || '');
+                            window.location.href = '/login';
+                          }}
+                          className="underline font-medium hover:text-destructive/80"
+                        >
+                          {t('enrollment.wizard.profile.email.loginLink', 'Click here to login')}
+                        </button>
+                      </div>
+                    ) : (
+                      <p>{emailError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Name Fields - Side by Side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="first_name" suppressHydrationWarning>
+                    {t('enrollment.wizard.profile.first_name', 'First Name')} *
+                  </Label>
+                  <Input
+                    id="first_name"
+                    type="text"
+                    value={profileData.first_name}
+                    onChange={(e) => {
+                      setProfileData({ ...profileData, first_name: e.target.value });
+                      if (firstNameError) setFirstNameError(null);
+                    }}
+                    disabled={!emailValidated}
+                    required
+                    className={firstNameError ? 'border-destructive' : ''}
+                  />
+                  {firstNameError && (
+                    <p className="text-xs text-destructive mt-1.5">
+                      {firstNameError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="last_name" suppressHydrationWarning>
+                    {t('enrollment.wizard.profile.last_name', 'Last Name')} *
+                  </Label>
+                  <Input
+                    id="last_name"
+                    type="text"
+                    value={profileData.last_name}
+                    onChange={(e) => {
+                      setProfileData({ ...profileData, last_name: e.target.value });
+                      if (lastNameError) setLastNameError(null);
+                    }}
+                    disabled={!emailValidated}
+                    required
+                    className={lastNameError ? 'border-destructive' : ''}
+                  />
+                  {lastNameError && (
+                    <p className="text-xs text-destructive mt-1.5">
+                      {lastNameError}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Phone and Address - Side by Side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone" suppressHydrationWarning>
+                    {t('enrollment.wizard.profile.phone', 'Phone')} *
+                  </Label>
+                  <PhoneInput
+                    international
+                    defaultCountry="US"
+                    value={profileData.phone}
+                    onChange={(value) => {
+                      // Limit to 17 characters (max for international phone numbers)
+                      const maxLength = 17;
+                      if (value && value.length > maxLength) {
+                        setPhoneError(`Phone number is too long (max ${maxLength} characters)`);
+                        return;
+                      }
+
+                      setProfileData({ ...profileData, phone: value || '' });
+
+                      // Real-time validation
+                      if (value && value.length > 5) {
+                        if (!isValidPhoneNumber(value)) {
+                          setPhoneError(t('enrollment.wizard.profile.phone.invalid.simple', 'Please enter a valid phone number'));
+                        } else {
+                          setPhoneError(null);
+                        }
+                      } else if (!value) {
+                        setPhoneError(null);
+                      }
+                    }}
+                    disabled={!emailValidated}
+                    placeholder="+1 234 567 8900"
+                    className="phone-input-wizard"
+                    smartCaret={true}
+                    numberInputProps={{
+                      maxLength: 17
+                    }}
+                  />
                 <style jsx global>{`
                   .phone-input-wizard {
                     width: 100%;
@@ -1118,50 +1274,51 @@ export default function EnrollmentWizardPage() {
                     {phoneError}
                   </p>
                 )}
-              </div>
+                </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="address" suppressHydrationWarning>
-                  {t('enrollment.wizard.profile.address', 'Address')} *
-                </Label>
-                <Input
-                  ref={addressInputRef}
-                  id="address"
-                  type="text"
-                  value={profileData.address}
-                  onChange={(e) => {
-                    setProfileData({ ...profileData, address: e.target.value });
-                    if (addressError) setAddressError(null);
-                  }}
-                  placeholder={t('enrollment.wizard.profile.address.placeholder', 'Start typing your address...')}
-                  dir="ltr"
-                  className={`text-left [direction:ltr] [unicode-bidi:bidi-override] ${addressError ? 'border-destructive' : ''}`}
-                  style={{ direction: 'ltr', textAlign: 'left' }}
-                  required
-                />
-                {addressError && (
-                  <p className="text-xs text-destructive mt-1.5">
-                    {addressError}
-                  </p>
-                )}
-                {googleMapsError && !addressError && (
-                  <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
-                    <span>⚠️</span>
-                    <span>{googleMapsError}</span>
-                  </p>
-                )}
-                {!googleMapsLoaded && !googleMapsError && !addressError && (
-                  <p className="text-xs text-muted-foreground mt-1.5" suppressHydrationWarning>
-                    {t('enrollment.wizard.profile.address.loading', 'Loading address autocomplete...')}
-                  </p>
-                )}
-                {googleMapsLoaded && !addressError && (
-                  <p className="text-xs text-green-600 mt-1.5" suppressHydrationWarning>
-                    ✓ {t('enrollment.wizard.profile.address.ready', 'Address autocomplete ready - start typing to see suggestions')}
-                  </p>
-                )}
+                <div className="space-y-2">
+                  <Label htmlFor="address" suppressHydrationWarning>
+                    {t('enrollment.wizard.profile.address', 'Address')} *
+                  </Label>
+                  <Input
+                    ref={addressInputRef}
+                    id="address"
+                    type="text"
+                    value={profileData.address}
+                    onChange={(e) => {
+                      setProfileData({ ...profileData, address: e.target.value });
+                      if (addressError) setAddressError(null);
+                    }}
+                    disabled={!emailValidated}
+                    placeholder={t('enrollment.wizard.profile.address.placeholder', 'Start typing your address...')}
+                    dir="ltr"
+                    className={`text-left [direction:ltr] [unicode-bidi:bidi-override] ${addressError ? 'border-destructive' : ''}`}
+                    style={{ direction: 'ltr', textAlign: 'left' }}
+                    required
+                  />
+                  {addressError && (
+                    <p className="text-xs text-destructive mt-1.5">
+                      {addressError}
+                    </p>
+                  )}
+                  {googleMapsError && !addressError && (
+                    <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+                      <span>⚠️</span>
+                      <span>{googleMapsError}</span>
+                    </p>
+                  )}
+                  {!googleMapsLoaded && !googleMapsError && !addressError && (
+                    <p className="text-xs text-muted-foreground mt-1.5" suppressHydrationWarning>
+                      {t('enrollment.wizard.profile.address.loading', 'Loading address autocomplete...')}
+                    </p>
+                  )}
+                  {googleMapsLoaded && !addressError && (
+                    <p className="text-xs text-green-600 mt-1.5" suppressHydrationWarning>
+                      ✓ {t('enrollment.wizard.profile.address.ready', 'Address autocomplete ready - start typing to see suggestions')}
+                    </p>
+                  )}
+                </div>
               </div>
-
             </div>
 
             <div className="flex gap-3">
@@ -1182,7 +1339,7 @@ export default function EnrollmentWizardPage() {
                 size="lg"
                 className="flex-1"
                 onClick={handleSaveProfile}
-                disabled={processing}
+                disabled={processing || emailExistsDetected}
                 suppressHydrationWarning
               >
                 {processing ? (
@@ -1371,8 +1528,8 @@ export default function EnrollmentWizardPage() {
 
             {/* Success Message */}
             <div className="space-y-3">
-              <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
-                🎉 Congratulations!
+              <h2 className="text-2xl sm:text-3xl font-bold text-foreground" suppressHydrationWarning>
+                {t('enrollment.wizard.complete.congratulations', '🎉 Congratulations!')}
               </h2>
               <p className="text-base sm:text-lg text-muted-foreground max-w-md mx-auto" suppressHydrationWarning>
                 {t('enrollment.wizard.complete.success', 'Your enrollment is complete! You can now access your content.')}
@@ -1404,10 +1561,7 @@ export default function EnrollmentWizardPage() {
               suppressHydrationWarning
             >
               {processing ? (
-                <>
-                  <Loader2 className="h-5 w-5 ltr:mr-2 rtl:ml-2 animate-spin" />
-                  {t('enrollment.wizard.complete.finishing', 'Finishing...')}
-                </>
+                <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <>
                   {t('enrollment.wizard.complete.button', 'Go to Dashboard')}
@@ -1490,10 +1644,10 @@ export default function EnrollmentWizardPage() {
           <div className="relative bg-gradient-to-r from-primary via-primary/90 to-primary/80 text-primary-foreground px-4 sm:px-8 py-6 sm:py-8">
             <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,transparent,black)]"></div>
             <div className="relative">
-              <h1 className="text-2xl sm:text-3xl font-bold mb-2" suppressHydrationWarning>
+              <h1 className="text-2xl sm:text-3xl font-bold mb-2 text-white" suppressHydrationWarning>
                 {t('enrollment.wizard.header.title', 'Complete Your Enrollment')}
               </h1>
-              <p className="text-primary-foreground/90 text-sm sm:text-base" suppressHydrationWarning>
+              <p className="text-white/90 text-sm sm:text-base" suppressHydrationWarning>
                 {enrollment.product_name}
               </p>
             </div>
@@ -1507,7 +1661,7 @@ export default function EnrollmentWizardPage() {
               onStepClick={handleStepNavigation}
               showSignature={enrollment.requires_signature}
               showPayment={enrollment.payment_required}
-              showPassword={!enrollment.user_id}
+              showPassword={true}
             />
 
             {/* Current Step Content */}

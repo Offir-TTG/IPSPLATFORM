@@ -9,6 +9,7 @@ import { BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUserLanguage, useTenant } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { LoadingState } from '@/components/user/LoadingState';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -27,11 +28,7 @@ export default function SignupPage() {
 
   // Show loading state while translations are loading to prevent flash
   if (translationsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/50">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <LoadingState variant="page" />;
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

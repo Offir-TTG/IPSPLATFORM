@@ -218,6 +218,36 @@ export async function processEnrollment(
     throw new Error(`Failed to create enrollment: ${enrollmentError?.message}`);
   }
 
+  // Trigger enrollment.created event
+  try {
+    const { processTriggerEvent } = await import('@/lib/email/triggerEngine');
+    await processTriggerEvent({
+      eventType: 'enrollment.created',
+      tenantId: tenant_id,
+      eventData: {
+        enrollmentId: enrollment.id,
+        userId: user_id,
+        productId: product_id,
+        productName: product.product_name,
+        productType: product.product_type,
+        totalAmount: totalAmount,
+        currency: product.currency,
+        paymentStatus: 'pending',
+        email: user_metadata?.email,
+        userName: user_metadata?.name || user_metadata?.first_name,
+        languageCode: user_metadata?.language || 'en',
+      },
+      userId: user_id,
+      metadata: {
+        enrollmentType: 'admin_created',
+        ...metadata,
+      },
+    });
+  } catch (triggerError) {
+    console.error('Error processing enrollment.created trigger:', triggerError);
+    // Don't fail enrollment if trigger fails
+  }
+
   // 5. Generate payment schedules
   // Use enrollment's payment_start_date if set, otherwise use current date
   const paymentStartDate = enrollment.payment_start_date

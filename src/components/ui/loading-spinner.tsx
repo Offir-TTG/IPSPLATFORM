@@ -14,11 +14,11 @@ export function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   );
 }
 
-export function LoadingPage({ message = 'Loading...' }: { message?: string }) {
+export function LoadingPage({ message }: { message?: string }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
       <LoadingSpinner size="lg" />
-      <p className="text-muted-foreground text-sm">{message}</p>
+      {message && <p className="text-muted-foreground text-sm">{message}</p>}
     </div>
   );
 }

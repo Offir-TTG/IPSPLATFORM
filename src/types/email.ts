@@ -207,7 +207,8 @@ export type TriggerEvent =
   | 'user.registered'
   | 'user.password_reset'
   | 'course.completed'
-  | 'certificate.issued';
+  | 'certificate.issued'
+  | 'recording.ready';
 
 export interface EmailTriggerConditions {
   enrollment_status?: string[];
@@ -224,13 +225,15 @@ export interface EmailTrigger {
   id: string;
   tenant_id: string;
   trigger_name: string;
-  trigger_event: TriggerEvent;
+  trigger_event: TriggerEvent | string;
   template_id: string;
-  conditions?: EmailTriggerConditions;
+  conditions?: EmailTriggerConditions | Record<string, any>;
   delay_minutes: number;
   send_time?: string; // HH:mm format
+  send_days_before?: number; // For reminders: send X days before event
   is_active: boolean;
   recipient_role?: string;
+  recipient_field?: string; // Field path to extract recipient email (e.g., "user.email")
   priority: EmailPriority;
   created_at: string;
   updated_at: string;
@@ -370,11 +373,14 @@ export interface UpdateTemplateRequest {
 
 export interface CreateTriggerRequest {
   trigger_name: string;
-  trigger_event: TriggerEvent;
+  trigger_event: TriggerEvent | string;
   template_id: string;
-  conditions?: EmailTriggerConditions;
+  conditions?: EmailTriggerConditions | Record<string, any>;
   delay_minutes?: number;
   send_time?: string;
+  send_days_before?: number;
+  recipient_role?: string;
+  recipient_field?: string;
   priority?: EmailPriority;
 }
 

@@ -736,6 +736,7 @@ export function useAdminLanguage() {
       return context.t(key, paramsOrFallback, 'admin');
     },
     loading: context.loading,
+    clearTranslationCache: context.clearTranslationCache,
   };
 }
 

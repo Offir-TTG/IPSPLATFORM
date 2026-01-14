@@ -103,16 +103,13 @@ export async function sendNotificationEmailWithSystemTemplate(
       priority: options.priority,
     });
 
-    // Send email
+    // Send email (SMTP config will be fetched from database by sendEmail)
     const result = await sendEmail({
-      from: process.env.SMTP_FROM || 'notifications@example.com',
       to: options.to,
       subject,
       html: fullHtml,
       text,
       tenantId: options.tenantId,
-      priority: options.priority === 'urgent' ? 'urgent' :
-                options.priority === 'high' ? 'high' : 'normal',
     });
 
     if (!result.messageId) {

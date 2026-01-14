@@ -18,7 +18,6 @@ import {
   Globe,
   Shield,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   Upload,
   X
@@ -60,11 +59,6 @@ export default function OrganizationSettingsPage() {
     default_language: 'en',
     timezone: 'UTC',
     currency: 'USD',
-    enabled_features: {
-      courses: true,
-      zoom: false,
-      docusign: false,
-    },
   });
 
   useEffect(() => {
@@ -95,11 +89,6 @@ export default function OrganizationSettingsPage() {
           default_language: data.data.default_language || 'en',
           timezone: data.data.timezone || 'UTC',
           currency: data.data.currency || 'USD',
-          enabled_features: data.data.enabled_features || {
-            courses: true,
-            zoom: false,
-            docusign: false,
-          },
         });
       } else {
         toast({
@@ -159,16 +148,6 @@ export default function OrganizationSettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleFeatureToggle = (feature: keyof typeof formData.enabled_features) => {
-    setFormData({
-      ...formData,
-      enabled_features: {
-        ...formData.enabled_features,
-        [feature]: !formData.enabled_features[feature],
-      },
-    });
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -482,55 +461,6 @@ export default function OrganizationSettingsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Features */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <CardTitle suppressHydrationWarning>
-                  {t('organization.features', 'Enabled Features')}
-                </CardTitle>
-              </div>
-              <CardDescription suppressHydrationWarning>
-                {t('organization.featuresDesc', 'Enable or disable platform features')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="courses" suppressHydrationWarning>
-                  {t('organization.coursesFeature', 'Courses')}
-                </Label>
-                <Switch
-                  id="courses"
-                  checked={formData.enabled_features.courses}
-                  onCheckedChange={() => handleFeatureToggle('courses')}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="zoom" suppressHydrationWarning>
-                  {t('organization.zoomFeature', 'Zoom Integration')}
-                </Label>
-                <Switch
-                  id="zoom"
-                  checked={formData.enabled_features.zoom}
-                  onCheckedChange={() => handleFeatureToggle('zoom')}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="docusign" suppressHydrationWarning>
-                  {t('organization.docusignFeature', 'DocuSign Integration')}
-                </Label>
-                <Switch
-                  id="docusign"
-                  checked={formData.enabled_features.docusign}
-                  onCheckedChange={() => handleFeatureToggle('docusign')}
-                />
               </div>
             </CardContent>
           </Card>

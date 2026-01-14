@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { useUserLanguage, useTenant } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { supabase } from '@/lib/supabase/client';
+import { ArrowLeft } from 'lucide-react';
+import { LoadingState } from '@/components/user/LoadingState';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,11 +24,7 @@ export default function LoginPage() {
 
   // Show loading state while translations are loading to prevent flash
   if (translationsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/50">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <LoadingState variant="page" />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +33,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // Client-side validation for email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error(t('auth.errors.invalidEmailFormat', 'Please enter a valid email address'));
+      }
+
+      // Check password length
+      if (password.length < 6) {
+        throw new Error(t('auth.errors.passwordTooShort', 'Password must be at least 6 characters'));
+      }
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -45,7 +54,23 @@ export default function LoginPage() {
 
       if (!response.ok) {
         console.error('Login failed:', data);
-        throw new Error(data.error || 'Failed to login');
+        // Translate the error message from the API
+        let errorMessage = data.error || t('auth.errors.unknown', 'An error occurred during login');
+
+        // Map common Supabase error messages to translated versions
+        if (errorMessage === 'Invalid login credentials') {
+          errorMessage = t('auth.errors.invalidCredentials', 'Invalid email or password');
+        } else if (errorMessage.includes('Email not confirmed')) {
+          errorMessage = t('auth.errors.emailNotConfirmed', 'Please verify your email address');
+        } else if (errorMessage.includes('do not have access')) {
+          errorMessage = t('auth.errors.noAccess', 'You do not have access to this organization');
+        } else if (errorMessage.includes('Tenant not found')) {
+          errorMessage = t('auth.errors.tenantNotFound', 'Organization not found. Please contact support.');
+        } else if (errorMessage.includes('verify your email')) {
+          errorMessage = t('auth.errors.verifyEmail', 'Please verify your email address before logging in');
+        }
+
+        throw new Error(errorMessage);
       }
 
       console.log('Login successful, setting session...');
@@ -79,6 +104,19 @@ export default function LoginPage() {
       // Wait a bit for cookies to be set
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Check if user came from enrollment wizard
+      const enrollmentReturnId = sessionStorage.getItem('enrollment_return_id');
+      const enrollmentReturnToken = sessionStorage.getItem('enrollment_return_token');
+
+      if (enrollmentReturnId && enrollmentReturnToken) {
+        // Clear the stored values
+        sessionStorage.removeItem('enrollment_return_id');
+        sessionStorage.removeItem('enrollment_return_token');
+        // Redirect back to enrollment wizard
+        router.push(`/enroll/wizard/${enrollmentReturnId}?token=${enrollmentReturnToken}`);
+        return;
+      }
+
       // Redirect based on user role
       if (data.data.user.role === 'admin' || data.data.user.role === 'super_admin') {
         router.push('/admin/dashboard');
@@ -110,7 +148,7 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-card border border-border/50 rounded-xl p-8 shadow-xl shadow-black/5 backdrop-blur-sm">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} noValidate className="space-y-6">
             {error && (
               <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm font-medium">
                 {error}
@@ -164,10 +202,13 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-8 text-center text-sm">
-            <span className="text-muted-foreground">{t('auth.login.noAccount')} </span>
-            <Link href="/signup" className="text-primary hover:text-primary/80 font-semibold transition-colors">
-              {t('auth.login.signupLink')}
+          <div className="mt-6 text-center">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>{t('auth.login.backToHome', 'Back to Home')}</span>
             </Link>
           </div>
         </div>

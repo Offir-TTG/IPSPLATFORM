@@ -11,6 +11,7 @@ import { UserTable } from '@/components/admin/users/UserTable';
 import { UserFilters } from '@/components/admin/users/UserFilters';
 import { UserDetailDrawer } from '@/components/admin/users/UserDetailDrawer';
 import { PasswordResetDialog } from '@/components/admin/users/PasswordResetDialog';
+import { SetPasswordDialog } from '@/components/admin/users/SetPasswordDialog';
 import { DeactivateUserDialog } from '@/components/admin/users/DeactivateUserDialog';
 import { InviteUserDialog } from '@/components/admin/users/InviteUserDialog';
 import { UserPlus, Users, UserCheck, UserX, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -51,6 +52,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [passwordResetOpen, setPasswordResetOpen] = useState(false);
+  const [setPasswordOpen, setSetPasswordOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
@@ -112,6 +114,11 @@ export default function UsersPage() {
   const handleResetPassword = (user: User) => {
     setSelectedUser(user);
     setPasswordResetOpen(true);
+  };
+
+  const handleSetPassword = (user: User) => {
+    setSelectedUser(user);
+    setSetPasswordOpen(true);
   };
 
   const handleToggleStatus = (user: User) => {
@@ -254,6 +261,7 @@ export default function UsersPage() {
             isLoading={loading}
             onEdit={handleEdit}
             onResetPassword={handleResetPassword}
+            onSetPassword={handleSetPassword}
             onToggleStatus={handleToggleStatus}
           />
 
@@ -308,6 +316,12 @@ export default function UsersPage() {
         <PasswordResetDialog
           open={passwordResetOpen}
           onOpenChange={setPasswordResetOpen}
+          user={selectedUser}
+        />
+
+        <SetPasswordDialog
+          open={setPasswordOpen}
+          onOpenChange={setSetPasswordOpen}
           user={selectedUser}
         />
 

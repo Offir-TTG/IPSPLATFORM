@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { LoadingState } from '@/components/admin/LoadingState';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -265,13 +266,7 @@ export default function ProductsPage() {
 
   // Show loading while translations are loading
   if (translationsLoading) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-muted-foreground">Loading...</div>
-        </div>
-      </AdminLayout>
-    );
+    return <LoadingState variant="page" withLayout={true} />;
   }
 
   return (
@@ -558,6 +553,10 @@ function ProductForm({ product, onSave, onCancel, t }: {
     currency: 'USD',
     payment_plan: {},
     requires_signature: false,
+    completion_benefit: '',
+    completion_description: '',
+    access_duration: '',
+    access_description: '',
     is_active: true,
   });
 
@@ -688,6 +687,10 @@ function ProductForm({ product, onSave, onCancel, t }: {
         allow_plan_selection: product.allow_plan_selection ?? true,
         requires_signature: product.requires_signature,
         signature_template_id: product.signature_template_id,
+        completion_benefit: product.completion_benefit || '',
+        completion_description: product.completion_description || '',
+        access_duration: product.access_duration || '',
+        access_description: product.access_description || '',
         keap_tag: product.keap_tag || undefined,
         enrollment_invitation_template_key: product.enrollment_invitation_template_key,
         enrollment_confirmation_template_key: product.enrollment_confirmation_template_key,
@@ -902,6 +905,74 @@ function ProductForm({ product, onSave, onCancel, t }: {
               placeholder={t('products.description_placeholder', 'Describe what this product includes...')}
               dir={direction}
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="completion_benefit" suppressHydrationWarning>
+                {t('products.completion_benefit', 'Completion Benefit')}
+              </Label>
+              <Input
+                id="completion_benefit"
+                value={formData.completion_benefit || ''}
+                onChange={(e) => setFormData({ ...formData, completion_benefit: e.target.value })}
+                placeholder={t('products.completion_benefit_placeholder', 'e.g., Certificate, Digital Badge')}
+                className={isRtl ? 'text-right' : 'text-left'}
+              />
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('products.completion_benefit_desc', 'What users receive upon completing the product')}
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="completion_description" suppressHydrationWarning>
+                {t('products.completion_description', 'Completion Description')}
+              </Label>
+              <Input
+                id="completion_description"
+                value={formData.completion_description || ''}
+                onChange={(e) => setFormData({ ...formData, completion_description: e.target.value })}
+                placeholder={t('products.completion_description_placeholder', 'e.g., Upon completion, After all modules')}
+                className={isRtl ? 'text-right' : 'text-left'}
+              />
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('products.completion_description_desc', 'When/how users receive the benefit')}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="access_duration" suppressHydrationWarning>
+                {t('products.access_duration', 'Access Duration')}
+              </Label>
+              <Input
+                id="access_duration"
+                value={formData.access_duration || ''}
+                onChange={(e) => setFormData({ ...formData, access_duration: e.target.value })}
+                placeholder={t('products.access_duration_placeholder', 'e.g., Lifetime access, 1 year')}
+                className={isRtl ? 'text-right' : 'text-left'}
+              />
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('products.access_duration_desc', 'How long users have access to the content')}
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="access_description" suppressHydrationWarning>
+                {t('products.access_description', 'Access Description')}
+              </Label>
+              <Input
+                id="access_description"
+                value={formData.access_description || ''}
+                onChange={(e) => setFormData({ ...formData, access_description: e.target.value })}
+                placeholder={t('products.access_description_placeholder', 'e.g., Learn at your own pace, Full access')}
+                className={isRtl ? 'text-right' : 'text-left'}
+              />
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t('products.access_description_desc', 'Description of access terms')}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center justify-between">

@@ -73,6 +73,10 @@ export async function POST(
         testResult = await testKeapConnection(credentials);
         break;
 
+      case 'smtp':
+        testResult = await testSMTPConnection(credentials);
+        break;
+
       default:
         return NextResponse.json(
           { error: 'Unsupported integration type' },
@@ -626,6 +630,52 @@ Note: This is a one-time setup. After authorization, the tokens will auto-refres
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Keap connection failed'
+    };
+  }
+}
+
+// Test SMTP connection
+async function testSMTPConnection(credentials: Record<string, any>) {
+  try {
+    // Validate required fields
+    const requiredFields = ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_secure'];
+    const missingFields = requiredFields.filter(field => !credentials[field]);
+
+    if (missingFields.length > 0) {
+      return {
+        success: false,
+        message: `Missing required fields: ${missingFields.join(', ')}`
+      };
+    }
+
+    // Import nodemailer dynamically
+    const nodemailer = require('nodemailer');
+
+    // Create nodemailer transporter
+    const transporter = nodemailer.createTransport({
+      host: credentials.smtp_host,
+      port: parseInt(credentials.smtp_port, 10),
+      secure: credentials.smtp_secure === 'ssl',
+      auth: {
+        user: credentials.smtp_username,
+        pass: credentials.smtp_password,
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
+      socketTimeout: 20000,
+    });
+
+    // Verify SMTP connection
+    await transporter.verify();
+
+    return {
+      success: true,
+      message: `SMTP connection successful! Connected to ${credentials.smtp_host}:${credentials.smtp_port}`
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: `SMTP connection failed: ${error.message || 'Unknown error'}. Please check your SMTP credentials and ensure your server can connect to the SMTP host.`
     };
   }
 }

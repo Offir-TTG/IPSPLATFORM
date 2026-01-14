@@ -435,4 +435,49 @@
     background-size: 100% 40px, 100% 40px, 100% 14px, 100% 14px;
     background-attachment: local, local, scroll, scroll;
   }
+
+  /* PhoneInput Dark Mode Support */
+  .dark .PhoneInput {
+    --PhoneInputCountryFlag-aspectRatio: 1.5;
+    --PhoneInputCountryFlag-height: 1em;
+    --PhoneInputCountryFlag-borderColor: hsl(var(--border));
+    --PhoneInputCountrySelectArrow-color: hsl(var(--muted-foreground));
+    --PhoneInputCountrySelectArrow-opacity: 0.45;
+  }
+
+  .dark .PhoneInputInput {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--input));
+  }
+
+  .dark .PhoneInputInput:focus {
+    border-color: hsl(var(--ring));
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .dark .PhoneInputInput::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .dark .PhoneInputCountrySelect {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--input));
+  }
+
+  .dark .PhoneInputCountrySelect:focus {
+    border-color: hsl(var(--ring));
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .dark .PhoneInputCountryIcon {
+    background-color: transparent;
+  }
+
+  .dark .PhoneInputCountryIconImg {
+    border-color: hsl(var(--border));
+  }
 }

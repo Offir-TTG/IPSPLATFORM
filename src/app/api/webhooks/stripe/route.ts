@@ -380,6 +380,64 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
     // Don't fail the webhook if invoice creation fails
     console.error('Error creating receipt invoice:', invoiceError);
   }
+
+  // Trigger payment.completed event
+  try {
+    const { processTriggerEvent } = await import('@/lib/email/triggerEngine');
+
+    // Get full enrollment details for trigger
+    const { data: fullEnrollment } = await supabase
+      .from('enrollments')
+      .select(`
+        *,
+        products (
+          id,
+          title,
+          type
+        )
+      `)
+      .eq('id', enrollment_id)
+      .single();
+
+    // Get user details
+    const { data: userData } = await supabase
+      .from('users')
+      .select('email, first_name, last_name, preferred_language')
+      .eq('id', enrollment.user_id)
+      .single();
+
+    if (fullEnrollment && userData) {
+      await processTriggerEvent({
+        eventType: 'payment.completed',
+        tenantId: tenant_id,
+        eventData: {
+          paymentId: id,
+          enrollmentId: enrollment_id,
+          userId: enrollment.user_id,
+          productId: fullEnrollment.product_id,
+          productName: fullEnrollment.products?.title || '',
+          productType: fullEnrollment.products?.type || '',
+          amount: amount / 100,
+          currency: currency.toUpperCase(),
+          paymentType: payment_type,
+          paidAmount: fullEnrollment.paid_amount,
+          totalAmount: fullEnrollment.total_amount,
+          paymentStatus: fullEnrollment.payment_status,
+          email: userData.email,
+          userName: userData.first_name,
+          languageCode: userData.preferred_language || 'en',
+        },
+        userId: enrollment.user_id,
+        metadata: {
+          stripePaymentIntentId: id,
+          scheduleId: schedule_id,
+        },
+      });
+    }
+  } catch (triggerError) {
+    console.error('Error processing payment.completed trigger:', triggerError);
+    // Don't fail webhook if trigger fails
+  }
 }
 
 // Handle payment intent failed
@@ -446,6 +504,63 @@ async function handlePaymentIntentFailed(supabase: any, event: Stripe.Event) {
   }
 
   console.error(`Payment failed for enrollment ${enrollment_id}: ${last_payment_error?.message}`);
+
+  // Trigger payment.failed event
+  try {
+    const { processTriggerEvent } = await import('@/lib/email/triggerEngine');
+
+    // Get enrollment and user details
+    const { data: fullEnrollment } = await supabase
+      .from('enrollments')
+      .select(`
+        *,
+        products (
+          id,
+          title,
+          type
+        )
+      `)
+      .eq('id', enrollment_id)
+      .single();
+
+    if (fullEnrollment) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('email, first_name, last_name, preferred_language')
+        .eq('id', fullEnrollment.user_id)
+        .single();
+
+      if (userData) {
+        await processTriggerEvent({
+          eventType: 'payment.failed',
+          tenantId: tenant_id,
+          eventData: {
+            paymentId: paymentIntent.id,
+            enrollmentId: enrollment_id,
+            userId: fullEnrollment.user_id,
+            productId: fullEnrollment.product_id,
+            productName: fullEnrollment.products?.title || '',
+            productType: fullEnrollment.products?.type || '',
+            amount: paymentIntent.amount / 100,
+            currency: paymentIntent.currency.toUpperCase(),
+            failureReason: last_payment_error?.message || 'Payment failed',
+            email: userData.email,
+            userName: userData.first_name,
+            languageCode: userData.preferred_language || 'en',
+          },
+          userId: fullEnrollment.user_id,
+          metadata: {
+            stripePaymentIntentId: paymentIntent.id,
+            scheduleId: schedule_id,
+            errorCode: last_payment_error?.code,
+          },
+        });
+      }
+    }
+  } catch (triggerError) {
+    console.error('Error processing payment.failed trigger:', triggerError);
+    // Don't fail webhook if trigger fails
+  }
 }
 
 // Handle subscription created

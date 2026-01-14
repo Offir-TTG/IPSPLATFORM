@@ -62,16 +62,16 @@ const DEFAULT_CATEGORIES: CategoryConfig[] = [
 ];
 
 const COLOR_OPTIONS = [
-  { name: 'Blue', light: 'bg-blue-100 text-blue-800', dark: 'dark:bg-blue-900 dark:text-blue-300' },
-  { name: 'Green', light: 'bg-green-100 text-green-800', dark: 'dark:bg-green-900 dark:text-green-300' },
-  { name: 'Purple', light: 'bg-purple-100 text-purple-800', dark: 'dark:bg-purple-900 dark:text-purple-300' },
-  { name: 'Pink', light: 'bg-pink-100 text-pink-800', dark: 'dark:bg-pink-900 dark:text-pink-300' },
-  { name: 'Red', light: 'bg-red-100 text-red-800', dark: 'dark:bg-red-900 dark:text-red-300' },
-  { name: 'Orange', light: 'bg-orange-100 text-orange-800', dark: 'dark:bg-orange-900 dark:text-orange-300' },
-  { name: 'Yellow', light: 'bg-yellow-100 text-yellow-800', dark: 'dark:bg-yellow-900 dark:text-yellow-300' },
-  { name: 'Indigo', light: 'bg-indigo-100 text-indigo-800', dark: 'dark:bg-indigo-900 dark:text-indigo-300' },
-  { name: 'Teal', light: 'bg-teal-100 text-teal-800', dark: 'dark:bg-teal-900 dark:text-teal-300' },
-  { name: 'Gray', light: 'bg-gray-100 text-gray-800', dark: 'dark:bg-gray-900 dark:text-gray-300' },
+  { nameKey: 'colors.blue', name: 'Blue', light: 'bg-blue-100 text-blue-800', dark: 'dark:bg-blue-900 dark:text-blue-300' },
+  { nameKey: 'colors.green', name: 'Green', light: 'bg-green-100 text-green-800', dark: 'dark:bg-green-900 dark:text-green-300' },
+  { nameKey: 'colors.purple', name: 'Purple', light: 'bg-purple-100 text-purple-800', dark: 'dark:bg-purple-900 dark:text-purple-300' },
+  { nameKey: 'colors.pink', name: 'Pink', light: 'bg-pink-100 text-pink-800', dark: 'dark:bg-pink-900 dark:text-pink-300' },
+  { nameKey: 'colors.red', name: 'Red', light: 'bg-red-100 text-red-800', dark: 'dark:bg-red-900 dark:text-red-300' },
+  { nameKey: 'colors.orange', name: 'Orange', light: 'bg-orange-100 text-orange-800', dark: 'dark:bg-orange-900 dark:text-orange-300' },
+  { nameKey: 'colors.yellow', name: 'Yellow', light: 'bg-yellow-100 text-yellow-800', dark: 'dark:bg-yellow-900 dark:text-yellow-300' },
+  { nameKey: 'colors.indigo', name: 'Indigo', light: 'bg-indigo-100 text-indigo-800', dark: 'dark:bg-indigo-900 dark:text-indigo-300' },
+  { nameKey: 'colors.teal', name: 'Teal', light: 'bg-teal-100 text-teal-800', dark: 'dark:bg-teal-900 dark:text-teal-300' },
+  { nameKey: 'colors.gray', name: 'Gray', light: 'bg-gray-100 text-gray-800', dark: 'dark:bg-gray-900 dark:text-gray-300' },
 ];
 
 export default function EmailSettingsPage() {
@@ -310,7 +310,7 @@ export default function EmailSettingsPage() {
                             category.color === colorOption.light ? 'border-primary' : 'border-transparent'
                           }`}
                         >
-                          {colorOption.name}
+                          {t(colorOption.nameKey, colorOption.name)}
                         </button>
                       ))}
                     </div>

@@ -455,6 +455,68 @@ export default function IntegrationsPage() {
           ]
         }
       ]
+    },
+    {
+      key: 'smtp',
+      name: t('admin.integrations.smtp.name', 'SMTP Email Server'),
+      description: t('admin.integrations.smtp.description', 'Configure SMTP server for sending emails'),
+      icon: <Mail className="h-5 w-5" />,
+      fields: [
+        {
+          key: 'smtp_host',
+          label: t('admin.integrations.smtp.host', 'SMTP Host'),
+          type: 'text',
+          placeholder: 'smtp.gmail.com',
+          required: true
+        },
+        {
+          key: 'smtp_port',
+          label: t('admin.integrations.smtp.port', 'SMTP Port'),
+          type: 'text',
+          placeholder: '587',
+          required: true
+        },
+        {
+          key: 'smtp_username',
+          label: t('admin.integrations.smtp.username', 'SMTP Username'),
+          type: 'text',
+          placeholder: 'your-email@example.com',
+          required: true
+        },
+        {
+          key: 'smtp_password',
+          label: t('admin.integrations.smtp.password', 'SMTP Password'),
+          type: 'password',
+          placeholder: '••••••••',
+          required: true
+        },
+        {
+          key: 'smtp_secure',
+          label: t('admin.integrations.smtp.secure', 'Security'),
+          type: 'select',
+          placeholder: t('admin.integrations.smtp.selectSecurity', 'Select security option'),
+          required: true,
+          options: [
+            { value: 'tls', label: 'TLS (Port 587)' },
+            { value: 'ssl', label: 'SSL (Port 465)' },
+            { value: 'none', label: t('admin.integrations.smtp.noSecurity', 'None') }
+          ]
+        },
+        {
+          key: 'from_email',
+          label: t('admin.integrations.smtp.fromEmail', 'From Email'),
+          type: 'text',
+          placeholder: 'noreply@yourdomain.com',
+          required: true
+        },
+        {
+          key: 'from_name',
+          label: t('admin.integrations.smtp.fromName', 'From Name'),
+          type: 'text',
+          placeholder: 'Your Organization',
+          required: true
+        }
+      ]
     }
   ];
 

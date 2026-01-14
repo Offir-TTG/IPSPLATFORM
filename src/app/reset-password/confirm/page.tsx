@@ -5,14 +5,14 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BookOpen, CheckCircle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUserLanguage } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { supabase } from '@/lib/supabase/client';
 
 export default function ResetPasswordConfirmPage() {
-  const { t } = useUserLanguage();
+  const { t, direction, loading: translationsLoading } = useUserLanguage();
   const router = useRouter();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,6 +20,7 @@ export default function ResetPasswordConfirmPage() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const isRtl = direction === 'rtl';
 
   useEffect(() => {
     let mounted = true;
@@ -121,32 +122,28 @@ export default function ResetPasswordConfirmPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background px-4 py-8" dir={direction}>
       <div className="w-full max-w-md">
-        <div className="absolute top-4 left-4">
+        <div className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'}`}>
           <LanguageSwitcher context="user" />
         </div>
 
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center space-x-2 mb-4">
-            <BookOpen className="h-8 w-8 text-primary" />
-            <span className="text-2xl font-bold">{t('platform.name', 'Parenting School')}</span>
-          </Link>
-          <h1 className="text-3xl font-bold mb-2">
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
             {t('auth.resetConfirm.title', 'Set New Password')}
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground text-base">
             {t('auth.resetConfirm.subtitle', 'Enter your new password below')}
           </p>
         </div>
 
-        <div className="bg-card border rounded-lg p-8">
+        <div className="bg-card border border-border/50 rounded-xl p-8 shadow-xl shadow-black/5 backdrop-blur-sm">
           {success ? (
             <div className="text-center space-y-4">
               <div className="flex justify-center mb-4">
                 <CheckCircle className="h-16 w-16 text-primary" />
               </div>
-              <div className="bg-primary/10 text-primary px-4 py-3 rounded-md">
+              <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded-lg font-medium">
                 {t('auth.resetConfirm.successMessage', 'Password updated successfully!')}
               </div>
               <p className="text-sm text-muted-foreground">
@@ -157,11 +154,11 @@ export default function ResetPasswordConfirmPage() {
             <div className="text-center space-y-4">
               {error ? (
                 <>
-                  <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md">
+                  <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm font-medium">
                     {error}
                   </div>
                   <Link href="/reset-password">
-                    <Button className="w-full">
+                    <Button className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200">
                       {t('auth.reset.sendButton', 'Send reset link')}
                     </Button>
                   </Link>
@@ -173,15 +170,15 @@ export default function ResetPasswordConfirmPage() {
               )}
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} noValidate className="space-y-6">
               {error && (
-                <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md text-sm">
+                <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm font-medium">
                   {error}
                 </div>
               )}
 
               <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium">
+                <label htmlFor="password" className="text-sm font-semibold text-foreground">
                   {t('auth.resetConfirm.newPassword', 'New Password')}
                 </label>
                 <input
@@ -190,7 +187,7 @@ export default function ResetPasswordConfirmPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-foreground placeholder:text-muted-foreground"
                   placeholder="••••••••"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -199,7 +196,7 @@ export default function ResetPasswordConfirmPage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="confirmPassword" className="text-sm font-medium">
+                <label htmlFor="confirmPassword" className="text-sm font-semibold text-foreground">
                   {t('auth.resetConfirm.confirmPassword', 'Confirm New Password')}
                 </label>
                 <input
@@ -208,12 +205,16 @@ export default function ResetPasswordConfirmPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-foreground placeholder:text-muted-foreground"
                   placeholder="••••••••"
                 />
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button
+                type="submit"
+                className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200"
+                disabled={loading}
+              >
                 {loading ? t('common.loading', 'Loading...') : t('auth.resetConfirm.updateButton', 'Update Password')}
               </Button>
             </form>

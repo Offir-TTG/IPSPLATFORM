@@ -5,21 +5,51 @@ export const dynamic = 'force-dynamic';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Mail, FileText, Send, BarChart3, Zap, Calendar } from 'lucide-react';
+import { Mail, FileText, Send, BarChart3, Zap, Calendar, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+
+interface EmailStats {
+  emailsSent: number;
+  openRate: number;
+  pending: number;
+  templates: number;
+}
 
 export default function EmailDashboardPage() {
   const { t, direction } = useAdminLanguage();
   const isRtl = direction === 'rtl';
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   const isMobile = windowWidth <= 640;
+  const [stats, setStats] = useState<EmailStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      setLoadingStats(true);
+      const response = await fetch('/api/admin/emails/stats');
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      } else {
+        console.error('Failed to fetch email stats');
+      }
+    } catch (error) {
+      console.error('Error fetching email stats:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
 
   const sections = [
     {
@@ -107,10 +137,16 @@ export default function EmailDashboardPage() {
               <Mail className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">0</div>
-              <p className="text-xs text-muted-foreground">
-                {t('emails.dashboard.stats.pending', 'Last 30 days')}
-              </p>
+              {loadingStats ? (
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.emailsSent || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('emails.dashboard.stats.pending', 'Last 30 days')}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -122,10 +158,16 @@ export default function EmailDashboardPage() {
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">0%</div>
-              <p className="text-xs text-muted-foreground">
-                {t('emails.dashboard.stats.opened', 'Average')}
-              </p>
+              {loadingStats ? (
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.openRate || 0}%</div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('emails.dashboard.stats.opened', 'Average')}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -137,10 +179,16 @@ export default function EmailDashboardPage() {
               <Send className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">0</div>
-              <p className="text-xs text-muted-foreground">
-                {t('emails.queue.title', 'In queue')}
-              </p>
+              {loadingStats ? (
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.pending || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('emails.queue.title', 'In queue')}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -152,10 +200,16 @@ export default function EmailDashboardPage() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">4</div>
-              <p className="text-xs text-muted-foreground">
-                {t('emails.templates.is_system', 'System templates')}
-              </p>
+              {loadingStats ? (
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.templates || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('emails.templates.is_system', 'Active templates')}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
