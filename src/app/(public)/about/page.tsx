@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { useUserLanguage } from '@/context/AppContext';
-import { PublicHeader } from '@/components/public/PublicHeader';
-import { PublicFooter } from '@/components/public/PublicFooter';
+import { PublicHeader } from '@/components/public';
+import { PublicFooter } from '@/components/public';
 import { Card, CardContent } from '@/components/ui/card';
 import { GraduationCap, Users, BookOpen, Award, Target, Building2 } from 'lucide-react';
 

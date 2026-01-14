@@ -23,8 +23,8 @@ import {
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
 import { useToast } from '@/components/ui/use-toast';
-import { PublicHeader } from '@/components/public/PublicHeader';
-import { PublicFooter } from '@/components/public/PublicFooter';
+import { PublicHeader } from '@/components/public';
+import { PublicFooter } from '@/components/public';
 import { Breadcrumbs } from '@/components/public/Breadcrumbs';
 
 interface Course {

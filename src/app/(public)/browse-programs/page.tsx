@@ -22,8 +22,8 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { useUserLanguage } from '@/context/AppContext';
-import { PublicHeader } from '@/components/public/PublicHeader';
-import { PublicFooter } from '@/components/public/PublicFooter';
+import { PublicHeader } from '@/components/public';
+import { PublicFooter } from '@/components/public';
 import {
   Select,
   SelectContent,
