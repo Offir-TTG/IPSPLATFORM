@@ -38,7 +38,6 @@ Font.register({
     { src: heeboRegularData, fontWeight: 400 },
     { src: heeboBoldData, fontWeight: 700 },
   ],
-  hyphenationCallback: (word) => [word],
 });
 
 // Register English font (Roboto)
@@ -48,7 +47,6 @@ Font.register({
     { src: robotoRegularData, fontWeight: 400 },
     { src: robotoBoldData, fontWeight: 700 },
   ],
-  hyphenationCallback: (word) => [word],
 });
 
 // Register Helvetica as fallback (using Roboto)
@@ -58,7 +56,6 @@ Font.register({
     { src: robotoRegularData, fontWeight: 400 },
     { src: robotoBoldData, fontWeight: 700 },
   ],
-  hyphenationCallback: (word) => [word],
 });
 
 console.log('Fonts registered successfully with data URLs');

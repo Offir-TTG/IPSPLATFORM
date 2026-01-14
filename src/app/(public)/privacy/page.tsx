@@ -40,7 +40,7 @@ export default function PrivacyPage() {
         <div className="container mx-auto px-4">
           <div className="mx-auto max-w-4xl">
             <div
-              name="termly-embed"
+              data-name="termly-embed"
               data-id="d7833c94-4904-49d2-8173-19115b8aea9b"
               data-type="iframe"
             />

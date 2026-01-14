@@ -151,7 +151,7 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
     },
   });
 
-  const formatDate = (dateString: string | null) => {
+  const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
     const day = String(date.getDate()).padStart(2, '0');

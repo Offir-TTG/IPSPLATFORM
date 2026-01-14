@@ -335,14 +335,14 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   if (customNavSections && customNavSections.length > 0) {
     navSections = customNavSections
       .filter(section => section.visible)
-      .sort((a, b) => a.order - b.order)
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
       .map(section => ({
-        titleKey: section.translation_key,
+        titleKey: section.translation_key || 'nav.section',
         items: section.items
           .filter(item => item.visible)
-          .sort((a, b) => a.order - b.order)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
           .map(item => ({
-            key: item.translation_key,
+            key: item.translation_key || 'nav.item',
             icon: item.icon ? (iconMap[item.icon] || Settings) : Settings,
             href: item.href,
           }))

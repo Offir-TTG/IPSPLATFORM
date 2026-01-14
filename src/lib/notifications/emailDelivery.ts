@@ -102,7 +102,7 @@ export async function sendNotificationEmail(options: EmailDeliveryOptions): Prom
     console.log('[Email Delivery] Email sent successfully to:', recipientEmail);
     return {
       success: true,
-      messageId: emailResult.messageId,
+      messageId: emailResult.message_id,
     };
   } catch (error) {
     console.error('[Email Delivery] Unexpected error:', error);

@@ -40,7 +40,7 @@ export default function TermsPage() {
         <div className="container mx-auto px-4">
           <div className="mx-auto max-w-4xl">
             <div
-              name="termly-embed"
+              data-name="termly-embed"
               data-id="8b6c4433-5b02-483d-8a86-e2c0921c37bf"
               data-type="iframe"
             />

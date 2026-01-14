@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
       filename = `invoice-preview-${Date.now()}.pdf`;
     } else if (documentType === 'schedule') {
       pdfBuffer = await renderToBuffer(
-        <PaymentScheduleTemplate data={sampleData} />
+        <PaymentScheduleTemplate data={sampleData as any} />
       );
       filename = `payment-schedule-preview-${Date.now()}.pdf`;
     } else {
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
         <EnrollmentInvoiceTemplate data={sampleData} />
       );
       const scheduleBuffer = await renderToBuffer(
-        <PaymentScheduleTemplate data={sampleData} />
+        <PaymentScheduleTemplate data={sampleData as any} />
       );
 
       // Merge PDFs using pdf-lib
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Return PDF
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(pdfBuffer as any, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

@@ -83,7 +83,7 @@ export default function EmailQueuePage() {
   };
 
   const getStatusBadge = (status: EmailStatus) => {
-    const statusConfig = {
+    const statusConfig: Record<EmailStatus, { variant: any; icon: any; label: string; className?: string }> = {
       pending: { variant: 'secondary' as const, icon: Clock, label: t('emails.status.pending', 'Pending') },
       processing: { variant: 'default' as const, icon: Loader2, label: t('emails.status.processing', 'Processing') },
       sent: { variant: 'default' as const, icon: CheckCircle, label: t('emails.status.sent', 'Sent'), className: 'bg-green-500 hover:bg-green-600' },
@@ -104,7 +104,7 @@ export default function EmailQueuePage() {
   };
 
   const getPriorityBadge = (priority: EmailPriority) => {
-    const priorityConfig = {
+    const priorityConfig: Record<EmailPriority, { variant: any; label: string; className?: string }> = {
       urgent: { variant: 'destructive' as const, label: t('emails.priority.urgent', 'Urgent') },
       high: { variant: 'default' as const, label: t('emails.priority.high', 'High'), className: 'bg-orange-500 hover:bg-orange-600' },
       normal: { variant: 'secondary' as const, label: t('emails.priority.normal', 'Normal') },

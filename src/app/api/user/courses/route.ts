@@ -156,7 +156,7 @@ export const GET = withAuth(
 
       // Add all program course IDs to our set
       for (const course of programCourses) {
-        courseIds.add(course.id);
+        courseIds.add((course as any).id);
       }
 
       // OPTIMIZATION 6: Fetch ALL lessons for ALL courses in ONE bulk query
@@ -181,14 +181,14 @@ export const GET = withAuth(
       }
 
       // Create lookup maps for fast access
-      const courseMap = new Map(allCoursesToProcess.map(c => [c.id, c]));
-      const programMap = new Map(programsData?.map(p => [p.id, p]) || []);
+      const courseMap = new Map(allCoursesToProcess.map((c: any) => [c.id, c]));
+      const programMap = new Map(programsData?.map((p: any) => [p.id, p]) || []);
       const lessonsByCourse = new Map<string, any[]>();
       const progressByEnrollment = new Map<string, any[]>();
 
       // Group lessons by course
       for (const lesson of allLessons || []) {
-        const courseId = lesson.modules?.course_id || lesson.modules?.[0]?.course_id;
+        const courseId = (lesson.modules as any)?.course_id || (lesson.modules as any)?.[0]?.course_id;
         if (!courseId) continue;
 
         if (!lessonsByCourse.has(courseId)) {
@@ -219,7 +219,7 @@ export const GET = withAuth(
           const course = courseMap.get(product.course_id);
           if (!course) continue;
 
-          const lessons = lessonsByCourse.get(course.id) || [];
+          const lessons = lessonsByCourse.get((course as any).id) || [];
           const lessonIds = lessons.map(l => l.id);
           const courseProgress = enrollmentProgress.filter(p => lessonIds.includes(p.lesson_id));
           const completedLessons = courseProgress.filter(p => p.status === 'completed').length;
@@ -233,10 +233,10 @@ export const GET = withAuth(
 
           result.push({
             id: enrollment.id,
-            course_id: course.id,
-            course_name: course.title,
-            course_description: course.description,
-            course_image: course.image_url,
+            course_id: (course as any).id,
+            course_name: (course as any).title,
+            course_description: (course as any).description,
+            course_image: (course as any).image_url,
             program_id: null,
             program_name: null,
             status: enrollment.status,
@@ -265,24 +265,24 @@ export const GET = withAuth(
           );
 
           for (const course of programCoursesForEnrollment) {
-            const lessons = lessonsByCourse.get(course.id) || [];
-            const lessonIds = lessons.map(l => l.id);
+            const lessons = lessonsByCourse.get((course as any).id) || [];
+            const lessonIds = lessons.map((l: any) => l.id);
             const courseProgress = enrollmentProgress.filter(p => lessonIds.includes(p.lesson_id));
             const completedLessons = courseProgress.filter(p => p.status === 'completed').length;
             const totalLessons = lessons.length;
             const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-            const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
+            const instructor = Array.isArray((course as any).users) ? (course as any).users[0] : (course as any).users;
             const instructorName = instructor
               ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
               : null;
 
             result.push({
               id: enrollment.id,
-              course_id: course.id,
-              course_name: course.title,
-              course_description: course.description,
-              course_image: course.image_url,
+              course_id: (course as any).id,
+              course_name: (course as any).title,
+              course_description: (course as any).description,
+              course_image: (course as any).image_url,
               program_id: program.id,
               program_name: program.name,
               status: enrollment.status,

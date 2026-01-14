@@ -701,7 +701,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
 
       // Set useTemplates based on whether product has payment plan references
       // Check both default_payment_plan_id (legacy) and alternative_payment_plan_ids
-      const hasTemplates = !!product.default_payment_plan_id || (product.alternative_payment_plan_ids && product.alternative_payment_plan_ids.length > 0);
+      const hasTemplates: boolean = !!product.default_payment_plan_id || (!!product.alternative_payment_plan_ids && product.alternative_payment_plan_ids.length > 0);
       setUseTemplates(hasTemplates);
 
       // Set config mode based on whether product uses templates

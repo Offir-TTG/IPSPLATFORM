@@ -86,6 +86,7 @@ interface Course {
   description: string | null;
   program_id: string;
   is_active: boolean;
+  is_published?: boolean;
   instructor_id: string | null;
   image_url?: string | null;
   instructor?: {
@@ -128,6 +129,8 @@ interface Lesson {
     join_url: string;
     start_url: string;
     has_recording: boolean;
+    platform?: 'zoom' | 'daily';
+    daily_room_name?: string;
   } | null;
 }
 
@@ -325,7 +328,7 @@ function SortableLesson({
   onDelete: (lessonId: string) => void;
   onEditContent: (lessonId: string, lessonTitle: string) => void;
   onOpenZoomMeeting: (lessonId: string) => void;
-  onCreateZoomMeeting: (lessonId: string) => void;
+  onCreateZoomMeeting: (lessonId: string, platform?: 'zoom' | 'daily') => void;
   creatingZoomFor: string | null;
   t: (key: string, fallback: string) => string;
   direction: 'ltr' | 'rtl';
@@ -783,6 +786,7 @@ export default function CourseBuilderPage() {
           description: 'Course description',
           program_id: '',
           is_active: true,
+          instructor_id: null,
         });
       }
 

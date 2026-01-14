@@ -70,11 +70,12 @@ export async function GET(
     }
 
     // Format response
+    const emailTemplate = Array.isArray(trigger.email_templates) ? trigger.email_templates[0] : trigger.email_templates;
     const formattedTrigger = {
       ...trigger,
-      template_name: trigger.email_templates?.template_name || '',
-      template_key: trigger.email_templates?.template_key || '',
-      template_category: trigger.email_templates?.template_category || '',
+      template_name: (emailTemplate as any)?.template_name || '',
+      template_key: (emailTemplate as any)?.template_key || '',
+      template_category: (emailTemplate as any)?.template_category || '',
       email_templates: undefined,
     };
 
@@ -199,10 +200,11 @@ export async function PATCH(
     }
 
     // Format response
+    const emailTemplate2 = Array.isArray(trigger.email_templates) ? trigger.email_templates[0] : trigger.email_templates;
     const formattedTrigger = {
       ...trigger,
-      template_name: trigger.email_templates?.template_name || '',
-      template_key: trigger.email_templates?.template_key || '',
+      template_name: (emailTemplate2 as any)?.template_name || '',
+      template_key: (emailTemplate2 as any)?.template_key || '',
       email_templates: undefined,
     };
 

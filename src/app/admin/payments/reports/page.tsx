@@ -306,7 +306,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
                 grid: { left: 90, right: 30, top: 40, bottom: 70 },
                 xAxis: {
                   type: 'category',
-                  data: data.revenueOverTime.map(item => new Date(item.date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', { month: 'short', day: 'numeric' })),
+                  data: data.revenueOverTime.map((item: any) => new Date(item.date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', { month: 'short', day: 'numeric' })),
                   inverse: isRtl,
                   axisLabel: {
                     color: '#374151',
@@ -347,7 +347,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
                   {
                     name: t('admin.payments.reports.charts.revenue', 'Revenue'),
                     type: 'line',
-                    data: data.revenueOverTime.map(item => item.revenue),
+                    data: data.revenueOverTime.map((item: any) => item.revenue),
                     smooth: true,
                     lineStyle: { width: 2 },
                     itemStyle: { color: '#3b82f6' },
@@ -396,7 +396,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
                     {
                       type: 'pie',
                       radius: '60%',
-                      data: revenueByType.map((item, index) => ({
+                      data: revenueByType.map((item: any, index: any) => ({
                         name: item.name,
                         value: item.value,
                         itemStyle: { color: COLORS[index % COLORS.length] },
@@ -430,7 +430,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {revenueByType.map((item, index) => (
+                {revenueByType.map((item: any, index: any) => (
                   <div key={item.name} className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -559,7 +559,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
     <>
       {/* Status Summary */}
       <div className="grid gap-4 md:grid-cols-4">
-        {allStatusData.map((item) => (
+        {allStatusData.map((item: any) => (
           <Card key={item.status}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -610,7 +610,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
                   {
                     type: 'pie',
                     radius: '60%',
-                    data: statusDataForChart.map((item) => ({
+                    data: statusDataForChart.map((item: any) => ({
                       name: item.status,
                       value: item.count,
                       itemStyle: { color: getStatusColor(item.status) },
@@ -694,7 +694,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
                 },
                 xAxis: {
                   type: 'category',
-                  data: data.statusOverTime.map(item => item.month),
+                  data: data.statusOverTime.map((item: any) => item.month),
                   inverse: isRtl,
                   axisLabel: {
                     rotate: isRtl ? 0 : 0,
@@ -749,7 +749,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
                       opacity: 0.7,
                     },
                     smooth: true,
-                    data: data.statusOverTime.map(item => item.paid),
+                    data: data.statusOverTime.map((item: any) => item.paid),
                     itemStyle: { color: '#10b981' },
                     lineStyle: { width: 2 },
                   },
@@ -761,7 +761,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
                       opacity: 0.7,
                     },
                     smooth: true,
-                    data: data.statusOverTime.map(item => item.pending),
+                    data: data.statusOverTime.map((item: any) => item.pending),
                     itemStyle: { color: '#f59e0b' },
                     lineStyle: { width: 2 },
                   },
@@ -773,7 +773,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
                       opacity: 0.7,
                     },
                     smooth: true,
-                    data: data.statusOverTime.map(item => item.overdue),
+                    data: data.statusOverTime.map((item: any) => item.overdue),
                     itemStyle: { color: '#ef4444' },
                     lineStyle: { width: 2 },
                   },
@@ -785,7 +785,7 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
                       opacity: 0.7,
                     },
                     smooth: true,
-                    data: data.statusOverTime.map(item => item.failed),
+                    data: data.statusOverTime.map((item: any) => item.failed),
                     itemStyle: { color: '#dc2626' },
                     lineStyle: { width: 2 },
                   },
@@ -915,7 +915,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
               grid: { left: 90, right: 30, top: 40, bottom: 70 },
               xAxis: {
                 type: 'category',
-                data: translatedForecast.map(item => item.month),
+                data: translatedForecast.map((item: any) => item.month),
                 inverse: isRtl,
                 axisLabel: {
                   color: '#374151',
@@ -956,7 +956,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
                 {
                   name: t('admin.payments.reports.charts.expectedRevenue', 'Expected Revenue'),
                   type: 'line',
-                  data: translatedForecast.map(item => item.expected),
+                  data: translatedForecast.map((item: any) => item.expected),
                   smooth: true,
                   areaStyle: {
                     color: {
@@ -992,7 +992,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
               grid: { left: 90, right: 30, top: 40, bottom: 70 },
               xAxis: {
                 type: 'category',
-                data: translatedForecast.map(item => item.month),
+                data: translatedForecast.map((item: any) => item.month),
                 inverse: isRtl,
                 axisLabel: {
                   color: '#374151',
@@ -1039,13 +1039,13 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
                 {
                   name: t('admin.payments.reports.charts.scheduledPayments', 'Scheduled Payments'),
                   type: 'bar',
-                  data: translatedForecast.map(item => item.scheduled),
+                  data: translatedForecast.map((item: any) => item.scheduled),
                   itemStyle: { color: '#3b82f6' },
                 },
                 {
                   name: t('admin.payments.reports.charts.subscriptionRevenue', 'Subscription Revenue'),
                   type: 'bar',
-                  data: translatedForecast.map(item => item.subscription),
+                  data: translatedForecast.map((item: any) => item.subscription),
                   itemStyle: { color: '#10b981' },
                 },
               ],
@@ -1125,7 +1125,7 @@ function ProductPerformanceReport({ t, isRtl }: { t: TranslationFunction; isRtl:
                 },
                 yAxis: {
                   type: 'category',
-                  data: productData.map(item => item.name),
+                  data: productData.map((item: any) => item.name),
                   inverse: !isRtl,
                   axisLabel: {
                     fontSize: 13,
@@ -1149,7 +1149,7 @@ function ProductPerformanceReport({ t, isRtl }: { t: TranslationFunction; isRtl:
                   {
                     name: t('admin.payments.reports.charts.revenue', 'Revenue'),
                     type: 'bar',
-                    data: productData.map(item => item.revenue),
+                    data: productData.map((item: any) => item.revenue),
                     itemStyle: { color: '#3b82f6' },
                   },
                 ],
@@ -1177,7 +1177,7 @@ function ProductPerformanceReport({ t, isRtl }: { t: TranslationFunction; isRtl:
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {productData.map((product, index) => (
+              {productData.map((product: any, index: any) => (
                 <div key={product.id || index} className="p-4 border rounded-lg space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1523,7 +1523,7 @@ function PaymentPlansReport({ t, isRtl }: { t: TranslationFunction; isRtl: boole
     <>
       {/* Plan Performance Summary */}
       <div className="grid gap-4 md:grid-cols-4">
-        {planPerformance.map((plan, index) => (
+        {planPerformance.map((plan, index: any) => (
           <Card key={index}>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
@@ -1647,7 +1647,7 @@ function PaymentPlansReport({ t, isRtl }: { t: TranslationFunction; isRtl: boole
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            {planPerformance.map((plan, index) => (
+            {planPerformance.map((plan, index: any) => (
               <div key={index} className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1743,7 +1743,7 @@ function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolea
               { date: '2025-01-15 10:30', admin: 'Admin User', action: 'Adjusted payment date', user: 'John Doe', reason: 'User requested extension' },
               { date: '2025-01-14 14:20', admin: 'Finance Manager', action: 'Paused payments', user: 'Jane Smith', reason: 'Medical leave' },
               { date: '2025-01-13 09:15', admin: 'Admin User', action: 'Resumed payments', user: 'Bob Johnson', reason: 'Return from leave' },
-            ].map((item, index) => (
+            ].map((item: any, index: any) => (
               <div key={index} className="flex items-start gap-3 p-3 border rounded-lg">
                 <div className="flex-1">
                   <p className="font-medium">{item.action}</p>

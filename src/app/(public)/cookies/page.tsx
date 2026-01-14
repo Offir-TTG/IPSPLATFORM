@@ -40,7 +40,7 @@ export default function CookiesPage() {
         <div className="container mx-auto px-4">
           <div className="mx-auto max-w-4xl">
             <div
-              name="termly-embed"
+              data-name="termly-embed"
               data-id="3e7f0bd1-d0ca-4011-afe1-b9c59ec48b3c"
               data-type="iframe"
             />

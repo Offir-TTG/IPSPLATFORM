@@ -356,6 +356,8 @@ export default function CoursesListPage() {
         program_id: newCourse.program_id || null,
       };
 
+      let uploadedImageUrl: string | null = null;
+
       const response = await fetch('/api/lms/courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -368,7 +370,7 @@ export default function CoursesListPage() {
         // Upload image with courseId if there's a file
         if (imageFile && result.data?.id) {
           try {
-            const uploadedImageUrl = await uploadCourseImage(imageFile, result.data.id);
+            uploadedImageUrl = await uploadCourseImage(imageFile, result.data.id);
             if (uploadedImageUrl) {
               // Update the course with the image URL
               await fetch(`/api/admin/lms/courses/${result.data.id}`, {

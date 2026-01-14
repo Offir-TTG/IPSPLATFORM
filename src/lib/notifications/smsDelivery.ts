@@ -54,8 +54,17 @@ export async function sendNotificationSMS(options: SMSDeliveryOptions): Promise<
     }
 
     // Dynamically import Twilio (only when needed)
-    const { default: twilio } = await import('twilio');
-    const client = twilio(accountSid, authToken);
+    let client;
+    try {
+      const { default: twilio } = await import('twilio');
+      client = twilio(accountSid, authToken);
+    } catch (importError) {
+      console.error('[SMS Delivery] Twilio package not installed:', importError);
+      return {
+        success: false,
+        error: 'Twilio package not installed. Run: npm install twilio',
+      };
+    }
 
     // Format phone number for WhatsApp if needed
     const toNumber = useWhatsApp && !recipientPhone.startsWith('whatsapp:')

@@ -82,12 +82,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Format response to flatten template data
-    const formattedTriggers = triggers?.map(trigger => ({
-      ...trigger,
-      template_name: trigger.email_templates?.template_name || '',
-      template_key: trigger.email_templates?.template_key || '',
-      email_templates: undefined, // Remove nested object
-    }));
+    const formattedTriggers = triggers?.map(trigger => {
+      const emailTemplate = Array.isArray(trigger.email_templates) ? trigger.email_templates[0] : trigger.email_templates;
+      return {
+        ...trigger,
+        template_name: (emailTemplate as any)?.template_name || '',
+        template_key: (emailTemplate as any)?.template_key || '',
+        email_templates: undefined, // Remove nested object
+      };
+    });
 
     return NextResponse.json({
       triggers: formattedTriggers || [],
@@ -210,10 +213,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Format response
+    const emailTemplate3 = Array.isArray(trigger.email_templates) ? trigger.email_templates[0] : trigger.email_templates;
     const formattedTrigger = {
       ...trigger,
-      template_name: trigger.email_templates?.template_name || '',
-      template_key: trigger.email_templates?.template_key || '',
+      template_name: (emailTemplate3 as any)?.template_name || '',
+      template_key: (emailTemplate3 as any)?.template_key || '',
       email_templates: undefined,
     };
 

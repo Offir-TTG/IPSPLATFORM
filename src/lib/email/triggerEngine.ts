@@ -440,10 +440,11 @@ export async function testTrigger(
     }
 
     // Flatten template data
+    const emailTemplate = Array.isArray(trigger.email_templates) ? trigger.email_templates[0] : trigger.email_templates;
     const triggerData: EmailTrigger = {
       ...trigger,
-      template_name: trigger.email_templates?.template_name || '',
-      template_key: trigger.email_templates?.template_key || '',
+      template_name: (emailTemplate as any)?.template_name || '',
+      template_key: (emailTemplate as any)?.template_key || '',
     };
 
     // Evaluate conditions

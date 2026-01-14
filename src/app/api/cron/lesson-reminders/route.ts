@@ -152,15 +152,15 @@ export async function GET(request: NextRequest) {
               lessonEndTime: lesson.end_time,
               courseId: lesson.course_id,
               programId: lesson.program_id,
-              courseName: lesson.courses?.title || '',
-              programName: lesson.programs?.title || '',
+              courseName: (lesson.courses as any)?.title || '',
+              programName: (lesson.programs as any)?.title || '',
               zoomMeetingId: lesson.zoom_meeting_id,
               minutesUntilStart: minutesUntilStart,
               enrollmentId: enrollment.id,
               userId: enrollment.user_id,
-              email: enrollment.users.email,
-              userName: enrollment.users.first_name,
-              languageCode: enrollment.users.preferred_language || 'en',
+              email: (enrollment.users as any).email,
+              userName: (enrollment.users as any).first_name,
+              languageCode: (enrollment.users as any).preferred_language || 'en',
             },
             userId: enrollment.user_id,
             metadata: {
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
           }));
 
         // Process all events in batch for this lesson
-        const result = await processBatchTriggerEvents(triggerEvents);
+        const result = await processBatchTriggerEvents(triggerEvents) as any;
 
         console.log(`[Cron] Lesson ${lesson.id}: Processed ${result.processed} events, queued ${result.queued} emails`);
 

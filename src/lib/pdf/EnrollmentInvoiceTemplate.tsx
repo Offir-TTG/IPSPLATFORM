@@ -13,6 +13,7 @@ interface InvoiceData {
     remaining_amount: number;
     currency: string;
     payment_plan_name: string;
+    invoice_number?: string;
   };
   user: {
     first_name: string;

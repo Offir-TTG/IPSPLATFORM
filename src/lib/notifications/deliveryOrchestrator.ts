@@ -142,7 +142,7 @@ export async function deliverNotification(
           channel: 'sms',
           success: smsResult.success,
           error: smsResult.error,
-          messageSid: smsResult.messageSid,
+          messageId: smsResult.messageSid,
         });
       }
 
