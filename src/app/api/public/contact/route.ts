@@ -71,8 +71,8 @@ ${message}
 Submitted at: ${timestamp}
     `;
 
-    // Use tenant's contact email if available, otherwise fall back to a default
-    const contactEmail = tenant.contact_email || process.env.DEFAULT_CONTACT_EMAIL || 'support@tenafly-tg.com';
+    // Use tenant's support email if available, otherwise fall back to a default
+    const contactEmail = tenant.support_email || process.env.DEFAULT_CONTACT_EMAIL || 'support@tenafly-tg.com';
 
     await sendEmail({
       to: contactEmail,
