@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/email/send';
+import { getCurrentTenant } from '@/lib/tenant/detection';
 
 export async function POST(request: NextRequest) {
   try {
+    // Get current tenant
+    const tenant = await getCurrentTenant(request);
+    if (!tenant) {
+      return NextResponse.json(
+        { error: 'Tenant not found' },
+        { status: 404 }
+      );
+    }
+
     // Parse request body
     const { name, email, phone, subject, message } = await request.json();
 
@@ -61,15 +71,19 @@ ${message}
 Submitted at: ${timestamp}
     `;
 
+    // Use tenant's contact email if available, otherwise fall back to a default
+    const contactEmail = tenant.contact_email || process.env.DEFAULT_CONTACT_EMAIL || 'support@tenafly-tg.com';
+
     await sendEmail({
-      to: 'support@tenafly-tg.com',
+      to: contactEmail,
       subject: `Contact Form: ${subject}`,
       html: emailHtml,
       text: emailText,
       replyTo: email,
+      tenantId: tenant.id, // Use tenant-specific SMTP configuration
     });
 
-    console.log('✅ Contact form notification sent to support@tenafly-tg.com');
+    console.log(`✅ Contact form notification sent to ${contactEmail} for tenant: ${tenant.name}`);
 
     return NextResponse.json({
       success: true,
