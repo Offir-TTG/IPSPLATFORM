@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { useUserLanguage, useTheme } from '@/context/AppContext';
-import { PublicHeader } from '@/components/public';
-import { PublicFooter } from '@/components/public';
+import { PublicHeader } from '@/components/public/index';
+import { PublicFooter } from '@/components/public/index';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

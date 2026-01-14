@@ -21,8 +21,8 @@ import {
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
 import { useToast } from '@/components/ui/use-toast';
-import { PublicHeader } from '@/components/public';
-import { PublicFooter } from '@/components/public';
+import { PublicHeader } from '@/components/public/index';
+import { PublicFooter } from '@/components/public/index';
 
 interface Product {
   id: string;

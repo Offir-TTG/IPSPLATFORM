@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect } from 'react';
 import { useUserLanguage } from '@/context/AppContext';
-import { PublicHeader } from '@/components/public';
-import { PublicFooter } from '@/components/public';
+import { PublicHeader } from '@/components/public/index';
+import { PublicFooter } from '@/components/public/index';
 
 export default function TermsPage() {
   const { direction } = useUserLanguage();
