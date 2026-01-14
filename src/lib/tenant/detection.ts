@@ -113,9 +113,14 @@ export async function getCurrentTenant(request: Request): Promise<Tenant | null>
   const tenantSlug = getTenantSlugFromHeaders(headers);
   if (tenantSlug) {
     tenant = await getTenantBySlug(tenantSlug);
+    if (tenant) {
+      return tenant;
+    }
   }
 
-  return tenant;
+  // Final fallback: use default tenant (for Vercel deployments without custom domain)
+  console.log('No tenant found via domain/subdomain, falling back to default tenant:', defaultTenantSlug);
+  return getTenantBySlug(defaultTenantSlug);
 }
 
 /**
