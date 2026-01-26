@@ -4,7 +4,7 @@
  * Runs every 6 hours to retry failed payments that are due for retry.
  * Checks for failed payments with next_retry_date <= now and retry_count < 3.
  *
- * Schedule: 0 */6 * * * (Every 6 hours)
+ * Schedule: Every 6 hours
  */
 
 import { NextRequest, NextResponse } from 'next/server';
