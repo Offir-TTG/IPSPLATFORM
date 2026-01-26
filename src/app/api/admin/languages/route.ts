@@ -160,7 +160,6 @@ export async function POST(request: NextRequest) {
     // Audit log
     await logAuditEvent({
       user_id: user.id,
-      tenant_id: tenant.id,
       event_type: 'CREATE',
       event_category: 'CONFIG',
       resource_type: 'language',
@@ -299,7 +298,6 @@ export async function PUT(request: NextRequest) {
       const changedFields = Object.keys(updateData);
       await logAuditEvent({
         user_id: user.id,
-        tenant_id: tenant.id,
         event_type: 'UPDATE',
         event_category: 'CONFIG',
         resource_type: 'language',
@@ -419,7 +417,6 @@ export async function DELETE(request: NextRequest) {
     if (language) {
       await logAuditEvent({
         user_id: user.id,
-        tenant_id: tenant.id,
         event_type: 'DELETE',
         event_category: 'CONFIG',
         resource_type: 'language',
