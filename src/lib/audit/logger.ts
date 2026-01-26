@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 export type EventType = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'EXPORT' | 'IMPORT' | 'ACCESS' | 'MODIFY' | 'EXECUTE' | 'SHARE' | 'CONSENT';
 export type EventCategory = 'DATA' | 'AUTH' | 'ADMIN' | 'CONFIG' | 'SECURITY' | 'COMPLIANCE' | 'SYSTEM' | 'EDUCATION' | 'STUDENT_RECORD' | 'GRADE' | 'ATTENDANCE' | 'PARENTAL_ACCESS';
@@ -8,6 +8,7 @@ export type EventStatus = 'success' | 'failure' | 'partial' | 'pending';
 interface AuditEventParams {
   userId: string;
   userEmail: string;
+  tenantId?: string; // Optional - will auto-resolve from userId if not provided
   action: string;
   eventType?: EventType;
   eventCategory?: EventCategory;
@@ -27,9 +28,57 @@ interface AuditEventParams {
   metadata?: any;
 }
 
+// Initialize service role client for audit logging (bypasses RLS)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+let supabaseClient: ReturnType<typeof createClient> | null = null;
+
+function getServiceClient() {
+  if (!supabaseClient) {
+    supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+  }
+  return supabaseClient;
+}
+
+// Auto-resolve tenant_id from userId if not provided
+async function resolveTenantId(userId: string): Promise<string | null> {
+  try {
+    const supabase = getServiceClient();
+
+    const { data, error } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      console.error('Failed to resolve tenant_id for user:', userId, error);
+      return null;
+    }
+
+    return (data as any).tenant_id;
+  } catch (error) {
+    console.error('Error resolving tenant_id:', error);
+    return null;
+  }
+}
+
 export async function logAuditEvent(params: AuditEventParams): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = getServiceClient();
+
+    // Resolve tenant_id if not provided
+    let tenantId = params.tenantId;
+    if (!tenantId && params.userId) {
+      const resolvedTenantId = await resolveTenantId(params.userId);
+      tenantId = resolvedTenantId || undefined;
+    }
 
     // Determine event type from action if not provided
     const eventType = params.eventType || inferEventType(params.action);
@@ -42,6 +91,7 @@ export async function logAuditEvent(params: AuditEventParams): Promise<void> {
 
     // Prepare audit event data
     const auditData: any = {
+      tenant_id: tenantId,
       user_id: params.userId,
       user_email: params.userEmail,
       event_type: eventType,

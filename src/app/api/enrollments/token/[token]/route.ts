@@ -49,7 +49,8 @@ export async function GET(
           type,
           description,
           payment_model,
-          payment_plan
+          payment_plan,
+          alternative_payment_plan_ids
         ),
         payment_plan:payment_plans!enrollments_payment_plan_id_fkey (
           id,
@@ -100,12 +101,21 @@ export async function GET(
     });
 
 
+    // Check if this is a multi-plan enrollment first
+    const alternativePlanIds = product.alternative_payment_plan_ids || [];
+    const hasMultiplePlans = alternativePlanIds.length > 1 && !enrollment.payment_plan;
+
     // Prepare payment plan data for client-side translation
     let paymentPlanData: any = null;
     if (paymentPlan?.plan_name) {
       paymentPlanData = {
         type: 'named_plan',
         name: paymentPlan.plan_name
+      };
+    } else if (hasMultiplePlans) {
+      // Multiple plans available - user will choose in wizard
+      paymentPlanData = {
+        type: 'multiple_plans'
       };
     } else if (product.payment_model === 'deposit_then_plan') {
       const plan = product.payment_plan || {};
@@ -154,6 +164,7 @@ export async function GET(
     // Return enrollment details (no sensitive user data)
     return NextResponse.json({
       id: enrollment.id,
+      product_id: product.id,
       product_name: product.title,
       product_type: product.type,
       product_description: product.description,
@@ -164,7 +175,9 @@ export async function GET(
       token_expires_at: enrollment.token_expires_at,
       status: enrollment.status,
       user_email: userEmail, // Show email so user can verify it's for them
-      enrollment_type: enrollment.enrollment_type // 'admin_invited' or 'self_enrolled'
+      enrollment_type: enrollment.enrollment_type, // 'admin_invited' or 'self_enrolled'
+      has_multiple_plans: hasMultiplePlans,
+      alternative_payment_plan_ids: hasMultiplePlans ? alternativePlanIds : []
     });
 
   } catch (error) {

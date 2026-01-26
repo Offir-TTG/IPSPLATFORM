@@ -57,8 +57,11 @@ async function fetchSMTPConfig(tenantId?: string): Promise<SMTPConfig | null> {
     const cacheKey = tenantId || 'default';
     const cached = smtpConfigCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`[SMTP] Using cached config for tenant: ${tenantId || 'default'}`);
       return cached.config;
     }
+
+    console.log(`[SMTP] Fetching SMTP config from database for tenant: ${tenantId || 'default'}`);
 
     // Create Supabase client
     const supabase = createClient(
@@ -68,6 +71,7 @@ async function fetchSMTPConfig(tenantId?: string): Promise<SMTPConfig | null> {
 
     // Query integrations table for SMTP config
     // First try tenant-specific config, then fall back to global config (tenant_id IS NULL)
+    console.log(`[SMTP] Querying integrations table with tenant_id: ${tenantId}`);
     let { data, error } = await supabase
       .from('integrations')
       .select('credentials, is_enabled')
@@ -76,8 +80,18 @@ async function fetchSMTPConfig(tenantId?: string): Promise<SMTPConfig | null> {
       .eq('tenant_id', tenantId)
       .maybeSingle();
 
+    if (error) {
+      console.error(`[SMTP] Error querying tenant-specific config:`, error);
+    }
+    if (data) {
+      console.log(`[SMTP] Found tenant-specific config for tenant: ${tenantId}`);
+    } else {
+      console.log(`[SMTP] No tenant-specific config found for tenant: ${tenantId}`);
+    }
+
     // If no tenant-specific config, try global config
     if (!data && tenantId) {
+      console.log(`[SMTP] Trying global config (tenant_id IS NULL)`);
       const globalResult = await supabase
         .from('integrations')
         .select('credentials, is_enabled')
@@ -88,10 +102,19 @@ async function fetchSMTPConfig(tenantId?: string): Promise<SMTPConfig | null> {
 
       data = globalResult.data;
       error = globalResult.error;
+
+      if (globalResult.error) {
+        console.error(`[SMTP] Error querying global config:`, globalResult.error);
+      }
+      if (data) {
+        console.log(`[SMTP] Found global config`);
+      } else {
+        console.log(`[SMTP] No global config found`);
+      }
     }
 
     if (error || !data) {
-      console.log('No SMTP config found in database, falling back to environment variables');
+      console.log('[SMTP] No SMTP config found in database, falling back to environment variables');
       return null;
     }
 
@@ -107,6 +130,15 @@ async function fetchSMTPConfig(tenantId?: string): Promise<SMTPConfig | null> {
       from: data.credentials.from_email,
       fromName: data.credentials.from_name,
     };
+
+    console.log(`[SMTP] Successfully loaded SMTP config:`, {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      from: config.from,
+      fromName: config.fromName,
+      hasAuth: !!config.auth,
+    });
 
     // Cache the config
     smtpConfigCache.set(cacheKey, { config, timestamp: Date.now() });
@@ -189,8 +221,12 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailResult>
     // Get SMTP config to check if it's configured
     const smtpConfig = await getSMTPConfig(options.tenantId);
 
-    // If SMTP not configured and in development, log to console
-    if (!smtpConfig.host && process.env.NODE_ENV === 'development') {
+    // If SMTP not configured (using localhost default) and in development, log to console
+    const isUsingDefaultLocalhost = smtpConfig.host === 'localhost' || smtpConfig.host === '127.0.0.1';
+    const hasNoAuth = !smtpConfig.auth;
+    const isNotConfigured = isUsingDefaultLocalhost && hasNoAuth;
+
+    if (isNotConfigured && process.env.NODE_ENV === 'development') {
       console.log('\n' + '='.repeat(80));
       console.log('📧 EMAIL WOULD BE SENT (Development Mode - SMTP Not Configured)');
       console.log('='.repeat(80));

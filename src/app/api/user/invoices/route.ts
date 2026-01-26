@@ -40,8 +40,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // If user doesn't have a Stripe customer ID, return empty array
-    if (!userData?.stripe_customer_id) {
+    // Get all unique stripe_customer_id values from user's enrollments
+    const { data: enrollments, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .select('stripe_customer_id')
+      .eq('user_id', user.id)
+      .not('stripe_customer_id', 'is', null);
+
+    if (enrollmentError) {
+      console.error('Error fetching enrollment data:', enrollmentError);
+    }
+
+    // Collect all unique customer IDs (from user record and enrollments)
+    const customerIds = new Set<string>();
+    if (userData?.stripe_customer_id) {
+      customerIds.add(userData.stripe_customer_id);
+    }
+    if (enrollments) {
+      enrollments.forEach(e => {
+        if (e.stripe_customer_id) {
+          customerIds.add(e.stripe_customer_id);
+        }
+      });
+    }
+
+    console.log(`[User Invoices] Found ${customerIds.size} unique Stripe customer IDs for user ${user.id}`);
+
+    // If user doesn't have any Stripe customer IDs, return empty array
+    if (customerIds.size === 0) {
       return NextResponse.json({
         success: true,
         invoices: [],
@@ -67,27 +93,32 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch invoices from Stripe
-    let stripeInvoices;
-    try {
-      stripeInvoices = await stripe.invoices.list({
-        customer: userData.stripe_customer_id,
-        limit: 100,
-      });
-    } catch (stripeError: any) {
-      console.error('Stripe API error:', stripeError);
-      // If Stripe is not configured or customer doesn't exist, return empty array
-      if (stripeError.type === 'StripeInvalidRequestError' || stripeError.statusCode === 404) {
-        return NextResponse.json({
-          success: true,
-          invoices: [],
+    // Fetch invoices from Stripe for all customer IDs
+    const allStripeInvoices: any[] = [];
+    for (const customerId of customerIds) {
+      try {
+        console.log(`[User Invoices] Fetching invoices for customer ${customerId}`);
+        const customerInvoices = await stripe.invoices.list({
+          customer: customerId,
+          limit: 100,
         });
+        allStripeInvoices.push(...customerInvoices.data);
+        console.log(`[User Invoices] Found ${customerInvoices.data.length} invoices for customer ${customerId}`);
+      } catch (stripeError: any) {
+        console.error(`[User Invoices] Stripe API error for customer ${customerId}:`, stripeError.message);
+        // If customer doesn't exist in Stripe, skip it
+        if (stripeError.type === 'StripeInvalidRequestError' || stripeError.statusCode === 404) {
+          console.log(`[User Invoices] Customer ${customerId} not found in Stripe, skipping`);
+          continue;
+        }
+        throw stripeError;
       }
-      throw stripeError;
     }
 
+    console.log(`[User Invoices] Total invoices found across all customers: ${allStripeInvoices.length}`);
+
     // Transform Stripe invoices to our format
-    let invoices = stripeInvoices.data.map((inv) => {
+    let invoices = allStripeInvoices.map((inv) => {
       // Calculate if invoice is overdue
       const isOverdue =
         inv.status === 'open' &&

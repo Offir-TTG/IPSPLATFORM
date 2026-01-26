@@ -14,7 +14,7 @@ import { he, enUS } from 'date-fns/locale';
 import { useLanguage } from '@/context/AppContext';
 
 interface PaymentPlanData {
-  type: 'named_plan' | 'deposit_then_plan' | 'subscription' | 'one_time' | 'free';
+  type: 'named_plan' | 'deposit_then_plan' | 'subscription' | 'one_time' | 'free' | 'multiple_plans';
   name?: string;
   installments?: number;
   frequency?: string;
@@ -27,6 +27,7 @@ interface PaymentPlanData {
 
 interface EnrollmentData {
   id: string;
+  product_id: string;
   product_name: string;
   product_type: string;
   product_description?: string;
@@ -38,6 +39,8 @@ interface EnrollmentData {
   status: string;
   user_email: string;
   enrollment_type?: string; // 'admin_invited' | 'self_enrolled'
+  has_multiple_plans?: boolean;
+  alternative_payment_plan_ids?: string[];
 }
 
 export default function EnrollmentPage() {
@@ -64,12 +67,48 @@ export default function EnrollmentPage() {
     }
   }, [token, mounted]);
 
-  // Helper function to strip HTML tags from text
-  const stripHtmlTags = (html: string): string => {
+  // Helper function to sanitize HTML - allow only safe formatting tags
+  const sanitizeHtml = (html: string): string => {
     if (typeof window === 'undefined') return html;
+
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || '';
+
+    // Remove all dangerous elements and attributes
+    const removeElements = tmp.querySelectorAll('script, style, iframe, object, embed');
+    removeElements.forEach(el => el.remove());
+
+    // Convert block elements to line breaks while preserving inline formatting
+    const blockElements = tmp.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li');
+    blockElements.forEach(element => {
+      const br = document.createElement('br');
+      element.before(br);
+
+      // Move children out of block element
+      while (element.firstChild) {
+        element.before(element.firstChild);
+      }
+
+      element.remove();
+    });
+
+    // Keep only safe inline formatting tags
+    const allowedTags = ['strong', 'b', 'em', 'i', 'u', 'br'];
+    const allElements = tmp.querySelectorAll('*');
+    allElements.forEach(element => {
+      if (!allowedTags.includes(element.tagName.toLowerCase())) {
+        // Replace with text content
+        const textNode = document.createTextNode(element.textContent || '');
+        element.replaceWith(textNode);
+      } else {
+        // Remove all attributes for safety
+        while (element.attributes.length > 0) {
+          element.removeAttribute(element.attributes[0].name);
+        }
+      }
+    });
+
+    return tmp.innerHTML.trim();
   };
 
   const fetchEnrollment = async () => {
@@ -128,7 +167,9 @@ export default function EnrollmentPage() {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground text-lg">Loading your invitation...</p>
+          {mounted && (
+            <p className="mt-4 text-muted-foreground text-lg">{t('enrollment.loading', 'Loading your invitation...')}</p>
+          )}
         </div>
       </div>
     );
@@ -227,6 +268,9 @@ export default function EnrollmentPage() {
       case 'free':
         return <span>{t('enrollment.paymentPlan.free', 'Free')}</span>;
 
+      case 'multiple_plans':
+        return <span>{t('enrollment.paymentPlan.multiplePlans', 'Multiple payment plans available')}</span>;
+
       default:
         return null;
     }
@@ -264,18 +308,19 @@ export default function EnrollmentPage() {
 
           <CardContent className="space-y-6 p-6 sm:p-8" dir={direction} style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* Product Details */}
-            <div className={`p-4 bg-primary/5 ${isRTL ? 'border-r-4 pr-4 rounded-l-lg' : 'border-l-4 pl-4 rounded-r-lg'} border-primary shadow-sm`}>
-              <div style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
+            <div className={`p-4 bg-primary/5 ${isRTL ? 'border-r-4 rounded-l-lg' : 'border-l-4 rounded-r-lg'} border-primary shadow-sm`}>
+              <div className="space-y-3">
                 <h3 className="font-bold text-xl text-foreground">{enrollment.product_name}</h3>
-                <div className={`flex items-center gap-2 mt-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
+                <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                   <Badge variant="secondary" className="text-xs">
                     {t(`enrollment.productType.${enrollment.product_type}`, enrollment.product_type)}
                   </Badge>
                 </div>
                 {enrollment.product_description && (
-                  <p className="text-sm text-muted-foreground mt-3" style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
-                    {stripHtmlTags(enrollment.product_description)}
-                  </p>
+                  <div
+                    className="text-sm text-muted-foreground leading-relaxed break-words"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(enrollment.product_description) }}
+                  />
                 )}
               </div>
             </div>

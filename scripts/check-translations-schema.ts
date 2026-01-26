@@ -1,34 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
-import * as dotenv from 'dotenv';
+import { config } from 'dotenv';
 
-dotenv.config({ path: '.env.local' });
+config({ path: '.env.local' });
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function checkSchema() {
-  try {
-    const { data: tenants } = await supabase.from('tenants').select('id').limit(1).single();
-    const tenantId = tenants?.id;
+  // Get distinct contexts
+  const { data: contexts, error: contextsError } = await supabase
+    .from('translations')
+    .select('context')
+    .limit(100);
 
-    const { data, error } = await supabase
-      .from('translations')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .limit(1);
-
-    if (error) {
-      console.error('Error:', error);
-    } else {
-      console.log('Sample translation row:', JSON.stringify(data, null, 2));
-    }
-
-    process.exit(0);
-  } catch (error: any) {
-    console.error('Error:', error.message);
-    process.exit(1);
+  if (contextsError) {
+    console.error('Error fetching contexts:', contextsError);
+  } else {
+    const uniqueContexts = [...new Set(contexts?.map(c => c.context))];
+    console.log('Unique contexts in database:', uniqueContexts);
   }
 }
 

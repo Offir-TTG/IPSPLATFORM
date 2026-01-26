@@ -246,6 +246,7 @@ export async function sendTemplateEmail(
         text,
         cc,
         bcc,
+        tenantId,
       });
 
       // Update queue status

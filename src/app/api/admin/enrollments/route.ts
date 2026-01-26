@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         currency,
         status,
         payment_status,
+        enrollment_type,
         next_payment_date,
         payment_start_date,
         enrolled_at,
@@ -66,6 +67,8 @@ export async function GET(request: NextRequest) {
           type,
           payment_model,
           payment_plan,
+          alternative_payment_plan_ids,
+          default_payment_plan_id,
           program:programs!products_program_id_fkey (
             id,
             name
@@ -101,28 +104,36 @@ export async function GET(request: NextRequest) {
 
     // Transform data to match frontend expectations
     let enrollments = (data || []).map((enrollment: any) => {
-      // Determine product name based on type
+      // Use product title as the primary name
+      // This allows differentiating between multiple products for the same program/course
       let productName = enrollment.product?.title || 'N/A';
-      if (enrollment.product?.program) {
-        productName = enrollment.product.program.name;
-      } else if (enrollment.product?.course) {
-        productName = enrollment.product.course.title;
-      }
 
       // Determine payment plan info (translation key + data) from either payment_plan template or product
       let paymentPlanKey = 'admin.enrollments.paymentPlan.notAvailable';
       let paymentPlanData: any = {};
 
       if (enrollment.payment_plan?.plan_name) {
-        // If using template-based payment plan, use the plan name directly
+        // If enrollment has a specific payment plan assigned, use it
         paymentPlanKey = 'custom';
         paymentPlanData = { name: enrollment.payment_plan.plan_name };
       } else if (enrollment.product?.payment_model) {
-        // Otherwise, generate translation key from product's payment model
+        // Check if product has payment_model set (OLD system or mixed system)
         const model = enrollment.product.payment_model;
         const plan = enrollment.product.payment_plan || {};
 
-        if (model === 'one_time') {
+        // If product has BOTH payment_model AND alternative_payment_plan_ids:
+        // - If product has multiple payment plans (>1) → NEW system with choices
+        // - If product has single payment plan (=1) → OLD system that got a plan added later
+        // - If payment_plan has data → OLD system with explicit config
+        const hasPaymentPlanConfig = plan && Object.keys(plan).length > 0;
+        const hasMultiplePlans = enrollment.product?.alternative_payment_plan_ids && enrollment.product.alternative_payment_plan_ids.length > 1;
+
+        if (!hasPaymentPlanConfig && hasMultiplePlans) {
+          // NEW SYSTEM: Product has multiple payment plan templates to choose from
+          // Show "Multiple plans available" if enrollment doesn't have one selected yet
+          paymentPlanKey = 'admin.enrollments.paymentPlan.multiplePlans';
+          paymentPlanData = { count: enrollment.product.alternative_payment_plan_ids.length };
+        } else if (model === 'one_time') {
           paymentPlanKey = 'admin.enrollments.paymentPlan.oneTime';
         } else if (model === 'deposit_then_plan') {
           paymentPlanKey = 'admin.enrollments.paymentPlan.deposit';
@@ -143,6 +154,14 @@ export async function GET(request: NextRequest) {
         } else if (model === 'free') {
           paymentPlanKey = 'admin.enrollments.paymentPlan.free';
         }
+      } else if (enrollment.product?.alternative_payment_plan_ids && enrollment.product.alternative_payment_plan_ids.length > 0) {
+        // NEW SYSTEM: Product uses payment plan templates (no payment_model)
+        // Show "Multiple plans available" if enrollment doesn't have one selected yet
+        paymentPlanKey = 'admin.enrollments.paymentPlan.multiplePlans';
+        paymentPlanData = { count: enrollment.product.alternative_payment_plan_ids.length };
+      } else if (enrollment.product?.default_payment_plan_id) {
+        // Legacy: if product has a default payment plan
+        paymentPlanKey = 'admin.enrollments.paymentPlan.defaultPlan';
       }
 
       // MEMORY-BASED WIZARD: Get user data from wizard_profile_data if user doesn't exist yet
@@ -186,6 +205,7 @@ export async function GET(request: NextRequest) {
         currency: enrollment.currency || 'USD',
         payment_status: enrollment.payment_status || 'pending',
         status: enrollment.status || 'active',
+        enrollment_type: enrollment.enrollment_type || 'self_enrolled',
         next_payment_date: enrollment.next_payment_date,
         payment_start_date: enrollment.payment_start_date,
         enrolled_at: enrollment.enrolled_at,

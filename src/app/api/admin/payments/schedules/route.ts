@@ -61,7 +61,12 @@ export async function GET(request: NextRequest) {
       }
 
       if (status) {
-        countQuery = countQuery.eq('status', status);
+        if (status === 'overdue') {
+          // Overdue means pending AND past due date
+          countQuery = countQuery.eq('status', 'pending').lt('scheduled_date', new Date().toISOString());
+        } else {
+          countQuery = countQuery.eq('status', status);
+        }
       }
 
       // Add amount filters to count query
@@ -87,7 +92,12 @@ export async function GET(request: NextRequest) {
       }
 
       if (status) {
-        query = query.eq('status', status);
+        if (status === 'overdue') {
+          // Overdue means pending AND past due date
+          query = query.eq('status', 'pending').lt('scheduled_date', new Date().toISOString());
+        } else {
+          query = query.eq('status', status);
+        }
       }
 
       // Add amount filters
@@ -155,6 +165,7 @@ export async function GET(request: NextRequest) {
       const productMap = new Map(products?.map(p => [p.id, p]) || []);
 
       // Enrich schedules with fetched data
+      const now = new Date();
       const enrichedSchedules = (scheduleData || []).map(schedule => {
         const enrollment = enrollmentMap.get(schedule.enrollment_id);
 
@@ -166,11 +177,16 @@ export async function GET(request: NextRequest) {
             user_name: 'Unknown (Enrollment Missing)',
             user_email: '',
             product_name: 'Unknown (Enrollment Missing)',
+            // Compute overdue status
+            status: schedule.status === 'pending' && new Date(schedule.scheduled_date) < now ? 'overdue' : schedule.status,
           };
         }
 
         const user = enrollment?.user_id ? userMap.get(enrollment.user_id) : null;
         const product = enrollment?.product_id ? productMap.get(enrollment.product_id) : null;
+
+        // Compute display status: if pending and past due, show as overdue
+        const displayStatus = schedule.status === 'pending' && new Date(schedule.scheduled_date) < now ? 'overdue' : schedule.status;
 
         return {
           ...schedule,
@@ -178,6 +194,7 @@ export async function GET(request: NextRequest) {
           user_name: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Unknown',
           user_email: user?.email || '',
           product_name: product?.title || 'Unknown Product',
+          status: displayStatus, // Use computed status
         };
       });
 

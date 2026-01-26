@@ -1,397 +1,124 @@
+/**
+ * Add missing translation keys for payment plan details dialog
+ */
+
 import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load environment variables from .env.local
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Missing Supabase credentials in .env.local');
+  process.exit(1);
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+interface Translation {
+  key: string;
+  en: string;
+  he: string;
+  context: string;
+}
+
+const translations: Translation[] = [
+  {
+    key: 'admin.enrollments.paymentPlanDetails.availablePlans',
+    en: 'Available Payment Plans',
+    he: 'תוכניות תשלום זמינות',
+    context: 'admin'
+  },
+  {
+    key: 'admin.enrollments.paymentPlanDetails.loadingPlans',
+    en: 'Loading plans...',
+    he: 'טוען תוכניות...',
+    context: 'admin'
+  },
+  {
+    key: 'admin.enrollments.paymentPlanDetails.noPlansAvailable',
+    en: 'No payment plans configured',
+    he: 'אין תוכניות תשלום מוגדרות',
+    context: 'admin'
+  },
+  {
+    key: 'admin.enrollments.paymentPlanDetails.depositLabel',
+    en: 'Deposit',
+    he: 'מקדמה',
+    context: 'admin'
+  },
+  {
+    key: 'admin.enrollments.paymentPlanDetails.installments',
+    en: 'installments',
+    he: 'תשלומים',
+    context: 'admin'
+  }
+];
 
 async function addTranslations() {
   console.log('Adding payment plan dialog translations...\n');
 
-  const { data: tenants } = await supabase
+  // Get the default tenant ID
+  const { data: tenants, error: tenantError } = await supabase
     .from('tenants')
     .select('id')
-    .limit(1);
+    .limit(1)
+    .single();
 
-  const tenantId = tenants?.[0]?.id;
-
-  const translations = [
-    // Dialog title and description
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.title',
-      translation_value: 'Payment Plan Details',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.title',
-      translation_value: 'פרטי תוכנית התשלום',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.description',
-      translation_value: 'View payment plan configuration for this enrollment',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.description',
-      translation_value: 'צפייה בהגדרות תוכנית התשלום להרשמה זו',
-      category: 'admin',
-      context: 'admin',
-    },
-    // Field labels
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.planName',
-      translation_value: 'Plan Name',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.planName',
-      translation_value: 'שם התוכנית',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.paymentModel',
-      translation_value: 'Payment Model',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.paymentModel',
-      translation_value: 'מודל תשלום',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.totalAmount',
-      translation_value: 'Total Amount',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.totalAmount',
-      translation_value: 'סכום כולל',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.paidAmount',
-      translation_value: 'Paid Amount',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.paidAmount',
-      translation_value: 'סכום ששולם',
-      category: 'admin',
-      context: 'admin',
-    },
-    // Payment model types
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.oneTime',
-      translation_value: 'One-Time Payment',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.oneTime',
-      translation_value: 'תשלום חד פעמי',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.depositThenPlan',
-      translation_value: 'Deposit + Installments',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.depositThenPlan',
-      translation_value: 'מקדמה + תשלומים',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.subscription',
-      translation_value: 'Subscription',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.subscription',
-      translation_value: 'מנוי',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.free',
-      translation_value: 'Free',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.free',
-      translation_value: 'חינם',
-      category: 'admin',
-      context: 'admin',
-    },
-    // Installment details
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.installmentDetails',
-      translation_value: 'Installment Details',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.installmentDetails',
-      translation_value: 'פרטי תשלומים',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.depositType',
-      translation_value: 'Deposit Type',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.depositType',
-      translation_value: 'סוג מקדמה',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.depositPercentage',
-      translation_value: 'Deposit Percentage',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.depositPercentage',
-      translation_value: 'אחוז מקדמה',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.numberOfInstallments',
-      translation_value: 'Number of Installments',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.numberOfInstallments',
-      translation_value: 'מספר תשלומים',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.frequency',
-      translation_value: 'Frequency',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.frequency',
-      translation_value: 'תדירות',
-      category: 'admin',
-      context: 'admin',
-    },
-    // Status fields
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.paymentStatus',
-      translation_value: 'Payment Status',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.paymentStatus',
-      translation_value: 'סטטוס תשלום',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.enrollmentStatus',
-      translation_value: 'Enrollment Status',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.enrollmentStatus',
-      translation_value: 'סטטוס הרשמה',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.nextPaymentDate',
-      translation_value: 'Next Payment Date',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.nextPaymentDate',
-      translation_value: 'תאריך תשלום הבא',
-      category: 'admin',
-      context: 'admin',
-    },
-    // Subscription details
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.subscriptionDetails',
-      translation_value: 'Subscription Details',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.subscriptionDetails',
-      translation_value: 'פרטי מנוי',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.billingInterval',
-      translation_value: 'Billing Interval',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.billingInterval',
-      translation_value: 'תדירות חיוב',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'admin.enrollments.paymentPlanDetails.trialDays',
-      translation_value: 'Trial Days',
-      category: 'admin',
-      context: 'admin',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'admin.enrollments.paymentPlanDetails.trialDays',
-      translation_value: 'ימי ניסיון',
-      category: 'admin',
-      context: 'admin',
-    },
-    // Common
-    {
-      tenant_id: tenantId,
-      language_code: 'en',
-      translation_key: 'common.close',
-      translation_value: 'Close',
-      category: 'common',
-      context: 'both',
-    },
-    {
-      tenant_id: tenantId,
-      language_code: 'he',
-      translation_key: 'common.close',
-      translation_value: 'סגור',
-      category: 'common',
-      context: 'both',
-    },
-  ];
-
-  for (const trans of translations) {
-    const { error } = await supabase
-      .from('translations')
-      .upsert(trans, {
-        onConflict: 'tenant_id,language_code,translation_key',
-      });
-
-    if (error) {
-      console.error(`Failed to add ${trans.translation_key}:`, error);
-    } else {
-      console.log(`✓ Added ${trans.translation_key} (${trans.language_code})`);
-    }
+  if (tenantError || !tenants) {
+    console.error('Error fetching tenant:', tenantError?.message);
+    process.exit(1);
   }
 
-  console.log('\n✅ All translations added!');
+  const tenantId = tenants.id;
+  console.log(`Using tenant ID: ${tenantId}\n`);
+
+  for (const translation of translations) {
+    console.log(`Processing: ${translation.key}`);
+
+    // Add English translation
+    const { error: enError } = await supabase.rpc('upsert_translation', {
+      p_language_code: 'en',
+      p_translation_key: translation.key,
+      p_translation_value: translation.en,
+      p_category: 'admin',
+      p_context: translation.context,
+      p_tenant_id: tenantId
+    });
+
+    if (enError) {
+      console.error(`  ❌ Error adding English translation:`, enError.message);
+    } else {
+      console.log(`  ✅ Added English: "${translation.en}"`);
+    }
+
+    // Add Hebrew translation
+    const { error: heError } = await supabase.rpc('upsert_translation', {
+      p_language_code: 'he',
+      p_translation_key: translation.key,
+      p_translation_value: translation.he,
+      p_category: 'admin',
+      p_context: translation.context,
+      p_tenant_id: tenantId
+    });
+
+    if (heError) {
+      console.error(`  ❌ Error adding Hebrew translation:`, heError.message);
+    } else {
+      console.log(`  ✅ Added Hebrew: "${translation.he}"`);
+    }
+
+    console.log('');
+  }
+
+  console.log('✅ All payment plan dialog translations added successfully!');
 }
 
-addTranslations().catch(console.error);
+addTranslations().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});

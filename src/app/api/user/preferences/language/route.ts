@@ -8,11 +8,21 @@ export const dynamic = 'force-dynamic';
 // PATCH /api/user/preferences/language - Update user's preferred language
 export const PATCH = withAuth(
   async (request: NextRequest, user: any) => {
+    let tenantId: string | undefined;
     try {
       const body = await request.json();
       const { preferred_language } = body;
 
       const supabase = await createClient();
+
+      // Get tenant_id for audit logging
+      const { data: tenantUser } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+
+      tenantId = tenantUser?.tenant_id;
 
       // Validate language code against active languages in the database
       if (preferred_language !== null) {
@@ -49,6 +59,7 @@ export const PATCH = withAuth(
         console.error('Language preference update error:', updateError);
 
         logAuditEvent({
+          tenantId,
           userId: user.id,
           userEmail: user.email || 'unknown',
           action: 'preferences.language.update_failed',
@@ -68,6 +79,7 @@ export const PATCH = withAuth(
 
       // Log successful update
       logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email || 'unknown',
         action: 'preferences.language.updated',
@@ -79,17 +91,30 @@ export const PATCH = withAuth(
         },
       }).catch((err) => console.error('Audit log failed:', err));
 
-      return NextResponse.json({
+      // Set cookie for SSR language detection (prevents flash on page load)
+      const response = NextResponse.json({
         success: true,
         data: {
           preferred_language: updatedUser.preferred_language,
         },
         message: 'Language preference updated successfully',
       });
+
+      // Set cookie with 1 year expiry
+      response.cookies.set('user_language', preferred_language || 'auto', {
+        httpOnly: false, // Needs to be readable by client
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+        path: '/',
+      });
+
+      return response;
     } catch (error) {
       console.error('Language preference update error:', error);
 
       logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email || 'unknown',
         action: 'preferences.language.update_error',

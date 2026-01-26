@@ -54,6 +54,7 @@ interface Enrollment {
   currency: string;
   payment_status: 'pending' | 'partial' | 'paid' | 'overdue';
   status: 'draft' | 'pending' | 'active' | 'suspended' | 'cancelled' | 'completed';
+  enrollment_type?: 'admin_assigned' | 'self_enrolled';
   next_payment_date?: string;
   payment_start_date?: string;
   enrolled_at?: string;
@@ -88,8 +89,18 @@ export default function EnrollmentsPage() {
   const [resetting, setResetting] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+
   // Responsive breakpoints
   const isMobile = windowWidth <= 640;
+
+  // Calculate pagination
+  const totalPages = Math.ceil(enrollments.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedEnrollments = enrollments.slice(startIndex, endIndex);
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -129,6 +140,10 @@ export default function EnrollmentsPage() {
 
     if (key === 'custom' && data.name) {
       return data.name;
+    } else if (key === 'admin.enrollments.paymentPlan.multiplePlans') {
+      return t('admin.enrollments.paymentPlan.multiplePlans', 'Multiple plans available');
+    } else if (key === 'admin.enrollments.paymentPlan.defaultPlan') {
+      return t('admin.enrollments.paymentPlan.defaultPlan', 'Default plan');
     } else if (key === 'admin.enrollments.paymentPlan.oneTime') {
       return t('admin.enrollments.paymentPlan.oneTime', 'One-Time Payment');
     } else if (key === 'admin.enrollments.paymentPlan.deposit') {
@@ -294,7 +309,7 @@ export default function EnrollmentsPage() {
   };
 
   const getStatusBadge = (status: string) => {
-    if (!status) return <Badge variant="outline">N/A</Badge>;
+    if (!status) return <Badge variant="outline" className="text-xs px-2 py-1">N/A</Badge>;
 
     const variants: Record<string, any> = {
       draft: 'outline',
@@ -306,22 +321,44 @@ export default function EnrollmentsPage() {
     };
     const statusKey = `admin.enrollments.status.${status}`;
     const statusText = t(statusKey, status.replace(/_/g, ' '));
-    return <Badge variant={variants[status] || 'outline'}>{statusText}</Badge>;
+    return <Badge variant={variants[status] || 'outline'} className="text-xs px-3 py-1 font-medium">{statusText}</Badge>;
   };
 
-  const getPaymentStatusIcon = (status: string) => {
-    switch (status) {
-      case 'paid':
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-      case 'partial':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
-      case 'overdue':
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
-      case 'pending':
-        return <Clock className="h-4 w-4 text-gray-500" />;
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />;
-    }
+  const getPaymentStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { variant: any; color: string; icon: any; text: string }> = {
+      paid: {
+        variant: 'default',
+        color: 'bg-green-100 text-green-700 border-green-300',
+        icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+        text: t('admin.enrollments.paymentStatus.paid', 'שולם')
+      },
+      partial: {
+        variant: 'secondary',
+        color: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+        icon: <Clock className="h-3.5 w-3.5" />,
+        text: t('admin.enrollments.paymentStatus.partial', 'חלקי')
+      },
+      overdue: {
+        variant: 'destructive',
+        color: 'bg-red-100 text-red-700 border-red-300',
+        icon: <AlertCircle className="h-3.5 w-3.5" />,
+        text: t('admin.enrollments.paymentStatus.overdue', 'באיחור')
+      },
+      pending: {
+        variant: 'outline',
+        color: 'bg-gray-100 text-gray-700 border-gray-300',
+        icon: <Clock className="h-3.5 w-3.5" />,
+        text: t('admin.enrollments.paymentStatus.pending', 'ממתין')
+      },
+    };
+
+    const config = statusConfig[status] || statusConfig.pending;
+    return (
+      <Badge variant={config.variant} className={`text-xs px-2 py-1 font-medium flex items-center gap-1.5 ${config.color}`}>
+        {config.icon}
+        {config.text}
+      </Badge>
+    );
   };
 
   const formatCurrency = (amount: number, currency: string) => {
@@ -469,7 +506,7 @@ export default function EnrollmentsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-xl font-bold">
-                {enrollments.filter(e => e.status === 'completed').length}
+                {enrollments.filter(e => e.status === 'active').length}
               </div>
               <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
                 {t('admin.enrollments.stats.completedDesc', 'Finished')}
@@ -583,12 +620,29 @@ export default function EnrollmentsPage() {
                   {t('admin.enrollments.noEnrollments', 'No enrollments found')}
                 </div>
               ) : (
-                enrollments.map((enrollment) => (
+                paginatedEnrollments.map((enrollment) => (
                   <div key={enrollment.id} className="border-b p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="font-medium">{enrollment.user_name}</div>
                         <div className="text-sm text-muted-foreground">{enrollment.user_email}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                            {enrollment.id.substring(0, 8)}...
+                          </code>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(enrollment.id);
+                              toast.success(t('admin.enrollments.idCopied', 'מזהה הועתק ללוח'));
+                            }}
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            title={t('admin.enrollments.copyId', 'העתק מזהה מלא')}
+                          >
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                       {getStatusBadge(enrollment.status)}
                     </div>
@@ -599,7 +653,7 @@ export default function EnrollmentsPage() {
                     </div>
 
                     <div className="flex items-center gap-2 text-sm">
-                      {getPaymentStatusIcon(enrollment.payment_status)}
+                      {getPaymentStatusBadge(enrollment.payment_status)}
                       <span className="font-medium">
                         {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
                       </span>
@@ -675,144 +729,187 @@ export default function EnrollmentsPage() {
               )}
             </div>
 
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b">
-                  <tr className={isRtl ? 'text-right' : 'text-left'}>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.user', 'User')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.product', 'Product')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.paymentPlan', 'Payment Plan')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.amount', 'Amount')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.paymentStatus', 'Payment Status')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.status', 'Status')}</th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('admin.enrollments.table.actions', 'Actions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enrollments.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-muted-foreground" suppressHydrationWarning>
-                        {t('admin.enrollments.noEnrollments', 'No enrollments found')}
-                      </td>
-                    </tr>
-                  ) : (
-                    enrollments.map((enrollment) => (
-                      <tr key={enrollment.id} className="border-b hover:bg-muted/50">
-                        <td className="p-4">
-                          <div>
-                            <div className="font-medium">{enrollment.user_name}</div>
-                            <div className="text-sm text-muted-foreground">{enrollment.user_email}</div>
+            {/* Desktop Table View - Two Row Layout */}
+            <div className="hidden md:block space-y-3">
+              {enrollments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground" suppressHydrationWarning>
+                  {t('admin.enrollments.noEnrollments', 'No enrollments found')}
+                </div>
+              ) : (
+                paginatedEnrollments.map((enrollment) => (
+                  <div key={enrollment.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow bg-card" dir={isRtl ? 'rtl' : 'ltr'}>
+                    {/* Row 1: Identity + Badges + Actions */}
+                    <div className="flex items-center gap-4 px-4 py-3 border-b bg-muted/30">
+                      {/* Type Badge + ID */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <div
+                          className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-semibold ${
+                            enrollment.enrollment_type === 'admin_assigned'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-secondary text-secondary-foreground'
+                          }`}
+                          title={enrollment.enrollment_type === 'admin_assigned'
+                            ? t('admin.enrollments.type.adminAssigned', 'הוקצה על ידי מנהל')
+                            : t('admin.enrollments.type.selfEnrolled', 'הרשמה עצמית')}
+                        >
+                          {enrollment.enrollment_type === 'admin_assigned' ? 'מ' : 'ע'}
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <code className="text-xs bg-muted px-2 py-0.5 rounded font-mono">
+                            {enrollment.id.substring(0, 8)}
+                          </code>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(enrollment.id);
+                              toast.success(t('admin.enrollments.idCopied', 'המזהה הועתק'));
+                            }}
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+                            title={t('admin.enrollments.copyId', 'העתק מזהה מלא')}
+                          >
+                            {t('admin.enrollments.copy', 'העתק')}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* User Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{enrollment.user_name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{enrollment.user_email}</div>
+                      </div>
+
+                      {/* Status Badges */}
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                            {t('admin.enrollments.table.status', 'סטטוס')}:
                           </div>
-                        </td>
-                        <td className="p-4">
-                          <div>
-                            <div className="font-medium">{enrollment.product_name}</div>
-                            <div className="text-sm text-muted-foreground">{formatProductType(enrollment.product_type)}</div>
+                          {getStatusBadge(enrollment.status)}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                            {t('admin.enrollments.paymentStatus', 'תשלום')}:
                           </div>
-                        </td>
-                        <td className="p-4">
-                          <Badge
-                            variant="outline"
-                            className="cursor-pointer hover:bg-muted transition-colors"
+                          {getPaymentStatusBadge(enrollment.payment_status)}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex gap-1 flex-shrink-0">
+                        {enrollment.status !== 'cancelled' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 relative"
+                            onClick={() => {
+                              setSendLinkEnrollment(enrollment);
+                              setSelectedLanguage(language || 'en');
+                              setSendLinkDialogOpen(true);
+                            }}
+                            title={t('admin.enrollments.sendLink', 'שלח קישור הרשמה')}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {enrollment.invitation_sent_at && (
+                              <span className={`absolute -top-0.5 h-2 w-2 rounded-full bg-green-500 border border-background ${isRtl ? '-left-0.5' : '-right-0.5'}`} />
+                            )}
+                          </Button>
+                        )}
+                        {(enrollment.status === 'pending' || enrollment.status === 'active') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
                             onClick={() => {
                               setSelectedEnrollment(enrollment);
-                              setPaymentPlanDialogOpen(true);
+                              setResetDialogOpen(true);
                             }}
+                            title={t('admin.enrollments.reset', 'אפס הרשמה')}
                           >
-                            {formatPaymentPlanName(enrollment)}
-                          </Badge>
-                        </td>
-                        <td className="p-4">
-                          <div>
-                            <div className="font-medium">
-                              {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {formatPercentage(enrollment.paid_amount, enrollment.total_amount)}{t('admin.enrollments.paidPercentage', '% paid')}
-                            </div>
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {enrollment.status === 'draft' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setSelectedEnrollment(enrollment);
+                              setOverrideDialogOpen(true);
+                            }}
+                            title={t('admin.enrollments.edit', 'ערוך הרשמה')}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {enrollment.status !== 'cancelled' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setSelectedEnrollment(enrollment);
+                              setCancelDialogOpen(true);
+                            }}
+                            title={t('admin.enrollments.delete', 'מחק הרשמה')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Row 2: Product + Payment Details */}
+                    <div className="grid grid-cols-3 gap-4 px-4 py-3">
+                      {/* Product Info */}
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                          {t('admin.enrollments.table.product', 'מוצר')}
+                        </div>
+                        <div className="font-semibold text-sm truncate">{enrollment.product_name}</div>
+                        <div className="text-xs text-muted-foreground">{formatProductType(enrollment.product_type)}</div>
+                      </div>
+
+                      {/* Payment Plan */}
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                          {t('admin.enrollments.table.paymentPlan', 'תוכנית תשלום')}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="cursor-pointer hover:bg-muted transition-colors text-xs font-medium px-3 py-1.5 w-fit"
+                          onClick={() => {
+                            setSelectedEnrollment(enrollment);
+                            setPaymentPlanDialogOpen(true);
+                          }}
+                        >
+                          {formatPaymentPlanName(enrollment)}
+                        </Badge>
+                      </div>
+
+                      {/* Payment Amount */}
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                          {t('admin.enrollments.table.amount', 'סכומים')}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-bold text-sm whitespace-nowrap">
+                            {formatCurrency(enrollment.paid_amount, enrollment.currency)}
                           </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            {getPaymentStatusIcon(enrollment.payment_status)}
-                            <Badge variant={enrollment.payment_status === 'paid' ? 'default' : 'secondary'}>
-                              {t(`admin.enrollments.paymentStatus.${enrollment.payment_status}`, enrollment.payment_status)}
-                            </Badge>
+                          <span className="text-xs text-muted-foreground">/</span>
+                          <div className="font-semibold text-sm text-muted-foreground whitespace-nowrap">
+                            {formatCurrency(enrollment.total_amount, enrollment.currency)}
                           </div>
-                        </td>
-                        <td className="p-4">
-                          {getStatusBadge(enrollment.status)}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex gap-2">
-                            {enrollment.status !== 'cancelled' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSendLinkEnrollment(enrollment);
-                                  setSelectedLanguage(language || 'en');
-                                  setSendLinkDialogOpen(true);
-                                }}
-                                title={t('admin.enrollments.sendLink', 'Send enrollment link')}
-                                className="relative"
-                              >
-                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                                {enrollment.invitation_sent_at && (
-                                  <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-background"
-                                        title={`Sent: ${new Date(enrollment.invitation_sent_at).toLocaleString()}`} />
-                                )}
-                              </Button>
-                            )}
-                            {(enrollment.status === 'pending' || enrollment.status === 'active') && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedEnrollment(enrollment);
-                                  setResetDialogOpen(true);
-                                }}
-                                title={t('admin.enrollments.reset', 'Reset enrollment wizard')}
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {enrollment.status === 'draft' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedEnrollment(enrollment);
-                                  setOverrideDialogOpen(true);
-                                }}
-                                title={t('admin.enrollments.edit', 'Edit enrollment')}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {enrollment.status !== 'cancelled' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedEnrollment(enrollment);
-                                  setCancelDialogOpen(true);
-                                }}
-                                title={t('admin.enrollments.delete', 'Delete enrollment')}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                        </div>
+                        <div className="text-xs font-medium text-muted-foreground">
+                          {formatPercentage(enrollment.paid_amount, enrollment.total_amount)}% {t('admin.enrollments.completed', 'הושלם')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             {enrollments.length === 0 && !loading && (
@@ -822,6 +919,93 @@ export default function EnrollmentsPage() {
                 <p className="text-muted-foreground">
                   {t('admin.enrollments.noEnrollmentsDescription', 'No enrollments match your current filters')}
                 </p>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {enrollments.length > 0 && (
+              <div className="flex items-center justify-between px-4 py-5 border-t bg-muted/20" dir={isRtl ? 'rtl' : 'ltr'}>
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="items-per-page" className="text-base font-medium" suppressHydrationWarning>
+                    {t('admin.enrollments.pagination.itemsPerPage', 'פריטים בעמוד')}:
+                  </Label>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(Number(value));
+                      setCurrentPage(1); // Reset to first page when changing items per page
+                    }}
+                  >
+                    <SelectTrigger className="w-24 text-base">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5" className="text-base">5</SelectItem>
+                      <SelectItem value="10" className="text-base">10</SelectItem>
+                      <SelectItem value="20" className="text-base">20</SelectItem>
+                      <SelectItem value="50" className="text-base">50</SelectItem>
+                      <SelectItem value="100" className="text-base">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-base text-muted-foreground" suppressHydrationWarning>
+                    {t('admin.enrollments.pagination.showing', 'מציג {start}-{end} מתוך {total}')
+                      .replace('{start}', (startIndex + 1).toString())
+                      .replace('{end}', Math.min(endIndex, enrollments.length).toString())
+                      .replace('{total}', enrollments.length.toString())}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="default"
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="h-9 w-9 p-0"
+                  >
+                    <span suppressHydrationWarning className="text-base">←</span>
+                  </Button>
+
+                  <div className="flex gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(page => {
+                        // Show first page, last page, current page, and pages around current
+                        return page === 1 ||
+                               page === totalPages ||
+                               Math.abs(page - currentPage) <= 1;
+                      })
+                      .map((page, index, array) => {
+                        // Add ellipsis if there's a gap
+                        const showEllipsisBefore = index > 0 && page - array[index - 1] > 1;
+
+                        return (
+                          <React.Fragment key={page}>
+                            {showEllipsisBefore && (
+                              <span className="px-2 py-2 text-sm text-muted-foreground">...</span>
+                            )}
+                            <Button
+                              variant={currentPage === page ? 'default' : 'outline'}
+                              size="default"
+                              onClick={() => setCurrentPage(page)}
+                              className="h-9 min-w-[2.25rem] text-sm font-medium"
+                            >
+                              {page}
+                            </Button>
+                          </React.Fragment>
+                        );
+                      })}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="default"
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-9 w-9 p-0"
+                  >
+                    <span suppressHydrationWarning className="text-base">→</span>
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

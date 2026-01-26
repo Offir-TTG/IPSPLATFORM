@@ -657,6 +657,35 @@ export default function ProfilePage() {
     });
   };
 
+  // Translate invoice descriptions client-side
+  const translateInvoiceDescription = (description: string) => {
+    if (!description) return t('invoices.defaultDescription', 'Invoice');
+
+    let translated = description;
+
+    // Replace "Invoice" as standalone word with translated version
+    if (translated.trim() === 'Invoice') {
+      return t('invoices.defaultDescription', 'Invoice');
+    }
+
+    // Replace "Payment #X" with translated version
+    translated = translated.replace(/Payment #(\d+)/g, (match, number) => {
+      return `${t('invoices.paymentNumber', 'Payment #')}${number}`;
+    });
+
+    // Replace "Payment for" with translated version
+    translated = translated.replace(/Payment for /g, () => {
+      return `${t('invoices.paymentFor', 'Payment for')} `;
+    });
+
+    // Replace any remaining "Invoice" words (not just standalone)
+    translated = translated.replace(/\bInvoice\b/g, () => {
+      return t('invoices.defaultDescription', 'Invoice');
+    });
+
+    return translated;
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -801,7 +830,7 @@ export default function ProfilePage() {
                   </TabsTrigger>
                   <TabsTrigger value="invoices">
                     <Receipt className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                    {t('user.profile.billing.invoicesTab', 'Stripe Invoices')}
+                    {t('invoices.stripeInvoices', 'Stripe Invoices')}
                   </TabsTrigger>
                 </TabsList>
 
@@ -1149,7 +1178,7 @@ export default function ProfilePage() {
 
                           {/* Description - Full Width */}
                           <p className="text-sm text-muted-foreground mb-4 pb-4 border-b">
-                            {invoice.description}
+                            {translateInvoiceDescription(invoice.description)}
                           </p>
 
                           {/* Date Information - Spread Across in 3 Columns */}

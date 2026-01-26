@@ -28,8 +28,17 @@ export default function RootLayout({
             __html: `
               (function() {
                 try {
+                  // Helper to get cookie value
+                  function getCookie(name) {
+                    var value = '; ' + document.cookie;
+                    var parts = value.split('; ' + name + '=');
+                    if (parts.length === 2) return parts.pop().split(';').shift();
+                    return null;
+                  }
+
                   // Set language and direction
                   var pathname = window.location.pathname;
+                  var cookieLang = getCookie('user_language');
                   var userLangStored = localStorage.getItem('user_language');
                   var adminLangStored = localStorage.getItem('admin_language');
 
@@ -44,9 +53,10 @@ export default function RootLayout({
                   if (isPublicPage) {
                     lang = 'en';
                   } else if (isAdminPage) {
-                    lang = adminLangStored || userLangStored || 'he';
+                    lang = adminLangStored || cookieLang || userLangStored || 'he';
                   } else {
-                    lang = userLangStored || adminLangStored || 'he';
+                    // Check cookie first (set by server), then localStorage
+                    lang = (cookieLang && cookieLang !== 'auto') ? cookieLang : (userLangStored || adminLangStored || 'he');
                   }
 
                   var rtlLanguages = ['he', 'ar', 'fa', 'ur', 'yi'];

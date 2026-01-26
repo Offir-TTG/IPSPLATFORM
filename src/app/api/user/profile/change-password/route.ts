@@ -30,6 +30,15 @@ export const POST = withAuth(async (
 
     const supabase = await createClient();
 
+    // Get tenant_id for audit logging
+    const { data: tenantUser } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .single();
+
+    const tenantId = tenantUser?.tenant_id;
+
     // Verify current password by attempting to sign in
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: user.email,
@@ -39,6 +48,7 @@ export const POST = withAuth(async (
     if (signInError) {
       // Log failed password change attempt
       await logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email,
         action: 'password.change_failed',
@@ -68,6 +78,7 @@ export const POST = withAuth(async (
       console.error('Password update error:', updateError);
 
       await logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email,
         action: 'password.change_failed',
@@ -97,6 +108,7 @@ export const POST = withAuth(async (
 
     // Log successful password change
     await logAuditEvent({
+      tenantId,
       userId: user.id,
       userEmail: user.email,
       action: 'password.changed',

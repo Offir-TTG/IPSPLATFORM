@@ -38,7 +38,7 @@ export const GET = withAuth(
           )
         `)
         .eq('user_id', user.id)
-        .in('status', ['active', 'completed'])
+        .in('status', ['active', 'completed', 'pending'])
         .order('enrolled_at', { ascending: false });
 
       if (enrollmentsError) {
@@ -58,6 +58,15 @@ export const GET = withAuth(
       }
 
       console.log('Total enrollments found:', allEnrollments.length);
+
+      // Get tenant ID for payment access checks
+      const { data: tenantUser } = await supabase
+        .from('users')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+      const tenantId = tenantUser?.tenant_id;
 
       // OPTIMIZATION 2: Extract all course IDs and program IDs upfront
       const courseIds = new Set<string>();
@@ -205,8 +214,9 @@ export const GET = withAuth(
         progressByEnrollment.get(progress.enrollment_id)!.push(progress);
       }
 
-      // Build final result
+      // Build final result with access checks
       const result: any[] = [];
+      const { checkCourseAccess } = await import('@/lib/payments/accessControl');
 
       for (const enrollment of allEnrollments) {
         const product = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
@@ -231,6 +241,12 @@ export const GET = withAuth(
             ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
             : null;
 
+          // Check payment-based access
+          let accessCheck = { hasAccess: true };
+          if (tenantId) {
+            accessCheck = await checkCourseAccess(user.id, product.course_id, tenantId);
+          }
+
           result.push({
             id: enrollment.id,
             course_id: (course as any).id,
@@ -251,6 +267,10 @@ export const GET = withAuth(
             total_amount: enrollment.total_amount,
             paid_amount: enrollment.paid_amount,
             currency: enrollment.currency,
+            hasAccess: accessCheck.hasAccess,
+            accessReason: accessCheck.reason,
+            overdueAmount: accessCheck.overdueAmount,
+            overdueDays: accessCheck.overdueDays,
           });
         }
 
@@ -264,35 +284,71 @@ export const GET = withAuth(
             c => c.program_id === product.program_id
           );
 
-          for (const course of programCoursesForEnrollment) {
-            const lessons = lessonsByCourse.get((course as any).id) || [];
-            const lessonIds = lessons.map((l: any) => l.id);
-            const courseProgress = enrollmentProgress.filter(p => lessonIds.includes(p.lesson_id));
-            const completedLessons = courseProgress.filter(p => p.status === 'completed').length;
-            const totalLessons = lessons.length;
-            const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+          // If program has courses, add each course as a separate entry
+          if (programCoursesForEnrollment.length > 0) {
+            for (const course of programCoursesForEnrollment) {
+              const lessons = lessonsByCourse.get((course as any).id) || [];
+              const lessonIds = lessons.map((l: any) => l.id);
+              const courseProgress = enrollmentProgress.filter(p => lessonIds.includes(p.lesson_id));
+              const completedLessons = courseProgress.filter(p => p.status === 'completed').length;
+              const totalLessons = lessons.length;
+              const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-            const instructor = Array.isArray((course as any).users) ? (course as any).users[0] : (course as any).users;
-            const instructorName = instructor
-              ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
-              : null;
+              const instructor = Array.isArray((course as any).users) ? (course as any).users[0] : (course as any).users;
+              const instructorName = instructor
+                ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
+                : null;
 
+              // Check payment-based access for program courses
+              let accessCheck = { hasAccess: true };
+              if (tenantId) {
+                accessCheck = await checkCourseAccess(user.id, (course as any).id, tenantId);
+              }
+
+              result.push({
+                id: enrollment.id,
+                course_id: (course as any).id,
+                course_name: (course as any).title,
+                course_description: (course as any).description,
+                course_image: (course as any).image_url,
+                program_id: program.id,
+                program_name: program.name,
+                status: enrollment.status,
+                enrolled_at: enrollment.enrolled_at,
+                completed_at: enrollment.completed_at,
+                expires_at: enrollment.expires_at,
+                overall_progress: progress,
+                completed_lessons: completedLessons,
+                total_lessons: totalLessons,
+                instructor: instructorName,
+                payment_status: enrollment.payment_status,
+                total_amount: enrollment.total_amount,
+                paid_amount: enrollment.paid_amount,
+                currency: enrollment.currency,
+                hasAccess: accessCheck.hasAccess,
+                accessReason: accessCheck.reason,
+                overdueAmount: accessCheck.overdueAmount,
+                overdueDays: accessCheck.overdueDays,
+              });
+            }
+          } else {
+            // Program has no published courses - show the program itself as a placeholder
             result.push({
               id: enrollment.id,
-              course_id: (course as any).id,
-              course_name: (course as any).title,
-              course_description: (course as any).description,
-              course_image: (course as any).image_url,
+              course_id: null, // No course yet
+              course_name: program.name, // Use program name
+              course_description: product.description || null,
+              course_image: null,
               program_id: program.id,
               program_name: program.name,
               status: enrollment.status,
               enrolled_at: enrollment.enrolled_at,
               completed_at: enrollment.completed_at,
               expires_at: enrollment.expires_at,
-              overall_progress: progress,
-              completed_lessons: completedLessons,
-              total_lessons: totalLessons,
-              instructor: instructorName,
+              overall_progress: 0,
+              completed_lessons: 0,
+              total_lessons: 0,
+              instructor: null,
               payment_status: enrollment.payment_status,
               total_amount: enrollment.total_amount,
               paid_amount: enrollment.paid_amount,

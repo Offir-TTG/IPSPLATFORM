@@ -56,6 +56,7 @@ export function UserLayout({ children }: UserLayoutProps) {
   const { t, direction } = useUserLanguage();
   const router = useRouter();
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [user, setUser] = useState<{
@@ -79,6 +80,11 @@ export function UserLayout({ children }: UserLayoutProps) {
     { name: t('user.nav.myCourses', 'My Courses'), href: '/courses', icon: Video, badge: null },
     { name: t('user.nav.notifications', 'Notifications'), href: '/notifications', icon: Bell, badge: unreadCount > 0 ? unreadCount : null },
   ];
+
+  // Prevent hydration mismatch by waiting for client mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     async function loadUser() {
@@ -183,6 +189,11 @@ export function UserLayout({ children }: UserLayoutProps) {
       !dismissedBanners.has(notif.id)
   );
   const urgentNotification = urgentNotifications[0]; // Show first urgent notification
+
+  // Don't render until mounted to prevent translation flash
+  if (!mounted) {
+    return null;
+  }
 
   if (loading) {
     return <LoadingState variant="page" />;
@@ -478,7 +489,7 @@ export function UserLayout({ children }: UserLayoutProps) {
                   }`}
                 >
                   <Icon className="h-5 w-5" />
-                  <span className="text-xs font-medium">{item.name.split(' ')[0]}</span>
+                  <span className="text-xs font-medium" suppressHydrationWarning>{item.name.split(' ')[0]}</span>
                   {item.badge && (
                     <span className="absolute top-1 ltr:right-6 rtl:left-6 h-4 min-w-[16px] px-1 bg-destructive text-destructive-foreground rounded-full text-[10px] font-semibold flex items-center justify-center">
                       {item.badge}

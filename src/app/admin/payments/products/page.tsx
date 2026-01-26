@@ -259,7 +259,7 @@ export default function ProductsPage() {
     return product.alternative_payment_plan_ids
       .map(planId => {
         const plan = paymentPlans.find(p => p.id === planId);
-        return plan?.name || null;
+        return (plan as any)?.plan_name || null;
       })
       .filter(Boolean) as string[];
   };
@@ -411,19 +411,31 @@ export default function ProductsPage() {
                       {/* Show payment plan names if using templates, otherwise show payment model */}
                       {(() => {
                         const planNames = getProductPaymentPlanNames(product);
+                        // Show plan badges if there are alternative plans
                         if (planNames.length > 0) {
                           return planNames.map((planName, idx) => (
                             <Badge key={idx} className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
                               {planName}
                             </Badge>
                           ));
-                        } else {
-                          return (
-                            <Badge className={getPaymentModelColor(product.payment_model)}>
-                              {t(`products.payment_model.${product.payment_model}`, product.payment_model)}
-                            </Badge>
-                          );
                         }
+                        // Check for default plan (legacy support)
+                        if (product.default_payment_plan_id) {
+                          const defaultPlan = paymentPlans.find(p => p.id === product.default_payment_plan_id);
+                          if (defaultPlan) {
+                            return (
+                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                                {(defaultPlan as any).plan_name}
+                              </Badge>
+                            );
+                          }
+                        }
+                        // Fallback to payment model if no plans
+                        return (
+                          <Badge className={getPaymentModelColor(product.payment_model)}>
+                            {t(`products.payment_model.${product.payment_model}`, product.payment_model)}
+                          </Badge>
+                        );
                       })()}
                       {!product.is_active && (
                         <Badge variant="outline" className="border-gray-400 text-gray-600">
@@ -1232,6 +1244,24 @@ function ProductForm({ product, onSave, onCancel, t }: {
                 onAllowPlanSelectionChange={() => {}}
                 t={t}
               />
+
+              {/* Payment Start Date - For Template Mode */}
+              <div>
+                <Label htmlFor="template_payment_start_date" suppressHydrationWarning>
+                  {t('admin.products.payment_start_date', 'תאריך תחילת תשלום')}
+                </Label>
+                <Input
+                  type="date"
+                  id="template_payment_start_date"
+                  value={formData.payment_start_date || ''}
+                  onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
+                  min={new Date().toISOString().split('T')[0]}
+                  className={isRtl ? 'text-right' : 'text-left'}
+                />
+                <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+                  {t('admin.products.payment_start_date_help', 'תאריך ברירת מחדל למועד תשלום ראשון עבור הרשמות חדשות. עובד עבור כל תבניות התשלום.')}
+                </p>
+              </div>
             </>
           )}
         </TabsContent>

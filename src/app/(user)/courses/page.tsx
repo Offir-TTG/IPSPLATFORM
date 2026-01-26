@@ -209,6 +209,24 @@ export default function CoursesPage() {
   const programCourses = filteredCourses.filter(c => c.program_id && c.program_name);
   const standaloneCourses = filteredCourses.filter(c => !c.program_id || !c.program_name);
 
+  // Group program courses by enrollment (to handle multiple products for the same program)
+  // Each enrollment gets its own section to avoid mixing courses from different products
+  const coursesByEnrollment = programCourses.reduce((acc, course) => {
+    const enrollmentKey = course.id; // Use enrollment ID as key
+    if (!acc[enrollmentKey]) {
+      acc[enrollmentKey] = {
+        enrollment_id: course.id,
+        program_id: course.program_id,
+        program_name: course.program_name,
+        courses: []
+      };
+    }
+    acc[enrollmentKey].courses.push(course);
+    return acc;
+  }, {} as Record<string, { enrollment_id: string; program_id: string | null; program_name: string | null; courses: Course[] }>);
+
+  const programGroups = Object.values(coursesByEnrollment);
+
   const stats = {
     total: allCourses.length,
     in_progress: allCourses.filter(c => getCourseStatus(c.overall_progress || 0, c.completed_lessons || 0, c.total_lessons || 0) === 'in_progress').length,
@@ -356,9 +374,9 @@ export default function CoursesPage() {
       {/* Card View */}
       {viewMode === 'card' && (
         <div className="space-y-8">
-          {/* Program Courses Section */}
-          {programCourses.length > 0 && (
-            <div>
+          {/* Program Courses Section - Grouped by Program */}
+          {programGroups.map((programGroup, groupIndex) => (
+            <div key={programGroup.program_id || `program-${groupIndex}`}>
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 rounded-lg bg-primary/10">
                   <GraduationCap className="h-5 w-5 text-primary" />
@@ -369,12 +387,12 @@ export default function CoursesPage() {
                     fontFamily: 'var(--font-family-heading)',
                     fontWeight: 'var(--font-weight-bold)',
                     color: 'hsl(var(--text-heading))'
-                  }}>{t('user.courses.sections.programCourses', 'Program Courses')}</h2>
+                  }}>{programGroup.program_name}</h2>
                   <p style={{
                     fontSize: 'var(--font-size-sm)',
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-muted))'
-                  }}>{t('user.courses.sections.programCoursesDesc', 'Courses that are part of your enrolled programs')}</p>
+                  }}>{t('user.courses.sections.programCoursesCount', 'courses in this program')}</p>
                 </div>
                 <span style={{
                   display: 'inline-flex',
@@ -393,10 +411,10 @@ export default function CoursesPage() {
                   fontFamily: 'var(--font-family-primary)',
                   fontWeight: 'var(--font-weight-bold)',
                   boxShadow: '0 2px 8px hsl(var(--primary) / 0.25)'
-                }}>{programCourses.length}</span>
+                }}>{programGroup.courses.length}</span>
               </div>
               <div className="grid gap-6 md:grid-cols-2">
-                {programCourses.map((course) => {
+                {programGroup.courses.map((course) => {
           const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
           const courseImage = course.course_image || getDefaultImage(course.course_name);
 
@@ -792,7 +810,7 @@ export default function CoursesPage() {
         })}
               </div>
             </div>
-          )}
+          ))}
 
           {/* Standalone Courses Section */}
           {standaloneCourses.length > 0 && (
@@ -1172,9 +1190,9 @@ export default function CoursesPage() {
       {/* List View */}
       {viewMode === 'list' && (
         <div className="space-y-8">
-          {/* Program Courses Section */}
-          {programCourses.length > 0 && (
-            <div>
+          {/* Program Courses Section - Grouped by Program */}
+          {programGroups.map((programGroup, groupIndex) => (
+            <div key={programGroup.program_id || `program-list-${groupIndex}`}>
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 rounded-lg bg-primary/10">
                   <GraduationCap className="h-5 w-5 text-primary" />
@@ -1185,12 +1203,12 @@ export default function CoursesPage() {
                     fontFamily: 'var(--font-family-heading)',
                     fontWeight: 'var(--font-weight-bold)',
                     color: 'hsl(var(--text-heading))'
-                  }}>{t('user.courses.sections.programCourses', 'Program Courses')}</h2>
+                  }}>{programGroup.program_name}</h2>
                   <p style={{
                     fontSize: 'var(--font-size-sm)',
                     fontFamily: 'var(--font-family-primary)',
                     color: 'hsl(var(--text-muted))'
-                  }}>{t('user.courses.sections.programCoursesDesc', 'Courses that are part of your enrolled programs')}</p>
+                  }}>{t('user.courses.sections.programCoursesCount', 'courses in this program')}</p>
                 </div>
                 <span style={{
                   display: 'inline-flex',
@@ -1209,10 +1227,10 @@ export default function CoursesPage() {
                   fontFamily: 'var(--font-family-primary)',
                   fontWeight: 'var(--font-weight-bold)',
                   boxShadow: '0 2px 8px hsl(var(--primary) / 0.25)'
-                }}>{programCourses.length}</span>
+                }}>{programGroup.courses.length}</span>
               </div>
               <div className="space-y-4">
-                {programCourses.map((course) => {
+                {programGroup.courses.map((course) => {
                   const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
                   const courseImage = course.course_image || getDefaultImage(course.course_name);
 
@@ -1328,7 +1346,7 @@ export default function CoursesPage() {
           })}
               </div>
             </div>
-          )}
+          ))}
 
           {/* Standalone Courses Section */}
           {standaloneCourses.length > 0 && (

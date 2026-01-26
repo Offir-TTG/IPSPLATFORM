@@ -52,6 +52,7 @@ export async function POST(
         id,
         user_id,
         product_id,
+        payment_plan_id,
         status,
         total_amount,
         currency,
@@ -69,6 +70,7 @@ export async function POST(
           type,
           payment_model,
           payment_plan,
+          alternative_payment_plan_ids,
           enrollment_invitation_template_key
         ),
         payment_plan:payment_plans!enrollments_payment_plan_id_fkey (
@@ -173,6 +175,22 @@ export async function POST(
     // Calculate days until expiration
     const expiresIn = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
+    // Determine payment plan name for email
+    let paymentPlanName: string | undefined;
+    const alternativePlanIds = product.alternative_payment_plan_ids || [];
+    const hasMultiplePlans = alternativePlanIds.length > 1 && !enrollment.payment_plan_id;
+
+    if (paymentPlan?.plan_name) {
+      // Specific plan selected
+      paymentPlanName = paymentPlan.plan_name;
+    } else if (hasMultiplePlans) {
+      // Multiple plans available - user will choose in wizard
+      paymentPlanName = language === 'he'
+        ? 'תוכניות תשלום מרובות זמינות'  // Multiple payment plans available
+        : 'Multiple payment plans available';
+    }
+    // If no specific plan and not multi-plan, leave undefined (template will use payment_model)
+
     // Determine which email template to use
     // Priority: product-specific template > default template
     const templateKey = product.enrollment_invitation_template_key || 'enrollment.invitation';
@@ -192,7 +210,7 @@ export async function POST(
         expiresIn,
         totalAmount: enrollment.total_amount || 0,
         currency: enrollment.currency || 'USD',
-        paymentPlanName: paymentPlan?.plan_name,
+        paymentPlanName,
       },
       priority: 'high'
     });

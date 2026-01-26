@@ -193,9 +193,32 @@ export async function GET(request: NextRequest) {
       throw new Error(`Failed to fetch enrollments: ${error.message}`);
     }
 
+    // Calculate accurate paid_amount from payment_schedules for each enrollment
+    const enrichedEnrollments = await Promise.all(
+      (enrollments || []).map(async (enrollment) => {
+        // Get all paid payment schedules for this enrollment
+        const { data: paidSchedules } = await supabase
+          .from('payment_schedules')
+          .select('amount')
+          .eq('enrollment_id', enrollment.id)
+          .eq('status', 'paid');
+
+        // Calculate total paid amount from schedules
+        const calculatedPaidAmount = paidSchedules
+          ? paidSchedules.reduce((sum, schedule) => sum + parseFloat(schedule.amount.toString()), 0)
+          : 0;
+
+        // Return enrollment with calculated paid_amount
+        return {
+          ...enrollment,
+          paid_amount: calculatedPaidAmount,
+        };
+      })
+    );
+
     return NextResponse.json({
-      enrollments: enrollments || [],
-      count: enrollments?.length || 0,
+      enrollments: enrichedEnrollments,
+      count: enrichedEnrollments.length,
     });
 
   } catch (error: any) {

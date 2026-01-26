@@ -180,39 +180,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if product already exists for this program/course
-    if (body.program_id) {
-      const { data: existingProduct } = await supabase
-        .from('products')
-        .select('id')
-        .eq('tenant_id', userData.tenant_id)
-        .eq('program_id', body.program_id)
-        .maybeSingle();
-
-      if (existingProduct) {
-        return NextResponse.json(
-          { success: false, error: 'A product already exists for this program. Please edit the existing product instead.' },
-          { status: 409 }
-        );
-      }
-    }
-
-    if (body.course_id) {
-      const { data: existingProduct } = await supabase
-        .from('products')
-        .select('id')
-        .eq('tenant_id', userData.tenant_id)
-        .eq('course_id', body.course_id)
-        .maybeSingle();
-
-      if (existingProduct) {
-        return NextResponse.json(
-          { success: false, error: 'A product already exists for this course. Please edit the existing product instead.' },
-          { status: 409 }
-        );
-      }
-    }
-
     // Create product
     const { data: product, error } = await supabase
       .from('products')

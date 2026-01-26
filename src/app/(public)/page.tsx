@@ -6,6 +6,12 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   BookOpen,
   Users,
   Clock,
@@ -14,6 +20,7 @@ import {
   PlayCircle,
   LayoutGrid,
   List,
+  MoreHorizontal,
   ArrowRight,
   CheckCircle,
   Award,
@@ -210,24 +217,56 @@ export default function LandingPage() {
                 {t('public.programs.subtitle', 'Structured learning paths to master your skills')}
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant={programsView === 'grid' ? 'default' : 'outline'}
-                size="icon"
-                onClick={() => setProgramsView('grid')}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={programsView === 'list' ? 'default' : 'outline'}
-                size="icon"
-                onClick={() => setProgramsView('list')}
-                aria-label="List view"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
+            <TooltipProvider>
+              <div className={`flex gap-2 ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={programsView === 'grid' ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setProgramsView('grid')}
+                      aria-label="Grid view"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('public.programs.gridView', 'Grid View')}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={programsView === 'list' ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setProgramsView('list')}
+                      aria-label="List view"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('public.programs.listView', 'List View')}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                {!loading && programs.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" size="icon" asChild>
+                        <Link href="/browse-programs">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{t('public.programs.viewAll', 'View All Programs')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
           </div>
 
           {loading ? (
@@ -309,18 +348,6 @@ export default function LandingPage() {
               </p>
             </div>
           )}
-
-          {/* View All Button */}
-          {!loading && programs.length > 0 && (
-            <div className="mt-12 text-center">
-              <Link href="/browse-programs">
-                <Button size="lg" variant="outline">
-                  {t('public.programs.viewAll', 'View All Programs')}
-                  <ArrowRight className={`h-4 w-4 ${direction === 'rtl' ? 'mr-2 rotate-180' : 'ml-2'}`} />
-                </Button>
-              </Link>
-            </div>
-          )}
         </div>
       </section>
 
@@ -342,24 +369,56 @@ export default function LandingPage() {
                 {t('public.courses.subtitle', 'Start with our most popular standalone courses')}
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant={coursesView === 'grid' ? 'default' : 'outline'}
-                size="icon"
-                onClick={() => setCoursesView('grid')}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={coursesView === 'list' ? 'default' : 'outline'}
-                size="icon"
-                onClick={() => setCoursesView('list')}
-                aria-label="List view"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
+            <TooltipProvider>
+              <div className={`flex gap-2 ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={coursesView === 'grid' ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setCoursesView('grid')}
+                      aria-label="Grid view"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('public.courses.gridView', 'Grid View')}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={coursesView === 'list' ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setCoursesView('list')}
+                      aria-label="List view"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('public.courses.listView', 'List View')}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                {!loading && courses.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" size="icon" asChild>
+                        <Link href="/browse-courses">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{t('public.courses.viewAll', 'View All Courses')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
           </div>
 
           {loading ? (
@@ -447,18 +506,6 @@ export default function LandingPage() {
               <p className="text-muted-foreground">
                 {t('public.courses.noCourses', 'No courses available at the moment')}
               </p>
-            </div>
-          )}
-
-          {/* View All Button */}
-          {!loading && courses.length > 0 && (
-            <div className="mt-12 text-center">
-              <Link href="/browse-courses">
-                <Button size="lg" variant="outline">
-                  {t('public.courses.viewAll', 'View All Courses')}
-                  <ArrowRight className={`h-4 w-4 ${direction === 'rtl' ? 'mr-2 rotate-180' : 'ml-2'}`} />
-                </Button>
-              </Link>
             </div>
           )}
         </div>
@@ -618,13 +665,6 @@ export default function LandingPage() {
                 </p>
               </Card>
             </div>
-
-            <Link href="/about">
-              <Button size="lg">
-                {t('accreditation.learnMore', 'Learn More About Our Programs')}
-                <ArrowRight className={`h-4 w-4 ${direction === 'rtl' ? 'mr-2 rotate-180' : 'ml-2'}`} />
-              </Button>
-            </Link>
           </div>
         </div>
       </section>

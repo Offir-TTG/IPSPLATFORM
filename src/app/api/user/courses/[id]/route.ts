@@ -90,6 +90,25 @@ export const GET = withAuth(
 
       const enrollmentId = activeEnrollment.id;
 
+      // Get tenant ID for payment access check
+      const { data: tenantUser } = await supabase
+        .from('users')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!tenantUser?.tenant_id) {
+        return NextResponse.json(
+          { error: 'Tenant not found' },
+          { status: 404 }
+        );
+      }
+
+      // Check payment-based course access
+      const { requireCourseAccess } = await import('@/lib/payments/accessControl');
+      const accessDenied = await requireCourseAccess(user.id, courseId, tenantUser.tenant_id);
+      if (accessDenied) return accessDenied;
+
       // Fetch course details
       const { data: course, error: courseError } = await supabase
         .from('courses')

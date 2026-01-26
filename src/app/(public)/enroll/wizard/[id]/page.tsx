@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase/client';
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import WizardStepIndicator from '@/components/wizard/WizardStepIndicator';
+import { toast } from 'sonner';
 
 // Extend Window interface for Google Maps
 declare global {
@@ -44,9 +45,25 @@ const loadGoogleMapsScript = (apiKey: string): Promise<void> => {
 
 type WizardStep = 'signature' | 'profile' | 'payment' | 'password' | 'complete';
 
+interface PaymentPlanTemplate {
+  id: string;
+  plan_name: string;
+  plan_type: 'deposit' | 'recurring' | 'one_time' | 'subscription';
+  deposit_type?: 'fixed' | 'percentage' | 'none';
+  deposit_amount?: number;
+  deposit_percentage?: number;
+  installment_count?: number;
+  installment_frequency?: 'weekly' | 'biweekly' | 'monthly';
+  custom_frequency_days?: number;
+  subscription_frequency?: 'weekly' | 'monthly' | 'yearly';
+  subscription_trial_days?: number;
+  plan_description?: string;
+}
+
 interface EnrollmentWizardData {
   id: string;
   user_id?: string | null; // Existing user ID (null for new users)
+  product_id: string; // Added for fetching payment plans
   product_name: string;
   product_type: string;
   total_amount: number;
@@ -58,6 +75,8 @@ interface EnrollmentWizardData {
   user_profile_complete: boolean;
   payment_required: boolean;
   payment_complete?: boolean;
+  alternative_payment_plan_ids?: string[]; // Added for multi-plan support
+  payment_plan_id?: string; // Added for selected plan tracking
   wizard_profile_data?: {
     first_name?: string;
     last_name?: string;
@@ -82,6 +101,12 @@ export default function EnrollmentWizardPage() {
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [initialStepDetermined, setInitialStepDetermined] = useState(false);
+
+  // Multi-plan payment selection state
+  const [availablePlans, setAvailablePlans] = useState<PaymentPlanTemplate[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [selectingPlan, setSelectingPlan] = useState(false);
 
   // Wizard state - keep all data in memory until completion
   const [wizardData, setWizardData] = useState({
@@ -136,8 +161,8 @@ export default function EnrollmentWizardPage() {
   // Refs
   const addressInputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<any>(null);
-  const isReturningFromDocuSignRef = useRef<boolean>(false);
-  const isReturningFromPaymentRef = useRef<boolean>(false);
+  const [isReturningFromDocuSign, setIsReturningFromDocuSign] = useState<boolean>(false);
+  const [isReturningFromPayment, setIsReturningFromPayment] = useState<boolean>(false);
   const userLinkingCompleteRef = useRef<boolean>(false); // Track if user linking finished
 
   useEffect(() => {
@@ -202,16 +227,22 @@ export default function EnrollmentWizardPage() {
 
       if (isReturningFromDocuSign) {
         // Set ref to true so other effects know we're returning from DocuSign
-        isReturningFromDocuSignRef.current = true;
-        console.log('[Wizard] ✅ SET isReturningFromDocuSignRef = true');
+        setIsReturningFromDocuSign(true);
+        console.log('[Wizard] ✅ SET isReturningFromDocuSign = true');
+
+        // REMOVED: Don't mark signature complete in memory - let DB be source of truth
+        // The fetchEnrollmentData will sync memory state with database state
 
         // Start with retry=1 to immediately trigger stale data detection
         // This handles PostgREST connection pooling cache issues
         console.log('[Wizard] Returned from DocuSign, starting with retry mode to handle PostgREST cache...');
-        fetchEnrollmentData(1); // Start with retry=1, not 0!
+        await fetchEnrollmentData(1); // Start with retry=1, not 0!
 
         // Sync signature status from DocuSign immediately (don't wait for webhook)
-        syncSignatureStatus();
+        await syncSignatureStatus();
+
+        // NOW set flag after both async operations complete
+        setInitialStepDetermined(true);
 
         // Clean up URL parameter after processing
         setTimeout(() => {
@@ -222,23 +253,19 @@ export default function EnrollmentWizardPage() {
           console.log('[Wizard] Cleaned up docusign URL parameter');
         }, 100);
       } else if (isReturningFromPayment) {
-        console.log('[Wizard] ✅ Returned from payment page - auto-completing enrollment');
+        console.log('[Wizard] ✅ Returned from payment page');
 
         // Set ref to true so other effects know we're returning from payment
-        isReturningFromPaymentRef.current = true;
+        setIsReturningFromPayment(true);
 
-        // Mark payment as complete in memory
-        setWizardData(prev => ({
-          ...prev,
-          paymentCompleted: true
-        }));
+        // REMOVED: Don't mark payment complete in memory - let DB be source of truth
+        // The fetchEnrollmentData will sync memory state with database state
 
-        // Move to complete step and prevent re-determination
-        setCurrentStep('complete');
+        // Fetch updated enrollment data first to get user_id
+        await fetchEnrollmentData(0);
+
+        // NOW set flag after enrollment data is loaded
         setInitialStepDetermined(true);
-
-        // Fetch updated enrollment data
-        fetchEnrollmentData(0);
 
         // Auto-complete will be triggered by useEffect when currentStep becomes 'complete'
         // See the auto-completion logic below
@@ -259,6 +286,26 @@ export default function EnrollmentWizardPage() {
 
     initializeEnrollment();
   }, [enrollmentId, enrollmentToken]);
+
+  // Handle browser back button to prevent re-submission of completed steps
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      console.log('[Wizard] Back button detected - forcing enrollment re-fetch');
+
+      // Force re-fetch enrollment to determine correct step based on database state
+      // This prevents users from going back and re-submitting forms
+      fetchEnrollmentData(0);
+
+      // Note: We can't fully prevent back navigation, but we can redirect to correct step
+      // The fetchEnrollmentData will trigger determineCurrentStep which redirects appropriately
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   // Track if profile data has been loaded to avoid overwriting user input
   const [profileDataLoaded, setProfileDataLoaded] = useState(false);
@@ -316,8 +363,7 @@ export default function EnrollmentWizardPage() {
       // This is needed when user returns from DocuSign or payment page
       // IMPORTANT: Don't overwrite in-memory state if user just returned from DocuSign or payment
       // The webhook/database may not have updated yet
-      const isReturningFromDocuSign = isReturningFromDocuSignRef.current;
-      const isReturningFromPayment = isReturningFromPaymentRef.current;
+      // isReturningFromDocuSign and isReturningFromPayment are now state variables (available in scope)
 
       setWizardData(prev => {
         const newSignatureCompleted = isReturningFromDocuSign
@@ -354,26 +400,57 @@ export default function EnrollmentWizardPage() {
   }, [enrollment, profileDataLoaded]);
 
   // Re-evaluate current step whenever wizard state changes
+  // BUT: Don't re-determine if we're returning from payment or DocuSign (preserve the step we set)
   useEffect(() => {
-    if (enrollment) {
+    if (enrollment && !isReturningFromPayment && !isReturningFromDocuSign) {
       determineCurrentStep();
     }
   }, [wizardData.profileCompleted, wizardData.signatureCompleted, wizardData.paymentCompleted, wizardData.passwordCompleted]);
 
-  // Auto-complete enrollment when returning from successful payment
-  // For EXISTING users: Auto-complete immediately and redirect to login page
-  // For NEW users: Show password step first, then complete
+  // Handle return from payment - determine correct next step
+  // For EXISTING users: Go to complete step and auto-complete
+  // For NEW users: Go to password step
+  useEffect(() => {
+    if (!enrollment || !isReturningFromPayment) return;
+    if (currentStep !== 'signature' && currentStep !== 'payment' && currentStep !== 'profile') return; // Only run once when enrollment loads
+
+    // Wait for enrollment to be fully loaded (has all data)
+    if (typeof enrollment.user_id === 'undefined') {
+      console.log('[Wizard] Enrollment not fully loaded yet, waiting...');
+      return;
+    }
+
+    const isExistingUser = !!enrollment.user_id;
+
+    console.log('[Wizard] Handling return from payment:', {
+      isExistingUser,
+      currentStep,
+      user_id: enrollment.user_id
+    });
+
+    if (isExistingUser) {
+      console.log('[Wizard] → Existing user: Moving to complete step');
+      setCurrentStep('complete');
+    } else {
+      console.log('[Wizard] → New user: Moving to password step');
+      setCurrentStep('password');
+    }
+
+  }, [enrollment?.user_id, isReturningFromPayment]);
+
+  // Auto-complete enrollment when on complete step after payment (existing users only)
   useEffect(() => {
     const isExistingUser = !!enrollment?.user_id;
 
-    if (currentStep === 'complete' && isReturningFromPaymentRef.current && !processing && isExistingUser) {
+    if (currentStep === 'complete' && isReturningFromPayment && !processing && isExistingUser) {
       console.log('[Wizard] Auto-completing enrollment for existing user after payment...');
-      const timer = setTimeout(() => {
-        handleComplete();
+      const timer = setTimeout(async () => {
+        await handleComplete();
+        setIsReturningFromPayment(false); // Reset after completion
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [currentStep, processing, enrollment?.user_id]);
+  }, [currentStep, processing, enrollment?.user_id, isReturningFromPayment]);
 
   // Load Google Maps Script on mount
   useEffect(() => {
@@ -443,6 +520,60 @@ export default function EnrollmentWizardPage() {
     };
   }, [currentStep, googleMapsLoaded]);
 
+  // Fetch available payment plans when payment step loads (multi-plan support)
+  useEffect(() => {
+    const fetchAvailablePlans = async () => {
+      if (currentStep !== 'payment' || !enrollment) return;
+
+      // Check if this enrollment has multiple plans available
+      const alternativePlanIds = enrollment.alternative_payment_plan_ids || [];
+      const hasMultiplePlans = alternativePlanIds.length > 1;
+
+      console.log('[Wizard] Payment step - Multi-plan check:', {
+        alternativePlanIds,
+        hasMultiplePlans,
+        payment_plan_id: enrollment.payment_plan_id,
+        product_id: enrollment.product_id
+      });
+
+      if (!hasMultiplePlans) {
+        setAvailablePlans([]);
+        return;
+      }
+
+      setLoadingPlans(true);
+      try {
+        const url = `/api/enrollments/payment-plans?ids=${alternativePlanIds.join(',')}&product_id=${enrollment.product_id}`;
+        console.log('[Wizard] Fetching payment plans from:', url);
+
+        const response = await fetch(url);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('[Wizard] Payment plans fetched:', data);
+          setAvailablePlans(data.plans || []);
+
+          // Pre-select currently selected plan or first plan
+          if (!selectedPlanId && data.plans.length > 0) {
+            // If enrollment has a payment_plan_id, pre-select it (user is changing plan)
+            const planToSelect = enrollment.payment_plan_id || data.plans[0].id;
+            setSelectedPlanId(planToSelect);
+            console.log('[Wizard] Pre-selected plan:', planToSelect);
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('[Wizard] Failed to fetch payment plans:', response.status, errorText);
+        }
+      } catch (error) {
+        console.error('[Wizard] Error fetching payment plans:', error);
+      } finally {
+        setLoadingPlans(false);
+      }
+    };
+
+    fetchAvailablePlans();
+  }, [currentStep, enrollment?.alternative_payment_plan_ids, enrollment?.product_id, enrollment?.payment_plan_id, selectedPlanId]);
+
   const fetchEnrollmentData = async (retryCount = 0, maxRetries = 3) => {
     try {
       // Use token-based endpoint for unauthenticated access
@@ -468,7 +599,16 @@ export default function EnrollmentWizardPage() {
       // Check if wizard_profile_data is incomplete (stale cache from PostgREST)
       // After returning from DocuSign, we expect phone and address to be saved
       // If they're missing, it means we're seeing stale cached data
-      const profileData = data.wizard_profile_data || {};
+      let profileData = data.wizard_profile_data || {};
+      // Parse if it's a JSON string
+      if (typeof profileData === 'string') {
+        try {
+          profileData = JSON.parse(profileData);
+        } catch (e) {
+          console.error('[Wizard] Failed to parse wizard_profile_data:', e);
+          profileData = {};
+        }
+      }
       const hasPhone = profileData.phone && profileData.phone !== '';
       const hasAddress = profileData.address && profileData.address !== '';
       const isProfileIncomplete = !hasPhone || !hasAddress;
@@ -493,7 +633,31 @@ export default function EnrollmentWizardPage() {
         });
       }
 
+      console.log('[Wizard] Setting enrollment data:', data);
+      console.log('[Wizard] product_id:', data.product_id);
+      console.log('[Wizard] alternative_payment_plan_ids:', data.alternative_payment_plan_ids);
       setEnrollment(data);
+
+      // CRITICAL: Sync memory state with database state
+      // Always use database as source of truth for completion status
+      // This ensures manual database updates are reflected in wizard navigation
+      setWizardData(prev => {
+        const dbSignatureComplete = data.signature_status === 'completed';
+        const dbPaymentComplete = data.payment_complete;
+
+        return {
+          ...prev,
+          // FIXED: Always trust database - no OR logic that makes memory "sticky"
+          signatureCompleted: dbSignatureComplete,
+          paymentCompleted: dbPaymentComplete,
+        };
+      });
+      console.log('[Wizard] ✅ Synced memory state with database:', {
+        signature_status: data.signature_status,
+        payment_complete: data.payment_complete,
+        memory_signatureCompleted: data.signature_status === 'completed',
+        memory_paymentCompleted: data.payment_complete,
+      });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -611,12 +775,23 @@ export default function EnrollmentWizardPage() {
   const determineCurrentStep = () => {
     if (!enrollment) return;
 
+    // CRITICAL: Use database as PRIMARY source of truth for completion status
+    // Memory state is synced from DB in fetchEnrollmentData
+    // This ensures manual database updates are immediately reflected in the wizard
+    const isProfileComplete = wizardData.profileCompleted || enrollment.user_profile_complete;
+    const isSignatureComplete = enrollment.signature_status === 'completed';
+    const isPaymentComplete = enrollment.payment_complete;
+
     console.log('[Wizard] Determining current step with state:', {
       userId: enrollment.user_id,
-      profileCompleted: wizardData.profileCompleted,
-      signatureCompleted: wizardData.signatureCompleted,
-      paymentCompleted: wizardData.paymentCompleted,
-      passwordCompleted: wizardData.passwordCompleted,
+      database_signature_status: enrollment.signature_status,
+      database_payment_complete: enrollment.payment_complete,
+      memory_profileCompleted: wizardData.profileCompleted,
+      memory_signatureCompleted: wizardData.signatureCompleted,
+      memory_paymentCompleted: wizardData.paymentCompleted,
+      computed_isProfileComplete: isProfileComplete,
+      computed_isSignatureComplete: isSignatureComplete,
+      computed_isPaymentComplete: isPaymentComplete,
       requiresSignature: enrollment.requires_signature,
       paymentRequired: enrollment.payment_required
     });
@@ -633,26 +808,67 @@ export default function EnrollmentWizardPage() {
       willSkipPassword: isExistingUser
     });
 
-    // Use in-memory wizard state instead of database to avoid cache issues
-    // Step 1: Profile completion (ONLY for new users - existing users skip this)
-    if (!isExistingUser && !wizardData.profileCompleted) {
-      console.log('[Wizard] → Setting step to: profile (NEW USER)');
+    // Step 1: Profile completion
+    // Check if we have complete profile data (all 5 fields)
+    // IMPORTANT: Check MEMORY state, not database (memory-based wizard!)
+    const memoryProfileData = wizardData.profile;
+    const hasCompleteProfileData = memoryProfileData.first_name && memoryProfileData.last_name &&
+                                   memoryProfileData.email && memoryProfileData.phone && memoryProfileData.address;
+
+    // Show profile step if:
+    // 1. New user and profile not completed, OR
+    // 2. Signature required BUT NOT COMPLETE and profile data is incomplete (need phone/address for contract)
+    const needsProfileCompletion = !isExistingUser && !isProfileComplete;
+    const needsProfileForSignature = enrollment.requires_signature && !isSignatureComplete && !hasCompleteProfileData;
+
+    console.log('[Wizard] Profile step check:', {
+      memoryProfileData,
+      hasCompleteProfileData,
+      needsProfileCompletion,
+      needsProfileForSignature,
+      isExistingUser,
+      isProfileComplete,
+      isSignatureComplete,
+      requiresSignature: enrollment.requires_signature,
+      database_signature_status: enrollment.signature_status,
+      database_wizard_profile_data: enrollment.wizard_profile_data
+    });
+
+    // CRITICAL FIX: If signature is already complete, NEVER go back to profile step
+    // regardless of profile completion status
+    if (isSignatureComplete && needsProfileForSignature) {
+      console.warn('[Wizard] ⚠️ PREVENTED profile regression - signature already complete!', {
+        isSignatureComplete,
+        needsProfileForSignature,
+        database_signature_status: enrollment.signature_status
+      });
+      // Don't return to profile - continue to next check
+    } else if (needsProfileCompletion || needsProfileForSignature) {
+      console.log('[Wizard] → Setting step to: profile', {
+        reason: needsProfileCompletion ? 'NEW USER - PROFILE NOT COMPLETE' : 'SIGNATURE REQUIRES COMPLETE PROFILE',
+        hasCompleteProfileData,
+        isExistingUser,
+        isSignatureComplete
+      });
       setCurrentStep('profile');
       return;
     }
 
     // Step 2: Signature (if required) - needs profile data
-    if (enrollment.requires_signature && !wizardData.signatureCompleted) {
-      console.log('[Wizard] → Setting step to: signature');
+    if (enrollment.requires_signature && !isSignatureComplete) {
+      console.log('[Wizard] → Setting step to: signature (signature_status:', enrollment.signature_status, ')');
       setCurrentStep('signature');
       return;
     }
 
-    // Step 3: Payment (if required)
-    if (enrollment.payment_required && !wizardData.paymentCompleted) {
-      console.log('[Wizard] → Setting step to: payment');
+    // Step 3: Payment (if required) - SKIP for free enrollments
+    const isFreeEnrollment = !enrollment.payment_required || enrollment.total_amount === 0;
+    if (!isFreeEnrollment && !isPaymentComplete) {
+      console.log('[Wizard] → Setting step to: payment (payment_complete:', enrollment.payment_complete, ')');
       setCurrentStep('payment');
       return;
+    } else if (isFreeEnrollment) {
+      console.log('[Wizard] ✓ Skipping payment step (free enrollment)');
     }
 
     // Step 4: Password creation (ONLY for new users - existing users skip this)
@@ -778,13 +994,16 @@ export default function EnrollmentWizardPage() {
         profile: profileData
       });
 
-      // Explicitly navigate to next step after saving profile
-      handleNext();
+      // Don't call handleNext() here - let the useEffect automatically advance
+      // when wizardData.profileCompleted changes (line 413-417)
+      // Wait briefly for state to propagate before clearing processing flag
+      setTimeout(() => {
+        setProcessing(false);
+      }, 50);
     } catch (err: any) {
       console.error('[Wizard] Profile validation error:', err);
       // Only set critical errors here, not validation errors
       setError(err.message);
-    } finally {
       setProcessing(false);
     }
   };
@@ -804,27 +1023,40 @@ export default function EnrollmentWizardPage() {
       if (!response.ok) {
         const errorData = await response.json();
         console.error('[Wizard] Failed to sync signature:', errorData);
-        // Don't throw - just continue with current state
+        toast.error('Failed to verify signature status. Please refresh the page.');
+
+        // Reset state so user can retry
+        setIsReturningFromDocuSign(false);
         return;
       }
 
       const data = await response.json();
+
+      if (!data || !data.signature_status) {
+        console.error('[Wizard] Invalid response from signature sync:', data);
+        toast.error('Received invalid signature status. Please refresh the page.');
+        setIsReturningFromDocuSign(false);
+        return;
+      }
+
       console.log('[Wizard] Signature sync result:', data);
 
-      // Mark as completed in memory if DocuSign confirms completion
+      // REMOVED: Don't update memory state here - fetchEnrollmentData will sync from DB
+      // The sync-signature API updates the database, then we fetch fresh data
+
+      // Fetch updated enrollment data to sync memory with database
+      await fetchEnrollmentData(0);
+
+      // Reset the state AFTER fetching data so determineCurrentStep() has fresh data
+      if (isReturningFromDocuSign) {
+        setIsReturningFromDocuSign(false);
+        console.log('[Wizard] ✅ RESET isReturningFromDocuSign = false (after fetching data)');
+      }
+
+      // If signature is complete, move to next step
       if (data.signature_status === 'completed') {
-        setWizardData(prev => ({
-          ...prev,
-          signatureCompleted: true
-        }));
-
-        console.log('[Wizard] Signature confirmed complete - moving to next step');
-
-        // Only navigate to next step if we're currently on the signature step
-        // Don't navigate if we're already past it (e.g., on payment or complete)
-        if (currentStep === 'signature') {
-          handleNext();
-        }
+        console.log('[Wizard] Signature complete - moving to next step');
+        handleNext();
       } else {
         console.log('[Wizard] Signature not yet completed, status:', data.signature_status);
       }
@@ -836,6 +1068,47 @@ export default function EnrollmentWizardPage() {
   const handlePaymentStep = () => {
     // Redirect to public wizard payment page with token
     router.push(`/enroll/wizard/${enrollmentId}/pay?token=${enrollmentToken}`);
+  };
+
+  const handlePlanSelection = async () => {
+    if (!selectedPlanId) {
+      setError(t('enrollment.wizard.payment.selectPlanError', 'Please select a payment plan'));
+      return;
+    }
+
+    setSelectingPlan(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/enrollments/token/${enrollmentToken}/select-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_plan_id: selectedPlanId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || t('enrollment.wizard.payment.selectPlanFailed', 'Failed to select payment plan'));
+      }
+
+      const data = await response.json();
+
+      // Update enrollment data in state
+      setEnrollment(prev => prev ? {
+        ...prev,
+        payment_plan_id: selectedPlanId,
+        total_amount: data.enrollment.total_amount
+      } : null);
+
+      // Proceed to payment page
+      handlePaymentStep();
+
+    } catch (err: any) {
+      console.error('Error selecting payment plan:', err);
+      setError(err.message);
+    } finally {
+      setSelectingPlan(false);
+    }
   };
 
   const handlePasswordSubmit = async () => {
@@ -966,8 +1239,33 @@ export default function EnrollmentWizardPage() {
     }
     steps.push('complete');
 
-    const currentIndex = steps.indexOf(currentStep);
-    return ((currentIndex + 1) / steps.length) * 100;
+    // Calculate progress based on ACTUAL completion, not just current step
+    // This gives users accurate feedback about their progress
+    let completedSteps = 0;
+
+    if (!isExistingUser && (enrollment?.user_profile_complete || wizardData.profileCompleted)) {
+      completedSteps++;
+    } else if (isExistingUser) {
+      completedSteps++; // Existing users skip profile
+    }
+
+    if (enrollment?.signature_status === 'completed' || wizardData.signatureCompleted) {
+      completedSteps++;
+    }
+
+    if (enrollment?.payment_complete || wizardData.paymentCompleted) {
+      completedSteps++;
+    }
+
+    if (enrollment?.user_id || wizardData.passwordCompleted) {
+      completedSteps++;
+    }
+
+    if (currentStep === 'complete') {
+      completedSteps = steps.length; // 100%
+    }
+
+    return (completedSteps / steps.length) * 100;
   };
 
   const getStepIcon = (step: WizardStep) => {
@@ -1358,34 +1656,231 @@ export default function EnrollmentWizardPage() {
           </div>
         );
 
-      case 'payment':
+      case 'payment': {
+        // Check if this is a multi-plan enrollment
+        const alternativePlanIds = enrollment?.alternative_payment_plan_ids || [];
+        const hasMultiplePlans = alternativePlanIds.length > 1;
+
         return (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <Alert className="border-primary/20 bg-primary/5">
               <CreditCard className="h-4 w-4 text-primary" />
               <AlertDescription className="text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.payment.info', 'Complete payment to activate your enrollment.')}
+                {hasMultiplePlans
+                  ? t('enrollment.wizard.payment.selectPlan', 'Select your preferred payment plan to continue.')
+                  : t('enrollment.wizard.payment.info', 'Complete payment to activate your enrollment.')
+                }
               </AlertDescription>
             </Alert>
 
-            <div className="bg-gradient-to-br from-muted/50 to-muted/30 p-6 rounded-2xl border border-border/50 shadow-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-                  {t('enrollment.wizard.payment.total', 'Total Amount')}:
-                </span>
-                <span className="text-2xl font-bold text-foreground" dir="ltr">
-                  {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
-                </span>
-              </div>
-            </div>
+            {/* Multi-Plan Selection UI */}
+            {hasMultiplePlans && (
+              <div className="space-y-4">
+                {loadingPlans ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : availablePlans.length === 0 ? (
+                  <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      No payment plans available. Check console for debugging information.
+                    </p>
+                    <p className="text-xs text-yellow-600 mt-2">
+                      Alternative plan IDs: {alternativePlanIds.join(', ') || 'none'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {availablePlans.map((plan) => {
+                      const isSelected = selectedPlanId === plan.id;
 
+                      // Calculate payment details
+                      const depositAmount = plan.deposit_type === 'fixed'
+                        ? plan.deposit_amount
+                        : (plan.deposit_percentage && enrollment?.total_amount)
+                          ? (enrollment.total_amount * plan.deposit_percentage / 100)
+                          : 0;
+
+                      const remainingAfterDeposit = enrollment?.total_amount
+                        ? enrollment.total_amount - (depositAmount || 0)
+                        : 0;
+
+                      const installmentAmount = plan.installment_count
+                        ? remainingAfterDeposit / plan.installment_count
+                        : enrollment?.total_amount || 0;
+
+                      const frequencyText = t(
+                        `enrollment.paymentPlan.frequency.${plan.installment_frequency}`,
+                        plan.installment_frequency || 'monthly'
+                      );
+
+                      return (
+                        <Card
+                          key={plan.id}
+                          className={`cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-primary border-2 shadow-lg'
+                              : 'border-border hover:border-primary/50 hover:shadow-md'
+                          }`}
+                          onClick={() => setSelectedPlanId(plan.id)}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1">
+                                <CardTitle className="text-lg">{plan.plan_name}</CardTitle>
+                                {plan.plan_description && (
+                                  <CardDescription className="mt-1">
+                                    {plan.plan_description}
+                                  </CardDescription>
+                                )}
+                              </div>
+                              <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                                isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
+                              }`}>
+                                {isSelected && <CheckCircle2 className="h-3 w-3 text-primary-foreground" />}
+                              </div>
+                            </div>
+                          </CardHeader>
+
+                          <CardContent className="space-y-3">
+                            {/* ONE-TIME PAYMENT */}
+                            {plan.plan_type === 'one_time' && (
+                              <div className="py-4 text-center">
+                                <div className="text-sm text-muted-foreground mb-2" suppressHydrationWarning>
+                                  {t('enrollment.wizard.payment.oneTimePayment', 'Single Payment')}
+                                </div>
+                                <div className="text-2xl font-bold text-primary" dir="ltr">
+                                  {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* DEPOSIT + INSTALLMENTS PLAN */}
+                            {plan.plan_type === 'deposit' && (
+                              <>
+                                {/* Deposit Details */}
+                                {depositAmount && depositAmount > 0 && (
+                                  <div className="flex justify-between items-center py-2 border-b">
+                                    <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                                      {t('enrollment.wizard.payment.deposit', 'Initial Deposit')}
+                                    </span>
+                                    <span className="font-semibold" dir="ltr">
+                                      {enrollment?.currency} {depositAmount.toFixed(2)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Installments */}
+                                {plan.installment_count && plan.installment_count > 0 && (
+                                  <div className="flex justify-between items-center py-2 border-b">
+                                    <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                                      {t('enrollment.wizard.payment.installments', 'Installments')}
+                                    </span>
+                                    <span className="font-medium" dir="ltr">
+                                      {plan.installment_count} × {enrollment?.currency} {installmentAmount.toFixed(2)}
+                                      <span className="text-sm text-muted-foreground ltr:ml-1 rtl:mr-1">
+                                        {frequencyText}
+                                      </span>
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Total Amount */}
+                                <div className="flex justify-between items-center pt-2">
+                                  <span className="text-sm font-medium" suppressHydrationWarning>
+                                    {t('enrollment.wizard.payment.total', 'Total Amount')}
+                                  </span>
+                                  <span className="text-lg font-bold text-primary" dir="ltr">
+                                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+
+                            {/* RECURRING PLAN (No Deposit) */}
+                            {plan.plan_type === 'recurring' && (
+                              <>
+                                <div className="flex justify-between items-center py-2 border-b">
+                                  <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                                    {t('enrollment.wizard.payment.recurringPayments', 'Recurring Payments')}
+                                  </span>
+                                  <span className="font-medium" dir="ltr">
+                                    {plan.installment_count} × {enrollment?.currency} {installmentAmount.toFixed(2)}
+                                    <span className="text-sm text-muted-foreground ltr:ml-1 rtl:mr-1">
+                                      {frequencyText}
+                                    </span>
+                                  </span>
+                                </div>
+
+                                {/* Total Amount */}
+                                <div className="flex justify-between items-center pt-2">
+                                  <span className="text-sm font-medium" suppressHydrationWarning>
+                                    {t('enrollment.wizard.payment.total', 'Total Amount')}
+                                  </span>
+                                  <span className="text-lg font-bold text-primary" dir="ltr">
+                                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+
+                            {/* SUBSCRIPTION PLAN */}
+                            {plan.plan_type === 'subscription' && (
+                              <div className="py-4">
+                                <div className="flex justify-between items-center py-2 border-b">
+                                  <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                                    {t('enrollment.wizard.payment.subscriptionPrice', 'Subscription')}
+                                  </span>
+                                  <span className="font-semibold" dir="ltr">
+                                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
+                                    <span className="text-sm text-muted-foreground ltr:ml-1 rtl:mr-1">
+                                      / {t(`enrollment.paymentPlan.interval.${plan.subscription_frequency || 'monthly'}`, plan.subscription_frequency || 'monthly')}
+                                    </span>
+                                  </span>
+                                </div>
+
+                                {plan.subscription_trial_days && plan.subscription_trial_days > 0 && (
+                                  <div className="mt-3 text-sm text-emerald-600" suppressHydrationWarning>
+                                    ✓ {plan.subscription_trial_days} {t('enrollment.wizard.payment.trialDays', 'days free trial')}
+                                  </div>
+                                )}
+
+                                <div className="mt-2 text-xs text-muted-foreground" suppressHydrationWarning>
+                                  {t('enrollment.wizard.payment.subscriptionRenews', 'Automatically renews until cancelled')}
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Single Plan Display (No Selection Needed) */}
+            {!hasMultiplePlans && (
+              <div className="bg-gradient-to-br from-muted/50 to-muted/30 p-6 rounded-2xl border border-border/50 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+                    {t('enrollment.wizard.payment.total', 'Total Amount')}:
+                  </span>
+                  <span className="text-2xl font-bold text-foreground" dir="ltr">
+                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
             <div className="flex gap-3">
               {getPreviousStep() && (
                 <Button
                   size="lg"
                   variant="outline"
                   onClick={handleBack}
-                  disabled={processing}
+                  disabled={processing || selectingPlan}
                   className="flex-1"
                   suppressHydrationWarning
                 >
@@ -1393,18 +1888,30 @@ export default function EnrollmentWizardPage() {
                   {t('enrollment.wizard.back', 'Back')}
                 </Button>
               )}
+
               <Button
                 size="lg"
                 className="flex-1"
-                onClick={handlePaymentStep}
+                onClick={hasMultiplePlans ? handlePlanSelection : handlePaymentStep}
+                disabled={selectingPlan || (hasMultiplePlans && !selectedPlanId)}
                 suppressHydrationWarning
               >
-                {t('enrollment.wizard.payment.button', 'Proceed to Payment')}
-                <ArrowRight className="h-4 w-4 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
+                {selectingPlan ? (
+                  <>
+                    <Loader2 className="h-4 w-4 ltr:mr-2 rtl:ml-2 animate-spin" />
+                    {t('enrollment.wizard.payment.selecting', 'Selecting...')}
+                  </>
+                ) : (
+                  <>
+                    {t('enrollment.wizard.payment.button', 'Proceed to Payment')}
+                    <ArrowRight className="h-4 w-4 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
+                  </>
+                )}
               </Button>
             </div>
           </div>
         );
+      }
 
       case 'password':
         return (
@@ -1619,21 +2126,27 @@ export default function EnrollmentWizardPage() {
         .pac-container {
           font-family: inherit;
           z-index: 9999;
+          direction: ltr !important;
+          text-align: left !important;
         }
         .pac-item {
           padding: 8px 12px;
           line-height: 1.5;
           cursor: pointer;
+          direction: ltr !important;
+          text-align: left !important;
         }
         .pac-item-query {
           font-size: 14px;
           padding-right: 4px;
+          direction: ltr !important;
         }
         .pac-matched {
           font-weight: 600;
         }
         .pac-icon {
           margin-top: 4px;
+          margin-right: 8px;
         }
       `}</style>
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background py-4 sm:py-8 px-4" dir={direction}>

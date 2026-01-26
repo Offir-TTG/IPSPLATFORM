@@ -13,6 +13,15 @@ export const POST = withAuth(async (
   try {
     const supabase = await createClient();
 
+    // Get tenant_id for audit logging
+    const { data: tenantUser } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .single();
+
+    const tenantId = tenantUser?.tenant_id;
+
     // Set user as inactive instead of deleting
     const { error: updateError } = await supabase
       .from('users')
@@ -26,6 +35,7 @@ export const POST = withAuth(async (
       console.error('Account deactivation error:', updateError);
 
       await logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email,
         action: 'account.deactivation_failed',
@@ -49,6 +59,7 @@ export const POST = withAuth(async (
 
     // Log successful account deactivation
     await logAuditEvent({
+      tenantId,
       userId: user.id,
       userEmail: user.email,
       action: 'account.deactivated',

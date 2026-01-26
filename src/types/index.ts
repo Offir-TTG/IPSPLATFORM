@@ -27,7 +27,6 @@ export interface Program {
   id: string;
   name: string;
   description: string;
-  crm_tag: string;
   is_active: boolean;
   duration_weeks?: number;
   max_students?: number;

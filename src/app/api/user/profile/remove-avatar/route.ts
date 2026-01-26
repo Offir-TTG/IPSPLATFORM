@@ -15,6 +15,15 @@ export const DELETE = withAuth(async (
 
     const supabase = await createClient();
 
+    // Get tenant_id for audit logging
+    const { data: tenantUser } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .single();
+
+    const tenantId = tenantUser?.tenant_id;
+
     // Get current avatar URL to delete the file
     const { data: userData, error: fetchError } = await supabase
       .from('users')
@@ -67,6 +76,7 @@ export const DELETE = withAuth(async (
 
     // Log audit event
     await logAuditEvent({
+      tenantId,
       userId: user.id,
       userEmail: user.email,
       action: 'user.avatar_removed',

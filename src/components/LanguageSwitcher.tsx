@@ -49,26 +49,7 @@ export function LanguageSwitcher({ context = 'user' }: LanguageSwitcherProps) {
     return null;
   }
 
-  // If only two languages, show simple toggle button
-  if (availableLanguages.length === 2) {
-    const otherLanguage = availableLanguages.find(l => l.code !== language);
-    if (!otherLanguage) return null;
-
-    return (
-      <button
-        onClick={() => setLanguage(otherLanguage.code)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent transition-colors"
-        aria-label={`Switch to ${otherLanguage.name}`}
-      >
-        <Globe className="h-5 w-5" />
-        <span className="text-sm font-medium">
-          {otherLanguage.native_name}
-        </span>
-      </button>
-    );
-  }
-
-  // For 3+ languages, show dropdown
+  // Always show dropdown for 2+ languages
   return (
     <div className="relative" ref={dropdownRef}>
       <button

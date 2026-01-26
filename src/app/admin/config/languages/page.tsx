@@ -274,9 +274,14 @@ export default function LanguagesPage() {
       const data = await response.json();
 
       if (data.success) {
-        setSuccess(`Language ${!language.is_active ? 'activated' : 'deactivated'} successfully`);
+        // Use the translated message from the API response
+        setSuccess(data.message || `Language ${!language.is_active ? 'activated' : 'deactivated'} successfully`);
         await loadLanguages();
-        setTimeout(() => setSuccess(''), 5000);
+
+        // Reload the page after a short delay to refresh the language dropdown in header
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } else {
         setError(data.error || 'Failed to update language');
       }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
-import { logAuditEvent } from '@/lib/audit/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,18 +17,7 @@ export const GET = withAuth(
 
       if (error) {
         console.error('Dashboard query error:', error);
-
-        // Log failed dashboard access
-        logAuditEvent({
-          userId: user.id,
-          userEmail: user.email || 'unknown',
-          action: 'dashboard.access_failed',
-          details: {
-            resourceType: 'dashboard',
-            resourceId: user.id,
-            error: error.message,
-          },
-        }).catch((err) => console.error('Audit log failed:', err));
+        console.error('Dashboard query error details:', JSON.stringify(error, null, 2));
 
         return NextResponse.json(
           { success: false, error: 'Failed to fetch dashboard data' },
@@ -37,19 +25,8 @@ export const GET = withAuth(
         );
       }
 
-      // Async audit logging (don't block response)
-      logAuditEvent({
-        userId: user.id,
-        userEmail: user.email || 'unknown',
-        action: 'dashboard.accessed',
-        details: {
-          resourceType: 'dashboard',
-          resourceId: user.id,
-          enrollmentsCount: data?.enrollments?.length || 0,
-          upcomingSessionsCount: data?.upcoming_sessions?.length || 0,
-          pendingAssignmentsCount: data?.pending_assignments?.length || 0,
-        },
-      }).catch((err) => console.error('Audit log failed:', err));
+      // Log the data to see what's being returned
+      console.log('Dashboard data received:', JSON.stringify(data, null, 2));
 
       // Ensure recent_attendance exists (for backwards compatibility before SQL update)
       const dashboardData = data || {
@@ -92,18 +69,6 @@ export const GET = withAuth(
       });
     } catch (error) {
       console.error('Dashboard error:', error);
-
-      // Log error
-      logAuditEvent({
-        userId: user.id,
-        userEmail: user.email || 'unknown',
-        action: 'dashboard.error',
-        details: {
-          resourceType: 'dashboard',
-          resourceId: user.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        },
-      }).catch((err) => console.error('Audit log failed:', err));
 
       return NextResponse.json(
         { success: false, error: 'Internal server error' },

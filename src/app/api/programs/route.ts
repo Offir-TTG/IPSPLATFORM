@@ -98,7 +98,6 @@ export const POST = withAuth(async (request: NextRequest, user: any) => {
         name: body.name,
         description: body.description || null,
         is_active: body.is_active ?? true,
-        crm_tag: body.crm_tag || 'general', // Default CRM tag
         duration_weeks: body.duration_weeks || null,
         max_students: body.max_students || null,
         image_url: body.image_url || null, // Store image URL

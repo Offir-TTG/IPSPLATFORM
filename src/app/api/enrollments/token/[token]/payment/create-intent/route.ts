@@ -158,13 +158,95 @@ export async function POST(
       `${idx + 1}. ${s.payment_type === 'deposit' ? 'Deposit' : `Payment ${s.payment_number}`}: ${s.currency} ${formatAmount(s.amount)} - Due: ${formatDate(s.scheduled_date)} - ${s.status === 'paid' ? '✓ Paid' : s.id === schedule.id ? '← Current' : 'Pending'}`
     ).join('\n') || '';
 
+    // Get or create Stripe customer for this enrollment
+    // This ensures all payments for this enrollment use the same customer
+    let stripeCustomerId: string | undefined;
+
+    // Check if enrollment already has a Stripe customer
+    const { data: existingCustomer } = await supabase
+      .from('enrollments')
+      .select('stripe_customer_id')
+      .eq('id', enrollment.id)
+      .single();
+
+    if (existingCustomer?.stripe_customer_id) {
+      console.log('[Stripe] Using existing customer:', existingCustomer.stripe_customer_id);
+      const tempCustomerId = existingCustomer.stripe_customer_id;
+
+      // Verify customer still exists in Stripe
+      try {
+        await stripe.customers.retrieve(tempCustomerId);
+        stripeCustomerId = tempCustomerId;
+      } catch (error) {
+        console.log('[Stripe] Customer no longer exists, will create new one');
+        stripeCustomerId = undefined;
+      }
+    }
+
+    // Create new customer if needed
+    if (!stripeCustomerId) {
+      console.log('[Stripe] Creating new customer for enrollment');
+
+      // Get profile data if available
+      const { data: enrollmentData } = await supabase
+        .from('enrollments')
+        .select('wizard_profile_data, user_id')
+        .eq('id', enrollment.id)
+        .single();
+
+      const profileData = enrollmentData?.wizard_profile_data as any;
+
+      console.log('[Stripe] ===== CUSTOMER CREATION DEBUG =====');
+      console.log('[Stripe] Enrollment ID:', enrollment.id);
+      console.log('[Stripe] Raw wizard_profile_data:', JSON.stringify(profileData, null, 2));
+      console.log('[Stripe] Profile data checks:', {
+        hasProfileData: !!profileData,
+        hasEmail: !!profileData?.email,
+        email: profileData?.email || 'MISSING',
+        hasFirstName: !!profileData?.first_name,
+        firstName: profileData?.first_name || 'MISSING',
+        hasLastName: !!profileData?.last_name,
+        lastName: profileData?.last_name || 'MISSING',
+      });
+      console.log('[Stripe] =====================================');
+
+      // Only create customer if we have profile email
+      // This prevents creating "Guest" customers without info
+      if (profileData?.email) {
+        const customer = await stripe.customers.create({
+          email: profileData.email,
+          name: profileData?.first_name && profileData?.last_name
+            ? `${profileData.first_name} ${profileData.last_name}`
+            : undefined,
+          metadata: {
+            enrollment_id: enrollment.id,
+            tenant_id: enrollment.tenant_id,
+          },
+        });
+
+        stripeCustomerId = customer.id;
+        console.log('[Stripe] ✓ Created customer with email:', stripeCustomerId, profileData.email);
+
+        // Save customer ID to enrollment
+        await supabase
+          .from('enrollments')
+          .update({ stripe_customer_id: stripeCustomerId })
+          .eq('id', enrollment.id);
+      } else {
+        console.warn('[Stripe] ⚠️ No profile email available yet - payment intent will be created without customer');
+        console.warn('[Stripe] Stripe will create a guest customer, which will be updated at enrollment completion');
+      }
+    }
+
     // Create Stripe payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntentParams: any = {
       amount: Math.round(schedule.amount * 100), // Convert to cents
       currency: schedule.currency.toLowerCase(),
       automatic_payment_methods: {
         enabled: true,
       },
+      // CRITICAL: Save payment method to customer for future installment payments
+      setup_future_usage: 'off_session',
       metadata: {
         enrollment_id: enrollment.id,
         schedule_id: schedule.id,
@@ -189,7 +271,29 @@ Total Plan: ${schedule.currency} ${formatAmount(totalAmount)}
 Paid So Far: ${schedule.currency} ${formatAmount(paidAmount)}
 This Payment: ${schedule.currency} ${formatAmount(schedule.amount)}
 Remaining After: ${schedule.currency} ${formatAmount(totalAmount - paidAmount - schedule.amount)}`,
+    };
+
+    // Add customer ID if we have one
+    if (stripeCustomerId) {
+      paymentIntentParams.customer = stripeCustomerId;
+      console.log('[Stripe] Payment intent will use customer:', stripeCustomerId);
+      console.log('[Stripe] Payment method will be saved to customer for future payments (setup_future_usage: off_session)');
+    } else {
+      console.log('[Stripe] Payment intent will be created without customer (Stripe will auto-create guest customer)');
+    }
+
+    console.log('[Stripe] Creating payment intent with params:', {
+      amount: paymentIntentParams.amount,
+      currency: paymentIntentParams.currency,
+      customer: paymentIntentParams.customer || 'none',
+      setup_future_usage: paymentIntentParams.setup_future_usage,
     });
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+
+    console.log('[Stripe] ✓ Payment intent created:', paymentIntent.id);
+    console.log('[Stripe] Customer:', paymentIntent.customer);
+    console.log('[Stripe] Setup future usage:', paymentIntent.setup_future_usage);
 
     // Store payment intent ID in schedule
     console.log('[Stripe] Storing payment intent ID in schedule:', paymentIntent.id);

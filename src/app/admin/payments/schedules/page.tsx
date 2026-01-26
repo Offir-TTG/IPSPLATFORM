@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { LoadingState } from '@/components/admin/LoadingState';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -53,7 +54,7 @@ interface PaymentSchedule {
   original_due_date: string;
   scheduled_date: string;
   paid_date?: string;
-  status: 'pending' | 'paid' | 'overdue' | 'paused' | 'failed' | 'cancelled' | 'adjusted';
+  status: 'pending' | 'paid' | 'overdue' | 'paused' | 'failed' | 'cancelled' | 'adjusted' | 'processing';
   retry_count?: number;
   next_retry_date?: string;
   last_error?: string;
@@ -90,10 +91,21 @@ export default function SchedulesPage() {
   const [products, setProducts] = useState<Array<{ id: string; title: string }>>([]);
   const [sortField, setSortField] = useState<keyof PaymentSchedule | null>('scheduled_date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isPolling, setIsPolling] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchSchedules();
   }, [filters, currentPage, itemsPerPage]);
+
+  // Cleanup polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Fetch products for the dropdown filter
   useEffect(() => {
@@ -212,11 +224,18 @@ export default function SchedulesPage() {
       });
 
       if (!response.ok) throw new Error('Failed to retry payment');
+
+      const data = await response.json();
       toast({
         title: t('common.success', 'Success'),
         description: t('admin.payments.schedules.retrySuccess', 'Payment retry initiated'),
       });
+
+      // Immediately refresh to show "processing" status
       fetchSchedules();
+
+      // Start polling to catch when payment completes
+      startPolling();
     } catch (error: any) {
       console.error('Error retrying payment:', error);
       toast({
@@ -273,6 +292,65 @@ export default function SchedulesPage() {
     }
   };
 
+  const handleChargeNow = async (scheduleId: string) => {
+    try {
+      const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/charge-now`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to charge payment');
+      }
+
+      const data = await response.json();
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.chargeNowSuccess', 'Payment initiated successfully. Invoice will be charged automatically.'),
+      });
+
+      // Immediately refresh to show "processing" status
+      fetchSchedules();
+
+      // Start polling to catch when payment completes
+      startPolling();
+    } catch (error: any) {
+      console.error('Error charging payment:', error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.chargeNowError', 'Failed to charge payment'),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Start polling for schedule updates (e.g., after charging)
+  const startPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    setIsPolling(true);
+    let pollCount = 0;
+    const maxPolls = 20; // Poll for 20 seconds (20 polls * 1 second)
+
+    pollingIntervalRef.current = setInterval(() => {
+      pollCount++;
+
+      if (pollCount >= maxPolls) {
+        // Stop polling after 20 seconds
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        setIsPolling(false);
+      } else {
+        // Refresh schedules to check for status updates
+        fetchSchedules();
+      }
+    }, 1000); // Poll every 1 second
+  };
+
   const handleBulkDelay = async (days: number, reason: string) => {
     try {
       const scheduleIds = Array.from(selectedSchedules);
@@ -324,6 +402,8 @@ export default function SchedulesPage() {
         return <CheckCircle2 className="h-4 w-4" style={{ color: 'hsl(var(--success))' }} />;
       case 'pending':
         return <Clock className="h-4 w-4" style={{ color: 'hsl(var(--warning))' }} />;
+      case 'processing':
+        return <RefreshCw className="h-4 w-4" style={{ color: 'hsl(var(--primary))' }} />;
       case 'adjusted':
         return <Calendar className="h-4 w-4" style={{ color: 'hsl(var(--primary))' }} />;
       case 'overdue':
@@ -343,6 +423,7 @@ export default function SchedulesPage() {
     const variants: Record<string, any> = {
       paid: 'default',
       pending: 'secondary',
+      processing: 'secondary',
       adjusted: 'secondary',
       overdue: 'destructive',
       failed: 'destructive',
@@ -421,23 +502,7 @@ export default function SchedulesPage() {
 
   // Show loading state while translations are loading
   if (translationsLoading) {
-    return (
-      <AdminLayout>
-        <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '400px'
-          }}>
-            <div style={{ textAlign: 'center' }}>
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-              <p style={{ color: 'hsl(var(--muted-foreground))' }}>Loading...</p>
-            </div>
-          </div>
-        </div>
-      </AdminLayout>
-    );
+    return <LoadingState variant="page" withLayout={true} />;
   }
 
   return (
@@ -551,6 +616,7 @@ export default function SchedulesPage() {
                     <SelectContent dir={direction}>
                       <SelectItem value="all" suppressHydrationWarning>{t('common.allStatuses', 'All Statuses')}</SelectItem>
                       <SelectItem value="pending" suppressHydrationWarning>{t('common.pending', 'Pending')}</SelectItem>
+                      <SelectItem value="processing" suppressHydrationWarning>{t('common.processing', 'Processing')}</SelectItem>
                       <SelectItem value="adjusted" suppressHydrationWarning>{t('common.adjusted', 'Adjusted')}</SelectItem>
                       <SelectItem value="paid" suppressHydrationWarning>{t('common.paid', 'Paid')}</SelectItem>
                       <SelectItem value="overdue" suppressHydrationWarning>{t('common.overdue', 'Overdue')}</SelectItem>
@@ -693,13 +759,13 @@ export default function SchedulesPage() {
               <table className="w-full">
                 <thead className="border-b">
                   <tr className={isRtl ? 'text-right' : 'text-left'}>
-                    <th className="p-4">
+                    <th className="p-3">
                       <Checkbox
                         checked={selectedSchedules.size === schedules.length && schedules.length > 0}
                         onCheckedChange={toggleAllSchedules}
                       />
                     </th>
-                    <th className="p-4 font-medium">
+                    <th className="p-3 font-medium text-sm">
                       <button
                         onClick={() => handleSort('user_name')}
                         className="flex items-center gap-2 hover:text-primary transition-colors"
@@ -708,7 +774,7 @@ export default function SchedulesPage() {
                         {getSortIcon('user_name')}
                       </button>
                     </th>
-                    <th className="p-4 font-medium">
+                    <th className="p-3 font-medium text-sm">
                       <button
                         onClick={() => handleSort('product_name')}
                         className="flex items-center gap-2 hover:text-primary transition-colors"
@@ -717,7 +783,7 @@ export default function SchedulesPage() {
                         {getSortIcon('product_name')}
                       </button>
                     </th>
-                    <th className="p-4 font-medium">
+                    <th className="p-3 font-medium text-sm">
                       <button
                         onClick={() => handleSort('payment_number')}
                         className="flex items-center gap-2 hover:text-primary transition-colors"
@@ -726,7 +792,7 @@ export default function SchedulesPage() {
                         {getSortIcon('payment_number')}
                       </button>
                     </th>
-                    <th className="p-4 font-medium">
+                    <th className="p-3 font-medium text-sm">
                       <button
                         onClick={() => handleSort('amount')}
                         className="flex items-center gap-2 hover:text-primary transition-colors"
@@ -735,7 +801,7 @@ export default function SchedulesPage() {
                         {getSortIcon('amount')}
                       </button>
                     </th>
-                    <th className="p-4 font-medium">
+                    <th className="p-3 font-medium text-sm">
                       <button
                         onClick={() => handleSort('scheduled_date')}
                         className="flex items-center gap-2 hover:text-primary transition-colors"
@@ -744,7 +810,16 @@ export default function SchedulesPage() {
                         {getSortIcon('scheduled_date')}
                       </button>
                     </th>
-                    <th className="p-4 font-medium">
+                    <th className="p-3 font-medium text-sm">
+                      <button
+                        onClick={() => handleSort('paid_date')}
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
+                        <span suppressHydrationWarning>{t('admin.payments.schedules.paidDate', 'Paid Date')}</span>
+                        {getSortIcon('paid_date')}
+                      </button>
+                    </th>
+                    <th className="p-3 font-medium text-sm">
                       <button
                         onClick={() => handleSort('status')}
                         className="flex items-center gap-2 hover:text-primary transition-colors"
@@ -753,7 +828,7 @@ export default function SchedulesPage() {
                         {getSortIcon('status')}
                       </button>
                     </th>
-                    <th className="p-4 font-medium" suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
+                    <th className="p-3 font-medium text-sm" suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -763,49 +838,58 @@ export default function SchedulesPage() {
                       className="border-b transition-colors hover:bg-muted/50"
                       style={{ borderColor: 'hsl(var(--border))' }}
                     >
-                      <td className="p-4">
+                      <td className="p-3">
                         <Checkbox
                           checked={selectedSchedules.has(schedule.id)}
                           onCheckedChange={() => toggleScheduleSelection(schedule.id)}
                         />
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <div>
                           <div style={{
+                            fontSize: 'var(--font-size-sm)',
                             fontWeight: 'var(--font-weight-medium)',
                             color: 'hsl(var(--text-primary))'
                           }}>{schedule.user_name}</div>
                           <div style={{
-                            fontSize: 'var(--font-size-sm)',
+                            fontSize: 'var(--font-size-xs)',
                             color: 'hsl(var(--text-muted))'
                           }}>{schedule.user_email}</div>
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <div style={{
+                          fontSize: 'var(--font-size-sm)',
                           fontWeight: 'var(--font-weight-medium)',
                           color: 'hsl(var(--text-primary))'
                         }}>{schedule.product_name}</div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <div className="flex items-center gap-2">
-                          <span style={{ color: 'hsl(var(--text-primary))' }}>#{schedule.payment_number}</span>
-                          <Badge variant="outline" suppressHydrationWarning>
+                          <span style={{
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'hsl(var(--text-primary))'
+                          }}>#{schedule.payment_number}</span>
+                          <Badge variant="outline" className="text-xs" suppressHydrationWarning>
                             {t(`admin.payments.schedules.paymentType.${schedule.payment_type}`, schedule.payment_type)}
                           </Badge>
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <span style={{
+                          fontSize: 'var(--font-size-sm)',
                           fontWeight: 'var(--font-weight-semibold)',
                           color: 'hsl(var(--text-primary))'
                         }}>
                           {formatCurrency(schedule.amount, schedule.currency)}
                         </span>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <div>
-                          <div style={{ color: 'hsl(var(--text-primary))' }}>
+                          <div style={{
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'hsl(var(--text-primary))'
+                          }}>
                             {formatDate(schedule.scheduled_date)}
                           </div>
                           {/* Show original date if it differs from scheduled date (comparing UTC date strings) */}
@@ -819,13 +903,71 @@ export default function SchedulesPage() {
                           )}
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
+                        <div>
+                          {schedule.paid_date ? (
+                            <div className="flex items-center gap-2">
+                              <div style={{
+                                fontSize: 'var(--font-size-sm)',
+                                color: 'hsl(var(--success))',
+                                fontWeight: 'var(--font-weight-medium)'
+                              }}>
+                                {formatDate(schedule.paid_date)}
+                              </div>
+                              {(() => {
+                                // Compare dates only (ignore time)
+                                const paidDate = new Date(schedule.paid_date).toISOString().split('T')[0];
+                                const scheduledDate = new Date(schedule.scheduled_date).toISOString().split('T')[0];
+
+                                if (paidDate === scheduledDate) {
+                                  // Same day - show "On Time" with icon
+                                  return (
+                                    <CheckCircle2 className="h-3 w-3" style={{ color: 'hsl(var(--success))' }} />
+                                  );
+                                } else {
+                                  // Different days - calculate difference and show icon with days
+                                  const paidTime = new Date(paidDate).getTime();
+                                  const scheduledTime = new Date(scheduledDate).getTime();
+                                  const daysDiff = Math.abs(Math.round((paidTime - scheduledTime) / (1000 * 60 * 60 * 24)));
+
+                                  return (
+                                    <div className="flex items-center gap-1" style={{
+                                      fontSize: 'var(--font-size-xs)',
+                                      color: 'hsl(var(--text-muted))'
+                                    }} suppressHydrationWarning>
+                                      {paidTime > scheduledTime ? (
+                                        <>
+                                          <AlertCircle className="h-3 w-3" style={{ color: 'hsl(var(--warning))' }} />
+                                          <span>{daysDiff}{t('common.days', 'd')}</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Clock className="h-3 w-3" style={{ color: 'hsl(var(--success))' }} />
+                                          <span>{daysDiff}{t('common.days', 'd')}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                }
+                              })()}
+                            </div>
+                          ) : (
+                            <span style={{
+                              color: 'hsl(var(--text-muted))',
+                              fontSize: 'var(--font-size-xs)'
+                            }}>
+                              -
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3">
                         <div className="flex items-center gap-2">
                           {getStatusIcon(schedule.status)}
                           {getStatusBadge(schedule.status)}
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <ScheduleActionsMenu
                           schedule={schedule}
                           onAdjust={() => {
@@ -835,6 +977,7 @@ export default function SchedulesPage() {
                           onRetry={() => handleRetryPayment(schedule.id)}
                           onPause={() => handlePausePayment(schedule.id, 'Admin action')}
                           onResume={() => handleResumePayment(schedule.id)}
+                          onChargeNow={() => handleChargeNow(schedule.id)}
                         />
                       </td>
                     </tr>
@@ -958,12 +1101,14 @@ function ScheduleActionsMenu({
   onRetry,
   onPause,
   onResume,
+  onChargeNow,
 }: {
   schedule: PaymentSchedule;
   onAdjust: () => void;
   onRetry: () => void;
   onPause: () => void;
   onResume: () => void;
+  onChargeNow: () => void;
 }) {
   const { t, direction } = useAdminLanguage();
   const [open, setOpen] = useState(false);
@@ -1018,8 +1163,18 @@ function ScheduleActionsMenu({
             }}
           >
             <div className="py-1">
-            {schedule.status === 'pending' && (
+            {(schedule.status === 'pending' || schedule.status === 'overdue' || schedule.status === 'adjusted') && (
               <>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
+                    onChargeNow();
+                    setOpen(false);
+                  }}
+                >
+                  <DollarSign className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.chargeNow', 'Charge Now')}</span>
+                </button>
                 <button
                   className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
                   onClick={() => {
@@ -1041,6 +1196,11 @@ function ScheduleActionsMenu({
                   <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
                 </button>
               </>
+            )}
+            {schedule.status === 'processing' && (
+              <div className="px-4 py-3 text-sm text-muted-foreground text-center" suppressHydrationWarning>
+                {t('admin.payments.schedules.processingPayment', 'Payment is being processed...')}
+              </div>
             )}
             {schedule.status === 'failed' && (
               <button

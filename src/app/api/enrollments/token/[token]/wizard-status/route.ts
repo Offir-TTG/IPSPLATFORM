@@ -21,47 +21,65 @@ export async function GET(
     // Validate token and get enrollment
     console.log('[Wizard Status] Fetching enrollment with token:', params.token);
 
-    // NUCLEAR OPTION: Always use direct query to bypass RPC caching issues
-    // The RPC function was returning stale JSONB data even though marked as VOLATILE
-    // Direct query ensures we always get fresh data from the database
-    //
-    // HYPER-AGGRESSIVE CACHE-BUSTING: Add headers to disable caching
-    // PostgREST caches query results even with .order() and .limit()
-    const cacheBuster = Date.now();
-    console.log('[Wizard Status] Cache buster timestamp:', cacheBuster);
-
-    const { data: enrollments, error: enrollmentError } = await supabase
+    // First get the enrollment ID using token (cannot be bypassed)
+    const { data: tokenLookup, error: tokenError } = await supabase
       .from('enrollments')
-      .select(`
-        id,
-        user_id,
-        product_id,
-        total_amount,
-        paid_amount,
-        currency,
-        status,
-        payment_status,
-        signature_status,
-        docusign_envelope_id,
-        tenant_id,
-        token_expires_at,
-        wizard_profile_data,
-        updated_at,
-        product:products!enrollments_product_id_fkey (
-          id,
-          title,
-          type,
-          requires_signature,
-          signature_template_id,
-          payment_model
-        )
-      `)
+      .select('id')
       .eq('enrollment_token', params.token)
-      .gte('created_at', `1970-01-01T00:00:${(cacheBuster % 60).toString().padStart(2, '0')}Z`) // Unique filter per second
-      .order('updated_at', { ascending: false })
+      .single();
+
+    if (tokenError || !tokenLookup) {
+      console.error('[Wizard Status] Token lookup failed:', tokenError);
+      return NextResponse.json({ error: 'Invalid enrollment token' }, { status: 404 });
+    }
+
+    console.log('[Wizard Status] Found enrollment ID:', tokenLookup.id);
+
+    // FORCE FRESH QUERY - Use dynamic timestamp to bust PostgREST cache
+    // PostgREST caches queries aggressively, even with service role
+    // Using current timestamp minus a large value creates a unique query each time
+    const veryOldDate = new Date(Date.now() - (365 * 10 * 24 * 60 * 60 * 1000)).toISOString(); // 10 years ago
+    console.log('[Wizard Status] Cache buster date:', veryOldDate);
+
+    const { data: freshEnrollmentDataArray, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .select('id, tenant_id, user_id, product_id, payment_plan_id, total_amount, paid_amount, currency, status, payment_status, signature_status, docusign_envelope_id, token_expires_at, wizard_profile_data, updated_at')
+      .eq('enrollment_token', params.token)
+      .gte('updated_at', veryOldDate) // Dynamic value - forces new query each time
       .limit(1);
 
-    const enrollment = enrollments && enrollments.length > 0 ? enrollments[0] : null;
+    if (enrollmentError || !freshEnrollmentDataArray || freshEnrollmentDataArray.length === 0) {
+      console.error('[Wizard Status] Direct query failed:', enrollmentError);
+      return NextResponse.json({ error: 'Failed to fetch enrollment data' }, { status: 500 });
+    }
+
+    const freshEnrollmentData = freshEnrollmentDataArray[0];
+
+    console.log('[Wizard Status] Direct query returned data:', freshEnrollmentData);
+    console.log('[Wizard Status] signature_status from direct query:', freshEnrollmentData.signature_status);
+    console.log('[Wizard Status] wizard_profile_data RAW from direct query:', freshEnrollmentData.wizard_profile_data);
+    console.log('[Wizard Status] wizard_profile_data TYPE:', typeof freshEnrollmentData.wizard_profile_data);
+    console.log('[Wizard Status] wizard_profile_data JSON.stringify:', JSON.stringify(freshEnrollmentData.wizard_profile_data));
+    console.log('[Wizard Status] wizard_profile_data KEYS:', freshEnrollmentData.wizard_profile_data ? Object.keys(freshEnrollmentData.wizard_profile_data) : 'null');
+
+    // Get product data separately
+    const { data: productData, error: productError } = await supabase
+      .from('products')
+      .select('id, title, type, requires_signature, signature_template_id, payment_model, alternative_payment_plan_ids')
+      .eq('id', freshEnrollmentData.product_id)
+      .single();
+
+    if (productError || !productData) {
+      console.error('[Wizard Status] Product fetch failed:', productError);
+      return NextResponse.json({ error: 'Failed to fetch product data' }, { status: 500 });
+    }
+
+    // Combine enrollment and product data
+    const enrollment = {
+      ...freshEnrollmentData,
+      token_expires_at: freshEnrollmentData.token_expires_at,
+      product: productData
+    };
 
     console.log('[Wizard Status] Query completed. Enrollment found:', !!enrollment);
     console.log('[Wizard Status] Enrollment updated_at:', enrollment?.updated_at);
@@ -78,8 +96,17 @@ export async function GET(
     const product = Array.isArray(enrollment.product) ? enrollment.product[0] : enrollment.product;
 
     // Check if profile is complete from wizard_profile_data
-    const profileData = enrollment.wizard_profile_data || {};
-    const requiredFields = ['first_name', 'last_name', 'phone', 'address'];
+    // Parse if it's a JSON string, otherwise use as-is
+    let profileData = enrollment.wizard_profile_data || {};
+    if (typeof profileData === 'string') {
+      try {
+        profileData = JSON.parse(profileData);
+      } catch (e) {
+        console.error('[Wizard Status] Failed to parse wizard_profile_data:', e);
+        profileData = {};
+      }
+    }
+    const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'address'];
     const userProfileComplete = requiredFields.every(field => {
       const value = profileData[field];
       return value !== null && value !== undefined && value !== '';
@@ -100,6 +127,7 @@ export async function GET(
     return NextResponse.json({
       id: enrollment.id,
       user_id: enrollment.user_id, // CRITICAL: Include user_id so frontend can determine if existing user
+      product_id: product.id, // Added for multi-plan support
       product_name: product.title,
       product_type: product.type,
       total_amount: enrollment.total_amount,
@@ -113,7 +141,9 @@ export async function GET(
       payment_complete: paymentComplete,
       enrollment_status: enrollment.status,
       payment_status: enrollment.payment_status,
-      wizard_profile_data: profileData
+      wizard_profile_data: profileData,
+      alternative_payment_plan_ids: product.alternative_payment_plan_ids || [], // Added for multi-plan support
+      payment_plan_id: enrollment.payment_plan_id // Added to track selected plan
     });
 
   } catch (error: any) {

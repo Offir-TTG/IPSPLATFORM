@@ -269,7 +269,42 @@ export async function processEnrollment(
     throw new Error(`Failed to create payment schedules: ${schedulesError?.message}`);
   }
 
-  // 7. Update enrollment with next payment date
+  // 7. Create Stripe invoices for future installments (automatic recurring payments)
+  try {
+    const { createScheduledInvoice } = await import('./invoiceService');
+
+    // Get future schedules (not the immediate deposit/first payment)
+    const futureSchedules = insertedSchedules.filter(s => {
+      if (s.status !== 'pending') return false;
+
+      const scheduleDate = new Date(s.scheduled_date);
+      const now = new Date();
+
+      // Only create invoices for future payments, not immediate ones
+      return scheduleDate > now;
+    });
+
+    console.log(`[EnrollmentService] Creating ${futureSchedules.length} invoices for future installments`);
+
+    // Create invoice for each future schedule
+    for (const schedule of futureSchedules) {
+      const result = await createScheduledInvoice(schedule.id, tenant_id);
+
+      if (result.error) {
+        console.error(`[EnrollmentService] Failed to create invoice for schedule ${schedule.id}:`, result.error);
+      } else {
+        console.log(`[EnrollmentService] Created invoice ${result.invoice_id} for schedule ${schedule.id}`);
+      }
+
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  } catch (error) {
+    console.error('[EnrollmentService] Error creating invoices for future schedules:', error);
+    // Don't fail enrollment if invoice creation fails - cron job will create them
+  }
+
+  // 8. Update enrollment with next payment date
   const nextSchedule = insertedSchedules.find(s => s.status === 'pending');
   if (nextSchedule) {
     await supabase
@@ -278,7 +313,7 @@ export async function processEnrollment(
       .eq('id', enrollment.id);
   }
 
-  // 8. Create Stripe payment intent for immediate payment (if required)
+  // 9. Create Stripe payment intent for immediate payment (if required)
   let stripeClientSecret: string | undefined;
   let paymentIntentId: string | undefined;
 
@@ -570,10 +605,29 @@ export async function getEnrollmentPaymentDetails(
     .eq('tenant_id', tenant_id)
     .order('created_at', { ascending: false });
 
+  // Calculate installment amount if applicable
+  let installmentAmount: number | undefined;
+  if (paymentPlan && paymentPlan.plan_type === 'deposit' && paymentPlan.installment_count > 0) {
+    // Find installment schedules (exclude deposit)
+    const installmentSchedules = schedules?.filter((s: any) => s.payment_type === 'installment') || [];
+    if (installmentSchedules.length > 0) {
+      // Use the amount from the first installment schedule
+      installmentAmount = installmentSchedules[0].amount;
+    } else {
+      // Calculate from remaining balance
+      const depositAmount = paymentPlan.deposit_amount || 0;
+      const remainingBalance = enrollment.total_amount - depositAmount;
+      installmentAmount = remainingBalance / paymentPlan.installment_count;
+    }
+  }
+
   return {
     enrollment,
     product,
-    payment_plan: paymentPlan,
+    payment_plan: paymentPlan ? {
+      ...paymentPlan,
+      installment_amount: installmentAmount
+    } : paymentPlan,
     schedules: schedules || [],
     payments: payments || [],
   };

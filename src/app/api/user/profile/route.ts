@@ -8,8 +8,18 @@ export const dynamic = 'force-dynamic';
 // GET /api/user/profile - Get user profile data
 export const GET = withAuth(
   async (request: NextRequest, user: any) => {
+    let tenantId: string | undefined;
     try {
       const supabase = await createClient();
+
+      // Get tenant_id for audit logging
+      const { data: tenantUser } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+
+      tenantId = tenantUser?.tenant_id;
 
       // Fetch user profile data
       const { data: userData, error: userError } = await supabase
@@ -23,6 +33,7 @@ export const GET = withAuth(
 
         // Log failed profile access
         logAuditEvent({
+          tenantId,
           userId: user.id,
           userEmail: user.email || 'unknown',
           action: 'profile.access_failed',
@@ -76,6 +87,7 @@ export const GET = withAuth(
 
       // Async audit logging (don't block response)
       logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email || 'unknown',
         action: 'profile.accessed',
@@ -85,7 +97,7 @@ export const GET = withAuth(
         },
       }).catch((err) => console.error('Audit log failed:', err));
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         data: {
           user: userData,
@@ -97,11 +109,37 @@ export const GET = withAuth(
           },
         },
       });
+
+      // Set language cookie for SSR (prevents flash on page refresh)
+      // If user has preferred_language set, use it; otherwise get tenant default
+      let languageForCookie = userData.preferred_language;
+
+      if (!languageForCookie) {
+        // User has "Auto" preference - fetch tenant default
+        const { data: tenantData } = await supabase
+          .from('tenants')
+          .select('default_language')
+          .eq('id', tenantId)
+          .single();
+
+        languageForCookie = tenantData?.default_language || 'he';
+      }
+
+      response.cookies.set('user_language', languageForCookie, {
+        httpOnly: false, // Needs to be readable by client
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+        path: '/',
+      });
+
+      return response;
     } catch (error) {
       console.error('Profile error:', error);
 
       // Log error
       logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email || 'unknown',
         action: 'profile.error',
@@ -118,12 +156,13 @@ export const GET = withAuth(
       );
     }
   },
-  ['student', 'instructor']
+  ['student', 'instructor', 'admin']
 );
 
 // PATCH /api/user/profile - Update user profile
 export const PATCH = withAuth(
   async (request: NextRequest, user: any) => {
+    let tenantId: string | undefined;
     try {
       const body = await request.json();
       const {
@@ -143,6 +182,15 @@ export const PATCH = withAuth(
       } = body;
 
       const supabase = await createClient();
+
+      // Get tenant_id for audit logging
+      const { data: tenantUser } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .single();
+
+      tenantId = tenantUser?.tenant_id;
 
       // Fetch current user data for audit trail (before values)
       const { data: currentUser } = await supabase
@@ -193,6 +241,7 @@ export const PATCH = withAuth(
 
         // Log failed update
         logAuditEvent({
+          tenantId,
           userId: user.id,
           userEmail: user.email || 'unknown',
           action: 'profile.update_failed',
@@ -212,6 +261,7 @@ export const PATCH = withAuth(
 
       // Log successful update with before/after changes
       logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email || 'unknown',
         action: 'profile.updated',
@@ -234,6 +284,7 @@ export const PATCH = withAuth(
 
       // Log error
       logAuditEvent({
+        tenantId,
         userId: user.id,
         userEmail: user.email || 'unknown',
         action: 'profile.update_error',

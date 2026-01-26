@@ -43,6 +43,15 @@ export const POST = withAuth(async (
     // This ensures the auth session is properly maintained
     const supabase = await createClient();
 
+    // Get tenant_id for audit logging
+    const { data: tenantUser } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .single();
+
+    const tenantId = tenantUser?.tenant_id;
+
     // Verify user authentication for storage
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
@@ -130,6 +139,7 @@ export const POST = withAuth(async (
 
     // Log audit event
     await logAuditEvent({
+      tenantId,
       userId: user.id,
       userEmail: user.email,
       action: 'user.avatar_uploaded',

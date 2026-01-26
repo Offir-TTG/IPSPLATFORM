@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 
 interface Course {
   id: string;
-  course_id: string;
+  course_id: string | null; // Can be null for program-only enrollments
   course_name: string;
   course_description: string | null;
   course_image: string | null;
@@ -192,7 +192,12 @@ export function ContinueLearning() {
       {viewMode === 'card' && (
         <div className="grid gap-3">
           {courses.slice(0, showAll ? courses.length : ITEMS_PER_PAGE).map((course, index) => {
-            const learningLink = `/courses/${course.course_id}`;
+            // For program-only enrollments without courses, link to programs page
+            const learningLink = course.course_id
+              ? `/courses/${course.course_id}`
+              : course.program_id
+                ? `/programs/${course.program_id}`
+                : '#';
             const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
 
             return (
@@ -250,8 +255,16 @@ export function ContinueLearning() {
 
                         {/* Action Button */}
                         {status === 'not_started' ? (
-                          <Button onClick={() => handleStartCourse(course.course_id)} size="sm" className="gap-1 h-7 px-2 text-xs group/btn">
-                            {t('user.courses.actions.start', 'Start')}
+                          <Button
+                            onClick={() => course.course_id && handleStartCourse(course.course_id)}
+                            size="sm"
+                            className="gap-1 h-7 px-2 text-xs group/btn"
+                            disabled={!course.course_id}
+                          >
+                            {course.course_id
+                              ? t('user.courses.actions.start', 'Start')
+                              : t('user.courses.actions.comingSoon', 'Coming Soon')
+                            }
                             <ChevronRight className="h-3 w-3 group-hover/btn:scale-110 transition-transform" />
                           </Button>
                         ) : (
@@ -307,7 +320,12 @@ export function ContinueLearning() {
       {viewMode === 'list' && (
         <div className="space-y-2">
           {courses.slice(0, showAll ? courses.length : ITEMS_PER_PAGE).map((course, index) => {
-            const learningLink = `/courses/${course.course_id}`;
+            // For program-only enrollments without courses, link to programs page
+            const learningLink = course.course_id
+              ? `/courses/${course.course_id}`
+              : course.program_id
+                ? `/programs/${course.program_id}`
+                : '#';
             const status = getCourseStatus(course.overall_progress, course.completed_lessons, course.total_lessons);
 
             return (

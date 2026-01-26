@@ -154,11 +154,14 @@ export async function POST(
       return NextResponse.json({ error: 'Course not found' }, { status: 404 });
     }
 
-    // Verify lesson if provided
+    // Determine the actual attendance date
+    let actualAttendanceDate = attendance_date;
+
+    // Verify lesson if provided and get its date
     if (lesson_id) {
       const { data: lesson, error: lessonError } = await supabase
         .from('lessons')
-        .select('id')
+        .select('id, start_time')
         .eq('id', lesson_id)
         .eq('tenant_id', userData.tenant_id)
         .single();
@@ -166,28 +169,51 @@ export async function POST(
       if (lessonError || !lesson) {
         return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
       }
+
+      // Use the lesson's start_time date as the attendance_date
+      if (lesson.start_time) {
+        actualAttendanceDate = new Date(lesson.start_time).toISOString().split('T')[0];
+      }
     }
 
     // Prepare records for upsert
-    const attendanceRecords = records.map((record) => {
-      const data: any = {
-        tenant_id: userData.tenant_id,
-        course_id: params.id,
-        lesson_id: record.lesson_id || lesson_id || null,
-        student_id: record.student_id,
-        attendance_date,
-        status: record.status,
-        notes: record.notes || null,
-        recorded_by: user.id,
-      };
+    const attendanceRecords = await Promise.all(
+      records.map(async (record) => {
+        let recordAttendanceDate = actualAttendanceDate;
 
-      // Include ID if provided (for updates)
-      if (record.id) {
-        data.id = record.id;
-      }
+        // If this specific record has a different lesson_id, fetch that lesson's date
+        if (record.lesson_id && record.lesson_id !== lesson_id) {
+          const { data: recordLesson } = await supabase
+            .from('lessons')
+            .select('start_time')
+            .eq('id', record.lesson_id)
+            .eq('tenant_id', userData.tenant_id)
+            .single();
 
-      return data;
-    });
+          if (recordLesson?.start_time) {
+            recordAttendanceDate = new Date(recordLesson.start_time).toISOString().split('T')[0];
+          }
+        }
+
+        const data: any = {
+          tenant_id: userData.tenant_id,
+          course_id: params.id,
+          lesson_id: record.lesson_id || lesson_id || null,
+          student_id: record.student_id,
+          attendance_date: recordAttendanceDate,
+          status: record.status,
+          notes: record.notes || null,
+          recorded_by: user.id,
+        };
+
+        // Include ID if provided (for updates)
+        if (record.id) {
+          data.id = record.id;
+        }
+
+        return data;
+      })
+    );
 
     // Upsert attendance records - when ID is provided, Supabase updates; otherwise inserts
     const { data: upsertedRecords, error: upsertError } = await supabase

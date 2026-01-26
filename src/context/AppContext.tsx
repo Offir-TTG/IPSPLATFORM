@@ -74,30 +74,47 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode}) {
-  // Helper function to get initial language from localStorage with fallback hierarchy
+  // Helper function to get cookie value
+  const getCookie = (name: string): string | null => {
+    if (typeof document !== 'undefined') {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) {
+        const cookieValue = parts.pop()?.split(';').shift();
+        return cookieValue || null;
+      }
+    }
+    return null;
+  };
+
+  // Helper function to get initial language with fallback hierarchy
   const getInitialLanguage = (key: string): string => {
     if (typeof window !== 'undefined') {
-      // 1. Check localStorage (runtime selection)
+      // 1. Check cookie first (set by server, available immediately)
+      const cookieLang = getCookie('user_language');
+      if (cookieLang && cookieLang !== 'auto') return cookieLang;
+
+      // 2. Check localStorage (runtime selection)
       const value = localStorage.getItem(key);
       if (value) return value;
 
-      // 2. Check user's preferred_language from localStorage cache (set during app init)
+      // 3. Check user's preferred_language from localStorage cache (set during app init)
       const userPreferredLang = localStorage.getItem('user_preferred_language');
       if (userPreferredLang && userPreferredLang !== 'null') return userPreferredLang;
 
-      // 3. Fallback: user_language → admin_language
+      // 4. Fallback: user_language → admin_language
       if (key === 'user_language') {
         const adminLang = localStorage.getItem('admin_language');
         if (adminLang) return adminLang;
       }
 
-      // 4. Check tenant's default_language from localStorage cache (set during app init)
+      // 5. Check tenant's default_language from localStorage cache (set during app init)
       const tenantDefaultLang = localStorage.getItem('tenant_default_language');
       if (tenantDefaultLang && tenantDefaultLang !== 'null') return tenantDefaultLang;
     }
 
-    // 5. Final fallback to English (universal default)
-    return 'en';
+    // 6. Final fallback to Hebrew (platform default)
+    return 'he';
   };
 
   const getInitialDirection = (lang: string): Direction => {
