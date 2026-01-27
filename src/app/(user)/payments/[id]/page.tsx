@@ -39,6 +39,10 @@ interface PaymentDetails {
     scheduled_date: string;
     paid_date?: string;
     status: string;
+    refunded_amount?: number;
+    refunded_at?: string;
+    refund_reason?: string;
+    payment_status?: string;
   }>;
   payments: Array<{
     id: string;
@@ -108,6 +112,8 @@ export default function PaymentDetailsPage() {
       failed: 'destructive',
       overdue: 'destructive',
       completed: 'default',
+      refunded: 'outline',
+      partially_refunded: 'secondary',
     };
 
     const statusLabels: Record<string, string> = {
@@ -116,6 +122,8 @@ export default function PaymentDetailsPage() {
       failed: t('user.payments.status.failed', 'Failed'),
       overdue: t('user.payments.status.overdue', 'Overdue'),
       completed: t('user.payments.status.completed', 'Completed'),
+      refunded: t('user.payments.status.refunded', 'Refunded'),
+      partially_refunded: t('user.payments.status.partially_refunded', 'Partially Refunded'),
     };
 
     return <Badge variant={variants[status] || 'outline'}>{statusLabels[status] || status}</Badge>;
@@ -263,6 +271,11 @@ export default function PaymentDetailsPage() {
                   <p className="text-lg font-bold">
                     {formatCurrency(schedule.amount, schedule.currency)}
                   </p>
+                  {schedule.refunded_amount && schedule.refunded_amount > 0 && (
+                    <p className="text-sm text-destructive mt-1">
+                      {t('user.payments.detail.refunded', 'Refunded')}: {formatCurrency(schedule.refunded_amount, schedule.currency)}
+                    </p>
+                  )}
                   {schedule.status === 'pending' && (
                     <Button asChild size="sm" className="mt-2">
                       <Link href={`/payments/${params.id}/pay?schedule=${schedule.id}`}>

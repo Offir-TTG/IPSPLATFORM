@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // PUT /api/admin/payments/plans/[id] - Update a payment plan
@@ -113,20 +111,6 @@ export async function PUT(
       );
     }
 
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'payment_plan.updated',
-      details: {
-        planId: data.id,
-        planName: plan_name,
-        planType: plan_type,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
     return NextResponse.json(data);
 
   } catch (error) {
@@ -199,20 +183,7 @@ export async function DELETE(
     }
 
     // Log audit event
-    if (plan) {
-      await logAuditEvent({
-        userId: user.id,
-        userEmail: user.email || 'unknown',
-        action: 'payment_plan.deleted',
-        details: {
-          planId: params.id,
-          planName: plan.plan_name,
-          planType: plan.plan_type,
-        },
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-      });
-    }
+    if (plan) {}
 
     return NextResponse.json({ success: true });
 

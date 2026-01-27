@@ -1,0 +1,533 @@
+/* ============================================================================
+   AUDIT TRAIL TABLE STYLES
+   ============================================================================ */
+
+.audit-table-container {
+  background-color: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 2);
+  overflow: hidden;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.audit-table thead {
+  background-color: hsl(var(--muted) / 0.3);
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.audit-table th {
+  padding: 0.625rem 0.75rem;
+  text-align: start;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family-primary);
+  color: hsl(var(--text-heading));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.audit-table th.center {
+  text-align: center;
+}
+
+.audit-table th.nowrap {
+  white-space: nowrap;
+}
+
+.audit-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.15s;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.audit-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.audit-table tbody tr:hover {
+  background-color: hsl(var(--accent));
+}
+
+.audit-table td {
+  padding: 0.625rem 0.75rem;
+  vertical-align: middle;
+}
+
+/* ============================================================================
+   TIMESTAMP CELL
+   ============================================================================ */
+
+.timestamp-cell {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  min-width: 180px;
+}
+
+.timestamp-cell .time {
+  color: hsl(var(--text-body));
+  font-weight: var(--font-weight-medium);
+  margin-bottom: 0.125rem;
+  direction: ltr; /* Force LTR for numbers */
+  display: inline-block;
+}
+
+.timestamp-cell .date {
+  color: hsl(var(--text-muted));
+  font-size: var(--font-size-xs);
+  direction: ltr; /* Force LTR for numbers */
+  display: inline-block;
+}
+
+/* ============================================================================
+   USER CELL
+   ============================================================================ */
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-cell .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+}
+
+.user-cell .info {
+  min-width: 0;
+  flex: 1;
+}
+
+.user-cell .info .name {
+  font-weight: var(--font-weight-medium);
+  color: hsl(var(--text-heading));
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.user-cell .info .role {
+  font-size: var(--font-size-xs);
+  color: hsl(var(--text-muted));
+  font-family: var(--font-family-primary);
+  text-transform: capitalize;
+}
+
+/* ============================================================================
+   ACTION CELL
+   ============================================================================ */
+
+.action-cell {
+  max-width: 300px;
+}
+
+.action-cell .primary {
+  font-weight: var(--font-weight-medium);
+  color: hsl(var(--text-body));
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-primary);
+}
+
+.action-cell .changed-fields {
+  font-size: var(--font-size-xs);
+  color: hsl(var(--primary));
+  font-family: var(--font-family-primary);
+  font-weight: var(--font-weight-medium);
+  margin-top: 0.125rem;
+}
+
+.action-cell .description {
+  font-size: var(--font-size-xs);
+  color: hsl(var(--text-muted));
+  font-family: var(--font-family-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+/* ============================================================================
+   RESOURCE CELL
+   ============================================================================ */
+
+.resource-cell .type {
+  font-size: var(--font-size-xs);
+  color: hsl(var(--text-body));
+  font-family: var(--font-family-primary);
+  white-space: nowrap;
+}
+
+.resource-cell .name {
+  font-size: var(--font-size-xs);
+  color: hsl(var(--text-muted));
+  font-family: var(--font-family-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+/* ============================================================================
+   BADGES
+   ============================================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: calc(var(--radius) * 3);
+  font-size: 0.625rem;
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family-mono);
+  white-space: nowrap;
+}
+
+/* Event Type Badges */
+.badge.type-CREATE {
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+.badge.type-READ {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--text-body));
+}
+
+.badge.type-UPDATE {
+  background-color: hsl(262 83% 58% / 0.1);
+  color: hsl(262 83% 58%);
+}
+
+.badge.type-DELETE {
+  background-color: hsl(0 84% 60% / 0.1);
+  color: hsl(0 84% 60%);
+}
+
+.badge.type-EXPORT {
+  background-color: hsl(25 95% 53% / 0.1);
+  color: hsl(25 95% 53%);
+}
+
+.badge.type-IMPORT {
+  background-color: hsl(142 71% 45% / 0.1);
+  color: hsl(142 71% 45%);
+}
+
+.badge.type-LOGIN {
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+.badge.type-LOGOUT {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--text-body));
+}
+
+.badge.type-ACCESS {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--text-body));
+}
+
+/* Risk Level Badges */
+.badge.risk-low {
+  background-color: hsl(142 71% 45% / 0.1);
+  color: hsl(142 71% 45%);
+}
+
+.badge.risk-medium {
+  background-color: hsl(45 93% 47% / 0.1);
+  color: hsl(45 93% 47%);
+}
+
+.badge.risk-high {
+  background-color: hsl(25 95% 53% / 0.1);
+  color: hsl(25 95% 53%);
+}
+
+.badge.risk-critical {
+  background-color: hsl(0 84% 60% / 0.1);
+  color: hsl(0 84% 60%);
+}
+
+/* ============================================================================
+   RISK ICONS
+   ============================================================================ */
+
+.risk-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.risk-icon.low {
+  color: hsl(142 71% 45%);
+}
+
+.risk-icon.medium {
+  color: hsl(45 93% 47%);
+}
+
+.risk-icon.high {
+  color: hsl(25 95% 53%);
+}
+
+.risk-icon.critical {
+  color: hsl(0 84% 60%);
+}
+
+/* ============================================================================
+   STATUS ICONS
+   ============================================================================ */
+
+.status-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.status-icon.success {
+  color: hsl(142 71% 45%);
+}
+
+.status-icon.failure {
+  color: hsl(0 84% 60%);
+}
+
+.status-icon.pending,
+.status-icon.partial {
+  color: hsl(45 93% 47%);
+}
+
+/* ============================================================================
+   EXPANDED DETAILS
+   ============================================================================ */
+
+.expanded-details {
+  background-color: hsl(var(--muted) / 0.3);
+  padding: 1.5rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detail-item .label {
+  font-size: var(--font-size-xs);
+  color: hsl(var(--text-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-weight-semibold);
+}
+
+.detail-item .value {
+  font-weight: var(--font-weight-medium);
+  color: hsl(var(--text-body));
+  font-size: var(--font-size-sm);
+}
+
+.detail-item .value.monospace {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+
+/* ============================================================================
+   CHANGES SECTION
+   ============================================================================ */
+
+.changes-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.changes-section .title {
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 1rem;
+  color: hsl(var(--text-heading));
+  font-size: var(--font-size-base);
+}
+
+.change-item {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: hsl(var(--background));
+  border-radius: calc(var(--radius) * 1);
+  border: 1px solid hsl(var(--border));
+}
+
+.change-item .field-name {
+  font-weight: var(--font-weight-semibold);
+  color: hsl(var(--text-heading));
+  margin-bottom: 0.5rem;
+  font-size: var(--font-size-sm);
+}
+
+.value-diff {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.value-diff .before,
+.value-diff .after {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.value-diff .before .label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: hsl(var(--text-muted));
+  font-family: var(--font-family-primary);
+}
+
+.value-diff .after .label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: hsl(142 71% 45%);
+  font-family: var(--font-family-primary);
+}
+
+.value-diff .arrow {
+  display: flex;
+  align-items: center;
+  color: hsl(var(--text-muted));
+  font-size: var(--font-size-xs);
+}
+
+.change-value {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  padding: 0.375rem;
+  border-radius: calc(var(--radius) * 1);
+  max-height: 100px;
+  overflow: auto;
+  word-break: break-all;
+}
+
+.change-value.before {
+  background-color: hsl(0 84% 60% / 0.05);
+  border: 1px solid hsl(0 84% 60% / 0.2);
+  text-decoration: line-through;
+  color: hsl(var(--text-muted));
+}
+
+.change-value.after {
+  background-color: hsl(142 71% 45% / 0.05);
+  border: 1px solid hsl(142 71% 45% / 0.2);
+  color: hsl(var(--text-body));
+  font-weight: var(--font-weight-medium);
+}
+
+/* ============================================================================
+   EMPTY STATE
+   ============================================================================ */
+
+.audit-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  background-color: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 2);
+  text-align: center;
+  color: hsl(var(--text-muted));
+}
+
+.audit-empty-state .icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 1rem;
+  color: hsl(var(--text-muted));
+}
+
+.audit-empty-state .message {
+  font-size: var(--font-size-base);
+  font-family: var(--font-family-primary);
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .audit-table {
+    font-size: var(--font-size-xs);
+  }
+
+  .audit-table th,
+  .audit-table td {
+    padding: 0.5rem;
+  }
+
+  .timestamp-cell {
+    min-width: 120px;
+  }
+
+  .user-cell .info .name {
+    max-width: 120px;
+  }
+
+  .action-cell .description {
+    max-width: 150px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .value-diff {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .value-diff .arrow {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   RTL SUPPORT
+   ============================================================================ */
+
+[dir="rtl"] .audit-table th {
+  text-align: start;
+}
+
+[dir="rtl"] .user-cell {
+  flex-direction: row-reverse;
+}
+
+[dir="rtl"] .value-diff .arrow {
+  transform: rotate(180deg);
+}

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // DELETE /api/admin/programs/[id]/courses/[courseId] - Remove course from program
@@ -54,20 +52,6 @@ export async function DELETE(
         { status: 500 }
       );
     }
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'program.course_removed',
-      details: {
-        programId: params.id,
-        courseId: params.courseId,
-        courseName: (courseData?.course as any)?.title,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
 
     return NextResponse.json({ success: true });
 
@@ -142,21 +126,6 @@ export async function PATCH(
         { status: 500 }
       );
     }
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'program.course_settings_updated',
-      details: {
-        programId: params.id,
-        courseId: params.courseId,
-        courseName: (data.course as any)?.title,
-        updates: updates,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
 
     return NextResponse.json(data);
 

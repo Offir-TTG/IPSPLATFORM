@@ -89,53 +89,105 @@ export async function GET(request: NextRequest) {
     // Get currency (use first transaction's currency or default to USD)
     const currency = paidSchedules.length > 0 ? paidSchedules[0].currency : 'USD';
 
-    // Calculate total expected income (all schedules regardless of status)
+    // Get all schedules (for expected income and pending)
     const { data: allSchedules } = await supabase
       .from('payment_schedules')
-      .select('amount')
+      .select('amount, status')
       .eq('tenant_id', tenantId)
       .gte('created_at', startDate.toISOString());
 
     const totalExpectedIncome = allSchedules?.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
 
-    // Calculate MRR (Monthly Recurring Revenue) - from subscription/installment payments
-    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const mrrPayments = paidSchedules.filter(s => {
-      const paidDate = new Date(s.paid_date);
-      return paidDate >= currentMonth &&
-             (s.payment_type === 'subscription' || s.payment_type === 'installment');
-    });
-    const mrr = mrrPayments.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0);
+    // Calculate pending payments
+    const pendingAmount = allSchedules?.filter(s => s.status === 'pending')
+      .reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
 
-    // Calculate ARR (Annual Recurring Revenue)
-    const arr = mrr * 12;
+    // Get refunds from payments table (need paid_at for chart and payment_type for breakdown)
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('refunded_amount, paid_at, payment_type')
+      .eq('tenant_id', tenantId);
 
-    // Group revenue by date for trend chart
-    const revenueByDate: Record<string, { date: string; revenue: number; transactions: number }> = {};
+    const totalRefunds = payments?.reduce((sum, p) => {
+      const refunded = parseFloat(p.refunded_amount?.toString() || '0');
+      return sum + refunded;
+    }, 0) || 0;
+
+    // Calculate net revenue (total paid - refunds)
+    const netRevenue = totalRevenue - totalRefunds;
+
+    // Calculate collection rate
+    const collectionRate = totalExpectedIncome > 0
+      ? (totalRevenue / totalExpectedIncome) * 100
+      : 0;
+
+    // Group revenue by date for trend chart (with refunds)
+    const revenueByDate: Record<string, { date: string; grossRevenue: number; refunds: number; netRevenue: number; transactions: number }> = {};
+
+    // Add paid schedules (gross revenue)
     paidSchedules.forEach(schedule => {
       const date = new Date(schedule.paid_date).toISOString().split('T')[0];
       if (!revenueByDate[date]) {
-        revenueByDate[date] = { date, revenue: 0, transactions: 0 };
+        revenueByDate[date] = { date, grossRevenue: 0, refunds: 0, netRevenue: 0, transactions: 0 };
       }
-      revenueByDate[date].revenue += parseFloat(schedule.amount.toString());
+      revenueByDate[date].grossRevenue += parseFloat(schedule.amount.toString());
       revenueByDate[date].transactions += 1;
+    });
+
+    // Subtract refunds by date (using paid_at as the refund date)
+    if (payments && payments.length > 0) {
+      payments.forEach(payment => {
+        const refundAmount = parseFloat(payment.refunded_amount?.toString() || '0');
+        if (refundAmount > 0 && payment.paid_at) {
+          const date = new Date(payment.paid_at).toISOString().split('T')[0];
+          if (revenueByDate[date]) {
+            revenueByDate[date].refunds += refundAmount;
+          }
+        }
+      });
+    }
+
+    // Calculate net revenue for each date
+    Object.values(revenueByDate).forEach(item => {
+      item.netRevenue = item.grossRevenue - item.refunds;
     });
 
     const revenueOverTime = Object.values(revenueByDate).map(item => ({
       date: item.date,
-      revenue: Math.round(item.revenue * 100) / 100,
+      grossRevenue: Math.round(item.grossRevenue * 100) / 100,
+      refunds: Math.round(item.refunds * 100) / 100,
+      netRevenue: Math.round(item.netRevenue * 100) / 100,
       transactions: item.transactions
     }));
 
-    // Group revenue by payment type
-    const revenueByTypeMap: Record<string, number> = {};
+    // Group revenue by payment type (GROSS - before refunds)
+    const grossRevenueByTypeMap: Record<string, number> = {};
     paidSchedules.forEach(schedule => {
       const type = schedule.payment_type || 'unknown';
-      revenueByTypeMap[type] = (revenueByTypeMap[type] || 0) + parseFloat(schedule.amount.toString());
+      grossRevenueByTypeMap[type] = (grossRevenueByTypeMap[type] || 0) + parseFloat(schedule.amount.toString());
     });
 
-    const totalForPercentage = Object.values(revenueByTypeMap).reduce((sum, val) => sum + val, 0);
-    const revenueByType = Object.entries(revenueByTypeMap).map(([name, value]) => ({
+    // Group refunds by payment type (ACTUAL - from payments table)
+    const refundsByTypeMap: Record<string, number> = {};
+    if (payments && payments.length > 0) {
+      payments.forEach(payment => {
+        const refundAmount = parseFloat(payment.refunded_amount?.toString() || '0');
+        if (refundAmount > 0) {
+          const type = payment.payment_type || 'unknown';
+          refundsByTypeMap[type] = (refundsByTypeMap[type] || 0) + refundAmount;
+        }
+      });
+    }
+
+    // Calculate net revenue by type (gross - actual refunds for that type)
+    const netRevenueByTypeMap: Record<string, number> = {};
+    Object.entries(grossRevenueByTypeMap).forEach(([type, grossAmount]) => {
+      const refundsForType = refundsByTypeMap[type] || 0;
+      netRevenueByTypeMap[type] = grossAmount - refundsForType;
+    });
+
+    const totalForPercentage = Object.values(netRevenueByTypeMap).reduce((sum, val) => sum + val, 0);
+    const revenueByType = Object.entries(netRevenueByTypeMap).map(([name, value]) => ({
       name,
       value: Math.round(value * 100) / 100,
       percentage: totalForPercentage > 0 ? Math.round((value / totalForPercentage) * 100) : 0
@@ -164,13 +216,14 @@ export async function GET(request: NextRequest) {
       summary: {
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         totalExpectedIncome: Math.round(totalExpectedIncome * 100) / 100,
+        netRevenue: Math.round(netRevenue * 100) / 100,
+        totalRefunds: Math.round(totalRefunds * 100) / 100,
         avgTransaction: Math.round(avgTransaction * 100) / 100,
-        mrr: Math.round(mrr * 100) / 100,
-        arr: Math.round(arr * 100) / 100,
+        pendingAmount: Math.round(pendingAmount * 100) / 100,
+        collectionRate: Math.round(collectionRate * 10) / 10,
         transactionCount,
         revenueGrowth: Math.round(revenueGrowth * 10) / 10,
         avgGrowth: Math.round(avgGrowth * 10) / 10,
-        mrrGrowth: 0, // TODO: Calculate MRR growth
       },
       revenueOverTime,
       revenueByType,

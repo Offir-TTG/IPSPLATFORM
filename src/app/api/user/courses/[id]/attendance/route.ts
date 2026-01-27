@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-
 /**
  * GET /api/user/courses/[id]/attendance
  * Retrieves the current user's attendance records for a course
@@ -72,8 +71,7 @@ export async function GET(
       ...record,
       lesson_title: record.lesson?.title || null,
     }));
-
-    return NextResponse.json({ success: true, data: formattedAttendance });
+return NextResponse.json({ success: true, data: formattedAttendance });
   } catch (error) {
     console.error('Error in GET /api/user/courses/[id]/attendance:', error);
     return NextResponse.json(

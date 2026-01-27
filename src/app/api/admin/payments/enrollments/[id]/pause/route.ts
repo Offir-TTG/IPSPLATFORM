@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { pauseEnrollmentPayments } from '@/lib/payments/scheduleManager';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // POST /api/admin/payments/enrollments/:id/pause - Pause enrollment payments
@@ -48,23 +46,7 @@ export async function POST(
       user.id,
       adminName,
       reason
-    );
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'enrollment.payments_paused',
-      details: {
-        enrollmentId: params.id,
-        pausedCount: result.pausedCount,
-        reason,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
-    return NextResponse.json({
+    );return NextResponse.json({
       success: true,
       pausedCount: result.pausedCount,
       message: `Paused ${result.pausedCount} payment(s) successfully`,

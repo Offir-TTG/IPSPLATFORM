@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
+import { logAuditEvent } from '@/lib/audit/auditService';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,7 +143,7 @@ export const POST = withAuth(
       // Check if progress record already exists
       const { data: existingProgress } = await adminClient
         .from('user_progress')
-        .select('id')
+        .select('id, status, progress_percentage')
         .eq('user_id', user.id)
         .eq('lesson_id', lessonId)
         .maybeSingle();
@@ -195,6 +196,30 @@ export const POST = withAuth(
           );
         }
       }
+
+      // Audit log: Track student progress update (FERPA-protected student record)
+      await logAuditEvent({
+        user_id: user.id,
+        event_type: 'MODIFY',
+        event_category: 'STUDENT_RECORD',
+        resource_type: 'lesson_progress',
+        resource_id: lessonId,
+        resource_name: `Lesson ${lessonId} Progress`,
+        action: existingProgress ? 'Updated lesson progress' : 'Created lesson progress',
+        description: `Student ${status === 'completed' ? 'completed' : 'updated progress for'} lesson ${lessonId}`,
+        old_values: existingProgress ? { status: existingProgress.status, progress_percentage: existingProgress.progress_percentage } : undefined,
+        new_values: { status, progress_percentage: progress_percentage || 0, completed_at: completedAt },
+        status: 'success',
+        risk_level: 'low',
+        student_id: user.id,
+        is_student_record: true,
+        compliance_flags: ['FERPA'],
+        metadata: {
+          course_id: courseId,
+          enrollment_id: enrollmentId,
+          action_type: existingProgress ? 'update' : 'create'
+        }
+      });
 
       return NextResponse.json({
         success: true,

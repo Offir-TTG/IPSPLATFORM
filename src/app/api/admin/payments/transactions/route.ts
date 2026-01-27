@@ -122,15 +122,48 @@ export async function GET(request: NextRequest) {
       enrollments?.map((e: any) => [e.id, e]) || []
     );
 
+    // Fetch payment records to get refund information
+    const scheduleIds = schedules.map(s => s.id);
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('id, payment_schedule_id, status, refunded_amount, refunded_at')
+      .in('payment_schedule_id', scheduleIds);
+
+    // Create payment lookup map
+    const paymentMap = new Map(
+      payments?.map((p: any) => [p.payment_schedule_id, p]) || []
+    );
+
     const transactions = schedules?.map((schedule: any) => {
       const enrollment = enrollmentMap.get(schedule.enrollment_id);
       const user = enrollment ? userMap.get(enrollment.user_id) : null;
       const product = enrollment ? productMap.get(enrollment.product_id) : null;
+      const payment = paymentMap.get(schedule.id);
 
       let transactionStatus: 'completed' | 'pending' | 'failed' | 'refunded' | 'partially_refunded' = 'pending';
-      if (schedule.status === 'paid') transactionStatus = 'completed';
-      else if (schedule.status === 'refunded') transactionStatus = 'refunded';
-      else if (schedule.status === 'failed') transactionStatus = 'failed';
+      let refundAmount: number | undefined = undefined;
+
+      // Determine status - check schedule status first for refunded, then payment record
+      if (schedule.status === 'refunded') {
+        // If schedule is refunded, mark as refunded regardless of payment record
+        transactionStatus = 'refunded';
+        // If we have payment record with refund amount, use it; otherwise use full schedule amount
+        refundAmount = payment?.refunded_amount
+          ? parseFloat(payment.refunded_amount)
+          : parseFloat(schedule.amount);
+      } else if (payment) {
+        // Use payment record status if schedule is not refunded
+        if (payment.status === 'refunded') transactionStatus = 'refunded';
+        else if (payment.status === 'partially_refunded') transactionStatus = 'partially_refunded';
+        else if (payment.status === 'succeeded') transactionStatus = 'completed';
+        else if (payment.status === 'failed') transactionStatus = 'failed';
+
+        refundAmount = payment.refunded_amount ? parseFloat(payment.refunded_amount) : undefined;
+      } else {
+        // Fallback to schedule status for non-refunded statuses
+        if (schedule.status === 'paid') transactionStatus = 'completed';
+        else if (schedule.status === 'failed') transactionStatus = 'failed';
+      }
 
       return {
         id: schedule.id,
@@ -145,6 +178,7 @@ export async function GET(request: NextRequest) {
         transaction_id: schedule.stripe_payment_intent_id || schedule.id,
         stripe_payment_intent_id: schedule.stripe_payment_intent_id,
         status: transactionStatus,
+        refund_amount: refundAmount,
         created_at: schedule.scheduled_date,
         metadata: {
           payment_number: schedule.payment_number,

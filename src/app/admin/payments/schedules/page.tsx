@@ -84,6 +84,8 @@ export default function SchedulesPage() {
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<PaymentSchedule | null>(null);
   const [bulkActionDialog, setBulkActionDialog] = useState<'delay' | 'pause' | 'cancel' | null>(null);
+  const [restructureDialogOpen, setRestructureDialogOpen] = useState(false);
+  const [selectedEnrollmentForRestructure, setSelectedEnrollmentForRestructure] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalSchedules, setTotalSchedules] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -319,6 +321,41 @@ export default function SchedulesPage() {
       toast({
         title: t('common.error', 'Error'),
         description: error.message || t('admin.payments.schedules.chargeNowError', 'Failed to charge payment'),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleRestructurePlan = async (enrollmentId: string, newInstallmentCount: number, startDate: string, reason: string) => {
+    try {
+      const response = await fetch(`/api/admin/payments/schedules/${enrollmentId}/restructure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_installment_count: newInstallmentCount,
+          start_date: startDate,
+          reason,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to restructure plan');
+      }
+
+      const data = await response.json();
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('admin.payments.schedules.restructureSuccess', 'Payment plan restructured successfully'),
+      });
+
+      setRestructureDialogOpen(false);
+      fetchSchedules();
+    } catch (error: any) {
+      console.error('Error restructuring plan:', error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.payments.schedules.restructureError', 'Failed to restructure payment plan'),
         variant: 'destructive',
       });
     }
@@ -978,6 +1015,10 @@ export default function SchedulesPage() {
                           onPause={() => handlePausePayment(schedule.id, 'Admin action')}
                           onResume={() => handleResumePayment(schedule.id)}
                           onChargeNow={() => handleChargeNow(schedule.id)}
+                          onRestructure={() => {
+                            setSelectedEnrollmentForRestructure(schedule.enrollment_id);
+                            setRestructureDialogOpen(true);
+                          }}
                         />
                       </td>
                     </tr>
@@ -1081,6 +1122,19 @@ export default function SchedulesPage() {
           direction={direction}
         />
 
+        {/* Restructure Plan Dialog */}
+        <RestructurePlanDialog
+          open={restructureDialogOpen}
+          enrollmentId={selectedEnrollmentForRestructure}
+          schedules={schedules.filter(s => s.enrollment_id === selectedEnrollmentForRestructure)}
+          onClose={() => {
+            setRestructureDialogOpen(false);
+            setSelectedEnrollmentForRestructure(null);
+          }}
+          onRestructure={handleRestructurePlan}
+          direction={direction}
+        />
+
         {/* Bulk Delay Dialog */}
         <BulkDelayDialog
           open={bulkActionDialog === 'delay'}
@@ -1102,6 +1156,7 @@ function ScheduleActionsMenu({
   onPause,
   onResume,
   onChargeNow,
+  onRestructure,
 }: {
   schedule: PaymentSchedule;
   onAdjust: () => void;
@@ -1109,6 +1164,7 @@ function ScheduleActionsMenu({
   onPause: () => void;
   onResume: () => void;
   onChargeNow: () => void;
+  onRestructure: () => void;
 }) {
   const { t, direction } = useAdminLanguage();
   const [open, setOpen] = useState(false);
@@ -1195,6 +1251,17 @@ function ScheduleActionsMenu({
                   <Pause className="h-4 w-4" />
                   <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
                 </button>
+                <div className="border-t my-1"></div>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
+                    onRestructure();
+                    setOpen(false);
+                  }}
+                >
+                  <ArrowUpDown className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.restructurePlan', 'Restructure Plan')}</span>
+                </button>
               </>
             )}
             {schedule.status === 'processing' && (
@@ -1254,18 +1321,69 @@ function AdjustDateDialog({
   direction: 'ltr' | 'rtl';
 }) {
   const { t } = useAdminLanguage();
+  const { toast } = useToast();
   const [newDate, setNewDate] = useState('');
   const [reason, setReason] = useState('');
+  const [errors, setErrors] = useState<{ date?: string; reason?: string }>({});
 
   useEffect(() => {
     if (schedule) {
       setNewDate(schedule.scheduled_date.split('T')[0]);
       setReason('');
+      setErrors({});
     }
   }, [schedule]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
+
+    // Validate date
+    if (!newDate) {
+      setErrors({ date: t('admin.payments.schedules.errorDateRequired', 'Please select a new date') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorDateRequired', 'Please select a new date'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const selectedDate = new Date(newDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (selectedDate < today) {
+      setErrors({ date: t('admin.payments.schedules.errorDatePast', 'Date cannot be in the past') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorDatePast', 'Date cannot be in the past'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate reason
+    if (!reason || reason.trim().length === 0) {
+      setErrors({ reason: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for adjustment') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for adjustment'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (reason.trim().length < 5) {
+      setErrors({ reason: t('admin.payments.schedules.errorReasonTooShortAdjust', 'Reason must be at least 5 characters') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorReasonTooShortAdjust', 'Reason must be at least 5 characters'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (schedule) {
       onAdjust(schedule.id, newDate, reason);
     }
@@ -1290,18 +1408,30 @@ function AdjustDateDialog({
             <Input
               type="date"
               value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              required
+              onChange={(e) => {
+                setNewDate(e.target.value);
+                if (errors.date) setErrors({ ...errors, date: undefined });
+              }}
+              className={errors.date ? 'border-destructive' : ''}
             />
+            {errors.date && (
+              <p className="text-xs text-destructive mt-1">{errors.date}</p>
+            )}
           </div>
           <div>
             <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
             <Input
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => {
+                setReason(e.target.value);
+                if (errors.reason) setErrors({ ...errors, reason: undefined });
+              }}
               placeholder={t('admin.payments.schedules.reasonPlaceholder', 'e.g., User requested extension')}
-              required
+              className={errors.reason ? 'border-destructive' : ''}
             />
+            {errors.reason && (
+              <p className="text-xs text-destructive mt-1">{errors.reason}</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
@@ -1379,6 +1509,348 @@ function BulkDelayDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Restructure Plan Dialog Component
+function RestructurePlanDialog({
+  open,
+  enrollmentId,
+  schedules,
+  onClose,
+  onRestructure,
+  direction,
+}: {
+  open: boolean;
+  enrollmentId: string | null;
+  schedules: PaymentSchedule[];
+  onClose: () => void;
+  onRestructure: (enrollmentId: string, newInstallmentCount: number, startDate: string, reason: string) => void;
+  direction: 'ltr' | 'rtl';
+}) {
+  const { t, language } = useAdminLanguage();
+  const { toast } = useToast();
+  const [newInstallmentCount, setNewInstallmentCount] = useState(12);
+  const [startDate, setStartDate] = useState('');
+  const [reason, setReason] = useState('');
+  const [errors, setErrors] = useState<{ installments?: string; startDate?: string; reason?: string }>({});
+  const [previewData, setPreviewData] = useState<{
+    currentPaid: number;
+    currentPending: number;
+    currentTotal: number;
+    remainingBalance: number;
+    newInstallmentAmount: number;
+    willCreate: number;
+    willCancel: number;
+  } | null>(null);
+
+  // Set default start date when dialog opens
+  useEffect(() => {
+    if (open && schedules.length > 0) {
+      const paidSchedules = schedules.filter(s => s.status === 'paid');
+      let defaultDate: Date;
+
+      if (paidSchedules.length > 0) {
+        // Start from one month after the last paid date
+        const lastPaidSchedule = paidSchedules[paidSchedules.length - 1];
+        defaultDate = new Date(lastPaidSchedule.scheduled_date);
+        defaultDate.setMonth(defaultDate.getMonth() + 1);
+      } else {
+        // Start from next month
+        defaultDate = new Date();
+        defaultDate.setMonth(defaultDate.getMonth() + 1);
+        defaultDate.setDate(1); // First day of next month
+      }
+
+      setStartDate(defaultDate.toISOString().split('T')[0]);
+      setErrors({});
+    }
+  }, [open, schedules]);
+
+  useEffect(() => {
+    if (!enrollmentId || schedules.length === 0) return;
+
+    const paidSchedules = schedules.filter(s => s.status === 'paid');
+    const pendingSchedules = schedules.filter(s => ['pending', 'overdue', 'adjusted'].includes(s.status));
+
+    const currentPaid = paidSchedules.length;
+    const currentPending = pendingSchedules.length;
+    const currentTotal = schedules.length;
+
+    // Calculate remaining balance
+    const paidAmount = paidSchedules.reduce((sum, s) => sum + s.amount, 0);
+    const totalAmount = schedules.reduce((sum, s) => sum + s.amount, 0);
+    const remainingBalance = totalAmount - paidAmount;
+
+    // Calculate new installment amount
+    const newInstallmentAmount = remainingBalance / newInstallmentCount;
+
+    // Determine what will happen
+    const willCreate = Math.max(0, newInstallmentCount - currentPending);
+    const willCancel = Math.max(0, currentPending - newInstallmentCount);
+
+    setPreviewData({
+      currentPaid,
+      currentPending,
+      currentTotal,
+      remainingBalance,
+      newInstallmentAmount,
+      willCreate,
+      willCancel,
+    });
+  }, [enrollmentId, schedules, newInstallmentCount]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Clear previous errors
+    setErrors({});
+
+    // Validate installment count
+    if (!newInstallmentCount || newInstallmentCount < 1) {
+      setErrors({ installments: t('admin.payments.schedules.errorInstallmentRequired', 'Please enter a valid number of installments') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorInstallmentRequired', 'Please enter a valid number of installments'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (newInstallmentCount > 100) {
+      setErrors({ installments: t('admin.payments.schedules.errorInstallmentMax', 'Maximum 100 installments allowed') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorInstallmentMax', 'Maximum 100 installments allowed'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate start date
+    if (!startDate) {
+      setErrors({ startDate: t('admin.payments.schedules.errorStartDateRequired', 'Please select a start date') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorStartDateRequired', 'Please select a start date'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const selectedDate = new Date(startDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (selectedDate < today) {
+      setErrors({ startDate: t('admin.payments.schedules.errorStartDatePast', 'Start date cannot be in the past') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorStartDatePast', 'Start date cannot be in the past'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate reason
+    if (!reason || reason.trim().length === 0) {
+      setErrors({ reason: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for restructuring') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for restructuring'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (reason.trim().length < 10) {
+      setErrors({ reason: t('admin.payments.schedules.errorReasonTooShort', 'Reason must be at least 10 characters') });
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('admin.payments.schedules.errorReasonTooShort', 'Reason must be at least 10 characters'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (enrollmentId && previewData) {
+      onRestructure(enrollmentId, newInstallmentCount, startDate, reason);
+    }
+  };
+
+  if (!enrollmentId || schedules.length === 0) return null;
+
+  const formatCurrency = (amount: number) => {
+    const currency = schedules[0]?.currency || 'USD';
+    return new Intl.NumberFormat(
+      language === 'he' ? 'he-IL' : 'en-US',
+      {
+        style: 'currency',
+        currency,
+      }
+    ).format(amount);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent dir={direction} className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle suppressHydrationWarning>
+            {t('admin.payments.schedules.restructurePaymentPlan', 'Restructure Payment Plan')}
+          </DialogTitle>
+          <DialogDescription suppressHydrationWarning>
+            {t('admin.payments.schedules.restructureDescription', 'Change the number of installments for this enrollment')}
+          </DialogDescription>
+        </DialogHeader>
+
+        {previewData && (
+          <div className="space-y-4">
+            {/* Current Status */}
+            <div className="bg-muted p-4 rounded-lg">
+              <h3 className="font-semibold mb-3" suppressHydrationWarning>
+                {t('admin.payments.schedules.currentStatus', 'Current Status')}
+              </h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-muted-foreground" suppressHydrationWarning>
+                    {t('admin.payments.schedules.totalPayments', 'Total Payments')}:
+                  </span>
+                  <span className="font-semibold ml-2">{previewData.currentTotal}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground" suppressHydrationWarning>
+                    {t('admin.payments.schedules.paidPayments', 'Paid')}:
+                  </span>
+                  <span className="font-semibold ml-2 text-green-600">{previewData.currentPaid}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground" suppressHydrationWarning>
+                    {t('admin.payments.schedules.pendingPayments', 'Pending')}:
+                  </span>
+                  <span className="font-semibold ml-2 text-yellow-600">{previewData.currentPending}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground" suppressHydrationWarning>
+                    {t('admin.payments.schedules.remainingBalance', 'Remaining Balance')}:
+                  </span>
+                  <span className="font-semibold ml-2">{formatCurrency(previewData.remainingBalance)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* New Plan Input */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label suppressHydrationWarning>
+                  {t('admin.payments.schedules.newNumberOfInstallments', 'New Number of Installments')}
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={newInstallmentCount}
+                  onChange={(e) => {
+                    setNewInstallmentCount(Number(e.target.value));
+                    if (errors.installments) setErrors({ ...errors, installments: undefined });
+                  }}
+                  className={errors.installments ? 'border-destructive' : ''}
+                />
+                {errors.installments && (
+                  <p className="text-xs text-destructive mt-1">{errors.installments}</p>
+                )}
+                {!errors.installments && (
+                  <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                    {t('admin.payments.schedules.currentInstallments', 'Current: {count} installments').replace('{count}', previewData.currentPending.toString())}
+                  </p>
+                )}
+              </div>
+
+              {/* Start Date Input */}
+              <div>
+                <Label suppressHydrationWarning>
+                  {t('admin.payments.schedules.paymentStartDate', 'Payment Start Date')}
+                </Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    if (errors.startDate) setErrors({ ...errors, startDate: undefined });
+                  }}
+                  className={errors.startDate ? 'border-destructive' : ''}
+                />
+                {errors.startDate && (
+                  <p className="text-xs text-destructive mt-1">{errors.startDate}</p>
+                )}
+                {!errors.startDate && (
+                  <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                    {t('admin.payments.schedules.firstPaymentWillBe', 'First payment will be scheduled for this date')}
+                  </p>
+                )}
+              </div>
+
+              {/* Preview of Changes */}
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p className="font-semibold" suppressHydrationWarning>
+                      {t('admin.payments.schedules.whatWillHappen', 'What will happen:')}
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      <li suppressHydrationWarning>
+                        {t('admin.payments.schedules.newInstallmentAmount', 'Each new installment: {amount}')
+                          .replace('{amount}', formatCurrency(previewData.newInstallmentAmount))}
+                      </li>
+                      {previewData.willCancel > 0 && (
+                        <li className="text-orange-600" suppressHydrationWarning>
+                          {t('admin.payments.schedules.willCancelSchedules', 'Will cancel {count} pending schedule(s)')
+                            .replace('{count}', previewData.willCancel.toString())}
+                        </li>
+                      )}
+                      {previewData.willCreate > 0 && (
+                        <li className="text-green-600" suppressHydrationWarning>
+                          {t('admin.payments.schedules.willCreateSchedules', 'Will create {count} new schedule(s)')
+                            .replace('{count}', previewData.willCreate.toString())}
+                        </li>
+                      )}
+                      <li suppressHydrationWarning>
+                        {t('admin.payments.schedules.paidPaymentsUntouched', 'Paid payments will not be affected')}
+                      </li>
+                    </ul>
+                  </div>
+                </AlertDescription>
+              </Alert>
+
+              <div>
+                <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
+                <Input
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    if (errors.reason) setErrors({ ...errors, reason: undefined });
+                  }}
+                  placeholder={t('admin.payments.schedules.restructureReasonPlaceholder', 'e.g., User requested payment plan adjustment')}
+                  className={errors.reason ? 'border-destructive' : ''}
+                />
+                {errors.reason && (
+                  <p className="text-xs text-destructive mt-1">{errors.reason}</p>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose}>
+                  <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
+                </Button>
+                <Button type="submit">
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.applyRestructure', 'Apply Restructure')}</span>
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

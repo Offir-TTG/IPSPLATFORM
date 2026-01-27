@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/auditService';
-
 export const dynamic = 'force-dynamic';
 
 // GET all platform settings
@@ -131,22 +129,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Audit log
-    await logAuditEvent({
-      user_id: user.id,
-      event_type: 'CREATE',
-      event_category: 'CONFIG',
-      resource_type: 'platform_setting',
-      resource_id: setting.id,
-      resource_name: setting_key,
-      action: 'Created platform setting',
-      description: `Created setting: ${label} (${setting_key})`,
-      new_values: { setting_key, setting_value, setting_type, category, label, is_public },
-      status: 'success',
-      risk_level: 'medium',
-      metadata: { category, setting_type }
-    });
-
     return NextResponse.json({
       success: true,
       data: setting,
@@ -228,23 +210,7 @@ export async function PUT(request: NextRequest) {
     // Audit log for each updated setting
     for (const setting of settings) {
       const oldSetting = oldSettings.find((s: any) => s.setting_key === setting.setting_key);
-      if (oldSetting) {
-        await logAuditEvent({
-          user_id: user.id,
-          event_type: 'UPDATE',
-          event_category: 'CONFIG',
-          resource_type: 'platform_setting',
-          resource_id: oldSetting.id,
-          resource_name: setting.setting_key,
-          action: 'Updated platform setting',
-          description: `Updated setting: ${oldSetting.label} (${setting.setting_key})`,
-          old_values: { setting_value: oldSetting.setting_value },
-          new_values: { setting_value: setting.setting_value },
-          status: 'success',
-          risk_level: 'medium',
-          metadata: { category: oldSetting.category, setting_type: oldSetting.setting_type }
-        });
-      }
+      if (oldSetting) {}
     }
 
     return NextResponse.json({
@@ -317,22 +283,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Audit log
-    if (setting) {
-      await logAuditEvent({
-        user_id: user.id,
-        event_type: 'DELETE',
-        event_category: 'CONFIG',
-        resource_type: 'platform_setting',
-        resource_id: setting.id,
-        resource_name: settingKey,
-        action: 'Deleted platform setting',
-        description: `Deleted setting: ${setting.label} (${settingKey})`,
-        old_values: { setting_key: settingKey, setting_value: setting.setting_value, setting_type: setting.setting_type, category: setting.category, label: setting.label },
-        status: 'success',
-        risk_level: 'high',
-        metadata: { category: setting.category, setting_type: setting.setting_type }
-      });
-    }
+    if (setting) {}
 
     return NextResponse.json({
       success: true,

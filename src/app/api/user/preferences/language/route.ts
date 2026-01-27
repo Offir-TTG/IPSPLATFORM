@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // PATCH /api/user/preferences/language - Update user's preferred language

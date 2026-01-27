@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { logAuditEvent } from '@/lib/audit/auditService';
 
 export const dynamic = 'force-dynamic';
 
@@ -110,6 +111,34 @@ export async function GET(
         { status: 404 }
       );
     }
+
+    // Audit log: Track student accessing lesson recording (helps with attendance tracking)
+    const course = Array.isArray(lesson.courses) ? lesson.courses[0] : lesson.courses;
+    await logAuditEvent({
+      user_id: user.id,
+      event_type: 'READ',
+      event_category: 'ATTENDANCE',
+      resource_type: 'lesson_recording',
+      resource_id: lessonId,
+      resource_name: `Lesson Recording: ${lesson.title}`,
+      action: 'Accessed lesson recording',
+      description: `Student accessed recording for lesson "${lesson.title}" in course "${course?.title}"`,
+      status: 'success',
+      risk_level: 'low',
+      student_id: user.id,
+      is_student_record: true,
+      compliance_flags: ['FERPA'],
+      metadata: {
+        lesson_id: lessonId,
+        lesson_title: lesson.title,
+        course_id: lesson.course_id,
+        course_title: course?.title,
+        enrollment_id: enrollment.id,
+        storage_location: zoomSession.storage_location,
+        recording_status: zoomSession.recording_status,
+        access_type: 'self_access'
+      }
+    });
 
     // For now, return the URL (client will handle the video playback)
     // In production, you'd want to proxy the stream for better security

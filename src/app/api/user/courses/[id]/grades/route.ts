@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/middleware/auth';
-
 export const dynamic = 'force-dynamic';
 
 // GET /api/user/courses/[id]/grades - Get student's grades for a course
@@ -85,8 +84,7 @@ export const GET = withAuth(
           category_color: category?.color_code,
         };
       }) || [];
-
-      return NextResponse.json({
+return NextResponse.json({
         success: true,
         data: transformedGrades,
       });

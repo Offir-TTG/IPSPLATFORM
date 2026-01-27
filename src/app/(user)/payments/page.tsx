@@ -101,6 +101,8 @@ export default function PaymentsPage() {
       partial: { variant: 'secondary', label: t('user.payments.statusPartial', 'Partial'), icon: Clock },
       pending: { variant: 'outline', label: t('user.payments.statusPending', 'Pending'), icon: AlertCircle },
       overdue: { variant: 'destructive', label: t('user.payments.statusOverdue', 'Overdue'), icon: AlertCircle },
+      refunded: { variant: 'outline', label: t('user.payments.statusRefunded', 'Refunded'), icon: AlertCircle },
+      partially_refunded: { variant: 'secondary', label: t('user.payments.statusPartiallyRefunded', 'Partially Refunded'), icon: AlertCircle },
     };
 
     const config = statusConfig[status] || statusConfig.pending;

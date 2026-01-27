@@ -31,19 +31,6 @@ export const GET = withAuth(
       if (userError) {
         console.error('Profile query error:', userError);
 
-        // Log failed profile access
-        logAuditEvent({
-          tenantId,
-          userId: user.id,
-          userEmail: user.email || 'unknown',
-          action: 'profile.access_failed',
-          details: {
-            resourceType: 'profile',
-            resourceId: user.id,
-            error: userError.message,
-          },
-        }).catch((err) => console.error('Audit log failed:', err));
-
         return NextResponse.json(
           { success: false, error: 'Failed to fetch profile data' },
           { status: 500 }
@@ -85,18 +72,6 @@ export const GET = withAuth(
         user_agent: session.user_agent,
       })) || [];
 
-      // Async audit logging (don't block response)
-      logAuditEvent({
-        tenantId,
-        userId: user.id,
-        userEmail: user.email || 'unknown',
-        action: 'profile.accessed',
-        details: {
-          resourceType: 'profile',
-          resourceId: user.id,
-        },
-      }).catch((err) => console.error('Audit log failed:', err));
-
       const response = NextResponse.json({
         success: true,
         data: {
@@ -136,19 +111,6 @@ export const GET = withAuth(
       return response;
     } catch (error) {
       console.error('Profile error:', error);
-
-      // Log error
-      logAuditEvent({
-        tenantId,
-        userId: user.id,
-        userEmail: user.email || 'unknown',
-        action: 'profile.error',
-        details: {
-          resourceType: 'profile',
-          resourceId: user.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        },
-      }).catch((err) => console.error('Audit log failed:', err));
 
       return NextResponse.json(
         { success: false, error: 'Internal server error' },

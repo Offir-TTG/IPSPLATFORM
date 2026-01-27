@@ -37,6 +37,119 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 type TranslationFunction = (key: string, params?: Record<string, any> | string, context?: 'admin' | 'user') => string;
 
+// CSV Helper: Escape values for proper CSV format and Hebrew support
+function escapeCSV(value: any): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  // If contains comma, quote, or newline, wrap in quotes and escape quotes
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+// CSV Conversion Functions
+function convertRevenueToCSV(data: any, t: TranslationFunction): string {
+  let csv = '';
+
+  // Summary Section
+  csv += escapeCSV(t('admin.payments.reports.title', 'Revenue Report')) + '\n\n';
+  csv += escapeCSV(t('admin.payments.reports.summary', 'Summary')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.totalExpectedIncome', 'Total Expected Income'))},${data.summary.totalExpectedIncome}\n`;
+  csv += `${escapeCSV(t('admin.payments.totalRevenue', 'Total Revenue'))},${data.summary.totalRevenue}\n`;
+  csv += `${escapeCSV(t('admin.payments.netRevenue', 'Net Revenue'))},${data.summary.netRevenue}\n`;
+  csv += `${escapeCSV(t('admin.payments.reports.totalRefunds', 'Total Refunds'))},${data.summary.totalRefunds}\n`;
+  csv += `${escapeCSV(t('admin.payments.reports.collectionRate', 'Collection Rate'))},${data.summary.collectionRate}%\n\n`;
+
+  // Revenue by Type
+  csv += escapeCSV(t('admin.payments.reports.revenueByType', 'Revenue by Type')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.paymentType', 'Payment Type'))},${escapeCSV(t('admin.payments.reports.amount', 'Amount'))}\n`;
+  data.revenueByType.forEach((item: any) => {
+    csv += `${escapeCSV(item.name)},${item.value}\n`;
+  });
+
+  return csv;
+}
+
+function convertStatusToCSV(data: any, t: TranslationFunction): string {
+  let csv = '';
+
+  // Status Breakdown
+  csv += escapeCSV(t('admin.payments.reports.tabs.status', 'Payment Status Report')) + '\n\n';
+  csv += escapeCSV(t('admin.payments.reports.statusBreakdown', 'Status Breakdown')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.status', 'Status'))},${escapeCSV(t('admin.payments.reports.count', 'Count'))},${escapeCSV(t('admin.payments.reports.amount', 'Amount'))},${escapeCSV(t('admin.payments.reports.percentage', 'Percentage'))}\n`;
+  data.statusBreakdown.forEach((item: any) => {
+    csv += `${escapeCSV(item.status)},${item.count},${item.amount},${item.percentage}%\n`;
+  });
+  csv += `\n${escapeCSV(t('admin.payments.reports.totalRefunds', 'Total Refunds'))},${data.totalRefunds}\n`;
+
+  return csv;
+}
+
+function convertCashFlowToCSV(data: any, t: TranslationFunction): string {
+  let csv = '';
+
+  // Current Month Summary
+  csv += escapeCSV(t('admin.payments.reports.tabs.cashflow', 'Cash Flow Report')) + '\n\n';
+  csv += escapeCSV(t('admin.payments.reports.currentMonth', 'Current Month')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.expectedThisMonth', 'Expected This Month'))},${data.currentMonth.expected}\n`;
+  csv += `${escapeCSV(t('admin.payments.reports.received', 'Received'))},${data.currentMonth.received}\n`;
+  csv += `${escapeCSV(t('common.pending', 'Pending'))},${data.currentMonth.pending}\n`;
+  csv += `${escapeCSV(t('admin.payments.reports.totalRefunds', 'Refunds'))},${data.currentMonth.refunds}\n\n`;
+
+  // Forecast
+  csv += escapeCSV(t('admin.payments.reports.cashFlowForecast', 'Cash Flow Forecast')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.month', 'Month'))},${escapeCSV(t('admin.payments.reports.expected', 'Expected'))}\n`;
+  data.forecast.forEach((item: any) => {
+    csv += `${escapeCSV(item.monthKey)},${item.expected}\n`;
+  });
+
+  return csv;
+}
+
+function convertProductsToCSV(data: any, t: TranslationFunction): string {
+  let csv = '';
+
+  // Products Performance
+  csv += escapeCSV(t('admin.payments.reports.tabs.products', 'Products Report')) + '\n\n';
+  csv += escapeCSV(t('admin.payments.reports.productPerformance', 'Product Performance')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.product', 'Product'))},${escapeCSV(t('admin.payments.reports.revenue', 'Revenue'))},${escapeCSV(t('admin.payments.reports.enrollments', 'Enrollments'))},${escapeCSV(t('admin.payments.reports.completion', 'Completion'))},${escapeCSV(t('admin.payments.reports.preferredPlan', 'Preferred Plan'))}\n`;
+  data.products.forEach((item: any) => {
+    csv += `${escapeCSV(item.name)},${item.revenue},${item.enrollments},${item.completion}%,${escapeCSV(item.plan)}\n`;
+  });
+
+  return csv;
+}
+
+function convertUsersToCSV(data: any, t: TranslationFunction): string {
+  let csv = '';
+
+  // User Segments
+  csv += escapeCSV(t('admin.payments.reports.tabs.users', 'Users Report')) + '\n\n';
+  csv += escapeCSV(t('admin.payments.reports.userSegments', 'User Segments')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.segment', 'Segment'))},${escapeCSV(t('admin.payments.reports.users', 'Users'))},${escapeCSV(t('admin.payments.reports.revenue', 'Revenue'))},${escapeCSV(t('admin.payments.reports.average', 'Average'))}\n`;
+  data.userSegments.forEach((item: any) => {
+    csv += `${escapeCSV(item.segment)},${item.users},${item.revenue},${item.avg}\n`;
+  });
+  csv += `\n${escapeCSV(t('admin.payments.reports.averageRevenue', 'Average Revenue Per User'))},${data.averageRevenue}\n`;
+
+  return csv;
+}
+
+function convertPlansToCSV(data: any, t: TranslationFunction): string {
+  let csv = '';
+
+  // Plan Performance
+  csv += escapeCSV(t('admin.payments.reports.tabs.plans', 'Plans Report')) + '\n\n';
+  csv += escapeCSV(t('admin.payments.reports.planPerformance', 'Plan Performance')) + '\n';
+  csv += `${escapeCSV(t('admin.payments.reports.planType', 'Plan Type'))},${escapeCSV(t('admin.payments.reports.enrollments', 'Enrollments'))},${escapeCSV(t('admin.payments.reports.revenue', 'Revenue'))},${escapeCSV(t('admin.payments.reports.average', 'Average'))},${escapeCSV(t('admin.payments.reports.completion', 'Completion'))}\n`;
+  data.planPerformance.forEach((item: any) => {
+    csv += `${escapeCSV(item.type)},${item.enrollments},${item.revenue},${item.avg},${item.completion}%\n`;
+  });
+
+  return csv;
+}
+
 export default function ReportsPage() {
   const { t, direction, language } = useAdminLanguage();
   const [dateRange, setDateRange] = useState('last_30_days');
@@ -44,12 +157,81 @@ export default function ReportsPage() {
   const isRtl = direction === 'rtl';
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   const isMobile = windowWidth <= 640;
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+
+      // Map report type to API endpoint
+      const apiEndpoints: Record<string, string> = {
+        revenue: '/api/admin/payments/reports/revenue',
+        status: '/api/admin/payments/reports/status',
+        cashflow: '/api/admin/payments/reports/cashflow',
+        products: '/api/admin/payments/reports/products',
+        users: '/api/admin/payments/reports/users',
+        plans: '/api/admin/payments/reports/plans',
+      };
+
+      const endpoint = apiEndpoints[reportType];
+      if (!endpoint) {
+        alert(t('admin.payments.reports.exportNotAvailable', 'Export not available for this report'));
+        return;
+      }
+
+      // Fetch data
+      const response = await fetch(endpoint);
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const data = await response.json();
+
+      // Convert to CSV based on report type
+      let csv = '';
+      let filename = '';
+
+      if (reportType === 'revenue') {
+        filename = `revenue-report-${new Date().toISOString().split('T')[0]}.csv`;
+        csv = convertRevenueToCSV(data, t);
+      } else if (reportType === 'status') {
+        filename = `status-report-${new Date().toISOString().split('T')[0]}.csv`;
+        csv = convertStatusToCSV(data, t);
+      } else if (reportType === 'cashflow') {
+        filename = `cashflow-report-${new Date().toISOString().split('T')[0]}.csv`;
+        csv = convertCashFlowToCSV(data, t);
+      } else if (reportType === 'products') {
+        filename = `products-report-${new Date().toISOString().split('T')[0]}.csv`;
+        csv = convertProductsToCSV(data, t);
+      } else if (reportType === 'users') {
+        filename = `users-report-${new Date().toISOString().split('T')[0]}.csv`;
+        csv = convertUsersToCSV(data, t);
+      } else if (reportType === 'plans') {
+        filename = `plans-report-${new Date().toISOString().split('T')[0]}.csv`;
+        csv = convertPlansToCSV(data, t);
+      }
+
+      // Add UTF-8 BOM for proper Hebrew display in Excel
+      const BOM = '\uFEFF';
+      const csvWithBOM = BOM + csv;
+
+      // Download CSV
+      const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert(t('admin.payments.reports.exportError', 'Failed to export report'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <AdminLayout>
@@ -84,9 +266,11 @@ export default function ReportsPage() {
                 <SelectItem value="custom"><span suppressHydrationWarning>{t('admin.payments.reports.customRange', 'Custom Range')}</span></SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline">
+            <Button variant="outline" onClick={handleExport} disabled={exporting}>
               <Download className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-              <span suppressHydrationWarning>{t('admin.payments.reports.export', 'Export')}</span>
+              <span suppressHydrationWarning>
+                {exporting ? t('admin.payments.reports.exporting', 'Exporting...') : t('admin.payments.reports.export', 'Export')}
+              </span>
             </Button>
           </div>
         </div>
@@ -217,7 +401,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.totalExpectedIncome)}</div>
+            <div className="text-lg font-bold break-words" suppressHydrationWarning>{formatCurrency(data.summary.totalExpectedIncome)}</div>
             <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
               {t('admin.payments.reports.allSchedules', 'All Schedules')}
             </p>
@@ -231,7 +415,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.totalRevenue)}</div>
+            <div className="text-lg font-bold break-words" suppressHydrationWarning>{formatCurrency(data.summary.totalRevenue)}</div>
             <div className={`flex items-center text-sm mt-2 ${data.summary.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {data.summary.revenueGrowth >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
@@ -250,7 +434,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.avgTransaction)}</div>
+            <div className="text-lg font-bold break-words" suppressHydrationWarning>{formatCurrency(data.summary.avgTransaction)}</div>
             <div className={`flex items-center text-sm mt-2 ${data.summary.avgGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {data.summary.avgGrowth >= 0 ? (
                 <ArrowUpRight className="h-4 w-4 ltr:mr-1 rtl:ml-1" />
@@ -265,13 +449,13 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.mrr', 'MRR')}
+              {t('admin.payments.netRevenue', 'Net Revenue')}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.mrr)}</div>
+            <div className="text-lg font-bold text-green-600 break-words" suppressHydrationWarning>{formatCurrency(data.summary.netRevenue)}</div>
             <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
-              {t('admin.payments.reports.monthlyRecurring', 'Monthly Recurring')}
+              {t('admin.payments.reports.afterRefunds', 'After refunds')} (-{formatCurrency(data.summary.totalRefunds)})
             </p>
           </CardContent>
         </Card>
@@ -279,13 +463,13 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.arr', 'ARR')}
+              {t('admin.payments.reports.collectionRate', 'Collection Rate')}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.summary.arr)}</div>
+            <div className="text-lg font-bold break-words" suppressHydrationWarning>{data.summary.collectionRate}%</div>
             <p className="text-xs text-muted-foreground mt-2" suppressHydrationWarning>
-              {t('admin.payments.reports.arrDescription', 'Annual Recurring Revenue')}
+              {t('admin.payments.reports.ofExpected', 'Of expected')}
             </p>
           </CardContent>
         </Card>
@@ -326,8 +510,16 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
                 tooltip: {
                   trigger: 'axis',
                   formatter: (params: any) => {
-                    const item = params[0];
-                    return `${item.name}<br/>${t('admin.payments.reports.charts.revenue', 'Revenue')}: ${formatCurrency(item.value)}`;
+                    const gross = params[0];
+                    const net = params[1];
+                    const refund = gross.value - net.value;
+                    let tooltip = `${gross.name}<br/>`;
+                    tooltip += `${gross.seriesName}: ${formatCurrency(gross.value)}<br/>`;
+                    tooltip += `${net.seriesName}: ${formatCurrency(net.value)}`;
+                    if (refund > 0) {
+                      tooltip += `<br/>${t('admin.payments.refunds', 'Refunds')}: -${formatCurrency(refund)}`;
+                    }
+                    return tooltip;
                   },
                   textStyle: {
                     fontSize: 13,
@@ -335,7 +527,10 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
                   },
                 },
                 legend: {
-                  data: [t('admin.payments.reports.charts.revenue', 'Revenue')],
+                  data: [
+                    t('admin.payments.reports.charts.grossRevenue', 'Gross Revenue'),
+                    t('admin.payments.reports.charts.netRevenue', 'Net Revenue')
+                  ],
                   bottom: 0,
                   textStyle: {
                     color: '#374151',
@@ -345,12 +540,20 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
                 },
                 series: [
                   {
-                    name: t('admin.payments.reports.charts.revenue', 'Revenue'),
+                    name: t('admin.payments.reports.charts.grossRevenue', 'Gross Revenue'),
                     type: 'line',
-                    data: data.revenueOverTime.map((item: any) => item.revenue),
+                    data: data.revenueOverTime.map((item: any) => item.grossRevenue),
                     smooth: true,
                     lineStyle: { width: 2 },
                     itemStyle: { color: '#3b82f6' },
+                  },
+                  {
+                    name: t('admin.payments.reports.charts.netRevenue', 'Net Revenue'),
+                    type: 'line',
+                    data: data.revenueOverTime.map((item: any) => item.netRevenue),
+                    smooth: true,
+                    lineStyle: { width: 2 },
+                    itemStyle: { color: '#10b981' },
                   },
                 ],
               } as EChartsOption}
@@ -370,7 +573,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
           <Card>
             <CardHeader>
               <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueByType', 'Revenue by Type')}</CardTitle>
-              <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueByTypeDescription', 'Revenue breakdown by payment type')}</CardDescription>
+              <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueByTypeDescription', 'Net revenue breakdown by payment type (after refunds)')}</CardDescription>
             </CardHeader>
             <CardContent>
               <ReactECharts
@@ -426,7 +629,7 @@ function RevenueReport({ t, isRtl, dateRange, language }: { t: TranslationFuncti
           <Card>
             <CardHeader>
               <CardTitle suppressHydrationWarning>{t('admin.payments.reports.revenueDistribution', 'Revenue Distribution')}</CardTitle>
-              <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueDistributionDescription', 'Detailed revenue distribution breakdown')}</CardDescription>
+              <CardDescription suppressHydrationWarning>{t('admin.payments.reports.revenueDistributionDescription', 'Detailed net revenue breakdown (after refunds)')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -559,24 +762,34 @@ function PaymentStatusReport({ t, isRtl }: { t: TranslationFunction; isRtl: bool
     <>
       {/* Status Summary */}
       <div className="grid gap-4 md:grid-cols-4">
-        {allStatusData.map((item: any) => (
-          <Card key={item.status}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-                  {item.status}
-                </CardTitle>
-                {getStatusIcon(item.status)}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{item.count}</div>
-              <p className="text-sm text-muted-foreground mt-1">
-                ${item.amount.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        {allStatusData.map((item: any) => {
+          const isPaid = item.status === translateStatus('paid');
+          const showRefundNote = isPaid && data.totalRefunds > 0;
+
+          return (
+            <Card key={item.status}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
+                    {item.status}
+                  </CardTitle>
+                  {getStatusIcon(item.status)}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{item.count}</div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  ${item.amount.toLocaleString()}
+                  {showRefundNote && (
+                    <span className="block text-xs text-red-600 mt-1" suppressHydrationWarning>
+                      ({t('admin.payments.reports.afterRefunds', 'After refunds')}: -${data.totalRefunds.toLocaleString()})
+                    </span>
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Status Distribution */}
@@ -873,8 +1086,8 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold break-words" suppressHydrationWarning>{formatCurrencyCompact(data.currentMonth.expected)}</div>
-            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.fromAllSources', 'From all sources')}</p>
+            <div className="text-lg font-bold text-amber-600 break-words" suppressHydrationWarning>{formatCurrency(data.currentMonth.expected)}</div>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.notYetPaid', 'Not yet paid')}</p>
           </CardContent>
         </Card>
 
@@ -885,8 +1098,15 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600 break-words" suppressHydrationWarning>{formatCurrencyCompact(data.currentMonth.received)}</div>
-            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.ofExpected', 'Of expected')}</p>
+            <div className="text-lg font-bold text-green-600 break-words" suppressHydrationWarning>{formatCurrency(data.currentMonth.received)}</div>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+              {t('admin.payments.reports.alreadyCollected', 'Already collected')}
+              {data.currentMonth.refunds > 0 && (
+                <span className="block text-xs text-red-600 mt-1">
+                  ({t('admin.payments.reports.afterRefunds', 'After refunds')}: -{formatCurrency(data.currentMonth.refunds)})
+                </span>
+              )}
+            </p>
           </CardContent>
         </Card>
 
@@ -897,7 +1117,7 @@ function CashFlowReport({ t, isRtl, language }: { t: TranslationFunction; isRtl:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600 break-words" suppressHydrationWarning>{formatCurrencyCompact(data.currentMonth.pending)}</div>
+            <div className="text-lg font-bold text-amber-600 break-words" suppressHydrationWarning>{formatCurrency(data.currentMonth.pending)}</div>
             <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.remaining', 'Remaining')}</p>
           </CardContent>
         </Card>

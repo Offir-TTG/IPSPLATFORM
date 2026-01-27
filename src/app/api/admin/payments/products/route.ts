@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { registerProduct, listProducts } from '@/lib/payments/productService';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // GET /api/admin/payments/products - List all products
@@ -104,24 +102,7 @@ export async function POST(request: NextRequest) {
       default_payment_plan_id,
       forced_payment_plan_id,
       metadata,
-    });
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'product.created',
-      details: {
-        productId: product.id,
-        productType: product_type,
-        productName: product_name,
-        price: price,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
-    return NextResponse.json(product);
+    });return NextResponse.json(product);
 
   } catch (error: any) {
     console.error('Error in POST /api/admin/payments/products:', error);

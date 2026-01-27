@@ -45,8 +45,20 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Get payment details
-    const paymentDetails = await getEnrollmentPaymentDetails(params.id, userData.tenant_id);
+    // Get payment details - pass the authenticated supabase client
+    const paymentDetails = await getEnrollmentPaymentDetails(params.id, userData.tenant_id, supabase);
+
+    // DEBUG: Log if any schedules have refund data
+    if (paymentDetails.schedules) {
+      const schedulesWithRefunds = paymentDetails.schedules.filter((s: any) => s.refunded_amount && s.refunded_amount > 0);
+      if (schedulesWithRefunds.length > 0) {
+        console.log('[API] Returning schedules with refunds:', schedulesWithRefunds.map((s: any) => ({
+          payment_number: s.payment_number,
+          refunded_amount: s.refunded_amount,
+          payment_status: s.payment_status
+        })));
+      }
+    }
 
     return NextResponse.json(paymentDetails);
 

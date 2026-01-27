@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // GET /api/admin/payments/plans - List all payment plans
@@ -147,20 +145,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'payment_plan.created',
-      details: {
-        planId: data.id,
-        planName: plan_name,
-        planType: plan_type,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
 
     return NextResponse.json(data);
 

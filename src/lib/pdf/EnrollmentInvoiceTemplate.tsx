@@ -11,6 +11,8 @@ interface InvoiceData {
     total_amount: number;
     paid_amount: number;
     remaining_amount: number;
+    total_refunded?: number;
+    net_paid_amount?: number;
     currency: string;
     payment_plan_name: string;
     invoice_number?: string;
@@ -116,6 +118,22 @@ export const EnrollmentInvoiceTemplate: React.FC<{ data: InvoiceData }> = ({ dat
     },
     summaryValue: {
       fontSize: 11,
+      textAlign: isRTL ? 'left' : 'right',
+    },
+    refundedRow: {
+      flexDirection: isRTL ? 'row-reverse' : 'row',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    refundedLabel: {
+      fontSize: 11,
+      fontWeight: 'bold',
+      color: '#9333ea',
+      textAlign: isRTL ? 'right' : 'left',
+    },
+    refundedValue: {
+      fontSize: 11,
+      color: '#9333ea',
       textAlign: isRTL ? 'left' : 'right',
     },
     totalRow: {
@@ -454,6 +472,44 @@ export const EnrollmentInvoiceTemplate: React.FC<{ data: InvoiceData }> = ({ dat
               </>
             )}
           </View>
+          {enrollment.total_refunded && enrollment.total_refunded > 0 ? (
+            <View style={styles.refundedRow}>
+              {isRTL ? (
+                <>
+                  <Text style={styles.refundedLabel}>
+                    :{t('pdf.invoice.totalRefunded', 'Total Refunded')}
+                  </Text>
+                  <Text style={styles.refundedValue}>({formatCurrency(enrollment.total_refunded)})</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.refundedLabel}>
+                    {t('pdf.invoice.totalRefunded', 'Total Refunded')}:
+                  </Text>
+                  <Text style={styles.refundedValue}>({formatCurrency(enrollment.total_refunded)})</Text>
+                </>
+              )}
+            </View>
+          ) : null}
+          {enrollment.total_refunded && enrollment.total_refunded > 0 ? (
+            <View style={styles.summaryRow}>
+              {isRTL ? (
+                <>
+                  <Text style={styles.summaryLabel}>
+                    :{t('pdf.invoice.netAmount', 'Net Amount')}
+                  </Text>
+                  <Text style={styles.summaryValue}>{formatCurrency(enrollment.net_paid_amount || 0)}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.summaryLabel}>
+                    {t('pdf.invoice.netAmount', 'Net Amount')}:
+                  </Text>
+                  <Text style={styles.summaryValue}>{formatCurrency(enrollment.net_paid_amount || 0)}</Text>
+                </>
+              )}
+            </View>
+          ) : null}
           <View style={styles.totalRow}>
             {isRTL ? (
               <>

@@ -37,22 +37,43 @@ export async function GET(request: NextRequest) {
       .gte('scheduled_date', currentMonth.toISOString())
       .lte('scheduled_date', currentMonthEnd.toISOString());
 
-    const expectedThisMonth = currentMonthSchedules?.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
-    const received = currentMonthSchedules?.filter(s => s.status === 'paid').reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
-    const pending = expectedThisMonth - received;
+    const expectedGross = currentMonthSchedules?.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+    const receivedGross = currentMonthSchedules?.filter(s => s.status === 'paid').reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
 
-    // Get forecast for next 6 months
+    // Calculate actual pending (schedules not yet paid)
+    const pendingAmount = currentMonthSchedules?.filter(s => ['pending', 'overdue', 'failed'].includes(s.status)).reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+
+    // Get refunds for current month
+    const { data: currentMonthPayments } = await supabase
+      .from('payments')
+      .select('refunded_amount, paid_at')
+      .eq('tenant_id', tenantId)
+      .gte('paid_at', currentMonth.toISOString())
+      .lte('paid_at', currentMonthEnd.toISOString());
+
+    const refundsThisMonth = currentMonthPayments?.reduce((sum, p) => {
+      const refunded = parseFloat(p.refunded_amount?.toString() || '0');
+      return sum + refunded;
+    }, 0) || 0;
+
+    const received = receivedGross - refundsThisMonth;
+    // Expected = What we're still expecting to receive = Pending schedules
+    const expectedThisMonth = pendingAmount;
+
+    // Get forecast for next 6 months (starting from next month, not current month)
     const forecastData = [];
     const monthKeys = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 1; i <= 6; i++) {
       const forecastDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const forecastMonthEnd = new Date(now.getFullYear(), now.getMonth() + i + 1, 0);
 
+      // Only forecast UNPAID schedules (pending, overdue, failed)
       const { data: monthSchedules } = await supabase
         .from('payment_schedules')
-        .select('amount, payment_type')
+        .select('amount, payment_type, status')
         .eq('tenant_id', tenantId)
+        .in('status', ['pending', 'overdue', 'failed'])
         .gte('scheduled_date', forecastDate.toISOString())
         .lte('scheduled_date', forecastMonthEnd.toISOString());
 
@@ -74,7 +95,8 @@ export async function GET(request: NextRequest) {
       currentMonth: {
         expected: Math.round(expectedThisMonth * 100) / 100,
         received: Math.round(received * 100) / 100,
-        pending: Math.round(pending * 100) / 100
+        pending: Math.round(pendingAmount * 100) / 100,
+        refunds: Math.round(refundsThisMonth * 100) / 100
       },
       forecast: forecastData
     });

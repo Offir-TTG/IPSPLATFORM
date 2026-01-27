@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // GET /api/admin/programs/[id]/courses - List courses in a program
@@ -148,22 +146,6 @@ export async function POST(
       );
     }
 
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'program.course_added',
-      details: {
-        programId: params.id,
-        courseId: course_id,
-        courseName: (data.course as any)?.title,
-        isRequired: is_required,
-        order: courseOrder,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
     return NextResponse.json(data);
 
   } catch (error) {
@@ -218,23 +200,7 @@ export async function PUT(
         .eq('course_id', course_id);
     });
 
-    await Promise.all(updates);
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'program.courses_reordered',
-      details: {
-        programId: params.id,
-        courseOrders: courseOrders,
-        courseCount: courseOrders.length,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
-    return NextResponse.json({ success: true });
+    await Promise.all(updates);return NextResponse.json({ success: true });
 
   } catch (error) {
     console.error('Error in PUT /api/admin/programs/[id]/courses/order:', error);

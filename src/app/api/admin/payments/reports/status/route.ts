@@ -36,9 +36,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         statusBreakdown: [],
         statusOverTime: [],
-        totalSchedules: 0
+        totalSchedules: 0,
+        totalRefunds: 0
       });
     }
+
+    // Get refunds from payments table
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('refunded_amount')
+      .eq('tenant_id', tenantId);
+
+    const totalRefunds = payments?.reduce((sum, p) => {
+      const refunded = parseFloat(p.refunded_amount?.toString() || '0');
+      return sum + refunded;
+    }, 0) || 0;
 
     // Calculate status breakdown
     const now = new Date();
@@ -72,13 +84,24 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // Adjust paid amount to be NET (after refunds)
+    const netPaidAmount = statusCounts.paid.amount - totalRefunds;
+
     const totalSchedules = schedules.length;
-    const statusBreakdown = Object.entries(statusCounts).map(([status, data]) => ({
-      status,
-      count: data.count,
-      amount: Math.round(data.amount * 100) / 100,
-      percentage: totalSchedules > 0 ? Math.round((data.count / totalSchedules) * 100) : 0
-    }));
+    const statusBreakdown = Object.entries(statusCounts).map(([status, data]) => {
+      let amount = data.amount;
+      // Show NET amount for paid status (gross - refunds)
+      if (status === 'paid') {
+        amount = netPaidAmount;
+      }
+
+      return {
+        status,
+        count: data.count,
+        amount: Math.round(amount * 100) / 100,
+        percentage: totalSchedules > 0 ? Math.round((data.count / totalSchedules) * 100) : 0
+      };
+    });
 
     // Group by month for trend analysis (last 6 months)
     const monthsAgo = 6;
@@ -124,7 +147,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       statusBreakdown,
       statusOverTime,
-      totalSchedules
+      totalSchedules,
+      totalRefunds: Math.round(totalRefunds * 100) / 100
     });
 
   } catch (error) {

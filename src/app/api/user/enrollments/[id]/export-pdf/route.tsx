@@ -268,6 +268,52 @@ export async function POST(
       );
     }
 
+    // Fetch payments with refund information to enrich schedules
+    const { data: payments, error: paymentsError } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('enrollment_id', id)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    console.log('[PDF Export] Fetched payments:', {
+      count: payments?.length || 0,
+      error: paymentsError
+    });
+
+    // Create payment lookup map by schedule_id to enrich schedules with refund data
+    const paymentsBySchedule = new Map();
+    payments?.forEach((payment: any) => {
+      if (payment.payment_schedule_id) {
+        paymentsBySchedule.set(payment.payment_schedule_id, payment);
+      }
+    });
+
+    // Enrich schedules with refund information from payments
+    const enrichedSchedules = schedules?.map((schedule: any) => {
+      const payment = paymentsBySchedule.get(schedule.id);
+
+      // If there's a payment record with refund data, add it to the schedule
+      if (payment && (payment.refunded_amount || payment.status === 'refunded' || payment.status === 'partially_refunded')) {
+        return {
+          ...schedule,
+          refunded_amount: payment.refunded_amount ? parseFloat(payment.refunded_amount) : 0,
+          refunded_at: payment.refunded_at,
+          refund_reason: payment.refund_reason,
+          payment_status: payment.status, // Add actual payment status for accurate display
+        };
+      }
+
+      return schedule;
+    }) || [];
+
+    // Calculate total refunded amount
+    const totalRefunded = enrichedSchedules.reduce((sum: number, schedule: any) => {
+      return sum + (schedule.refunded_amount || 0);
+    }, 0);
+
+    console.log('[PDF Export] Total refunded amount:', totalRefunded);
+
     // Fetch PDF branding config using admin client (bypasses RLS)
     console.log('[PDF Export] Fetching PDF branding config for tenant:', tenantId);
     const { data: brandingSettings, error: brandingError } = await adminClient
@@ -353,6 +399,8 @@ export async function POST(
         total_amount: enrollment.total_amount || product.price,
         paid_amount: enrollment.paid_amount,
         remaining_amount: remainingAmount,
+        total_refunded: totalRefunded,
+        net_paid_amount: enrollment.paid_amount - totalRefunded,
         currency: product.currency,
         payment_plan_name: paymentPlanName,
       },
@@ -363,7 +411,7 @@ export async function POST(
         phone: userData.phone || undefined,
         address: undefined, // Can add if user profile has address field
       },
-      schedules: schedules as PaymentSchedule[],
+      schedules: enrichedSchedules as PaymentSchedule[],
       branding,
       language: userLanguage,
       translations,

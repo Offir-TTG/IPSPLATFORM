@@ -597,19 +597,62 @@ export async function getEnrollmentPaymentDetails(
     }
   }
 
-  // Get payments
-  const { data: payments } = await supabase
+  // Get payments with refund information
+  const { data: payments, error: paymentsError } = await supabase
     .from('payments')
     .select('*')
     .eq('enrollment_id', enrollment_id)
     .eq('tenant_id', tenant_id)
     .order('created_at', { ascending: false });
 
+  // DEBUG: Log payment fetch results
+  console.log('[EnrollmentService] Fetched payments:', {
+    count: payments?.length || 0,
+    error: paymentsError,
+    enrollment_id,
+    tenant_id
+  });
+
+  if (paymentsError) {
+    console.error('[EnrollmentService] Error fetching payments:', paymentsError);
+  }
+
+  // Create payment lookup map by schedule_id to enrich schedules with refund data
+  const paymentsBySchedule = new Map();
+  payments?.forEach((payment: any) => {
+    if (payment.payment_schedule_id) {
+      paymentsBySchedule.set(payment.payment_schedule_id, payment);
+      console.log('[EnrollmentService] Payment for schedule:', {
+        schedule_id: payment.payment_schedule_id.substring(0, 8),
+        refunded_amount: payment.refunded_amount,
+        status: payment.status
+      });
+    }
+  });
+
+  // Enrich schedules with refund information from payments
+  const enrichedSchedules = schedules?.map((schedule: any) => {
+    const payment = paymentsBySchedule.get(schedule.id);
+
+    // If there's a payment record with refund data, add it to the schedule
+    if (payment && (payment.refunded_amount || payment.status === 'refunded' || payment.status === 'partially_refunded')) {
+      return {
+        ...schedule,
+        refunded_amount: payment.refunded_amount ? parseFloat(payment.refunded_amount) : 0,
+        refunded_at: payment.refunded_at,
+        refund_reason: payment.refund_reason,
+        payment_status: payment.status, // Add actual payment status for accurate display
+      };
+    }
+
+    return schedule;
+  }) || [];
+
   // Calculate installment amount if applicable
   let installmentAmount: number | undefined;
   if (paymentPlan && paymentPlan.plan_type === 'deposit' && paymentPlan.installment_count > 0) {
     // Find installment schedules (exclude deposit)
-    const installmentSchedules = schedules?.filter((s: any) => s.payment_type === 'installment') || [];
+    const installmentSchedules = enrichedSchedules?.filter((s: any) => s.payment_type === 'installment') || [];
     if (installmentSchedules.length > 0) {
       // Use the amount from the first installment schedule
       installmentAmount = installmentSchedules[0].amount;
@@ -628,7 +671,7 @@ export async function getEnrollmentPaymentDetails(
       ...paymentPlan,
       installment_amount: installmentAmount
     } : paymentPlan,
-    schedules: schedules || [],
+    schedules: enrichedSchedules,
     payments: payments || [],
   };
 }

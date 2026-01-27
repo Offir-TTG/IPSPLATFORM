@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { logConfigChange, logAuditEvent } from '@/lib/audit/auditService';
-
 export const dynamic = 'force-dynamic';
 
 // GET - Fetch all theme configurations (admin only)
@@ -97,22 +95,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log audit event for theme creation
-    await logAuditEvent({
-      user_id: user.id,
-      event_type: 'CREATE',
-      event_category: 'CONFIG',
-      resource_type: 'theme_config',
-      resource_id: theme.id,
-      resource_name: theme.theme_name,
-      action: 'Created new theme configuration',
-      new_values: theme,
-      risk_level: 'medium',
-      metadata: {
-        is_active: theme.is_active,
-      },
-    });
-
     return NextResponse.json({
       success: true,
       data: theme,
@@ -172,13 +154,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Get old values for audit trail using admin client
-    const { data: oldTheme } = await adminClient
-      .from('theme_configs')
-      .select('*')
-      .eq('id', id)
-      .single();
-
     // Update theme using admin client (bypasses RLS)
     const { data: theme, error } = await adminClient
       .from('theme_configs')
@@ -192,27 +167,6 @@ export async function PUT(request: NextRequest) {
         { success: false, error: error.message },
         { status: 500 }
       );
-    }
-
-    // Log audit event for theme configuration change
-    try {
-      console.log('[Theme API] Logging audit event for theme update:', { userId: user.id, themeId: id });
-      const auditResult = await logConfigChange(
-        user.id,
-        'theme_config',
-        id,
-        oldTheme,
-        theme,
-        {
-          theme_name: theme.theme_name,
-          is_active: theme.is_active,
-          changed_fields: Object.keys(updates),
-        }
-      );
-      console.log('[Theme API] Audit event logged:', auditResult);
-    } catch (auditError) {
-      console.error('[Theme API] Failed to log audit event:', auditError);
-      // Don't fail the request if audit logging fails
     }
 
     return NextResponse.json({
@@ -289,22 +243,6 @@ export async function DELETE(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Log audit event for theme deletion
-    await logAuditEvent({
-      user_id: user.id,
-      event_type: 'DELETE',
-      event_category: 'CONFIG',
-      resource_type: 'theme_config',
-      resource_id: id,
-      resource_name: theme?.theme_name,
-      action: 'Deleted theme configuration',
-      old_values: theme,
-      risk_level: 'high',
-      metadata: {
-        was_active: theme?.is_active,
-      },
-    });
 
     return NextResponse.json({
       success: true,

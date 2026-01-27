@@ -111,12 +111,18 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
       fontSize: 9,
       textAlign: isRTL ? 'right' : 'left',
     },
-    col1: { width: '8%' },
-    col2: { width: '18%' },
-    col3: { width: '18%' },
-    col4: { width: '18%' },
-    col5: { width: '18%' },
-    col6: { width: '20%' },
+    col1: { width: '7%' },
+    col2: { width: '15%' },
+    col3: { width: '15%' },
+    col4: { width: '13%' },
+    col5: { width: '15%' },
+    col6: { width: '15%' },
+    col7: { width: '20%' },
+    refundedText: {
+      fontSize: 8,
+      color: '#9333ea',
+      textAlign: isRTL ? 'right' : 'left',
+    },
     statusBadge: {
       padding: '3 6',
       borderRadius: 3,
@@ -134,6 +140,14 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
     statusOverdue: {
       backgroundColor: '#fee2e2',
       color: '#991b1b',
+    },
+    statusPartiallyRefunded: {
+      backgroundColor: '#f3e8ff',
+      color: '#6b21a8',
+    },
+    statusRefunded: {
+      backgroundColor: '#f3e8ff',
+      color: '#6b21a8',
     },
     footer: {
       position: 'absolute',
@@ -172,6 +186,10 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
         return [styles.statusBadge, styles.statusPending];
       case 'overdue':
         return [styles.statusBadge, styles.statusOverdue];
+      case 'partially_refunded':
+        return [styles.statusBadge, styles.statusPartiallyRefunded];
+      case 'refunded':
+        return [styles.statusBadge, styles.statusRefunded];
       default:
         return [styles.statusBadge];
     }
@@ -254,8 +272,11 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
             <View style={styles.tableHeader}>
               {isRTL ? (
                 <>
-                  <Text style={[styles.tableHeaderCell, styles.col6]}>
+                  <Text style={[styles.tableHeaderCell, styles.col7]}>
                     {t('pdf.schedule.status', 'Status')}
+                  </Text>
+                  <Text style={[styles.tableHeaderCell, styles.col6]}>
+                    {t('pdf.schedule.refunded', 'Refunded')}
                   </Text>
                   <Text style={[styles.tableHeaderCell, styles.col5]}>
                     {t('pdf.schedule.amount', 'Amount')}
@@ -291,6 +312,9 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
                     {t('pdf.schedule.amount', 'Amount')}
                   </Text>
                   <Text style={[styles.tableHeaderCell, styles.col6]}>
+                    {t('pdf.schedule.refunded', 'Refunded')}
+                  </Text>
+                  <Text style={[styles.tableHeaderCell, styles.col7]}>
                     {t('pdf.schedule.status', 'Status')}
                   </Text>
                 </>
@@ -298,57 +322,70 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
             </View>
 
             {/* Table Rows */}
-            {schedules.map((schedule, index) => (
-              <View key={`schedule-${index}`} style={styles.tableRow}>
-                {isRTL ? (
-                  <>
-                    <View style={[styles.col6, { paddingLeft: 5 }]}>
-                      <Text style={getStatusStyle(schedule.status)}>
-                        {t(`pdf.schedule.statusLabel.${schedule.status}`, schedule.status.toUpperCase())}
+            {schedules.map((schedule, index) => {
+              const hasRefund = schedule.refunded_amount && schedule.refunded_amount > 0;
+              const displayStatus = hasRefund && schedule.payment_status === 'partially_refunded'
+                ? 'partially_refunded'
+                : schedule.status;
+
+              return (
+                <View key={`schedule-${index}`} style={styles.tableRow}>
+                  {isRTL ? (
+                    <>
+                      <View style={[styles.col7, { paddingLeft: 5 }]}>
+                        <Text style={getStatusStyle(displayStatus)}>
+                          {t(`pdf.schedule.statusLabel.${displayStatus}`, displayStatus.toUpperCase())}
+                        </Text>
+                      </View>
+                      <Text style={[hasRefund ? styles.refundedText : styles.tableCell, styles.col6]}>
+                        {hasRefund ? `(${formatCurrency(schedule.refunded_amount)})` : '-'}
                       </Text>
-                    </View>
-                    <Text style={[styles.tableCell, styles.col5]}>
-                      {formatCurrency(schedule.amount)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col4]}>
-                      {formatDate(schedule.paid_date)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col3]}>
-                      {formatDate(schedule.scheduled_date)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col2]}>
-                      {t(`pdf.schedule.paymentType.${schedule.payment_type}`, schedule.payment_type)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col1]}>
-                      {schedule.payment_number}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={[styles.tableCell, styles.col1]}>
-                      {schedule.payment_number}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col2]}>
-                      {t(`pdf.schedule.paymentType.${schedule.payment_type}`, schedule.payment_type)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col3]}>
-                      {formatDate(schedule.scheduled_date)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col4]}>
-                      {formatDate(schedule.paid_date)}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.col5]}>
-                      {formatCurrency(schedule.amount)}
-                    </Text>
-                    <View style={[styles.col6, { paddingRight: 5 }]}>
-                      <Text style={getStatusStyle(schedule.status)}>
-                        {t(`pdf.schedule.statusLabel.${schedule.status}`, schedule.status.toUpperCase())}
+                      <Text style={[styles.tableCell, styles.col5]}>
+                        {formatCurrency(schedule.amount)}
                       </Text>
-                    </View>
-                  </>
-                )}
-              </View>
-            ))}
+                      <Text style={[styles.tableCell, styles.col4]}>
+                        {formatDate(schedule.paid_date)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col3]}>
+                        {formatDate(schedule.scheduled_date)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col2]}>
+                        {t(`pdf.schedule.paymentType.${schedule.payment_type}`, schedule.payment_type)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col1]}>
+                        {schedule.payment_number}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={[styles.tableCell, styles.col1]}>
+                        {schedule.payment_number}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col2]}>
+                        {t(`pdf.schedule.paymentType.${schedule.payment_type}`, schedule.payment_type)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col3]}>
+                        {formatDate(schedule.scheduled_date)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col4]}>
+                        {formatDate(schedule.paid_date)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.col5]}>
+                        {formatCurrency(schedule.amount)}
+                      </Text>
+                      <Text style={[hasRefund ? styles.refundedText : styles.tableCell, styles.col6]}>
+                        {hasRefund ? `(${formatCurrency(schedule.refunded_amount)})` : '-'}
+                      </Text>
+                      <View style={[styles.col7, { paddingRight: 5 }]}>
+                        <Text style={getStatusStyle(displayStatus)}>
+                          {t(`pdf.schedule.statusLabel.${displayStatus}`, displayStatus.toUpperCase())}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+              );
+            })}
           </View>
         </View>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import {
   Shield,
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import type { AuditEvent } from '@/lib/audit/types';
+import '@/styles/audit-table.css';
 
 interface AuditEventsTableProps {
   events: AuditEvent[];
@@ -22,31 +23,23 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
 
   const getRiskIcon = (riskLevel: string) => {
-    const colors = {
-      critical: 'hsl(0 84% 60%)',
-      high: 'hsl(25 95% 53%)',
-      medium: 'hsl(45 93% 47%)',
-      low: 'hsl(142 71% 45%)',
-    };
-    const color = colors[riskLevel as keyof typeof colors] || colors.low;
-
     switch (riskLevel) {
       case 'critical':
       case 'high':
-        return <AlertTriangle className="h-3.5 w-3.5" style={{ color }} />;
+        return <AlertTriangle className={`risk-icon ${riskLevel}`} />;
       default:
-        return <Shield className="h-3.5 w-3.5" style={{ color }} />;
+        return <Shield className={`risk-icon ${riskLevel}`} />;
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'success':
-        return <CheckCircle className="h-3.5 w-3.5" style={{ color: 'hsl(142 71% 45%)' }} />;
+        return <CheckCircle className="status-icon success" />;
       case 'failure':
-        return <XCircle className="h-3.5 w-3.5" style={{ color: 'hsl(0 84% 60%)' }} />;
+        return <XCircle className="status-icon failure" />;
       default:
-        return <AlertTriangle className="h-3.5 w-3.5" style={{ color: 'hsl(45 93% 47%)' }} />;
+        return <AlertTriangle className="status-icon pending" />;
     }
   };
 
@@ -78,37 +71,90 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   const formatDate = (dateString: string) => {
     // Parse the date - ensure proper timezone handling
     const date = new Date(dateString);
-    const now = new Date();
 
-    // Format for display with full context
-    const dateStr = date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
+    // Use Hebrew locale for proper RTL formatting
+    const dateStr = date.toLocaleDateString('he-IL', {
+      day: '2-digit',
+      month: '2-digit',
       year: 'numeric',
-    });
+    }); // 26/01/2026
 
-    const timeStr = date.toLocaleTimeString(undefined, {
+    const timeStr = date.toLocaleTimeString('he-IL', {
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    });
+      hour12: false,  // 24-hour format for Hebrew
+    }); // 15:41
 
     return { dateStr, timeStr };
   };
 
-  const formatResourceType = (resourceType: string) => {
+  /**
+   * Format resource type with translation support
+   */
+  const formatResourceType = (resourceType: string): string => {
+    // Try to translate the resource type first
+    const translationKey = `audit.resource.${resourceType}`;
+    const translated = t(translationKey, '');
+    if (translated) {
+      return translated;
+    }
+
+    // Fallback to formatting the resource type
     return resourceType
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
 
-  const formatActionName = (action: string) => {
+  /**
+   * Translate event type for display
+   */
+  const formatEventType = (eventType: string): string => {
+    const translationKey = `audit.eventType.${eventType}`;
+    return t(translationKey, eventType);
+  };
+
+  /**
+   * Format field names for display (e.g., instagram_url -> Instagram URL)
+   */
+  const formatFieldName = (field: string): string => {
+    // Try to translate the field name first
+    const translationKey = `audit.field.${field}`;
+    const translated = t(translationKey, '');
+    if (translated) {
+      return translated;
+    }
+
+    // Fallback to formatting the field name
+    return field
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  /**
+   * Format the action name by combining the action, resource, and changed fields
+   */
+  const formatActionName = (action: string, event?: AuditEvent): string => {
     // Check if this is a translation key
     if (action.startsWith('audit.')) {
       return t(action, action);
     }
+
+    // Handle dotted actions like "profile.updated" or "lesson.created"
+    if (action.includes('.')) {
+      const [resourcePart, actionPart] = action.split('.');
+
+      // Try to translate action and resource separately
+      const actionKey = `audit.action.${actionPart}`;
+      const resourceKey = `audit.resource.${resourcePart}`;
+
+      const actionTranslated = t(actionKey, actionPart.charAt(0).toUpperCase() + actionPart.slice(1));
+      const resourceTranslated = t(resourceKey, resourcePart.charAt(0).toUpperCase() + resourcePart.slice(1));
+
+      return `${actionTranslated} ${resourceTranslated}`;
+    }
+
     // Normalize action names for better readability
     return action
       .replace(/^Updated\s+/i, 'Updated ')
@@ -140,16 +186,23 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   };
 
   const getChangedFieldsSummary = (event: AuditEvent): string | null => {
-    if (event.event_type !== 'UPDATE' || !event.changed_fields || event.changed_fields.length === 0) {
+    if (event.event_type !== 'UPDATE') {
       return null;
     }
 
-    const fields = event.changed_fields
-      .map(field => field.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '))
-      .slice(0, 3);
+    // Check for fields in either location
+    const fieldsList = event.changed_fields || event.metadata?.fields;
 
-    if (event.changed_fields.length > 3) {
-      return `${fields.join(', ')} +${event.changed_fields.length - 3} more`;
+    if (!fieldsList || fieldsList.length === 0) {
+      return null;
+    }
+
+    const fields = fieldsList
+      .map((field: string) => formatFieldName(field))
+      .slice(0, 2);  // Show first 2 fields instead of 3 for cleaner display
+
+    if (fieldsList.length > 2) {
+      return `${fields.join(', ')} +${fieldsList.length - 2}`;
     }
     return fields.join(', ');
   };
@@ -158,35 +211,84 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
     setExpandedEvent(expandedEvent === eventId ? null : eventId);
   };
 
+  /**
+   * Format a value for clean display (no JSON)
+   */
+  const formatValue = (val: any): string => {
+    if (val === null || val === undefined) {
+      return t('common.empty', '(empty)');
+    }
+    if (typeof val === 'boolean') {
+      return val ? t('common.yes', 'Yes') : t('common.no', 'No');
+    }
+    if (typeof val === 'string') {
+      return val;
+    }
+    if (typeof val === 'number') {
+      return String(val);
+    }
+    if (typeof val === 'object') {
+      // For objects/arrays, show a clean summary
+      if (Array.isArray(val)) {
+        return val.length > 0 ? val.join(', ') : t('common.empty', '(empty)');
+      }
+      // For objects, show key-value pairs cleanly
+      const entries = Object.entries(val);
+      if (entries.length === 0) return t('common.empty', '(empty)');
+      if (entries.length <= 3) {
+        return entries.map(([k, v]) => `${k}: ${v}`).join(', ');
+      }
+      return `${entries.length} ${t('common.items', 'items')}`;
+    }
+    return String(val);
+  };
+
   const renderValueDiff = (oldVal: any, newVal: any, field: string) => {
-    const oldStr = typeof oldVal === 'object' ? JSON.stringify(oldVal, null, 2) : String(oldVal);
-    const newStr = typeof newVal === 'object' ? JSON.stringify(newVal, null, 2) : String(newVal);
+    const oldStr = formatValue(oldVal);
+    const newStr = formatValue(newVal);
+
+    // If values are the same, don't show diff
+    if (oldStr === newStr) {
+      return (
+        <div style={{
+          fontSize: 'var(--font-size-sm)',
+          fontFamily: 'var(--font-family-primary)',
+          padding: '0.5rem',
+          borderRadius: 'calc(var(--radius) * 1)',
+          backgroundColor: 'hsl(var(--muted))',
+          color: 'hsl(var(--text-body))'
+        }}>
+          {newStr}
+        </div>
+      );
+    }
 
     return (
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3" style={{ alignItems: 'start' }}>
         <div>
           <div style={{
             fontSize: 'var(--font-size-xs)',
             fontWeight: 'var(--font-weight-semibold)',
             color: 'hsl(var(--text-muted))',
             fontFamily: 'var(--font-family-primary)',
-            marginBottom: '0.25rem'
+            marginBottom: '0.375rem'
           }}>
             {t('admin.audit.details.before', 'Before')}
           </div>
           <div style={{
-            fontSize: 'var(--font-size-xs)',
-            fontFamily: 'var(--font-family-mono)',
-            padding: '0.375rem',
+            fontSize: 'var(--font-size-sm)',
+            fontFamily: 'var(--font-family-primary)',
+            padding: '0.5rem 0.75rem',
             borderRadius: 'calc(var(--radius) * 1)',
-            backgroundColor: 'hsl(0 84% 60% / 0.05)',
+            backgroundColor: 'hsl(0 84% 60% / 0.08)',
             border: '1px solid hsl(0 84% 60% / 0.2)',
-            textDecoration: 'line-through',
             color: 'hsl(var(--text-muted))',
-            maxHeight: '100px',
-            overflow: 'auto'
+            textDecoration: oldStr ? 'line-through' : 'none',
+            minHeight: '2.5rem',
+            display: 'flex',
+            alignItems: 'center'
           }}>
-            {oldStr}
+            {oldStr || t('common.empty', '(empty)')}
           </div>
         </div>
         <div>
@@ -195,23 +297,24 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
             fontWeight: 'var(--font-weight-semibold)',
             color: 'hsl(142 71% 45%)',
             fontFamily: 'var(--font-family-primary)',
-            marginBottom: '0.25rem'
+            marginBottom: '0.375rem'
           }}>
             {t('admin.audit.details.after', 'After')}
           </div>
           <div style={{
-            fontSize: 'var(--font-size-xs)',
-            fontFamily: 'var(--font-family-mono)',
-            padding: '0.375rem',
+            fontSize: 'var(--font-size-sm)',
+            fontFamily: 'var(--font-family-primary)',
+            padding: '0.5rem 0.75rem',
             borderRadius: 'calc(var(--radius) * 1)',
-            backgroundColor: 'hsl(142 71% 45% / 0.05)',
+            backgroundColor: 'hsl(142 71% 45% / 0.08)',
             border: '1px solid hsl(142 71% 45% / 0.2)',
             color: 'hsl(var(--text-body))',
             fontWeight: 'var(--font-weight-medium)',
-            maxHeight: '100px',
-            overflow: 'auto'
+            minHeight: '2.5rem',
+            display: 'flex',
+            alignItems: 'center'
           }}>
-            {newStr}
+            {newStr || t('common.empty', '(empty)')}
           </div>
         </div>
       </div>
@@ -348,9 +451,8 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
           </thead>
           <tbody>
             {events.map((event, index) => (
-              <>
+              <Fragment key={event.id}>
                 <tr
-                  key={event.id}
                   style={{
                     cursor: 'pointer',
                     transition: 'background-color 0.15s',
@@ -414,7 +516,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                     </div>
                   </td>
 
-                  {/* Action */}
+                  {/* Action - CLEAN DISPLAY ONLY */}
                   <td style={{ padding: '0.625rem 0.75rem', verticalAlign: 'middle' }}>
                     <div style={{
                       fontWeight: 'var(--font-weight-medium)',
@@ -422,31 +524,8 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                       fontSize: 'var(--font-size-sm)',
                       fontFamily: 'var(--font-family-primary)'
                     }}>
-                      {formatActionName(event.action)}
+                      {formatActionName(event.action, event)}
                     </div>
-                    {getChangedFieldsSummary(event) ? (
-                      <div style={{
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'hsl(var(--primary))',
-                        fontFamily: 'var(--font-family-primary)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        marginTop: '0.125rem'
-                      }}>
-                        {t('admin.audit.table.changed', 'Changed')}: {getChangedFieldsSummary(event)}
-                      </div>
-                    ) : formatDescription(event) && (
-                      <div style={{
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'hsl(var(--text-muted))',
-                        fontFamily: 'var(--font-family-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: '250px'
-                      }}>
-                        {formatDescription(event)}
-                      </div>
-                    )}
                   </td>
 
                   {/* Resource */}
@@ -484,12 +563,12 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                         borderRadius: 'calc(var(--radius) * 3)',
                         fontSize: '0.625rem',
                         fontWeight: 'var(--font-weight-semibold)',
-                        fontFamily: 'var(--font-family-mono)',
+                        fontFamily: 'var(--font-family-primary)',
                         whiteSpace: 'nowrap',
                         ...getEventTypeBadgeStyle(event.event_type)
                       }}
                     >
-                      {event.event_type}
+                      {formatEventType(event.event_type)}
                     </span>
                   </td>
 
@@ -538,72 +617,98 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                       borderBottom: index < events.length - 1 ? '1px solid hsl(var(--border))' : 'none'
                     }}>
                       {/* Exact Changes */}
-                      {event.event_type === 'UPDATE' && event.changed_fields && event.changed_fields.length > 0 && event.old_values && event.new_values && (() => {
-                        // Filter out automatic fields that aren't relevant to display
-                        const relevantFields = event.changed_fields.filter(field =>
+                      {event.event_type === 'UPDATE' && (() => {
+                        // Check for changes in either format:
+                        // 1. Dedicated columns: changed_fields, old_values, new_values
+                        // 2. Metadata format: metadata.fields, metadata.changes
+                        const hasChangesInColumns = event.changed_fields && event.changed_fields.length > 0 && event.old_values && event.new_values;
+                        const hasChangesInMetadata = event.metadata?.fields && event.metadata?.changes;
+
+                        if (!hasChangesInColumns && !hasChangesInMetadata) {
+                          return false;
+                        }
+
+                        // Get the list of fields from either location
+                        const fields = hasChangesInColumns
+                          ? event.changed_fields
+                          : event.metadata?.fields || [];
+
+                        // Filter out automatic fields
+                        const relevantFields = fields.filter((field: string) =>
                           field !== 'updated_at' && field !== 'created_at'
                         );
-                        return relevantFields.length > 0;
-                      })() && (
-                        <div style={{ marginBottom: '1rem' }}>
-                          <div style={{
-                            fontSize: 'var(--font-size-xs)',
-                            fontWeight: 'var(--font-weight-semibold)',
-                            fontFamily: 'var(--font-family-primary)',
-                            color: 'hsl(var(--text-heading))',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            marginBottom: '0.5rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                          }}>
-                            <AlertTriangle className="h-3.5 w-3.5" style={{ color: 'hsl(var(--primary))' }} />
-                            {t('admin.audit.details.exactChanges', 'Exact Changes')} ({event.changed_fields.filter(f => f !== 'updated_at' && f !== 'created_at').length})
-                          </div>
-                          <div className="space-y-2">
-                            {event.changed_fields
-                              .filter(field => field !== 'updated_at' && field !== 'created_at')
-                              .map((field) => (
-                              <div key={field}>
-                                <div style={{
-                                  fontSize: 'var(--font-size-xs)',
-                                  fontWeight: 'var(--font-weight-semibold)',
-                                  fontFamily: 'var(--font-family-mono)',
-                                  color: 'hsl(var(--primary))',
-                                  marginBottom: '0.25rem',
-                                  textTransform: 'uppercase'
-                                }}>
-                                  {field}
-                                </div>
-                                {renderValueDiff(event.old_values?.[field], event.new_values?.[field], field)}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
 
-                      {/* Metadata Grid */}
-                      <div className="grid grid-cols-3 gap-4 text-xs">
-                        <div>
-                          <span style={{ color: 'hsl(var(--text-muted))' }}>ID:</span>{' '}
-                          <span style={{ fontFamily: 'var(--font-family-mono)' }}>{event.id.slice(0, 8)}...</span>
-                        </div>
-                        <div>
-                          <span style={{ color: 'hsl(var(--text-muted))' }}>Category:</span>{' '}
-                          {event.event_category}
-                        </div>
-                        {event.ip_address && (
-                          <div>
-                            <span style={{ color: 'hsl(var(--text-muted))' }}>IP:</span>{' '}
-                            <span style={{ fontFamily: 'var(--font-family-mono)' }}>{event.ip_address}</span>
+                        return relevantFields.length > 0;
+                      })() && (() => {
+                        // Determine which format we're using
+                        const hasChangesInColumns = event.changed_fields && event.old_values && event.new_values;
+                        const fields = hasChangesInColumns
+                          ? event.changed_fields
+                          : event.metadata?.fields || [];
+                        const relevantFields = fields.filter((field: string) =>
+                          field !== 'updated_at' && field !== 'created_at'
+                        );
+
+                        return (
+                          <div className="space-y-2">
+                            {relevantFields
+                              .filter((field: string) => {
+                                // Get before/after values to check if there's an actual change
+                                let oldVal, newVal;
+                                if (hasChangesInColumns) {
+                                  oldVal = event.old_values?.[field];
+                                  newVal = event.new_values?.[field];
+                                } else {
+                                  const change = event.metadata?.changes?.[field];
+                                  oldVal = change?.before;
+                                  newVal = change?.after;
+                                }
+
+                                // Filter out fields where:
+                                // 1. Both values are empty/null
+                                const bothEmpty = (oldVal === null || oldVal === undefined || oldVal === '') &&
+                                                 (newVal === null || newVal === undefined || newVal === '');
+
+                                // 2. Both values are the same
+                                const noChange = oldVal === newVal;
+
+                                return !bothEmpty && !noChange;
+                              })
+                              .map((field: string) => {
+                                // Get before/after values from either location
+                                let oldVal, newVal;
+                                if (hasChangesInColumns) {
+                                  oldVal = event.old_values?.[field];
+                                  newVal = event.new_values?.[field];
+                                } else {
+                                  // Metadata format has { before, after }
+                                  const change = event.metadata?.changes?.[field];
+                                  oldVal = change?.before;
+                                  newVal = change?.after;
+                                }
+
+                                return (
+                                  <div key={field}>
+                                    <div style={{
+                                      fontSize: 'var(--font-size-sm)',
+                                      fontWeight: 'var(--font-weight-semibold)',
+                                      fontFamily: 'var(--font-family-primary)',
+                                      color: 'hsl(var(--text-heading))',
+                                      marginBottom: '0.5rem'
+                                    }}>
+                                      {formatFieldName(field)}
+                                    </div>
+                                    {renderValueDiff(oldVal, newVal, field)}
+                                  </div>
+                                );
+                              })}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

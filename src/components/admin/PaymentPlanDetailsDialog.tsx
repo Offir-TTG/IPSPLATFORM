@@ -12,9 +12,13 @@ interface PaymentSchedule {
   id: string;
   amount: number;
   due_date: string;
-  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  status: 'pending' | 'paid' | 'overdue' | 'cancelled' | 'refunded' | 'partially_refunded';
   paid_date?: string;
   sequence_number: number;
+  refunded_amount?: number;
+  refunded_at?: string;
+  refund_reason?: string;
+  payment_status?: string;
 }
 
 interface Enrollment {
@@ -79,10 +83,23 @@ export function PaymentPlanDetailsDialog({
 
       setLoadingSchedules(true);
       try {
-        const response = await fetch(`/api/admin/payment-schedules?enrollment_id=${enrollment.id}`);
+        const response = await fetch(`/api/enrollments/${enrollment.id}/payment`);
         if (response.ok) {
           const data = await response.json();
-          setPaymentSchedules(data.data || []);
+          // Map schedules to PaymentSchedule interface
+          const mappedSchedules = (data.schedules || []).map((schedule: any, index: number) => ({
+            id: schedule.id,
+            amount: parseFloat(schedule.amount),
+            due_date: schedule.scheduled_date,
+            status: schedule.payment_status === 'partially_refunded' ? 'partially_refunded' : schedule.status,
+            paid_date: schedule.paid_date,
+            sequence_number: schedule.payment_number || index + 1,
+            refunded_amount: schedule.refunded_amount,
+            refunded_at: schedule.refunded_at,
+            refund_reason: schedule.refund_reason,
+            payment_status: schedule.payment_status,
+          }));
+          setPaymentSchedules(mappedSchedules);
         }
       } catch (error) {
         console.error('Error fetching payment schedules:', error);
@@ -961,21 +978,34 @@ export function PaymentPlanDetailsDialog({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-sm whitespace-nowrap">
-                              {formatCurrency(payment.amount, enrollment.currency)}
-                            </span>
-                            {actualSchedule && (
-                              <Badge
-                                variant={
-                                  actualSchedule.status === 'paid' ? 'default' :
-                                  actualSchedule.status === 'overdue' ? 'destructive' :
-                                  'secondary'
-                                }
-                                className="text-xs"
-                              >
-                                {t(`admin.enrollments.paymentPlanDetails.status.${actualSchedule.status}`, actualSchedule.status)}
-                              </Badge>
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm whitespace-nowrap">
+                                {formatCurrency(payment.amount, enrollment.currency)}
+                              </span>
+                              {actualSchedule && (
+                                <Badge
+                                  variant={
+                                    actualSchedule.status === 'paid' ? 'default' :
+                                    actualSchedule.status === 'partially_refunded' ? 'secondary' :
+                                    actualSchedule.status === 'refunded' ? 'outline' :
+                                    actualSchedule.status === 'overdue' ? 'destructive' :
+                                    'secondary'
+                                  }
+                                  className="text-xs"
+                                >
+                                  {actualSchedule.status === 'partially_refunded'
+                                    ? t('admin.enrollments.paymentPlanDetails.status.partially_refunded', 'Partially Refunded')
+                                    : actualSchedule.status === 'refunded'
+                                    ? t('admin.enrollments.paymentPlanDetails.status.refunded', 'Refunded')
+                                    : t(`admin.enrollments.paymentPlanDetails.status.${actualSchedule.status}`, actualSchedule.status)}
+                                </Badge>
+                              )}
+                            </div>
+                            {actualSchedule?.refunded_amount && actualSchedule.refunded_amount > 0 && (
+                              <span className="text-xs text-purple-600 dark:text-purple-400 font-medium whitespace-nowrap">
+                                {t('admin.enrollments.paymentPlanDetails.refunded', 'Refunded')}: {formatCurrency(actualSchedule.refunded_amount, enrollment.currency)}
+                              </span>
                             )}
                           </div>
                         </div>

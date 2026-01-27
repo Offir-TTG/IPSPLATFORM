@@ -323,7 +323,7 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event) 
         amount: amount / 100,
         currency: currency.toUpperCase(),
         payment_type,
-        status: 'succeeded',
+        status: 'paid',
         installment_number: parseInt(metadata.payment_number || '1'),
         paid_at: new Date().toISOString(),
         metadata: {
@@ -763,7 +763,7 @@ async function handleInvoicePaymentSucceeded(supabase: any, event: Stripe.Event)
   // Get schedule details to update enrollment
   const { data: schedule } = await supabase
     .from('payment_schedules')
-    .select('amount, enrollment_id')
+    .select('amount, enrollment_id, payment_number, payment_type, payment_plan_id')
     .eq('id', scheduleId)
     .single();
 
@@ -771,7 +771,7 @@ async function handleInvoicePaymentSucceeded(supabase: any, event: Stripe.Event)
     // Update enrollment paid_amount
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('paid_amount, total_amount')
+      .select('paid_amount, total_amount, product_id')
       .eq('id', enrollmentId)
       .eq('tenant_id', tenantId)
       .single();
@@ -799,14 +799,22 @@ async function handleInvoicePaymentSucceeded(supabase: any, event: Stripe.Event)
       tenant_id: tenantId,
       enrollment_id: enrollmentId,
       payment_schedule_id: scheduleId,
+      product_id: enrollment.product_id,
+      payment_plan_id: schedule.payment_plan_id,
       amount: parseFloat(schedule.amount.toString()),
       currency: invoice.currency.toUpperCase(),
       payment_type: schedule.payment_type,
+      installment_number: schedule.payment_number,
       stripe_payment_intent_id: invoice.payment_intent as string,
       stripe_invoice_id: invoice.id,
       stripe_customer_id: invoice.customer as string,
-      status: 'succeeded',
+      status: 'paid',
       paid_at: new Date().toISOString(),
+      metadata: {
+        payment_number: schedule.payment_number,
+        payment_type: schedule.payment_type,
+        schedule_id: scheduleId,
+      },
     };
 
     console.log('[Webhook] Creating payment record with data:', paymentData);
@@ -1057,33 +1065,87 @@ async function handleInvoicePaymentFailed(supabase: any, event: Stripe.Event) {
 async function handleChargeRefunded(supabase: any, event: Stripe.Event) {
   const charge = event.data.object as Stripe.Charge;
 
-  console.log('Charge refunded:', charge.id);
+  console.log('[Webhook] Charge refunded:', {
+    charge_id: charge.id,
+    payment_intent: charge.payment_intent,
+    amount_refunded: charge.amount_refunded / 100,
+    currency: charge.currency,
+  });
 
-  // Update payment record
+  // Get existing payment record to calculate total refunded
+  const { data: existingPayment } = await supabase
+    .from('payments')
+    .select('id, amount, refunded_amount, payment_schedule_id')
+    .eq('stripe_payment_intent_id', charge.payment_intent)
+    .maybeSingle();
+
+  if (!existingPayment) {
+    console.log('[Webhook] No payment record found for payment intent:', charge.payment_intent);
+    return;
+  }
+
+  const totalRefunded = (charge.amount_refunded || 0) / 100;
+  const isFullRefund = totalRefunded >= existingPayment.amount;
+  const newStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+
+  console.log('[Webhook] Updating payment record:', {
+    payment_id: existingPayment.id,
+    new_status: newStatus,
+    refunded_amount: totalRefunded,
+  });
+
+  // Update payment record with refund details
   await supabase
     .from('payments')
     .update({
-      status: 'refunded',
+      status: newStatus,
+      refunded_amount: totalRefunded,
       refunded_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
-    .eq('stripe_payment_intent', charge.payment_intent);
+    .eq('id', existingPayment.id);
 
-  // Update enrollment if linked
+  // Update payment_schedule status
+  if (existingPayment.payment_schedule_id) {
+    await supabase
+      .from('payment_schedules')
+      .update({
+        status: isFullRefund ? 'refunded' : 'paid',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', existingPayment.payment_schedule_id);
+
+    console.log('[Webhook] Updated payment schedule status to:', isFullRefund ? 'refunded' : 'paid');
+  }
+
+  // Update enrollment if linked - don't set to refunded unless fully refunded
   const { data: payment } = await supabase
     .from('payments')
     .select('enrollment_id')
-    .eq('stripe_payment_intent', charge.payment_intent)
+    .eq('id', existingPayment.id)
     .single();
 
-  if (payment?.enrollment_id) {
+  if (payment?.enrollment_id && isFullRefund) {
+    // Recalculate enrollment paid_amount
+    const { data: allSchedules } = await supabase
+      .from('payment_schedules')
+      .select('amount')
+      .eq('enrollment_id', payment.enrollment_id)
+      .eq('status', 'paid');
+
+    const totalPaid = allSchedules
+      ? allSchedules.reduce((sum: number, s: any) => sum + parseFloat(s.amount.toString()), 0)
+      : 0;
+
     await supabase
       .from('enrollments')
       .update({
-        payment_status: 'refunded',
+        paid_amount: totalPaid,
         updated_at: new Date().toISOString()
       })
       .eq('id', payment.enrollment_id);
+
+    console.log('[Webhook] Updated enrollment paid_amount to:', totalPaid);
 
     // Create notification
     await supabase.from('notifications').insert({

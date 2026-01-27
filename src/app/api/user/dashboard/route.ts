@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
-
 export const dynamic = 'force-dynamic';
 
 // GET /api/user/dashboard - Get user dashboard data
@@ -62,8 +61,7 @@ export const GET = withAuth(
       if (!dashboardData.stats.attendance_rate) {
         dashboardData.stats.attendance_rate = 0;
       }
-
-      return NextResponse.json({
+return NextResponse.json({
         success: true,
         data: dashboardData,
       });

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getProduct, updateProduct, deleteProduct, getProductStats } from '@/lib/payments/productService';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // GET /api/admin/payments/products/:id - Get product details
@@ -79,22 +77,7 @@ export async function PUT(
     const body = await request.json();
 
     // Update product
-    const product = await updateProduct(params.id, userData.tenant_id, body);
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'product.updated',
-      details: {
-        productId: product.id,
-        updates: Object.keys(body),
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
-    return NextResponse.json(product);
+    const product = await updateProduct(params.id, userData.tenant_id, body);return NextResponse.json(product);
 
   } catch (error: any) {
     console.error('Error in PUT /api/admin/payments/products/:id:', error);
@@ -136,20 +119,7 @@ export async function DELETE(
     await deleteProduct(params.id, userData.tenant_id);
 
     // Log audit event
-    if (product) {
-      await logAuditEvent({
-        userId: user.id,
-        userEmail: user.email || 'unknown',
-        action: 'product.deleted',
-        details: {
-          productId: params.id,
-          productName: product.product_name,
-          productType: product.product_type,
-        },
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-      });
-    }
+    if (product) {}
 
     return NextResponse.json({ success: true });
 

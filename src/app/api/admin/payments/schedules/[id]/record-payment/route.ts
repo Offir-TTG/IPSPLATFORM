@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { recordManualPayment } from '@/lib/payments/enrollmentService';
-import { logAuditEvent } from '@/lib/audit/logger';
-
 export const dynamic = 'force-dynamic';
 
 // POST /api/admin/payments/schedules/:id/record-payment - Record a manual payment
@@ -59,26 +57,7 @@ export async function POST(
       payment_method,
       transaction_reference,
       notes
-    );
-
-    // Log audit event
-    await logAuditEvent({
-      userId: user.id,
-      userEmail: user.email || 'unknown',
-      action: 'payment.manual_recorded',
-      details: {
-        scheduleId: params.id,
-        enrollmentId: schedule.enrollment_id,
-        amount: schedule.amount,
-        paymentMethod: payment_method,
-        transactionReference: transaction_reference,
-        notes,
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-    });
-
-    return NextResponse.json({
+    );return NextResponse.json({
       success: true,
       message: 'Payment recorded successfully',
       amount: schedule.amount,

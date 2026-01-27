@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/auditService';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 import { getServerTranslations, translate } from '@/lib/translations/serverTranslations';
 
@@ -157,22 +156,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Audit log
-    await logAuditEvent({
-      user_id: user.id,
-      event_type: 'CREATE',
-      event_category: 'CONFIG',
-      resource_type: 'language',
-      resource_id: language.id,
-      resource_name: `${name} (${code})`,
-      action: 'Created language',
-      description: `Created language: ${native_name} (${code})`,
-      new_values: { code, name, native_name, direction, is_active, is_default, currency_code, currency_symbol, currency_position },
-      status: 'success',
-      risk_level: 'medium',
-      metadata: { direction, is_default, currency_code }
-    });
-
     return NextResponse.json({
       success: true,
       data: language,
@@ -295,23 +278,7 @@ export async function PUT(request: NextRequest) {
 
     // Audit log
     if (oldLanguage) {
-      const changedFields = Object.keys(updateData);
-      await logAuditEvent({
-        user_id: user.id,
-        event_type: 'UPDATE',
-        event_category: 'CONFIG',
-        resource_type: 'language',
-        resource_id: oldLanguage.id,
-        resource_name: `${oldLanguage.name} (${code})`,
-        action: 'Updated language',
-        description: `Updated language: ${oldLanguage.native_name} (${code})`,
-        old_values: Object.fromEntries(changedFields.map(k => [k, oldLanguage[k]])),
-        new_values: updateData,
-        status: 'success',
-        risk_level: is_default ? 'high' : 'medium',
-        metadata: { direction: oldLanguage.direction, was_default: oldLanguage.is_default, is_default }
-      });
-    }
+      const changedFields = Object.keys(updateData);}
 
     // Determine appropriate success message based on what changed
     let successMessage;
@@ -414,22 +381,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Audit log
-    if (language) {
-      await logAuditEvent({
-        user_id: user.id,
-        event_type: 'DELETE',
-        event_category: 'CONFIG',
-        resource_type: 'language',
-        resource_id: language.id,
-        resource_name: `${language.name} (${code})`,
-        action: 'Deleted language',
-        description: `Deleted language: ${language.native_name} (${code})`,
-        old_values: { code, name: language.name, native_name: language.native_name, direction: language.direction, is_active: language.is_active },
-        status: 'success',
-        risk_level: 'high',
-        metadata: { direction: language.direction, was_default: language.is_default }
-      });
-    }
+    if (language) {}
 
     return NextResponse.json({
       success: true,

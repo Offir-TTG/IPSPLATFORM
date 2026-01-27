@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getStripeClient } from '@/lib/payments/getStripeClient';
-
 export const dynamic = 'force-dynamic';
 
 /**
@@ -117,6 +116,30 @@ export async function GET(request: NextRequest) {
 
     console.log(`[User Invoices] Total invoices found across all customers: ${allStripeInvoices.length}`);
 
+    // Fetch payment intents to check for refunds
+    const paymentIntentIds = allStripeInvoices
+      .map(inv => inv.payment_intent)
+      .filter(Boolean) as string[];
+
+    const paymentIntentsWithRefunds = new Map<string, { amount_refunded: number; refunds: any[] }>();
+
+    for (const piId of paymentIntentIds) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(piId, {
+          expand: ['charges.data.refunds'],
+        }) as any; // Use any to access expanded properties
+
+        if (pi.amount_refunded && pi.amount_refunded > 0) {
+          paymentIntentsWithRefunds.set(piId, {
+            amount_refunded: pi.amount_refunded / 100,
+            refunds: pi.charges?.data?.[0]?.refunds?.data || [],
+          });
+        }
+      } catch (error) {
+        console.error(`[User Invoices] Error fetching payment intent ${piId}:`, error);
+      }
+    }
+
     // Transform Stripe invoices to our format
     let invoices = allStripeInvoices.map((inv) => {
       // Calculate if invoice is overdue
@@ -125,12 +148,30 @@ export async function GET(request: NextRequest) {
         inv.due_date &&
         inv.due_date * 1000 < Date.now();
 
+      // Check for refunds on the payment intent
+      const piId = inv.payment_intent as string;
+      const refundInfo = piId ? paymentIntentsWithRefunds.get(piId) : null;
+
+      // Determine status including refund states
+      let status = isOverdue ? 'overdue' : inv.status;
+      if (refundInfo) {
+        const totalAmount = inv.amount_paid / 100;
+        const refundedAmount = refundInfo.amount_refunded;
+
+        if (refundedAmount >= totalAmount) {
+          status = 'refunded';
+        } else if (refundedAmount > 0) {
+          status = 'partially_refunded';
+        }
+      }
+
       return {
         id: inv.id,
         number: inv.number || inv.id,
-        status: isOverdue ? 'overdue' : inv.status,
+        status,
         amount_due: inv.amount_due / 100,
         amount_paid: inv.amount_paid / 100,
+        refund_amount: refundInfo?.amount_refunded || 0,
         currency: inv.currency.toUpperCase(),
         created: inv.created * 1000, // Convert to milliseconds
         due_date: inv.due_date ? inv.due_date * 1000 : null,
@@ -158,8 +199,7 @@ export async function GET(request: NextRequest) {
 
     // Sort by created date (newest first)
     invoices.sort((a, b) => b.created - a.created);
-
-    return NextResponse.json({
+return NextResponse.json({
       success: true,
       invoices,
     });

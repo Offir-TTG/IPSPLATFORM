@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
-
 export const dynamic = 'force-dynamic';
 
 // OPTIMIZED VERSION - Fixes N+1 query problem
@@ -242,7 +241,7 @@ export const GET = withAuth(
             : null;
 
           // Check payment-based access
-          let accessCheck = { hasAccess: true };
+          let accessCheck: { hasAccess: boolean; reason?: string; overdueAmount?: number; overdueDays?: number } = { hasAccess: true };
           if (tenantId) {
             accessCheck = await checkCourseAccess(user.id, product.course_id, tenantId);
           }
@@ -300,7 +299,7 @@ export const GET = withAuth(
                 : null;
 
               // Check payment-based access for program courses
-              let accessCheck = { hasAccess: true };
+              let accessCheck: { hasAccess: boolean; reason?: string; overdueAmount?: number; overdueDays?: number } = { hasAccess: true };
               if (tenantId) {
                 accessCheck = await checkCourseAccess(user.id, (course as any).id, tenantId);
               }
@@ -359,8 +358,7 @@ export const GET = withAuth(
       }
 
       console.log('Total courses to return:', result.length);
-
-      return NextResponse.json({
+return NextResponse.json({
         success: true,
         data: result,
       });

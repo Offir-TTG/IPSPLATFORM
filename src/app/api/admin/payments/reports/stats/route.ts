@@ -32,16 +32,37 @@ export async function GET(request: NextRequest) {
       .select('total_amount, paid_amount, payment_status')
       .eq('tenant_id', tenantId);
 
-    // Get all payment schedules (including paid and pending)
+    // Get all payment schedules (for pending/overdue calculations)
     const { data: schedules } = await supabase
       .from('payment_schedules')
       .select('amount, status, scheduled_date, paid_date')
       .eq('tenant_id', tenantId);
 
-    // Calculate total revenue from paid schedules
-    const totalRevenue = schedules
+    // Get all payments (for paid amount and refunds)
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('amount, status, refunded_amount, paid_at')
+      .eq('tenant_id', tenantId);
+
+    // Calculate total revenue from all enrollments (full expected revenue)
+    const totalRevenue = enrollments
+      ?.filter(e => !['cancelled', 'refunded'].includes(e.payment_status))
+      .reduce((sum, e) => sum + parseFloat(e.total_amount?.toString() || '0'), 0) || 0;
+
+    // Calculate total paid from payment schedules (more complete data)
+    const totalPaid = schedules
       ?.filter(s => s.status === 'paid')
-      .reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+      .reduce((sum, s) => sum + parseFloat(s.amount?.toString() || '0'), 0) || 0;
+
+    // Calculate total refunds from payments table ONLY
+    const totalRefunds = payments
+      ?.reduce((sum, p) => {
+        const refunded = parseFloat(p.refunded_amount?.toString() || '0');
+        return sum + refunded;
+      }, 0) || 0;
+
+    // Calculate net revenue (total paid from schedules minus refunds from payments)
+    const netRevenue = totalPaid - totalRefunds;
 
     // Calculate active enrollments (with payment status not cancelled/refunded)
     const activeEnrollments = enrollments?.filter(e =>
@@ -62,11 +83,11 @@ export async function GET(request: NextRequest) {
       s.status === 'pending' && new Date(s.scheduled_date) < now
     ).length || 0;
 
-    // Calculate this month's revenue from paid schedules
+    // Calculate this month's revenue from payment schedules
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const thisMonthRevenue = schedules
       ?.filter(s => s.status === 'paid' && s.paid_date && new Date(s.paid_date) >= thisMonthStart)
-      .reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+      .reduce((sum, s) => sum + parseFloat(s.amount?.toString() || '0'), 0) || 0;
 
     // Calculate last month's revenue for comparison
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -77,26 +98,26 @@ export async function GET(request: NextRequest) {
         const date = new Date(s.paid_date);
         return date >= lastMonthStart && date <= lastMonthEnd;
       })
-      .reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+      .reduce((sum, s) => sum + parseFloat(s.amount?.toString() || '0'), 0) || 0;
 
     // Calculate growth percentage
     const revenueGrowth = lastMonthRevenue > 0
       ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
       : 0;
 
-    // Get recent paid schedules (fetch separately and join manually since no FK exists)
-    const { data: paidSchedules } = await supabase
-      .from('payment_schedules')
-      .select('id, amount, status, paid_date, enrollment_id')
+    // Get recent payments (fetch separately and join manually since no FK exists)
+    const { data: recentPaymentsData } = await supabase
+      .from('payments')
+      .select('id, amount, status, paid_at, enrollment_id')
       .eq('tenant_id', tenantId)
-      .eq('status', 'paid')
-      .order('paid_date', { ascending: false })
+      .neq('status', 'failed')
+      .order('paid_at', { ascending: false })
       .limit(5);
 
     // Get enrollment and user data for recent payments
     let recentPayments: any[] = [];
-    if (paidSchedules && paidSchedules.length > 0) {
-      const enrollmentIds = paidSchedules.map(s => s.enrollment_id).filter(Boolean);
+    if (recentPaymentsData && recentPaymentsData.length > 0) {
+      const enrollmentIds = recentPaymentsData.map(p => p.enrollment_id).filter(Boolean);
 
       if (enrollmentIds.length > 0) {
         const { data: enrollmentsData } = await supabase
@@ -117,15 +138,15 @@ export async function GET(request: NextRequest) {
           const enrollmentMap = new Map(enrollmentsData?.map(e => [e.id, e]) || []);
 
           // Join the data
-          recentPayments = paidSchedules.map(schedule => {
-            const enrollment = enrollmentMap.get(schedule.enrollment_id);
+          recentPayments = recentPaymentsData.map(payment => {
+            const enrollment = enrollmentMap.get(payment.enrollment_id);
             const user = enrollment ? userMap.get(enrollment.user_id) : null;
 
             return {
-              id: schedule.id,
-              amount: schedule.amount,
-              status: schedule.status,
-              paid_date: schedule.paid_date,
+              id: payment.id,
+              amount: payment.amount,
+              status: payment.status,
+              paid_date: payment.paid_at,
               enrollments: {
                 users: user || null
               }
@@ -137,6 +158,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       totalRevenue,
+      netRevenue,
+      totalRefunds,
       activeEnrollments,
       pendingPayments,
       pendingAmount,

@@ -38,9 +38,14 @@ import {
   Target,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ExternalLink,
   FileText,
   FileBarChart,
+  Info,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useUserLanguage } from '@/context/AppContext';
@@ -72,10 +77,26 @@ interface PaymentSchedule {
   amount: number;
   currency: string;
   scheduled_date: string;
+  original_due_date?: string;
   paid_date?: string;
   status: string;
   payment_type: string;
   product_name?: string;
+  refunded_amount?: number;
+  refunded_at?: string;
+  refund_reason?: string;
+  payment_status?: string;
+  adjustment_history?: Array<{
+    action: string;
+    reason: string;
+    admin_id: string;
+    admin_name: string;
+    new_date: string;
+    old_date: string;
+    timestamp: string;
+  }>;
+  adjusted_by?: string;
+  adjustment_reason?: string;
 }
 
 interface Invoice {
@@ -84,6 +105,7 @@ interface Invoice {
   status: string;
   amount_due: number;
   amount_paid: number;
+  refund_amount?: number;
   currency: string;
   created: number;
   due_date: number | null;
@@ -92,6 +114,7 @@ interface Invoice {
   hosted_invoice_url: string | null;
   description: string;
   metadata: Record<string, string>;
+  locallyPaid?: boolean; // Flag to indicate payment was completed locally
 }
 
 export default function ProfilePage() {
@@ -113,6 +136,14 @@ export default function ProfilePage() {
   // Pagination state for payment schedules (per enrollment)
   const [paymentPages, setPaymentPages] = useState<Record<string, number>>({});
   const PAYMENTS_PER_PAGE = 10;
+
+  // Sorting state for payment schedules (per enrollment)
+  type SortField = 'payment_number' | 'payment_type' | 'scheduled_date' | 'amount' | 'refunded_amount' | 'paid_amount' | 'status';
+  type SortDirection = 'asc' | 'desc';
+  const [paymentSort, setPaymentSort] = useState<Record<string, { field: SortField; direction: SortDirection }>>({});
+
+  // Expanded payment rows state (tracks which payment detail rows are expanded)
+  const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set());
 
   // Billing sub-tab state
   const [billingSubTab, setBillingSubTab] = useState('enrollments');
@@ -381,16 +412,20 @@ export default function ProfilePage() {
   );
 
   // Fetch enrollments and invoices when billing tab is active
+  // Fetch enrollments when billing tab is active
   useEffect(() => {
-    if (activeTab === 'billing') {
-      if (enrollments.length === 0) {
-        fetchEnrollments();
-      }
-      if (invoices.length === 0) {
-        fetchInvoices();
-      }
+    if (activeTab === 'billing' && enrollments.length === 0) {
+      fetchEnrollments();
     }
-  }, [activeTab, enrollments.length, invoices.length]);
+  }, [activeTab, enrollments.length]);
+
+  // Fetch invoices AFTER payment schedules are loaded
+  useEffect(() => {
+    if (activeTab === 'billing' && paymentSchedules.length > 0 && invoices.length === 0) {
+      console.log('[Profile] Payment schedules loaded, now fetching invoices');
+      fetchInvoices();
+    }
+  }, [activeTab, paymentSchedules.length, invoices.length]);
 
   const fetchEnrollments = async () => {
     setLoadingEnrollments(true);
@@ -475,6 +510,14 @@ export default function ProfilePage() {
             }
 
             if (scheduleData.schedules) {
+              // DEBUG: Log each schedule to see if refunded_amount is present
+              console.log('[Profile] Schedules received from API:', scheduleData.schedules.length);
+              scheduleData.schedules.forEach((s: any, idx: number) => {
+                if (s.refunded_amount) {
+                  console.log(`[Profile] Schedule #${s.payment_number} has refunded_amount:`, s.refunded_amount);
+                }
+              });
+
               const schedulesWithProduct = scheduleData.schedules.map((s: any) => ({
                 ...s,
                 product_name: enrollment.product_name,
@@ -513,7 +556,61 @@ export default function ProfilePage() {
       const data = await response.json();
 
       if (data.success && data.invoices) {
-        setInvoices(data.invoices);
+        console.log('[Profile] fetchInvoices - Starting invoice enrichment');
+        console.log('[Profile] Payment schedules available:', paymentSchedules.length);
+
+        // Create a set of paid payment_schedule_ids from existing payment schedules
+        // This prevents showing "Pay Now" for payments that were manually charged by admin
+        const paidSchedules = new Set<string>();
+
+        // Also create a map of stripe_invoice_id -> payment_schedule for direct matching
+        const paidSchedulesByStripeInvoice = new Map<string, string>();
+
+        // Use existing paymentSchedules state which is already fetched
+        paymentSchedules.forEach((schedule: any) => {
+          if (schedule.status === 'paid') {
+            paidSchedules.add(schedule.id);
+
+            // Map Stripe invoice ID to schedule ID for direct matching
+            if (schedule.stripe_invoice_id) {
+              paidSchedulesByStripeInvoice.set(schedule.stripe_invoice_id, schedule.id);
+            }
+          }
+        });
+
+        console.log('[Profile] Paid schedules count:', paidSchedules.size);
+        console.log('[Profile] Paid schedules by Stripe invoice ID:', Array.from(paidSchedulesByStripeInvoice.keys()));
+
+        // Enrich invoices with local payment status
+        const enrichedInvoices = data.invoices.map((inv: Invoice) => {
+          const matchedByInvoiceId = paidSchedulesByStripeInvoice.has(inv.id);
+
+          // Check if invoice metadata has schedule_id (or payment_schedule_id for backwards compat) and if that schedule is paid
+          const metadataScheduleId = inv.metadata?.schedule_id || inv.metadata?.payment_schedule_id;
+          const matchedByMetadata = metadataScheduleId && paidSchedules.has(metadataScheduleId);
+
+          // Mark as locally paid if EITHER:
+          // 1. Invoice ID matches a paid schedule's stripe_invoice_id
+          // 2. Invoice metadata payment_schedule_id matches a paid schedule (catches old failed invoices)
+          const locallyPaid = matchedByInvoiceId || matchedByMetadata;
+
+          console.log('[Profile] Invoice:', inv.id, {
+            number: inv.number,
+            status: inv.status,
+            matchedByInvoiceId,
+            matchedByMetadata,
+            metadataScheduleId,
+            locallyPaid,
+            metadata: inv.metadata
+          });
+
+          return {
+            ...inv,
+            locallyPaid
+          };
+        });
+
+        setInvoices(enrichedInvoices);
       }
     } catch (error) {
       console.error('Error fetching invoices:', error);
@@ -601,6 +698,20 @@ export default function ProfilePage() {
             {t('user.profile.billing.schedule.overdue', 'Overdue')}
           </Badge>
         );
+      case 'refunded':
+        return (
+          <Badge className={`bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20 border ${badgeClass}`}>
+            <AlertCircle className="h-3 w-3" />
+            {t('user.profile.billing.schedule.refunded', 'Refunded')}
+          </Badge>
+        );
+      case 'partially_refunded':
+        return (
+          <Badge className={`bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20 border ${badgeClass}`}>
+            <AlertCircle className="h-3 w-3" />
+            {t('user.profile.billing.schedule.partially_refunded', 'Partially Refunded')}
+          </Badge>
+        );
       default:
         return (
           <Badge variant="outline">
@@ -608,6 +719,28 @@ export default function ProfilePage() {
           </Badge>
         );
     }
+  };
+
+  // Toggle payment details expansion
+  const togglePaymentExpansion = (paymentId: string) => {
+    setExpandedPayments(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(paymentId)) {
+        newSet.delete(paymentId);
+      } else {
+        newSet.add(paymentId);
+      }
+      return newSet;
+    });
+  };
+
+  // Check if payment has additional details to show
+  const hasPaymentDetails = (schedule: PaymentSchedule) => {
+    return (
+      (schedule.refunded_amount && schedule.refunded_amount > 0) ||
+      (schedule.original_due_date && schedule.original_due_date !== schedule.scheduled_date) ||
+      (schedule.adjustment_history && schedule.adjustment_history.length > 0)
+    );
   };
 
   const getInvoiceStatusBadge = (status: string) => {
@@ -618,6 +751,20 @@ export default function ProfilePage() {
           <Badge className={`bg-green-500 hover:bg-green-600 text-white ${badgeClass}`}>
             <CheckCircle2 className="h-3 w-3" />
             {t('invoices.status.paid', 'Paid')}
+          </Badge>
+        );
+      case 'refunded':
+        return (
+          <Badge className={`bg-purple-500 hover:bg-purple-600 text-white ${badgeClass}`}>
+            <AlertCircle className="h-3 w-3" />
+            {t('invoices.status.refunded', 'Refunded')}
+          </Badge>
+        );
+      case 'partially_refunded':
+        return (
+          <Badge className={`bg-purple-400 hover:bg-purple-500 text-white ${badgeClass}`}>
+            <AlertCircle className="h-3 w-3" />
+            {t('invoices.status.partially_refunded', 'Partially Refunded')}
           </Badge>
         );
       case 'open':
@@ -863,18 +1010,78 @@ export default function ProfilePage() {
                       schedule => schedule.product_name === enrollment.product_name
                     );
 
+                    // Calculate total refunded amount for this enrollment
+                    const totalRefunded = enrollmentPayments.reduce((sum, schedule) => {
+                      return sum + (schedule.refunded_amount || 0);
+                    }, 0);
+
+                    // Sorting for this enrollment's payments (default: by payment_number ascending)
+                    const sortConfig = paymentSort[enrollment.id] || { field: 'payment_number', direction: 'asc' };
+                    const sortedPayments = [...enrollmentPayments].sort((a, b) => {
+                      const { field, direction } = sortConfig;
+                      let aValue: any;
+                      let bValue: any;
+
+                      // Handle calculated fields
+                      if (field === 'refunded_amount') {
+                        aValue = a.refunded_amount || 0;
+                        bValue = b.refunded_amount || 0;
+                      } else if (field === 'paid_amount') {
+                        aValue = (a.amount || 0) - (a.refunded_amount || 0);
+                        bValue = (b.amount || 0) - (b.refunded_amount || 0);
+                      } else {
+                        aValue = a[field];
+                        bValue = b[field];
+                      }
+
+                      // Handle date sorting
+                      if (field === 'scheduled_date') {
+                        aValue = new Date(aValue).getTime();
+                        bValue = new Date(bValue).getTime();
+                      }
+
+                      // Handle numeric sorting
+                      if (field === 'payment_number' || field === 'amount' || field === 'refunded_amount' || field === 'paid_amount') {
+                        aValue = Number(aValue);
+                        bValue = Number(bValue);
+                      }
+
+                      // Handle string sorting
+                      if (typeof aValue === 'string') {
+                        aValue = aValue.toLowerCase();
+                        bValue = bValue.toLowerCase();
+                      }
+
+                      if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+                      if (aValue > bValue) return direction === 'asc' ? 1 : -1;
+                      return 0;
+                    });
+
                     // Pagination for this enrollment's payments
                     const currentPage = paymentPages[enrollment.id] || 1;
-                    const totalPaymentPages = Math.ceil(enrollmentPayments.length / PAYMENTS_PER_PAGE);
+                    const totalPaymentPages = Math.ceil(sortedPayments.length / PAYMENTS_PER_PAGE);
                     const startIndex = (currentPage - 1) * PAYMENTS_PER_PAGE;
                     const endIndex = startIndex + PAYMENTS_PER_PAGE;
-                    const paginatedPayments = enrollmentPayments.slice(startIndex, endIndex);
+                    const paginatedPayments = sortedPayments.slice(startIndex, endIndex);
 
                     const handlePageChange = (enrollmentId: string, newPage: number) => {
                       setPaymentPages(prev => ({
                         ...prev,
                         [enrollmentId]: newPage
                       }));
+                    };
+
+                    const handleSort = (enrollmentId: string, field: SortField) => {
+                      setPaymentSort(prev => {
+                        const current = prev[enrollmentId] || { field: 'payment_number', direction: 'asc' };
+                        const newDirection = current.field === field && current.direction === 'asc' ? 'desc' : 'asc';
+                        return {
+                          ...prev,
+                          [enrollmentId]: { field, direction: newDirection }
+                        };
+                      });
+                      // Reset to first page when sorting changes
+                      handlePageChange(enrollmentId, 1);
                     };
 
                     return (
@@ -942,28 +1149,36 @@ export default function ProfilePage() {
                                   {t('user.profile.billing.paymentProgress', 'Payment Progress')}
                                 </span>
                                 <span className="font-bold">
-                                  {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
+                                  {formatCurrency(enrollment.paid_amount - totalRefunded, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
                                 </span>
                               </div>
                               <div className="w-full bg-secondary rounded-full h-3">
                                 <div
                                   className={`bg-gradient-to-r from-primary to-primary/80 h-3 transition-all duration-500 flex items-center px-2 ${isRtl ? 'rounded-r-full justify-start' : 'rounded-l-full justify-end'}`}
                                   style={{
-                                    width: `${Math.min(100, (enrollment.paid_amount / enrollment.total_amount) * 100)}%`,
+                                    width: `${Math.min(100, ((enrollment.paid_amount - totalRefunded) / enrollment.total_amount) * 100)}%`,
                                     [isRtl ? 'marginLeft' : 'marginRight']: 'auto',
                                     [isRtl ? 'marginRight' : 'marginLeft']: '0'
                                   }}
                                 >
-                                  {enrollment.paid_amount > 0 && (
+                                  {(enrollment.paid_amount - totalRefunded) > 0 && (
                                     <span className="text-[10px] font-bold text-white">
-                                      {Math.round((enrollment.paid_amount / enrollment.total_amount) * 100)}%
+                                      {Math.round(((enrollment.paid_amount - totalRefunded) / enrollment.total_amount) * 100)}%
                                     </span>
                                   )}
                                 </div>
                               </div>
+
+                              {/* Show refund information if any */}
+                              {totalRefunded > 0 && (
+                                <p className={`text-xs font-medium text-purple-600 dark:text-purple-400 pt-2 border-t border-border/50 ${isRtl ? 'text-right' : 'text-left'}`}>
+                                  {t('user.profile.billing.totalRefunded', 'Total Refunded')}: {formatCurrency(totalRefunded, enrollment.currency)}
+                                </p>
+                              )}
+
                               {enrollment.payment_status !== 'paid' && (
                                 <p className={`text-xs font-medium text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                                  {t('user.profile.billing.remaining', 'Remaining')}: {formatCurrency(enrollment.total_amount - enrollment.paid_amount, enrollment.currency)}
+                                  {t('user.profile.billing.remaining', 'Remaining')}: {formatCurrency(enrollment.total_amount - (enrollment.paid_amount - totalRefunded), enrollment.currency)}
                                 </p>
                               )}
                             </div>
@@ -1027,68 +1242,225 @@ export default function ProfilePage() {
                           {/* Payment History Content */}
                           {enrollmentPayments.length > 0 && (
                             <AccordionContent>
-                              <div className="px-6 pb-6 pt-2 bg-muted/5">
+                              <div className="px-6 pb-6 pt-2 bg-muted/5" dir={isRtl ? 'rtl' : 'ltr'}>
                                 {/* Table Header */}
-                                <div className={`grid grid-cols-12 gap-3 px-3 py-2 text-xs font-medium text-muted-foreground border-b mb-2`}>
-                                  <div className={`col-span-1 ${isRtl ? 'text-right' : 'text-left'}`}>#</div>
-                                  <div className={`col-span-3 ${isRtl ? 'text-right' : 'text-left'}`}>{t('user.profile.billing.paymentType.deposit', 'Type')}</div>
-                                  <div className={`col-span-3 hidden sm:block ${isRtl ? 'text-right' : 'text-left'}`}>{t('user.profile.billing.dueOn', 'Date')}</div>
-                                  <div className={`col-span-3 sm:col-span-2 ${isRtl ? 'text-right' : 'text-right'}`}>{t('user.profile.billing.amount', 'Amount')}</div>
-                                  <div className={`col-span-2 ${isRtl ? 'text-right' : 'text-right'}`}>{t('user.profile.billing.status.paid', 'Status')}</div>
+                                <div className={`grid grid-cols-12 gap-3 px-4 py-2.5 text-xs font-medium text-muted-foreground border-b mb-2`}>
+                                  {/* # - Sortable */}
+                                  <div
+                                    className={`col-span-1 cursor-pointer hover:text-foreground transition-colors flex items-center gap-1 ${isRtl ? 'text-right flex-row-reverse justify-end' : 'text-left'}`}
+                                    onClick={() => handleSort(enrollment.id, 'payment_number')}
+                                  >
+                                    <span>#</span>
+                                    {sortConfig.field === 'payment_number' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
+
+                                  {/* Type - Sortable */}
+                                  <div
+                                    className={`col-span-2 hidden lg:flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors ${isRtl ? 'text-right flex-row-reverse justify-end' : 'text-left'}`}
+                                    onClick={() => handleSort(enrollment.id, 'payment_type')}
+                                  >
+                                    <span>{t('user.profile.billing.type', 'Type')}</span>
+                                    {sortConfig.field === 'payment_type' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
+
+                                  {/* Due Date - Sortable */}
+                                  <div
+                                    className={`col-span-3 lg:col-span-2 cursor-pointer hover:text-foreground transition-colors flex items-center gap-1 ${isRtl ? 'text-right flex-row-reverse justify-end' : 'text-left'}`}
+                                    onClick={() => handleSort(enrollment.id, 'scheduled_date')}
+                                  >
+                                    <span>{t('user.profile.billing.dueDate', 'Due Date')}</span>
+                                    {sortConfig.field === 'scheduled_date' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
+
+                                  {/* Original - Sortable */}
+                                  <div
+                                    className={`col-span-2 hidden md:flex items-center gap-1 justify-end ${isRtl ? 'text-right flex-row-reverse' : 'text-right'} cursor-pointer hover:text-foreground transition-colors`}
+                                    onClick={() => handleSort(enrollment.id, 'amount')}
+                                  >
+                                    <span>{t('user.profile.billing.originalAmount', 'Original')}</span>
+                                    {sortConfig.field === 'amount' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
+
+                                  {/* Refunded - Sortable */}
+                                  <div
+                                    className={`col-span-2 hidden lg:flex items-center gap-1 justify-end ${isRtl ? 'text-right flex-row-reverse' : 'text-right'} cursor-pointer hover:text-foreground transition-colors`}
+                                    onClick={() => handleSort(enrollment.id, 'refunded_amount')}
+                                  >
+                                    <span>{t('user.profile.billing.refundedAmount', 'Refunded')}</span>
+                                    {sortConfig.field === 'refunded_amount' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
+
+                                  {/* Paid - Sortable */}
+                                  <div
+                                    className={`col-span-3 md:col-span-2 lg:col-span-1 flex items-center gap-1 justify-end ${isRtl ? 'text-right flex-row-reverse' : 'text-right'} cursor-pointer hover:text-foreground transition-colors`}
+                                    onClick={() => handleSort(enrollment.id, 'paid_amount')}
+                                  >
+                                    <span>{t('user.profile.billing.paidAmount', 'Paid')}</span>
+                                    {sortConfig.field === 'paid_amount' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
+
+                                  {/* Status - Sortable */}
+                                  <div
+                                    className={`col-span-3 md:col-span-2 lg:col-span-2 flex items-center gap-1 justify-end ${isRtl ? 'text-right flex-row-reverse' : 'text-right'} cursor-pointer hover:text-foreground transition-colors`}
+                                    onClick={() => handleSort(enrollment.id, 'status')}
+                                  >
+                                    <span>{t('user.profile.billing.paymentStatus', 'Status')}</span>
+                                    {sortConfig.field === 'status' ? (
+                                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    )}
+                                  </div>
                                 </div>
 
                                 {/* Payment Rows */}
                                 <div className="space-y-1">
-                                  {paginatedPayments.map((schedule) => (
-                                    <div
-                                      key={schedule.id}
-                                      className={`grid grid-cols-12 gap-3 px-3 py-2.5 rounded-md hover:bg-muted/50 transition-colors items-center ${isRtl ? 'text-right' : 'text-left'}`}
-                                    >
-                                      {/* Payment Number */}
-                                      <div className="col-span-1">
-                                        <span className="text-xs font-semibold text-foreground">
-                                          {schedule.payment_number}
-                                        </span>
-                                      </div>
+                                  {paginatedPayments.map((schedule) => {
+                                    const originalAmount = schedule.amount;
+                                    const refundedAmount = schedule.refunded_amount || 0;
+                                    const paidAmount = originalAmount - refundedAmount;
+                                    const hasDateAdjustment = schedule.original_due_date && schedule.original_due_date !== schedule.scheduled_date;
 
-                                      {/* Payment Type */}
-                                      <div className="col-span-3">
-                                        <span className="text-xs text-muted-foreground">
-                                          {t(`user.profile.billing.paymentType.${schedule.payment_type}`, schedule.payment_type)}
-                                        </span>
-                                      </div>
+                                    return (
+                                      <div key={schedule.id} className={`grid grid-cols-12 gap-3 px-4 py-2.5 rounded-md hover:bg-muted/30 transition-colors items-center ${isRtl ? 'text-right' : 'text-left'}`}>
+                                        {/* Payment Number */}
+                                        <div className="col-span-1">
+                                          <span className="text-xs font-semibold text-foreground">
+                                            {schedule.payment_number}
+                                          </span>
+                                        </div>
 
-                                      {/* Date */}
-                                      <div className="col-span-3 hidden sm:block">
-                                        <span className="text-xs text-muted-foreground">
-                                          {schedule.status === 'paid' && schedule.paid_date
-                                            ? new Date(schedule.paid_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                year: 'numeric'
-                                              })
-                                            : new Date(schedule.scheduled_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                year: 'numeric'
-                                              })
-                                          }
-                                        </span>
-                                      </div>
+                                        {/* Payment Type */}
+                                        <div className="col-span-2 hidden lg:block">
+                                          <span className="text-xs text-muted-foreground">
+                                            {t(`user.profile.billing.paymentType.${schedule.payment_type}`, schedule.payment_type)}
+                                          </span>
+                                        </div>
 
-                                      {/* Amount */}
-                                      <div className={`col-span-3 sm:col-span-2 ${isRtl ? 'text-right' : 'text-right'}`}>
-                                        <span className="text-sm font-bold text-foreground">
-                                          {formatCurrency(schedule.amount, schedule.currency)}
-                                        </span>
-                                      </div>
+                                        {/* Due On with date adjustment icon */}
+                                        <div className="col-span-3 lg:col-span-2">
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-xs text-muted-foreground">
+                                              {schedule.status === 'paid' && schedule.paid_date
+                                                ? new Date(schedule.paid_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    year: 'numeric'
+                                                  })
+                                                : new Date(schedule.scheduled_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    year: 'numeric'
+                                                  })
+                                              }
+                                            </span>
+                                            {hasDateAdjustment && (
+                                              <div className="relative inline-block">
+                                                <Calendar className="h-3 w-3 text-amber-600 dark:text-amber-400 cursor-help peer" />
+                                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden peer-hover:block z-[100] pointer-events-none">
+                                                  <div className="bg-popover text-popover-foreground text-xs rounded-md shadow-lg p-2 whitespace-nowrap border pointer-events-auto">
+                                                    <div className="font-medium mb-1">{t('user.profile.billing.dateAdjusted', 'Date Adjusted')}</div>
+                                                    <div className="text-muted-foreground">
+                                                      {t('user.profile.billing.originalDate', 'Original')}: {new Date(schedule.original_due_date!).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        year: 'numeric'
+                                                      })}
+                                                    </div>
+                                                    {schedule.adjustment_reason && (
+                                                      <div className="text-muted-foreground mt-0.5">
+                                                        {schedule.adjustment_reason}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
 
-                                      {/* Status Badge */}
-                                      <div className={`col-span-2 flex ${isRtl ? 'justify-end' : 'justify-end'}`}>
-                                        {getScheduleStatusBadge(schedule.status)}
+                                        {/* Original Amount */}
+                                        <div className={`col-span-2 hidden md:block ${isRtl ? 'text-right' : 'text-right'}`}>
+                                          <span className="text-xs text-muted-foreground">
+                                            {formatCurrency(originalAmount, schedule.currency)}
+                                          </span>
+                                        </div>
+
+                                        {/* Refunded Amount */}
+                                        <div className={`col-span-2 hidden lg:block ${isRtl ? 'text-right' : 'text-right'}`}>
+                                          {refundedAmount > 0 ? (
+                                            <div className={`flex items-center gap-1 ${isRtl ? 'flex-row-reverse justify-end' : 'justify-end'}`}>
+                                              <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                                                {formatCurrency(refundedAmount, schedule.currency)}
+                                              </span>
+                                              <div className="relative inline-block">
+                                                <Info className="h-3 w-3 text-purple-600 dark:text-purple-400 cursor-help peer" />
+                                                <div className="absolute bottom-full right-0 mb-2 hidden peer-hover:block z-[100] pointer-events-none">
+                                                  <div className="bg-popover text-popover-foreground text-xs rounded-md shadow-lg p-2 whitespace-nowrap border pointer-events-auto">
+                                                    <div className="font-medium mb-1">{t('user.profile.billing.refundDetails', 'Refund Details')}</div>
+                                                    {schedule.refunded_at && (
+                                                      <div className="text-muted-foreground">
+                                                        {new Date(schedule.refunded_at).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          year: 'numeric',
+                                                          hour: '2-digit',
+                                                          minute: '2-digit'
+                                                        })}
+                                                      </div>
+                                                    )}
+                                                    {schedule.refund_reason && (
+                                                      <div className="text-muted-foreground mt-0.5">
+                                                        {schedule.refund_reason}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <span className="text-xs text-muted-foreground">—</span>
+                                          )}
+                                        </div>
+
+                                        {/* Paid (Net) Amount */}
+                                        <div className={`col-span-3 md:col-span-2 lg:col-span-1 ${isRtl ? 'text-right' : 'text-right'}`}>
+                                          <span className="text-xs font-semibold text-foreground">
+                                            {formatCurrency(paidAmount, schedule.currency)}
+                                          </span>
+                                        </div>
+
+                                        {/* Status Badge */}
+                                        <div className={`col-span-3 md:col-span-2 lg:col-span-2 flex ${isRtl ? 'justify-end' : 'justify-end'}`}>
+                                          {getScheduleStatusBadge(schedule.payment_status || schedule.status)}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
 
                                 {/* Pagination Controls */}
@@ -1166,13 +1538,18 @@ export default function ProfilePage() {
                               <h4 className="text-lg font-semibold mb-1.5">{invoice.number}</h4>
                               {getInvoiceStatusBadge(invoice.status)}
                             </div>
-                            <div>
+                            <div className={isRtl ? 'text-left' : 'text-right'}>
                               <div className="text-xs text-muted-foreground mb-1">
                                 {t('invoices.amount_due', 'Amount Due')}
                               </div>
                               <div className="text-2xl font-bold">
                                 {formatCurrency(invoice.amount_due, invoice.currency)}
                               </div>
+                              {invoice.refund_amount > 0 && (
+                                <div className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">
+                                  {t('invoices.refunded_amount', 'Refunded')}: {formatCurrency(invoice.refund_amount, invoice.currency)}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -1231,12 +1608,21 @@ export default function ProfilePage() {
                             )}
                             {(invoice.status === 'open' || invoice.status === 'overdue') &&
                               invoice.hosted_invoice_url && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => window.open(invoice.hosted_invoice_url!, '_blank')}
-                                >
-                                  {t('invoices.actions.pay_now', 'Pay Now')}
-                                </Button>
+                                invoice.locallyPaid ? (
+                                  <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                                    <Clock className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                                    <span className="text-xs text-yellow-700 dark:text-yellow-300">
+                                      {t('invoices.processing', 'Payment is being processed')}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => window.open(invoice.hosted_invoice_url!, '_blank')}
+                                  >
+                                    {t('invoices.actions.pay_now', 'Pay Now')}
+                                  </Button>
+                                )
                               )}
                           </div>
                         </div>

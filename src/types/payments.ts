@@ -83,6 +83,12 @@ export interface PaymentSchedule {
   // Status
   status: 'pending' | 'processing' | 'paid' | 'failed' | 'paused' | 'adjusted' | 'cancelled' | 'refunded';
 
+  // Refund fields (enriched from payments table)
+  refunded_amount?: number;
+  refunded_at?: string;
+  refund_reason?: string;
+  payment_status?: string;
+
   // Payment processing
   stripe_invoice_id?: string;
   stripe_payment_intent_id?: string;
