@@ -140,23 +140,26 @@ export async function GET(request: NextRequest) {
         console.log(`[Cron] Found ${enrollments.length} enrolled students for lesson ${lesson.id}`);
 
         // Check which students already have emails queued or sent for this lesson
+        // Fetch all pending/sent emails for this tenant and filter by lessonId in JavaScript
         const { data: existingEmails, error: emailCheckError } = await supabase
           .from('email_queue')
-          .select('id, template_variables')
+          .select('id, template_variables, user_id')
           .eq('tenant_id', lesson.tenant_id)
-          .in('status', ['pending', 'sent'])
-          .contains('template_variables', { lessonId: lesson.id });
+          .in('status', ['pending', 'sent']);
 
         if (emailCheckError) {
           console.error(`[Cron] Error checking existing emails:`, emailCheckError);
         }
 
-        // Create a Set of user IDs that already have emails for this lesson
+        // Filter for this specific lesson and create Set of user IDs
         const alreadyQueuedUserIds = new Set(
-          existingEmails?.map(e => e.template_variables?.userId).filter(Boolean) || []
+          existingEmails
+            ?.filter(e => e.template_variables?.lessonId === lesson.id)
+            .map(e => e.user_id || e.template_variables?.userId)
+            .filter(Boolean) || []
         );
 
-        console.log(`[Cron] ${alreadyQueuedUserIds.size} students already have emails for lesson ${lesson.id}`);
+        console.log(`[Cron] ${alreadyQueuedUserIds.size} students already have emails for lesson ${lesson.id} (out of ${existingEmails?.length || 0} total queued emails)`);
 
         // Create trigger events for each student (skip those who already have emails)
         const triggerEvents = enrollments
