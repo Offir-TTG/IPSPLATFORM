@@ -1,14 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/cron/lesson-reminders",
-      "schedule": "0/15 * * * *"
-    },
-    {
-      "path": "/api/cron/process-email-queue",
-      "schedule": "0/2 * * * *"
-    },
-    {
       "path": "/api/cron/create-payment-invoices",
       "schedule": "0 3 * * *"
     },
