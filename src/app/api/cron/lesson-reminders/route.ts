@@ -139,9 +139,29 @@ export async function GET(request: NextRequest) {
 
         console.log(`[Cron] Found ${enrollments.length} enrolled students for lesson ${lesson.id}`);
 
-        // Create trigger events for each student
+        // Check which students already have emails queued or sent for this lesson
+        const { data: existingEmails, error: emailCheckError } = await supabase
+          .from('email_queue')
+          .select('id, template_variables')
+          .eq('tenant_id', lesson.tenant_id)
+          .in('status', ['pending', 'sent'])
+          .contains('template_variables', { lessonId: lesson.id });
+
+        if (emailCheckError) {
+          console.error(`[Cron] Error checking existing emails:`, emailCheckError);
+        }
+
+        // Create a Set of user IDs that already have emails for this lesson
+        const alreadyQueuedUserIds = new Set(
+          existingEmails?.map(e => e.template_variables?.userId).filter(Boolean) || []
+        );
+
+        console.log(`[Cron] ${alreadyQueuedUserIds.size} students already have emails for lesson ${lesson.id}`);
+
+        // Create trigger events for each student (skip those who already have emails)
         const triggerEvents = enrollments
           .filter(e => e.users) // Only process if user data exists
+          .filter(e => !alreadyQueuedUserIds.has(e.user_id)) // Skip if already queued/sent
           .map(enrollment => ({
             eventType: 'lesson.reminder' as const,
             tenantId: lesson.tenant_id,
@@ -169,9 +189,16 @@ export async function GET(request: NextRequest) {
             },
           }));
 
-        console.log(`[Cron] Created ${triggerEvents.length} trigger events for lesson ${lesson.id}`);
+        const skippedCount = enrollments.length - triggerEvents.length;
+        console.log(`[Cron] Created ${triggerEvents.length} trigger events for lesson ${lesson.id} (${skippedCount} skipped - already notified)`);
         if (triggerEvents.length > 0) {
           console.log(`[Cron] Sample event data:`, JSON.stringify(triggerEvents[0], null, 2));
+        }
+
+        // Skip processing if no new events to process
+        if (triggerEvents.length === 0) {
+          console.log(`[Cron] No new reminders needed for lesson ${lesson.id}`);
+          continue;
         }
 
         // Process all events in batch for this lesson
