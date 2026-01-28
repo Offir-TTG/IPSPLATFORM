@@ -29,6 +29,7 @@ export function CreateEnrollmentDialog({
   const [selectedUser, setSelectedUser] = useState('');
   const [selectedProduct, setSelectedProduct] = useState('');
   const [waivePayment, setWaivePayment] = useState(false);
+  const [isParent, setIsParent] = useState(false);
   const [expiryDate, setExpiryDate] = useState('');
   const [paymentStartDate, setPaymentStartDate] = useState('');
 
@@ -49,6 +50,7 @@ export function CreateEnrollmentDialog({
       setSelectedUser('');
       setSelectedProduct('');
       setWaivePayment(false);
+      setIsParent(false);
       setPaymentStartDate('');
       setCreateNewUser(false);
       setNewUserEmail('');
@@ -181,6 +183,29 @@ export function CreateEnrollmentDialog({
     }
   };
 
+  // Helper to format product type
+  const formatProductType = (type: string): string => {
+    if (!type) return '';
+    const typeKey = `productType.${type.toLowerCase()}`;
+    return t(typeKey, type);
+  };
+
+  // Helper to get translated product title
+  const getProductTitle = (product: any): string => {
+    if (!product) return '';
+
+    // Check if product has translated titles in metadata
+    const currentLang = direction === 'rtl' ? 'he' : 'en';
+    const translatedTitle = product.metadata?.[`title_${currentLang}`];
+
+    if (translatedTitle) {
+      return translatedTitle;
+    }
+
+    // Fall back to default title
+    return product.title || '';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -216,6 +241,7 @@ export function CreateEnrollmentDialog({
         status: 'draft', // Always start as draft, will change to pending when email is sent
         expires_at: expiryDate || null,
         waive_payment: waivePayment, // Admin override to waive payment requirement
+        is_parent: isParent, // Indicates if this is a parent enrollment (no dashboard access)
         payment_start_date: paymentStartDate || null // Admin override for payment schedule start date
       };
 
@@ -394,7 +420,7 @@ export function CreateEnrollmentDialog({
                 {Array.isArray(products) && products.length > 0 ? (
                   products.map(product => (
                     <SelectItem key={product.id} value={product.id}>
-                      {product.title} ({t(`productType.${product.type}`, product.type)})
+                      {getProductTitle(product)} ({formatProductType(product.type)})
                     </SelectItem>
                   ))
                 ) : (
@@ -407,6 +433,28 @@ export function CreateEnrollmentDialog({
             <p className="text-xs text-muted-foreground mt-1">
               {t('admin.enrollments.create.productHelp', 'Products contain all program/course information including pricing and payment plans')}
             </p>
+          </div>
+
+          {/* Parent Enrollment Checkbox */}
+          <div className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20">
+            <input
+              type="checkbox"
+              id="isParent"
+              checked={isParent}
+              onChange={(e) => setIsParent(e.target.checked)}
+              className="h-4 w-4 mt-0.5 flex-shrink-0"
+            />
+            <div className="flex-1">
+              <Label htmlFor="isParent" className="text-sm font-medium cursor-pointer">
+                {t('admin.enrollments.create.isParent', 'Parent Enrollment')} *
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t(
+                  'admin.enrollments.create.isParentHelp',
+                  'Check this if enrollment is for a parent (no dashboard access). User will only get dashboard access when they have at least one non-parent enrollment.'
+                )}
+              </p>
+            </div>
           </div>
 
           {/* Payment Start Date Override */}

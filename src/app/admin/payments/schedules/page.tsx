@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
+import { CardSelectionDialog } from '@/components/admin/CardSelectionDialog';
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
@@ -37,6 +38,7 @@ import {
   ArrowDown,
   Download,
   ArrowLeft,
+  CreditCard,
 } from 'lucide-react';
 
 interface PaymentSchedule {
@@ -86,6 +88,8 @@ export default function SchedulesPage() {
   const [bulkActionDialog, setBulkActionDialog] = useState<'delay' | 'pause' | 'cancel' | null>(null);
   const [restructureDialogOpen, setRestructureDialogOpen] = useState(false);
   const [selectedEnrollmentForRestructure, setSelectedEnrollmentForRestructure] = useState<string | null>(null);
+  const [cardSelectionDialogOpen, setCardSelectionDialogOpen] = useState(false);
+  const [selectedScheduleForCardChange, setSelectedScheduleForCardChange] = useState<PaymentSchedule | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalSchedules, setTotalSchedules] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -1015,6 +1019,10 @@ export default function SchedulesPage() {
                           onPause={() => handlePausePayment(schedule.id, 'Admin action')}
                           onResume={() => handleResumePayment(schedule.id)}
                           onChargeNow={() => handleChargeNow(schedule.id)}
+                          onChangeCard={() => {
+                            setSelectedScheduleForCardChange(schedule);
+                            setCardSelectionDialogOpen(true);
+                          }}
                           onRestructure={() => {
                             setSelectedEnrollmentForRestructure(schedule.enrollment_id);
                             setRestructureDialogOpen(true);
@@ -1143,6 +1151,22 @@ export default function SchedulesPage() {
           onDelay={handleBulkDelay}
           direction={direction}
         />
+
+        {/* Card Selection Dialog */}
+        <CardSelectionDialog
+          open={cardSelectionDialogOpen}
+          scheduleId={selectedScheduleForCardChange?.id || null}
+          scheduleName={selectedScheduleForCardChange?.user_name}
+          onClose={() => {
+            setCardSelectionDialogOpen(false);
+            setSelectedScheduleForCardChange(null);
+          }}
+          onCharged={() => {
+            fetchSchedules();
+            startPolling();
+          }}
+          direction={direction}
+        />
       </div>
     </AdminLayout>
   );
@@ -1156,6 +1180,7 @@ function ScheduleActionsMenu({
   onPause,
   onResume,
   onChargeNow,
+  onChangeCard,
   onRestructure,
 }: {
   schedule: PaymentSchedule;
@@ -1164,6 +1189,7 @@ function ScheduleActionsMenu({
   onPause: () => void;
   onResume: () => void;
   onChargeNow: () => void;
+  onChangeCard: () => void;
   onRestructure: () => void;
 }) {
   const { t, direction } = useAdminLanguage();
@@ -1234,6 +1260,17 @@ function ScheduleActionsMenu({
                 <button
                   className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
                   onClick={() => {
+                    onChangeCard();
+                    setOpen(false);
+                  }}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.changeCard', 'Change Card')}</span>
+                </button>
+                <div className="border-t my-1"></div>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
                     onAdjust();
                     setOpen(false);
                   }}
@@ -1251,7 +1288,6 @@ function ScheduleActionsMenu({
                   <Pause className="h-4 w-4" />
                   <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
                 </button>
-                <div className="border-t my-1"></div>
                 <button
                   className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
                   onClick={() => {
@@ -1270,16 +1306,28 @@ function ScheduleActionsMenu({
               </div>
             )}
             {schedule.status === 'failed' && (
-              <button
-                className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                onClick={() => {
-                  onRetry();
-                  setOpen(false);
-                }}
-              >
-                <RefreshCw className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('admin.payments.schedules.retryPayment', 'Retry Payment')}</span>
-              </button>
+              <>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
+                    onRetry();
+                    setOpen(false);
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.retryPayment', 'Retry Payment')}</span>
+                </button>
+                <button
+                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
+                  onClick={() => {
+                    onChangeCard();
+                    setOpen(false);
+                  }}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span suppressHydrationWarning>{t('admin.payments.schedules.changeCard', 'Change Card')}</span>
+                </button>
+              </>
             )}
             {schedule.status === 'paused' && (
               <button

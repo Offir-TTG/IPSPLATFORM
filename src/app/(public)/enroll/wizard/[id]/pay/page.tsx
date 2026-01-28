@@ -11,6 +11,9 @@ import { ArrowLeft, CreditCard, Lock, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useUserLanguage, useApp } from '@/context/AppContext';
 import StripePaymentForm from '@/components/payments/StripePaymentForm';
+import StripeSetupForm from '@/components/payments/StripeSetupForm';
+import SavedCardDisplay from '@/components/payments/SavedCardDisplay';
+import PaymentMethodSelector from '@/components/payments/PaymentMethodSelector';
 
 interface PaymentInfo {
   schedule_id: string;
@@ -36,6 +39,13 @@ interface StripePaymentData {
   publishableKey: string;
 }
 
+interface StripeSetupData {
+  clientSecret: string;
+  setup_intent_id: string;
+  publishableKey: string;
+  requires_payment_method: boolean;
+}
+
 export default function WizardPaymentPage() {
   const { t } = useUserLanguage();
   const appContext = useApp();
@@ -45,9 +55,21 @@ export default function WizardPaymentPage() {
 
   const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
   const [stripeData, setStripeData] = useState<StripePaymentData | null>(null);
+  const [stripeSetupData, setStripeSetupData] = useState<StripeSetupData | null>(null);
+  const [isSetupMode, setIsSetupMode] = useState(false); // Setup Intent mode (card save only)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Saved card state
+  const [savedCard, setSavedCard] = useState<any>(null);
+  const [allPaymentMethods, setAllPaymentMethods] = useState<any[]>([]);
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | null>(null);
+  const [checkingSavedCard, setCheckingSavedCard] = useState(false);
+  const [showNewCardForm, setShowNewCardForm] = useState(false);
+
+  // Parent enrollment state
+  const [isParentEnrollment, setIsParentEnrollment] = useState(false);
 
   const enrollmentToken = searchParams?.get('token');
   const scheduleId = searchParams?.get('schedule');
@@ -124,39 +146,71 @@ export default function WizardPaymentPage() {
         throw new Error(data.error || 'Failed to fetch payment information');
       }
 
-      if (!data.schedules) {
-        throw new Error('No payment schedules found');
+      // Check if this is a parent enrollment
+      if (data.enrollment?.is_parent) {
+        setIsParentEnrollment(true);
+        console.log('[Payment Page] This is a parent enrollment - card save only, no payment');
+        // Parent enrollments can save/use cards but won't be charged
+        // Continue to show payment page for card management
       }
 
-      // Find the specific schedule or the next pending one
-      let schedule;
-      if (scheduleId) {
-        schedule = data.schedules.find((s: any) => s.id === scheduleId);
+      // Check if there are any pending schedules (deposit or one-time payment)
+      const hasPendingSchedules = data.schedules && data.schedules.length > 0;
+      const pendingSchedule = hasPendingSchedules
+        ? (scheduleId
+            ? data.schedules.find((s: any) => s.id === scheduleId)
+            : data.schedules.find((s: any) => s.status === 'pending'))
+        : null;
+
+      // Determine mode: Payment Intent (charge now) vs Setup Intent (save card only)
+      // CRITICAL: Parent enrollments ALWAYS use Setup Intent (card save only, no charge)
+      if (pendingSchedule && !data.enrollment?.is_parent) {
+        // Payment Intent mode - there's a deposit or full payment to charge now
+        console.log('[Payment Page] Using Payment Intent mode - charging', pendingSchedule.amount);
+        setIsSetupMode(false);
+        setPaymentInfo({
+          schedule_id: pendingSchedule.id,
+          amount: pendingSchedule.amount,
+          currency: pendingSchedule.currency,
+          payment_type: pendingSchedule.payment_type,
+          payment_number: pendingSchedule.payment_number,
+          product_name: data.product.title,
+          enrollment_total: data.enrollment.total_amount,
+          payment_plan: data.payment_plan ? {
+            plan_name: data.payment_plan.plan_name,
+            plan_type: data.payment_plan.plan_type,
+            installment_count: data.payment_plan.installment_count,
+            installment_frequency: data.payment_plan.installment_frequency,
+            deposit_amount: data.payment_plan.deposit_amount,
+            installment_amount: data.payment_plan.installment_amount,
+          } : undefined,
+        });
       } else {
-        schedule = data.schedules.find((s: any) => s.status === 'pending');
+        // Setup Intent mode - no immediate charge, just save card for future payments
+        console.log('[Payment Page] Using Setup Intent mode - saving card only (no charge)');
+        setIsSetupMode(true);
+        // Set minimal payment info for UI display
+        setPaymentInfo({
+          schedule_id: '', // No schedule yet
+          amount: 0, // No charge now
+          currency: data.enrollment.currency || 'USD',
+          payment_type: 'installment',
+          payment_number: 0,
+          product_name: data.product.title,
+          enrollment_total: data.enrollment.total_amount,
+          payment_plan: data.payment_plan ? {
+            plan_name: data.payment_plan.plan_name,
+            plan_type: data.payment_plan.plan_type,
+            installment_count: data.payment_plan.installment_count,
+            installment_frequency: data.payment_plan.installment_frequency,
+            deposit_amount: data.payment_plan.deposit_amount,
+            installment_amount: data.payment_plan.installment_amount,
+          } : undefined,
+        });
       }
 
-      if (!schedule) {
-        throw new Error('No pending payment found');
-      }
-
-      setPaymentInfo({
-        schedule_id: schedule.id,
-        amount: schedule.amount,
-        currency: schedule.currency,
-        payment_type: schedule.payment_type,
-        payment_number: schedule.payment_number,
-        product_name: data.product.title, // Product uses 'title' field
-        enrollment_total: data.enrollment.total_amount,
-        payment_plan: data.payment_plan ? {
-          plan_name: data.payment_plan.plan_name,
-          plan_type: data.payment_plan.plan_type,
-          installment_count: data.payment_plan.installment_count,
-          installment_frequency: data.payment_plan.installment_frequency,
-          deposit_amount: data.payment_plan.deposit_amount,
-          installment_amount: data.payment_plan.installment_amount,
-        } : undefined,
-      });
+      // After fetching payment info, check for saved card
+      await checkSavedCard();
 
     } catch (error: any) {
       console.error('Error fetching payment info:', error);
@@ -166,22 +220,102 @@ export default function WizardPaymentPage() {
     }
   };
 
-  // Create Stripe payment intent when payment info is loaded
+  // Check if user has a saved payment method
+  const checkSavedCard = async () => {
+    if (!enrollmentToken) return;
+
+    setCheckingSavedCard(true);
+    try {
+      console.log('[Payment Page] Checking for saved cards...');
+      const response = await fetch(
+        `/api/enrollments/token/${enrollmentToken}/payment/check-saved-card`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log('[Payment Page] Check saved card failed:', response.status, errorData);
+        setSavedCard(null);
+        setShowNewCardForm(true);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('[Payment Page] Check saved card response:', data);
+
+      if (data.has_saved_card && data.default_payment_method) {
+        console.log('[Payment Page] ✓ Found', data.payment_methods?.length || 1, 'saved card(s)');
+        console.log('[Payment Page] ✓ Using default card:', data.default_payment_method.brand, '****', data.default_payment_method.last4);
+
+        // Store all payment methods
+        setAllPaymentMethods(data.payment_methods || [data.default_payment_method]);
+
+        // Set default as selected and saved card
+        setSavedCard(data.default_payment_method);
+        setSelectedPaymentMethodId(data.default_payment_method.id);
+        setShowNewCardForm(false);
+      } else {
+        console.log('[Payment Page] No saved card found in response');
+        setSavedCard(null);
+        setAllPaymentMethods([]);
+        setSelectedPaymentMethodId(null);
+        setShowNewCardForm(true);
+      }
+    } catch (error) {
+      console.error('[Payment Page] ❌ Error checking saved card:', error);
+      setSavedCard(null);
+      setShowNewCardForm(true);
+    } finally {
+      setCheckingSavedCard(false);
+    }
+  };
+
+  // Create Stripe intent (Payment or Setup) when payment info is loaded
   // Use ref to prevent multiple intent creations
   const intentCreatedRef = useRef(false);
   const currentPaymentIntentRef = useRef<string | null>(null);
 
+  // Reset intent creation flag when switching to new card form
   useEffect(() => {
-    if (paymentInfo && !stripeData && !intentCreatedRef.current) {
+    if (showNewCardForm && savedCard) {
+      console.log('[Payment Page] Switching to new card form - resetting intent flag');
+      intentCreatedRef.current = false;
+      // Clear existing stripe data to trigger new intent creation
+      setStripeData(null);
+      setStripeSetupData(null);
+    }
+  }, [showNewCardForm, savedCard]);
+
+  useEffect(() => {
+    // Skip if using saved card - no need for new intent
+    if (savedCard && !showNewCardForm) {
+      console.log('[Payment Page] Using saved card - skipping intent creation');
+      return;
+    }
+
+    // For parent enrollments, ONLY allow Setup Intent (never Payment Intent)
+    if (isParentEnrollment && !isSetupMode) {
+      console.log('[Payment Page] Parent enrollment - forcing Setup Intent mode (no charge)');
+      setIsSetupMode(true);
+      return;
+    }
+
+    if (paymentInfo && !stripeData && !stripeSetupData && !intentCreatedRef.current) {
       intentCreatedRef.current = true; // Mark as creating
-      createPaymentIntent();
+      if (isSetupMode) {
+        createSetupIntent();
+      } else {
+        // Parent enrollments should never reach here due to check above
+        if (!isParentEnrollment) {
+          createPaymentIntent();
+        }
+      }
     }
 
     // Cleanup: Cancel payment intent when component unmounts or user navigates away
     return () => {
-      if (currentPaymentIntentRef.current && !success) {
-        // User is leaving without completing payment - cancel the intent
-        // This runs async but that's OK since we're unmounting
+      if (currentPaymentIntentRef.current && !success && !isSetupMode) {
+        // User is leaving without completing payment - cancel the payment intent
+        // (Setup intents don't need cancellation as they don't hold funds)
         fetch(`/api/enrollments/token/${enrollmentToken}/payment/cancel-intent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -196,7 +330,7 @@ export default function WizardPaymentPage() {
     };
     // Only run when paymentInfo becomes available
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentInfo, success]);
+  }, [paymentInfo, success, isParentEnrollment, savedCard, showNewCardForm]);
 
   const createPaymentIntent = async () => {
     try {
@@ -212,6 +346,11 @@ export default function WizardPaymentPage() {
         throw new Error(data.error || 'Failed to create payment intent');
       }
 
+      // Validate response data
+      if (!data.publishableKey) {
+        throw new Error('Stripe publishable key not configured. Please contact support.');
+      }
+
       // Store payment intent ID for cleanup
       currentPaymentIntentRef.current = data.payment_intent_id;
       console.log('[Payment Page] Created payment intent:', data.payment_intent_id);
@@ -219,6 +358,33 @@ export default function WizardPaymentPage() {
       setStripeData(data);
     } catch (error: any) {
       console.error('Error creating payment intent:', error);
+      setError(error.message);
+    }
+  };
+
+  const createSetupIntent = async () => {
+    try {
+      console.log('[Payment Page] Creating Setup Intent for card save...');
+      const res = await fetch(`/api/enrollments/token/${enrollmentToken}/payment/create-setup-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create setup intent');
+      }
+
+      // Validate response data
+      if (!data.publishableKey) {
+        throw new Error('Stripe publishable key not configured. Please contact support.');
+      }
+
+      console.log('[Payment Page] Created setup intent:', data.setup_intent_id);
+      setStripeSetupData(data);
+    } catch (error: any) {
+      console.error('Error creating setup intent:', error);
       setError(error.message);
     }
   };
@@ -234,6 +400,19 @@ export default function WizardPaymentPage() {
     setError(errorMessage);
   };
 
+  const handleSetupSuccess = () => {
+    console.log('[Payment Page] Setup Intent succeeded - card saved');
+    setSuccess(true);
+    setTimeout(() => {
+      router.push(`/enroll/wizard/${params.id}?token=${enrollmentToken}&payment=complete`);
+    }, 2000);
+  };
+
+  const handleSetupError = (errorMessage: string) => {
+    console.error('[Payment Page] Setup Intent failed:', errorMessage);
+    setError(errorMessage);
+  };
+
   const formatCurrency = (amount: number, currency: string) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -243,10 +422,17 @@ export default function WizardPaymentPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        </div>
+      <div className="container mx-auto py-8 max-w-2xl">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+            <p className="text-lg text-muted-foreground">
+              {isParentEnrollment
+                ? t('user.payments.checkout.processingParentEnrollment', 'Processing enrollment...')
+                : t('user.payments.checkout.loading', 'Loading payment information...')}
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -277,9 +463,15 @@ export default function WizardPaymentPage() {
             <div className="rounded-full bg-green-100 p-4 mb-4">
               <CreditCard className="h-12 w-12 text-green-600" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">{t('user.payments.checkout.success', 'Payment Successful!')}</h2>
+            <h2 className="text-2xl font-bold mb-2">
+              {isSetupMode
+                ? t('user.payments.checkout.cardSaved', 'Card Saved Successfully!')
+                : t('user.payments.checkout.success', 'Payment Successful!')}
+            </h2>
             <p className="text-muted-foreground text-center mb-4">
-              {t('user.payments.checkout.successDesc', 'Your payment has been processed successfully.')}
+              {isSetupMode
+                ? t('user.payments.checkout.cardSavedDesc', 'Your payment method has been saved for future payments.')
+                : t('user.payments.checkout.successDesc', 'Your payment has been processed successfully.')}
             </p>
             <p className="text-sm text-muted-foreground">{t('user.payments.checkout.redirecting', 'Redirecting...')}</p>
           </CardContent>
@@ -301,8 +493,16 @@ export default function WizardPaymentPage() {
         {/* Payment Summary - First column */}
         <Card className="lg:sticky lg:top-6 lg:self-start">
           <CardHeader>
-            <CardTitle>{t('user.payments.checkout.summary', 'Payment Summary')}</CardTitle>
-            <CardDescription>{t('user.payments.checkout.reviewDetails', 'Review your payment details')}</CardDescription>
+            <CardTitle>
+              {isSetupMode
+                ? t('user.payments.checkout.saveCard', 'Save Payment Method')
+                : t('user.payments.checkout.summary', 'Payment Summary')}
+            </CardTitle>
+            <CardDescription>
+              {isSetupMode
+                ? t('user.payments.checkout.saveCardDescription', 'Save your payment method for future automatic payments')
+                : t('user.payments.checkout.reviewDetails', 'Review your payment details')}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between py-2 border-b">
@@ -329,17 +529,43 @@ export default function WizardPaymentPage() {
                 </div>
               </div>
             )}
-            <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">{t('user.payments.checkout.paymentType', 'Payment Type')}</span>
-              <span className="font-medium">{translatePaymentType(paymentInfo.payment_type)}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b">
-              <span className="text-muted-foreground">{t('user.payments.checkout.paymentNumber', 'Payment Number')}</span>
-              <span className="font-medium">#{paymentInfo.payment_number}</span>
-            </div>
 
-            {/* Payment Plan Breakdown - show if this is a deposit payment */}
-            {paymentInfo.payment_type === 'deposit' && paymentInfo.payment_plan && (
+            {/* Simplified summary for parent enrollments */}
+            {isParentEnrollment ? (
+              <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 my-4">
+                <h3 className="font-semibold text-amber-900 dark:text-amber-100 mb-3">
+                  {t('user.payments.checkout.parentSummary', 'Payment Information')}
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-amber-700 dark:text-amber-300">{t('user.payments.checkout.totalAmount', 'Total Amount')}</span>
+                    <span className="font-semibold text-amber-900 dark:text-amber-100">{formatCurrency(paymentInfo.enrollment_total, paymentInfo.currency)}</span>
+                  </div>
+                  {paymentInfo.payment_plan && paymentInfo.payment_plan.installment_count && (
+                    <div className="flex justify-between text-amber-700 dark:text-amber-300">
+                      <span>{t('user.payments.checkout.numberOfPayments', 'Number of Payments')}</span>
+                      <span className="font-semibold">{paymentInfo.payment_plan.installment_count}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                {!isSetupMode && (
+                  <>
+                    <div className="flex justify-between py-2 border-b">
+                      <span className="text-muted-foreground">{t('user.payments.checkout.paymentType', 'Payment Type')}</span>
+                      <span className="font-medium">{translatePaymentType(paymentInfo.payment_type)}</span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b">
+                      <span className="text-muted-foreground">{t('user.payments.checkout.paymentNumber', 'Payment Number')}</span>
+                      <span className="font-medium">#{paymentInfo.payment_number}</span>
+                    </div>
+                  </>
+                )}
+
+                {/* Payment Plan Breakdown - show if this is a deposit payment and NOT setup mode */}
+                {!isSetupMode && paymentInfo.payment_type === 'deposit' && paymentInfo.payment_plan && (
               <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 my-4">
                 <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-3">
                   {t('user.payments.checkout.paymentBreakdown', 'Payment Breakdown')}
@@ -379,40 +605,208 @@ export default function WizardPaymentPage() {
                   )}
                 </div>
               </div>
+                )}
+              </>
             )}
 
-            <div className="flex justify-between py-3">
-              <span className="text-lg font-semibold">{t('user.payments.checkout.amountDue', 'Amount Due Now')}</span>
-              <span className="text-2xl font-bold">
-                {formatCurrency(paymentInfo.amount, paymentInfo.currency)}
-              </span>
-            </div>
+            {isSetupMode || isParentEnrollment ? (
+              <Alert className="mt-4">
+                <CreditCard className="h-4 w-4" />
+                <AlertDescription>
+                  {t('user.payments.checkout.noChargeNow', 'No charge will be made now. Your card will be saved for future scheduled payments.')}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="flex justify-between py-3">
+                <span className="text-lg font-semibold">{t('user.payments.checkout.amountDue', 'Amount Due Now')}</span>
+                <span className="text-2xl font-bold">
+                  {formatCurrency(paymentInfo.amount, paymentInfo.currency)}
+                </span>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Payment Form Placeholder */}
+        {/* Payment/Setup Form */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('user.payments.checkout.paymentMethod', 'Payment Method')}</CardTitle>
+            <CardTitle>
+              {isSetupMode
+                ? t('user.payments.checkout.cardDetails', 'Card Details')
+                : t('user.payments.checkout.paymentMethod', 'Payment Method')}
+            </CardTitle>
             <CardDescription>
               {t('user.payments.checkout.securePayment', 'Secure payment powered by Stripe')}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {!stripeData ? (
+            {/* Show saved card if exists and user hasn't chosen to add new card */}
+            {savedCard && !showNewCardForm ? (
+              // Show selector if multiple cards, otherwise show single card display
+              allPaymentMethods.length > 1 ? (
+                <PaymentMethodSelector
+                  paymentMethods={allPaymentMethods}
+                  selectedMethodId={selectedPaymentMethodId}
+                  onSelectMethod={(methodId) => {
+                    console.log('[Payment Page] Selected payment method:', methodId);
+                    setSelectedPaymentMethodId(methodId);
+                    const selected = allPaymentMethods.find(m => m.id === methodId);
+                    if (selected) {
+                      setSavedCard(selected);
+                    }
+                  }}
+                  onAddNewCard={() => {
+                    console.log('[Payment Page] Switching to new card form');
+                    intentCreatedRef.current = false;
+                    setStripeData(null);
+                    setStripeSetupData(null);
+                    setShowNewCardForm(true);
+                  }}
+                  onConfirm={async () => {
+                    // Handle selected card usage differently for parent vs regular enrollments
+                    console.log('[Payment Page] Using selected card:', selectedPaymentMethodId);
+
+                    if (isParentEnrollment) {
+                      // Parent enrollments: Just redirect to completion (no charge)
+                      console.log('[Payment Page] Parent enrollment - completing without charge');
+                      router.push(`/enroll/wizard/${params.id}?token=${enrollmentToken}&payment=complete`);
+                    } else {
+                      // Regular enrollments: Charge the saved card first
+                      setLoading(true);
+                      try {
+                        console.log('[Payment Page] Charging selected card...');
+
+                        const response = await fetch(
+                          `/api/enrollments/token/${enrollmentToken}/payment/charge-saved-card`,
+                          {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              schedule_id: paymentInfo?.schedule_id,
+                              payment_method_id: selectedPaymentMethodId,
+                            }),
+                          }
+                        );
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          throw new Error(data.error || 'Failed to charge card');
+                        }
+
+                        console.log('[Payment Page] ✓ Card charged successfully');
+                        setSuccess(true);
+
+                        // Redirect to completion after short delay
+                        setTimeout(() => {
+                          router.push(`/enroll/wizard/${params.id}?token=${enrollmentToken}&payment=complete`);
+                        }, 1500);
+
+                      } catch (error: any) {
+                        console.error('[Payment Page] ❌ Error charging selected card:', error);
+                        setError(error.message);
+                        setLoading(false);
+                      }
+                    }
+                  }}
+                />
+              ) : (
+                <SavedCardDisplay
+                  paymentMethod={savedCard}
+                  onUseCard={async () => {
+                    // Handle saved card usage differently for parent vs regular enrollments
+                    console.log('[Payment Page] Using saved card');
+
+                    if (isParentEnrollment) {
+                      // Parent enrollments: Just redirect to completion (no charge)
+                      console.log('[Payment Page] Parent enrollment - completing without charge');
+                      router.push(`/enroll/wizard/${params.id}?token=${enrollmentToken}&payment=complete`);
+                    } else {
+                      // Regular enrollments: Charge the saved card first
+                      setLoading(true);
+                      try {
+                        console.log('[Payment Page] Charging saved card...');
+
+                        const response = await fetch(
+                          `/api/enrollments/token/${enrollmentToken}/payment/charge-saved-card`,
+                          {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              schedule_id: paymentInfo?.schedule_id,
+                              payment_method_id: savedCard.id,
+                            }),
+                          }
+                        );
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          throw new Error(data.error || 'Failed to charge card');
+                        }
+
+                        console.log('[Payment Page] ✓ Card charged successfully');
+                        setSuccess(true);
+
+                        // Redirect to completion after short delay
+                        setTimeout(() => {
+                          router.push(`/enroll/wizard/${params.id}?token=${enrollmentToken}&payment=complete`);
+                        }, 1500);
+
+                      } catch (error: any) {
+                        console.error('[Payment Page] ❌ Error charging saved card:', error);
+                        setError(error.message);
+                        setLoading(false);
+                      }
+                    }
+                  }}
+                  onUpdateCard={() => {
+                    // Show new card form and reset intent creation
+                    console.log('[Payment Page] Switching to new card form');
+                    intentCreatedRef.current = false;
+                    setStripeData(null);
+                    setStripeSetupData(null);
+                    setShowNewCardForm(true);
+                  }}
+                />
+              )
+            ) : checkingSavedCard ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <span className="ml-3">{t('user.payments.checkout.preparingPayment', 'Preparing payment...')}</span>
+                <span className="ml-3">{t('user.payments.checkout.checkingCard', 'Checking payment method...')}</span>
               </div>
+            ) : isSetupMode ? (
+              // Setup Intent mode - save card without charging
+              !stripeSetupData ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-3">{t('user.payments.checkout.preparingForm', 'Preparing form...')}</span>
+                </div>
+              ) : (
+                <StripeSetupForm
+                  clientSecret={stripeSetupData.clientSecret}
+                  publishableKey={stripeSetupData.publishableKey}
+                  onSuccess={handleSetupSuccess}
+                  onError={handleSetupError}
+                />
+              )
             ) : (
-              <StripePaymentForm
-                clientSecret={stripeData.clientSecret}
-                publishableKey={stripeData.publishableKey}
-                amount={paymentInfo.amount}
-                currency={paymentInfo.currency}
-                onSuccess={handlePaymentSuccess}
-                onError={handlePaymentError}
-              />
+              // Payment Intent mode - charge now
+              !stripeData ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-3">{t('user.payments.checkout.preparingPayment', 'Preparing payment...')}</span>
+                </div>
+              ) : (
+                <StripePaymentForm
+                  clientSecret={stripeData.clientSecret}
+                  publishableKey={stripeData.publishableKey}
+                  amount={paymentInfo.amount}
+                  currency={paymentInfo.currency}
+                  onSuccess={handlePaymentSuccess}
+                  onError={handlePaymentError}
+                />
+              )
             )}
           </CardContent>
         </Card>

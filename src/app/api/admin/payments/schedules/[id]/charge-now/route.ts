@@ -18,6 +18,10 @@ export async function POST(
     const supabase = await createClient();
     const { id: scheduleId } = await params;
 
+    // Get optional payment method ID from request body
+    const body = await request.json().catch(() => ({}));
+    const { payment_method_id } = body;
+
     // Verify admin authentication
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -55,10 +59,11 @@ export async function POST(
       );
     }
 
-    console.log(`[Admin Charge Now] Creating invoice for schedule ${scheduleId}`);
+    console.log(`[Admin Charge Now] Creating invoice for schedule ${scheduleId}`,
+      payment_method_id ? `using payment method: ${payment_method_id}` : 'using default payment method');
 
-    // Create invoice and charge immediately (chargeNow = true)
-    const result = await createScheduledInvoice(scheduleId, userData.tenant_id, true);
+    // Create invoice and charge immediately (chargeNow = true, optionally with specific payment method)
+    const result = await createScheduledInvoice(scheduleId, userData.tenant_id, true, payment_method_id);
 
     if (result.error) {
       console.error(`[Admin Charge Now] Error:`, result.error);

@@ -73,6 +73,18 @@ export async function logAuditEvent(params: AuditEventParams): Promise<void> {
   try {
     const supabase = getServiceClient();
 
+    // Check if user is admin - skip tracking admin actions
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', params.userId)
+      .single();
+
+    // Skip logging if user is admin or super_admin
+    if (userData?.role === 'admin' || userData?.role === 'super_admin') {
+      return;
+    }
+
     // Resolve tenant_id if not provided
     let tenantId = params.tenantId;
     if (!tenantId && params.userId) {

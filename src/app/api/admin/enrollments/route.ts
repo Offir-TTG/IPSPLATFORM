@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
         status,
         payment_status,
         enrollment_type,
+        is_parent,
         next_payment_date,
         payment_start_date,
         enrolled_at,
@@ -172,19 +173,19 @@ export async function GET(request: NextRequest) {
 
       if (enrollment.user) {
         // User exists - use user table data
-        userName = `${enrollment.user.first_name} ${enrollment.user.last_name}`;
-        userEmail = enrollment.user.email;
-        
+        userName = `${enrollment.user.first_name || ''} ${enrollment.user.last_name || ''}`.trim() || 'Unknown';
+        userEmail = enrollment.user.email || '';
+
       } else if (enrollment.wizard_profile_data) {
         // User doesn't exist yet - use wizard_profile_data
-        userName = `${enrollment.wizard_profile_data.first_name || ''} ${enrollment.wizard_profile_data.last_name || ''}`.trim();
+        userName = `${enrollment.wizard_profile_data.first_name || ''} ${enrollment.wizard_profile_data.last_name || ''}`.trim() || 'Unknown';
         userEmail = enrollment.wizard_profile_data.email || '';
-        
+
       } else {
         // No user data available
         userName = 'Unknown';
         userEmail = '';
-        
+
       }
 
       return {
@@ -219,9 +220,9 @@ export async function GET(request: NextRequest) {
     if (search) {
       const searchLower = search.toLowerCase();
       enrollments = enrollments.filter((e: any) =>
-        e.user_name.toLowerCase().includes(searchLower) ||
-        e.user_email.toLowerCase().includes(searchLower) ||
-        e.product_name.toLowerCase().includes(searchLower)
+        (e.user_name || '').toLowerCase().includes(searchLower) ||
+        (e.user_email || '').toLowerCase().includes(searchLower) ||
+        (e.product_name || '').toLowerCase().includes(searchLower)
       );
     }
 
@@ -275,6 +276,7 @@ export async function POST(request: NextRequest) {
       payment_plan_id,
       status = 'draft',
       waive_payment = false, // Admin override to waive payment requirement
+      is_parent = false, // Indicates if this is a parent enrollment (no dashboard access)
       expires_at = null, // Optional expiration date for the enrollment
       // Legacy fields (kept for backwards compatibility)
       email,
@@ -421,45 +423,12 @@ export async function POST(request: NextRequest) {
       finalUserId = null;
     }
 
-    // Check for existing enrollment (only if we have a user_id)
-    if (finalUserId) {
-      const { data: existingEnrollment } = await supabase
-        .from('enrollments')
-        .select('id')
-        .eq('user_id', finalUserId)
-        .eq('product_id', product_id)
-        .eq('tenant_id', adminData.tenant_id)
-        .single();
-
-      if (existingEnrollment) {
-        return NextResponse.json(
-          { error: 'User is already enrolled in this product' },
-          { status: 409 }
-        );
-      }
-    } else {
-      // For new users (no user_id yet), check by email in wizard_profile_data
-      // This prevents duplicate enrollments for the same email
-      const { data: existingEnrollments } = await supabase
-        .from('enrollments')
-        .select('id, wizard_profile_data')
-        .eq('product_id', product_id)
-        .eq('tenant_id', adminData.tenant_id)
-        .is('user_id', null);
-
-      if (existingEnrollments && existingEnrollments.length > 0) {
-        const duplicateEnrollment = existingEnrollments.find(
-          (e: any) => e.wizard_profile_data?.email?.toLowerCase() === userEmail.toLowerCase()
-        );
-
-        if (duplicateEnrollment) {
-          return NextResponse.json(
-            { error: 'An enrollment for this email and product already exists' },
-            { status: 409 }
-          );
-        }
-      }
-    }
+    // Duplicate enrollments are allowed - admins can enroll users multiple times in the same product
+    // This supports use cases like:
+    // - Parents enrolling multiple children in the same program
+    // - Re-enrollment after course completion
+    // - Multiple enrollments for different time slots/sessions
+    // - Group registrations
 
     // Create enrollment
     const enrollmentData: any = {
@@ -473,6 +442,7 @@ export async function POST(request: NextRequest) {
       status,
       payment_status: paymentStatus,
       payment_waived: waive_payment,
+      is_parent: is_parent, // Parent enrollments don't grant dashboard access
       enrollment_type: 'admin_assigned',
       created_by: user.id,
       expires_at: expires_at || null,

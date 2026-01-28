@@ -122,6 +122,18 @@ export async function POST(request: NextRequest) {
         await handleChargeRefunded(supabase, event);
         break;
 
+      case 'charge.dispute.created':
+        await handleDisputeCreated(supabase, event);
+        break;
+
+      case 'charge.dispute.updated':
+        await handleDisputeUpdated(supabase, event);
+        break;
+
+      case 'charge.dispute.closed':
+        await handleDisputeClosed(supabase, event);
+        break;
+
       default:
         console.log('Unhandled Stripe event:', event.type);
     }
@@ -1162,6 +1174,229 @@ async function handleChargeRefunded(supabase: any, event: Stripe.Event) {
   }
 }
 
+// Handle dispute created (chargeback initiated)
+async function handleDisputeCreated(supabase: any, event: Stripe.Event) {
+  const dispute = event.data.object as Stripe.Dispute;
+
+  console.log('[Webhook] Dispute created:', {
+    dispute_id: dispute.id,
+    charge_id: dispute.charge,
+    amount: dispute.amount / 100,
+    reason: dispute.reason,
+    status: dispute.status,
+  });
+
+  // Find the payment record by charge ID
+  const { data: payment } = await supabase
+    .from('payments')
+    .select('id, tenant_id, enrollment_id, user_id')
+    .eq('metadata->charge_id', dispute.charge)
+    .maybeSingle();
+
+  if (!payment) {
+    console.log('[Webhook] No payment found for charge:', dispute.charge);
+    // Try to find by payment intent
+    const { data: paymentByIntent } = await supabase
+      .from('payments')
+      .select('id, tenant_id, enrollment_id, user_id')
+      .eq('stripe_payment_intent_id', dispute.payment_intent)
+      .maybeSingle();
+
+    if (!paymentByIntent) {
+      console.log('[Webhook] No payment found for payment intent:', dispute.payment_intent);
+      return;
+    }
+
+    // Use payment found by intent
+    Object.assign(payment, paymentByIntent);
+  }
+
+  // Get enrollment to find user_id if not in payment
+  let userId = payment.user_id;
+  if (!userId && payment.enrollment_id) {
+    const { data: enrollment } = await supabase
+      .from('enrollments')
+      .select('user_id')
+      .eq('id', payment.enrollment_id)
+      .single();
+
+    userId = enrollment?.user_id;
+  }
+
+  // Map Stripe dispute status to our status
+  let disputeStatus = 'needs_response';
+  if (dispute.status === 'warning_needs_response' || dispute.status === 'needs_response') {
+    disputeStatus = 'needs_response';
+  } else if (dispute.status === 'under_review' || dispute.status === 'warning_under_review') {
+    disputeStatus = 'under_review';
+  } else if (dispute.status === 'won') {
+    disputeStatus = 'won';
+  } else if (dispute.status === 'lost') {
+    disputeStatus = 'lost';
+  } else if (dispute.status === 'warning_closed') {
+    disputeStatus = 'closed';
+  }
+
+  // Create dispute record
+  const { error: disputeError } = await supabase
+    .from('payment_disputes')
+    .insert({
+      tenant_id: payment.tenant_id,
+      payment_id: payment.id,
+      enrollment_id: payment.enrollment_id,
+      user_id: userId,
+      stripe_dispute_id: dispute.id,
+      stripe_charge_id: dispute.charge as string,
+      amount: dispute.amount / 100,
+      currency: dispute.currency.toUpperCase(),
+      reason: dispute.reason,
+      status: disputeStatus,
+      evidence_due_date: dispute.evidence_details?.due_by
+        ? new Date(dispute.evidence_details.due_by * 1000).toISOString()
+        : null,
+      evidence_submitted: dispute.evidence_details?.submission_count ? dispute.evidence_details.submission_count > 0 : false,
+      metadata: {
+        stripe_dispute_status: dispute.status,
+        is_charge_refundable: dispute.is_charge_refundable,
+        network_reason_code: dispute.network_reason_code,
+      },
+    });
+
+  if (disputeError) {
+    console.error('[Webhook] Error creating dispute record:', disputeError);
+  } else {
+    console.log(`[Webhook] ✓ Created dispute record for ${dispute.id}`);
+  }
+
+  // Create admin notification
+  await supabase.from('notifications').insert({
+    type: 'payment_dispute_created',
+    title: 'Payment Dispute Created',
+    message: `A payment dispute of ${(dispute.amount / 100).toFixed(2)} ${dispute.currency.toUpperCase()} has been filed. Reason: ${dispute.reason}`,
+    data: {
+      dispute_id: dispute.id,
+      payment_id: payment.id,
+      amount: dispute.amount / 100,
+      currency: dispute.currency,
+      reason: dispute.reason,
+      evidence_due: dispute.evidence_details?.due_by,
+    },
+    created_at: new Date().toISOString()
+  });
+}
+
+// Handle dispute updated
+async function handleDisputeUpdated(supabase: any, event: Stripe.Event) {
+  const dispute = event.data.object as Stripe.Dispute;
+
+  console.log('[Webhook] Dispute updated:', {
+    dispute_id: dispute.id,
+    status: dispute.status,
+    evidence_submitted: dispute.evidence_details?.submission_count || 0,
+  });
+
+  // Map Stripe status to our status
+  let disputeStatus = 'needs_response';
+  if (dispute.status === 'warning_needs_response' || dispute.status === 'needs_response') {
+    disputeStatus = 'needs_response';
+  } else if (dispute.status === 'under_review' || dispute.status === 'warning_under_review') {
+    disputeStatus = 'under_review';
+  } else if (dispute.status === 'won') {
+    disputeStatus = 'won';
+  } else if (dispute.status === 'lost') {
+    disputeStatus = 'lost';
+  } else if (dispute.status === 'warning_closed') {
+    disputeStatus = 'closed';
+  }
+
+  // Update dispute record
+  const updateData: any = {
+    status: disputeStatus,
+    evidence_submitted: dispute.evidence_details?.submission_count ? dispute.evidence_details.submission_count > 0 : false,
+    updated_at: new Date().toISOString(),
+  };
+
+  // Update evidence submission timestamp if evidence was submitted
+  if (dispute.evidence_details?.submission_count && dispute.evidence_details.submission_count > 0) {
+    updateData.evidence_submitted_at = new Date().toISOString();
+  }
+
+  // Update evidence due date if changed
+  if (dispute.evidence_details?.due_by) {
+    updateData.evidence_due_date = new Date(dispute.evidence_details.due_by * 1000).toISOString();
+  }
+
+  const { error: updateError } = await supabase
+    .from('payment_disputes')
+    .update(updateData)
+    .eq('stripe_dispute_id', dispute.id);
+
+  if (updateError) {
+    console.error('[Webhook] Error updating dispute:', updateError);
+  } else {
+    console.log(`[Webhook] ✓ Updated dispute ${dispute.id} to status: ${disputeStatus}`);
+  }
+}
+
+// Handle dispute closed (final outcome)
+async function handleDisputeClosed(supabase: any, event: Stripe.Event) {
+  const dispute = event.data.object as Stripe.Dispute;
+
+  console.log('[Webhook] Dispute closed:', {
+    dispute_id: dispute.id,
+    status: dispute.status,
+  });
+
+  // Map final status
+  let finalStatus = 'closed';
+  if (dispute.status === 'won') {
+    finalStatus = 'won';
+  } else if (dispute.status === 'lost') {
+    finalStatus = 'lost';
+  } else if (dispute.status === 'warning_closed') {
+    finalStatus = 'closed';
+  }
+
+  // Update dispute record with final status
+  const { error: updateError } = await supabase
+    .from('payment_disputes')
+    .update({
+      status: finalStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('stripe_dispute_id', dispute.id);
+
+  if (updateError) {
+    console.error('[Webhook] Error updating dispute to closed:', updateError);
+  } else {
+    console.log(`[Webhook] ✓ Dispute ${dispute.id} closed with status: ${finalStatus}`);
+  }
+
+  // Get dispute details for notification
+  const { data: disputeRecord } = await supabase
+    .from('payment_disputes')
+    .select('amount, currency, payment_id')
+    .eq('stripe_dispute_id', dispute.id)
+    .single();
+
+  // Create admin notification
+  if (disputeRecord) {
+    await supabase.from('notifications').insert({
+      type: 'payment_dispute_closed',
+      title: `Payment Dispute ${finalStatus === 'won' ? 'Won' : 'Lost'}`,
+      message: `Dispute for ${disputeRecord.amount} ${disputeRecord.currency} has been ${finalStatus === 'won' ? 'won' : 'lost'}.`,
+      data: {
+        dispute_id: dispute.id,
+        payment_id: disputeRecord.payment_id,
+        amount: disputeRecord.amount,
+        currency: disputeRecord.currency,
+        outcome: finalStatus,
+      },
+      created_at: new Date().toISOString()
+    });
+  }
+}
+
 // GET /api/webhooks/stripe - Return webhook configuration info
 export async function GET(request: NextRequest) {
   return NextResponse.json({
@@ -1179,7 +1414,10 @@ export async function GET(request: NextRequest) {
       'invoice.payment_failed',
       'invoice.finalized',
       'invoice.paid',
-      'charge.refunded'
+      'charge.refunded',
+      'charge.dispute.created',
+      'charge.dispute.updated',
+      'charge.dispute.closed'
     ],
     headers: {
       'stripe-signature': 'Webhook signature for payload verification'

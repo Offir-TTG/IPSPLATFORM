@@ -10,7 +10,7 @@ import type { Tenant } from '@/lib/tenant/types';
 
 // CACHE VERSION: Increment this number when you need to invalidate all translation caches
 // This forces all clients to fetch fresh translations from the API
-const TRANSLATION_CACHE_VERSION = 26;
+const TRANSLATION_CACHE_VERSION = 30;
 
 // Maximum cache age in milliseconds (1 hour)
 const MAX_CACHE_AGE = 60 * 60 * 1000;

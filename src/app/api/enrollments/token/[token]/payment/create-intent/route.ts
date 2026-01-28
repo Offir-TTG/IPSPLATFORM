@@ -25,6 +25,14 @@ export async function POST(
       );
     }
 
+    // Validate token parameter
+    if (!params?.token) {
+      return NextResponse.json(
+        { error: 'Invalid enrollment token' },
+        { status: 400 }
+      );
+    }
+
     // Get enrollment using token
     const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
@@ -40,7 +48,7 @@ export async function POST(
     }
 
     // Verify token not expired
-    if (new Date(enrollment.token_expires_at) < new Date()) {
+    if (enrollment.token_expires_at && new Date(enrollment.token_expires_at) < new Date()) {
       return NextResponse.json(
         { error: 'Enrollment token has expired' },
         { status: 410 }
@@ -55,8 +63,11 @@ export async function POST(
       .eq('integration_key', 'stripe')
       .single();
 
-    if (integrationError || !integration?.credentials?.secret_key) {
+    if (integrationError || !integration?.credentials?.secret_key || !integration?.credentials?.publishable_key) {
       console.error('Stripe integration not configured for tenant:', enrollment.tenant_id);
+      console.error('Integration error:', integrationError);
+      console.error('Has secret key:', !!integration?.credentials?.secret_key);
+      console.error('Has publishable key:', !!integration?.credentials?.publishable_key);
       return NextResponse.json(
         { error: 'Payment processing not configured. Please contact support.' },
         { status: 500 }
@@ -155,37 +166,71 @@ export async function POST(
 
     // Build payment plan details for description
     const paymentPlanDetails = allSchedules?.map((s, idx) =>
-      `${idx + 1}. ${s.payment_type === 'deposit' ? 'Deposit' : `Payment ${s.payment_number}`}: ${s.currency} ${formatAmount(s.amount)} - Due: ${formatDate(s.scheduled_date)} - ${s.status === 'paid' ? '✓ Paid' : s.id === schedule.id ? '← Current' : 'Pending'}`
+      `${idx + 1}. ${s.payment_type === 'deposit' ? 'Deposit' : `Payment ${s.payment_number || idx + 1}`}: ${s.currency || 'USD'} ${formatAmount(s.amount || 0)} - Due: ${formatDate(s.scheduled_date)} - ${s.status === 'paid' ? '✓ Paid' : s.id === schedule.id ? '← Current' : 'Pending'}`
     ).join('\n') || '';
 
     // Get or create Stripe customer for this enrollment
-    // This ensures all payments for this enrollment use the same customer
+    // CRITICAL: Check user's Stripe customer FIRST to prevent duplicate customers
     let stripeCustomerId: string | undefined;
 
-    // Check if enrollment already has a Stripe customer
-    const { data: existingCustomer } = await supabase
+    // Step 1: Check if enrollment already has a Stripe customer
+    const { data: existingEnrollment } = await supabase
       .from('enrollments')
-      .select('stripe_customer_id')
+      .select('stripe_customer_id, user_id')
       .eq('id', enrollment.id)
       .single();
 
-    if (existingCustomer?.stripe_customer_id) {
-      console.log('[Stripe] Using existing customer:', existingCustomer.stripe_customer_id);
-      const tempCustomerId = existingCustomer.stripe_customer_id;
+    if (existingEnrollment?.stripe_customer_id) {
+      console.log('[Stripe] Enrollment has customer:', existingEnrollment.stripe_customer_id);
+      const tempCustomerId = existingEnrollment.stripe_customer_id;
 
       // Verify customer still exists in Stripe
       try {
         await stripe.customers.retrieve(tempCustomerId);
         stripeCustomerId = tempCustomerId;
+        console.log('[Stripe] Verified enrollment customer exists in Stripe');
       } catch (error) {
-        console.log('[Stripe] Customer no longer exists, will create new one');
+        console.log('[Stripe] Enrollment customer no longer exists, will check user or create new');
         stripeCustomerId = undefined;
       }
     }
 
-    // Create new customer if needed
+    // Step 2: If enrollment has no customer, check if USER has a Stripe customer
+    // This prevents creating duplicate customers when user has multiple enrollments
+    if (!stripeCustomerId && existingEnrollment?.user_id) {
+      console.log('[Stripe] Enrollment has no customer, checking user:', existingEnrollment.user_id);
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('stripe_customer_id')
+        .eq('id', existingEnrollment.user_id)
+        .single();
+
+      if (userData?.stripe_customer_id) {
+        console.log('[Stripe] User has existing customer:', userData.stripe_customer_id);
+
+        // Verify customer still exists in Stripe
+        try {
+          await stripe.customers.retrieve(userData.stripe_customer_id);
+          stripeCustomerId = userData.stripe_customer_id;
+          console.log('[Stripe] ✓ Reusing user\'s existing Stripe customer');
+
+          // Save customer ID to enrollment for future reference
+          await supabase
+            .from('enrollments')
+            .update({ stripe_customer_id: stripeCustomerId })
+            .eq('id', enrollment.id);
+          console.log('[Stripe] ✓ Linked user\'s customer to enrollment');
+        } catch (error) {
+          console.log('[Stripe] User customer no longer exists in Stripe, will create new');
+          stripeCustomerId = undefined;
+        }
+      }
+    }
+
+    // Step 3: Create new customer if needed
     if (!stripeCustomerId) {
-      console.log('[Stripe] Creating new customer for enrollment');
+      console.log('[Stripe] No existing customer found - creating new one');
 
       // Get profile data if available
       const { data: enrollmentData } = await supabase
@@ -195,47 +240,90 @@ export async function POST(
         .single();
 
       const profileData = enrollmentData?.wizard_profile_data as any;
+      const userId = enrollmentData?.user_id;
+
+      // Try to get email from user table if user exists
+      let customerEmail = profileData?.email;
+      let customerName: string | undefined;
+
+      if (userId) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('email, first_name, last_name')
+          .eq('id', userId)
+          .single();
+
+        if (userData) {
+          customerEmail = userData.email;
+          customerName = userData.first_name && userData.last_name
+            ? `${userData.first_name} ${userData.last_name}`
+            : undefined;
+          console.log('[Stripe] Using user profile for new customer:', customerEmail);
+        }
+      } else if (profileData?.first_name && profileData?.last_name) {
+        customerName = `${profileData.first_name} ${profileData.last_name}`;
+      }
 
       console.log('[Stripe] ===== CUSTOMER CREATION DEBUG =====');
       console.log('[Stripe] Enrollment ID:', enrollment.id);
-      console.log('[Stripe] Raw wizard_profile_data:', JSON.stringify(profileData, null, 2));
-      console.log('[Stripe] Profile data checks:', {
-        hasProfileData: !!profileData,
-        hasEmail: !!profileData?.email,
-        email: profileData?.email || 'MISSING',
-        hasFirstName: !!profileData?.first_name,
-        firstName: profileData?.first_name || 'MISSING',
-        hasLastName: !!profileData?.last_name,
-        lastName: profileData?.last_name || 'MISSING',
-      });
+      console.log('[Stripe] User ID:', userId || 'none');
+      console.log('[Stripe] Customer email:', customerEmail || 'MISSING');
+      console.log('[Stripe] Customer name:', customerName || 'MISSING');
       console.log('[Stripe] =====================================');
 
-      // Only create customer if we have profile email
+      // Only create customer if we have email
       // This prevents creating "Guest" customers without info
-      if (profileData?.email) {
+      if (customerEmail) {
         const customer = await stripe.customers.create({
-          email: profileData.email,
-          name: profileData?.first_name && profileData?.last_name
-            ? `${profileData.first_name} ${profileData.last_name}`
-            : undefined,
+          email: customerEmail,
+          name: customerName,
           metadata: {
             enrollment_id: enrollment.id,
             tenant_id: enrollment.tenant_id,
+            user_id: userId || '',
           },
         });
 
         stripeCustomerId = customer.id;
-        console.log('[Stripe] ✓ Created customer with email:', stripeCustomerId, profileData.email);
+        console.log('[Stripe] ✓ Created new Stripe customer:', stripeCustomerId);
 
         // Save customer ID to enrollment
         await supabase
           .from('enrollments')
           .update({ stripe_customer_id: stripeCustomerId })
           .eq('id', enrollment.id);
+        console.log('[Stripe] ✓ Saved customer ID to enrollment');
+
+        // CRITICAL: Also save to user table if user exists
+        // This ensures future enrollments will reuse this customer
+        if (userId) {
+          await supabase
+            .from('users')
+            .update({ stripe_customer_id: stripeCustomerId })
+            .eq('id', userId);
+          console.log('[Stripe] ✓ Saved customer ID to user table - future enrollments will reuse this customer');
+        }
       } else {
-        console.warn('[Stripe] ⚠️ No profile email available yet - payment intent will be created without customer');
+        console.warn('[Stripe] ⚠️ No email available - payment intent will be created without customer');
         console.warn('[Stripe] Stripe will create a guest customer, which will be updated at enrollment completion');
       }
+    }
+
+    // Validate schedule data
+    if (!schedule.currency) {
+      console.error('[Stripe] Payment schedule missing currency:', schedule);
+      return NextResponse.json(
+        { error: 'Payment schedule is missing currency information' },
+        { status: 500 }
+      );
+    }
+
+    if (!schedule.amount || schedule.amount <= 0) {
+      console.error('[Stripe] Payment schedule has invalid amount:', schedule);
+      return NextResponse.json(
+        { error: 'Payment schedule has invalid amount' },
+        { status: 500 }
+      );
     }
 
     // Create Stripe payment intent
@@ -251,18 +339,18 @@ export async function POST(
         enrollment_id: enrollment.id,
         schedule_id: schedule.id,
         tenant_id: enrollment.tenant_id,
-        payment_type: schedule.payment_type,
-        payment_number: schedule.payment_number.toString(),
+        payment_type: schedule.payment_type || 'payment',
+        payment_number: (schedule.payment_number || 1).toString(),
         product_title: product?.title || 'Unknown Product',
         product_type: product?.type || 'unknown',
         // Payment plan summary
         total_payments: totalPayments.toString(),
-        current_payment: schedule.payment_number.toString(),
+        current_payment: (schedule.payment_number || 1).toString(),
         total_amount: totalAmount.toString(),
         paid_amount: paidAmount.toString(),
         remaining_amount: (totalAmount - paidAmount).toString(),
       },
-      description: `${schedule.payment_type === 'deposit' ? 'Deposit' : `Payment ${schedule.payment_number}/${totalPayments}`} for ${product?.title || 'Product'}
+      description: `${schedule.payment_type === 'deposit' ? 'Deposit' : `Payment ${schedule.payment_number || 1}/${totalPayments}`} for ${product?.title || 'Product'}
 
 PAYMENT PLAN (${completedPayments + 1}/${totalPayments}):
 ${paymentPlanDetails}

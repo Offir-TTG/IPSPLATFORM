@@ -15,12 +15,14 @@ import { getStripeClient } from './getStripeClient';
  * @param scheduleId - ID of the payment schedule
  * @param tenantId - Tenant ID for database isolation
  * @param chargeNow - If true, charges immediately instead of on scheduled_date
+ * @param paymentMethodId - Optional payment method ID to use (defaults to customer's default)
  * @returns Object with invoice_id or error message
  */
 export async function createScheduledInvoice(
   scheduleId: string,
   tenantId: string,
-  chargeNow: boolean = false
+  chargeNow: boolean = false,
+  paymentMethodId?: string
 ): Promise<{ invoice_id: string; error?: string }> {
   try {
     console.log(`[Invoice Service] Starting invoice creation for schedule ${scheduleId}, tenant ${tenantId}`);
@@ -137,25 +139,32 @@ export async function createScheduledInvoice(
       console.log(`[Invoice Service] Using user's Stripe customer: ${customerId}`);
     }
 
-    // Verify customer has payment method for charging and get the payment method ID
-    let paymentMethodId: string | undefined;
-    try {
-      const paymentMethods = await stripe.paymentMethods.list({
-        customer: customerId,
-        limit: 1,
-      });
+    // Get or verify payment method for charging
+    let selectedPaymentMethodId: string | undefined = paymentMethodId; // Use provided payment method if specified
 
-      if (paymentMethods.data.length === 0) {
-        console.error(`[Invoice Service] ⚠️ CRITICAL: Customer ${customerId} has NO payment method!`);
-        console.error(`[Invoice Service] Invoice will be created but charge will fail.`);
-        console.error(`[Invoice Service] User needs to add payment method first.`);
-      } else {
-        const pm = paymentMethods.data[0];
-        paymentMethodId = pm.id;
-        console.log(`[Invoice Service] ✓ Customer has payment method: ${pm.type} ending in ${(pm as any).card?.last4 || 'N/A'} (${paymentMethodId})`);
+    if (!selectedPaymentMethodId) {
+      // No payment method specified - get customer's default or first available
+      console.log('[Invoice Service] No payment method specified, checking customer defaults');
+      try {
+        const paymentMethods = await stripe.paymentMethods.list({
+          customer: customerId,
+          limit: 1,
+        });
+
+        if (paymentMethods.data.length === 0) {
+          console.error(`[Invoice Service] ⚠️ CRITICAL: Customer ${customerId} has NO payment method!`);
+          console.error(`[Invoice Service] Invoice will be created but charge will fail.`);
+          console.error(`[Invoice Service] User needs to add payment method first.`);
+        } else {
+          const pm = paymentMethods.data[0];
+          selectedPaymentMethodId = pm.id;
+          console.log(`[Invoice Service] ✓ Using customer's default payment method: ${pm.type} ending in ${(pm as any).card?.last4 || 'N/A'} (${selectedPaymentMethodId})`);
+        }
+      } catch (error) {
+        console.error(`[Invoice Service] Error checking payment methods:`, error);
       }
-    } catch (error) {
-      console.error(`[Invoice Service] Error checking payment methods:`, error);
+    } else {
+      console.log(`[Invoice Service] ✓ Using specified payment method: ${selectedPaymentMethodId}`);
     }
 
     // 6. Calculate due date timestamp (Unix timestamp in seconds)
@@ -224,12 +233,12 @@ export async function createScheduledInvoice(
 
     // For charge_automatically, explicitly pay the invoice if it's not already paid
     if (chargeNow && finalizedInvoice.status !== 'paid') {
-      console.log(`[Invoice Service] Explicitly paying invoice ${invoice.id} with payment method ${paymentMethodId || 'default'}`);
+      console.log(`[Invoice Service] Explicitly paying invoice ${invoice.id} with payment method ${selectedPaymentMethodId || 'default'}`);
       try {
         // Specify payment method to avoid "no default_payment_method" error
         const payOptions: any = {};
-        if (paymentMethodId) {
-          payOptions.payment_method = paymentMethodId;
+        if (selectedPaymentMethodId) {
+          payOptions.payment_method = selectedPaymentMethodId;
         }
 
         const paidInvoice = await stripe.invoices.pay(invoice.id, payOptions);

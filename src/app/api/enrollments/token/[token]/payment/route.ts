@@ -18,7 +18,7 @@ export async function GET(
     // Get enrollment using token
     const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
-      .select('id, tenant_id, token_expires_at')
+      .select('id, tenant_id, token_expires_at, is_parent')
       .eq('enrollment_token', params.token)
       .single();
 

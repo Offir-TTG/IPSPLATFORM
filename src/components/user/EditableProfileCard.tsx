@@ -259,36 +259,36 @@ export function EditableProfileCard({
       .map(([_, label]) => label);
 
     if (missingFields.length > 0) {
-      toast.error(`Missing Required Fields: ${missingFields.join(', ')}`);
+      toast.error(`${t('user.profile.validation.missing_fields')}: ${missingFields.join(', ')}`);
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.contact_email)) {
-      toast.error('Please enter a valid contact email address');
+      toast.error(t('user.profile.validation.invalid_email'));
       return;
     }
 
     // Validate phone number format using international validation
     if (!formData.phone) {
-      toast.error('Please enter a phone number');
+      toast.error(t('user.profile.validation.phone_required'));
       return;
     }
 
     // Check if it's a valid international phone number
     if (!isValidPhoneNumber(formData.phone)) {
-      toast.error('Please enter a valid phone number with country code (e.g., +1 234 567 8900)');
+      toast.error(t('user.profile.validation.phone_invalid'));
       return;
     }
 
     try {
       await onSave(formData);
-      toast.success('Profile updated successfully');
+      toast.success(t('user.profile.update.success'));
       setIsEditing(false);
       setPhoneError(null); // Clear phone error on successful save
     } catch (error) {
-      toast.error('Failed to update profile. Please try again.');
+      toast.error(t('user.profile.validation.save_error'));
     }
   };
 
@@ -502,7 +502,7 @@ export function EditableProfileCard({
                 minHeight: '50px'
               }}
               dangerouslySetInnerHTML={{
-                __html: user.bio || '<p style="color: hsl(var(--text-muted))">No bio provided</p>'
+                __html: user.bio || `<p style="color: hsl(var(--text-muted))">${t('user.profile.no_bio')}</p>`
               }}
             />
           )}
@@ -661,7 +661,7 @@ export function EditableProfileCard({
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   placeholder="Enter your city or address"
-                  style={inputStyle}
+                  style={{...inputStyle, textAlign: 'right'}}
                   className="focus:outline-none focus:ring-2 focus:ring-primary hover:border-primary/50"
                 />
                 {googleMapsError && (
@@ -682,7 +682,7 @@ export function EditableProfileCard({
                 )}
               </>
             ) : (
-              <div style={valueStyle}>{user.location || t('user.profile.edit.not_specified')}</div>
+              <div style={{...valueStyle, textAlign: 'right'}}>{user.location || t('user.profile.edit.not_specified')}</div>
             )}
           </div>
 
@@ -777,7 +777,7 @@ export function EditableProfileCard({
           {/* Website */}
           <div style={fieldStyle}>
             <label style={labelStyle}>
-              <Globe className="h-3 w-3 inline mr-1" />
+              <Globe className={`h-3 w-3 inline ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
               {t('user.profile.edit.website')}
             </label>
             {isEditing ? (
@@ -803,7 +803,7 @@ export function EditableProfileCard({
           {/* LinkedIn */}
           <div style={fieldStyle}>
             <label style={labelStyle}>
-              <Linkedin className="h-3 w-3 inline mr-1" />
+              <Linkedin className={`h-3 w-3 inline ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
               {t('user.profile.edit.linkedin')}
             </label>
             {isEditing ? (
@@ -829,7 +829,7 @@ export function EditableProfileCard({
           {/* Facebook */}
           <div style={fieldStyle}>
             <label style={labelStyle}>
-              <Facebook className="h-3 w-3 inline mr-1" />
+              <Facebook className={`h-3 w-3 inline ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
               {t('user.profile.edit.facebook')}
             </label>
             {isEditing ? (
@@ -855,7 +855,7 @@ export function EditableProfileCard({
           {/* Instagram */}
           <div style={fieldStyle}>
             <label style={labelStyle}>
-              <Instagram className="h-3 w-3 inline mr-1" />
+              <Instagram className={`h-3 w-3 inline ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
               {t('user.profile.edit.instagram')}
             </label>
             {isEditing ? (

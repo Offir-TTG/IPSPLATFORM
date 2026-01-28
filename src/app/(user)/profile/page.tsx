@@ -54,6 +54,7 @@ import { Switch } from '@/components/ui/switch';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { EditableProfileCard } from '@/components/user/EditableProfileCard';
+import { PaymentMethodsManager } from '@/components/user/PaymentMethodsManager';
 import { LanguagePreferenceDialog } from '@/components/user/LanguagePreferenceDialog';
 import { NotificationPreferences } from '@/components/user/NotificationPreferences';
 import Link from 'next/link';
@@ -65,6 +66,7 @@ interface Enrollment {
   product_type: string;
   total_amount: number;
   paid_amount: number;
+  refunded_amount?: number;
   payment_status: string;
   enrolled_date: string;
   currency: string;
@@ -193,10 +195,10 @@ export default function ProfilePage() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      toast.success('Profile updated successfully');
+      toast.success(t('user.profile.update.success', 'Profile updated successfully'));
     } catch (error) {
       console.error('Error updating profile:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to update profile');
+      toast.error(error instanceof Error ? error.message : t('user.profile.update.error', 'Failed to update profile'));
       throw error;
     } finally {
       setIsSaving(false);
@@ -229,12 +231,12 @@ export default function ProfilePage() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      toast.success('Avatar updated successfully');
+      toast.success(t('user.profile.avatar.upload_success', 'Avatar updated successfully'));
       setIsAvatarDialogOpen(false);
       setSelectedFile(null);
     } catch (error) {
       console.error('Error uploading avatar:', error);
-      setUploadError(error instanceof Error ? error.message : 'Failed to upload avatar');
+      setUploadError(error instanceof Error ? error.message : t('user.profile.avatar.upload_error', 'Failed to upload avatar'));
     } finally {
       setIsUploading(false);
     }
@@ -257,12 +259,12 @@ export default function ProfilePage() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      toast.success('Avatar removed successfully');
+      toast.success(t('user.profile.avatar.remove_success', 'Avatar removed successfully'));
       setIsAvatarDialogOpen(false);
       setSelectedFile(null);
     } catch (error) {
       console.error('Error removing avatar:', error);
-      setUploadError(error instanceof Error ? error.message : 'Failed to remove avatar');
+      setUploadError(error instanceof Error ? error.message : t('user.profile.avatar.remove_error', 'Failed to remove avatar'));
     } finally {
       setIsUploading(false);
     }
@@ -395,7 +397,7 @@ export default function ProfilePage() {
       window.location.href = '/auth/logout';
     } catch (error) {
       console.error('Error deactivating account:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to deactivate account');
+      toast.error(error instanceof Error ? error.message : t('user.profile.deactivate.error', 'Failed to deactivate account'));
     } finally {
       setIsDeactivating(false);
     }
@@ -471,12 +473,19 @@ export default function ProfilePage() {
             }
           }
 
+          // Calculate total refunded from payment schedules
+          const schedules = e.payment_schedules || [];
+          const refundedAmount = schedules.reduce((sum: number, schedule: any) => {
+            return sum + (parseFloat(schedule.refunded_amount?.toString() || '0'));
+          }, 0);
+
           return {
             id: e.id,
             product_name: e.products.title || e.products.product_name,
             product_type: e.products.type || e.products.product_type,
             total_amount: e.total_amount,
             paid_amount: e.paid_amount,
+            refunded_amount: refundedAmount,
             payment_status: e.payment_status,
             enrolled_date: e.enrolled_date || e.created_at,
             currency: e.products.currency || 'ILS',
@@ -936,7 +945,7 @@ export default function ProfilePage() {
                   </div>
                   <p className="text-2xl font-bold">
                     {formatCurrency(
-                      enrollments.reduce((sum, e) => sum + e.paid_amount, 0),
+                      enrollments.reduce((sum, e) => sum + (e.paid_amount - (e.refunded_amount || 0)), 0),
                       enrollments[0]?.currency || 'ILS'
                     )}
                   </p>
@@ -951,7 +960,10 @@ export default function ProfilePage() {
                   </div>
                   <p className="text-2xl font-bold">
                     {formatCurrency(
-                      enrollments.reduce((sum, e) => sum + (e.total_amount - e.paid_amount), 0),
+                      enrollments.reduce((sum, e) => {
+                        const netPaid = e.paid_amount - (e.refunded_amount || 0);
+                        return sum + (e.total_amount - netPaid);
+                      }, 0),
                       enrollments[0]?.currency || 'ILS'
                     )}
                   </p>
@@ -970,7 +982,7 @@ export default function ProfilePage() {
 
               {/* Billing Sub-Tabs */}
               <Tabs value={billingSubTab} onValueChange={setBillingSubTab}>
-                <TabsList className="grid w-full max-w-md grid-cols-2">
+                <TabsList className="grid w-full max-w-2xl grid-cols-3">
                   <TabsTrigger value="enrollments">
                     <BookOpen className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
                     {t('user.profile.billing.enrollmentsTab', 'Enrollments')}
@@ -978,6 +990,10 @@ export default function ProfilePage() {
                   <TabsTrigger value="invoices">
                     <Receipt className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
                     {t('invoices.stripeInvoices', 'Stripe Invoices')}
+                  </TabsTrigger>
+                  <TabsTrigger value="payment-methods">
+                    <CreditCard className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                    {t('user.profile.billing.paymentMethodsTab', 'Payment Methods')}
                   </TabsTrigger>
                 </TabsList>
 
@@ -1631,6 +1647,11 @@ export default function ProfilePage() {
                   </div>
                 )}
                   </Card>
+                </TabsContent>
+
+                {/* Payment Methods Tab Content */}
+                <TabsContent value="payment-methods" className="mt-6">
+                  <PaymentMethodsManager t={t} />
                 </TabsContent>
               </Tabs>
             </>

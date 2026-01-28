@@ -307,6 +307,9 @@ export default function EnrollmentWizardPage() {
     };
   }, []);
 
+  // Payment handling is now simpler - payment step always shown if payment_required
+  // For parent enrollments, payment step is ALWAYS shown (even with saved card)
+
   // Track if profile data has been loaded to avoid overwriting user input
   const [profileDataLoaded, setProfileDataLoaded] = useState(false);
 
@@ -665,6 +668,9 @@ export default function EnrollmentWizardPage() {
     }
   };
 
+  // Simplified payment logic - payment step shown if payment_required = true
+  // Parent enrollments ALWAYS show payment step (even with saved card)
+
   // Check if email already exists in the system
   // Returns true if email exists (user should login), false if available (can proceed)
   const checkEmailExists = async (email: string): Promise<boolean> => {
@@ -861,8 +867,16 @@ export default function EnrollmentWizardPage() {
       return;
     }
 
-    // Step 3: Payment (if required) - SKIP for free enrollments
+    // Step 3: Payment (if required) - ONLY skip for free enrollments
     const isFreeEnrollment = !enrollment.payment_required || enrollment.total_amount === 0;
+
+    console.log('[Wizard] Payment step decision:', {
+      isFreeEnrollment,
+      isPaymentComplete,
+      payment_required: enrollment.payment_required,
+      total_amount: enrollment.total_amount
+    });
+
     if (!isFreeEnrollment && !isPaymentComplete) {
       console.log('[Wizard] → Setting step to: payment (payment_complete:', enrollment.payment_complete, ')');
       setCurrentStep('payment');

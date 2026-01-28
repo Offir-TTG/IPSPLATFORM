@@ -118,8 +118,24 @@ export function EditEnrollmentDialog({
   // Helper to format product type
   const formatProductType = (type: string): string => {
     if (!type) return '';
-    const typeKey = `admin.enrollments.productType.${type.toLowerCase()}`;
+    const typeKey = `productType.${type}`;
     return t(typeKey, type);
+  };
+
+  // Helper to get translated product title
+  const getProductTitle = (product: any): string => {
+    if (!product) return '';
+
+    // Check if product has translated titles in metadata
+    const currentLang = direction === 'rtl' ? 'he' : 'en';
+    const translatedTitle = product.metadata?.[`title_${currentLang}`];
+
+    if (translatedTitle) {
+      return translatedTitle;
+    }
+
+    // Fall back to default title
+    return product.title || '';
   };
 
   if (!enrollment) return null;
@@ -153,7 +169,7 @@ export function EditEnrollmentDialog({
                 {Array.isArray(products) && products.length > 0 ? (
                   products.map(product => (
                     <SelectItem key={product.id} value={product.id}>
-                      {product.title} ({formatProductType(product.type)})
+                      {getProductTitle(product)} ({formatProductType(product.type)})
                     </SelectItem>
                   ))
                 ) : (

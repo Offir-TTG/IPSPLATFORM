@@ -24,6 +24,7 @@ interface Enrollment {
   paid_amount: number;
   payment_status: string;
   currency: string;
+  refunded_amount?: number;
 }
 
 export function PaymentSummary() {
@@ -42,15 +43,35 @@ export function PaymentSummary() {
       const response = await fetch('/api/enrollments');
       const data = await response.json();
 
+      console.log('[PaymentSummary] API response:', data);
+
       if (data.enrollments) {
-        const formatted = data.enrollments.map((e: any) => ({
-          id: e.id,
-          product_name: e.products?.title || e.products?.product_name || 'Unknown',
-          total_amount: e.total_amount || 0,
-          paid_amount: e.paid_amount || 0,
-          payment_status: e.payment_status || 'pending',
-          currency: e.products?.currency || 'ILS',
-        }));
+        const formatted = data.enrollments.map((e: any) => {
+          console.log('[PaymentSummary] Processing enrollment:', e.id);
+          console.log('[PaymentSummary] Payment schedules:', e.payment_schedules);
+
+          // Calculate total refunded from payment schedules
+          const schedules = e.payment_schedules || [];
+          const refundedAmount = schedules.reduce((sum: number, schedule: any) => {
+            const refund = parseFloat(schedule.refunded_amount?.toString() || '0');
+            console.log('[PaymentSummary] Schedule refund:', refund);
+            return sum + refund;
+          }, 0);
+
+          console.log('[PaymentSummary] Total refunded for enrollment:', refundedAmount);
+
+          return {
+            id: e.id,
+            product_name: e.products?.title || e.products?.product_name || 'Unknown',
+            total_amount: e.total_amount || 0,
+            paid_amount: e.paid_amount || 0,
+            payment_status: e.payment_status || 'pending',
+            currency: e.products?.currency || 'ILS',
+            refunded_amount: refundedAmount,
+          };
+        });
+
+        console.log('[PaymentSummary] Formatted enrollments:', formatted);
         setEnrollments(formatted);
       }
     } catch (error) {
@@ -69,9 +90,20 @@ export function PaymentSummary() {
 
   // Calculate totals
   const totalPaid = enrollments.reduce((sum, e) => sum + e.paid_amount, 0);
+  const totalRefunded = enrollments.reduce((sum, e) => sum + (e.refunded_amount || 0), 0);
   const totalOwed = enrollments.reduce((sum, e) => sum + (e.total_amount - e.paid_amount), 0);
   const totalAmount = enrollments.reduce((sum, e) => sum + e.total_amount, 0);
+  const netPaid = totalPaid - totalRefunded;
   const currency = enrollments[0]?.currency || 'ILS';
+
+  console.log('[PaymentSummary] Totals:', {
+    totalPaid,
+    totalRefunded,
+    totalOwed,
+    totalAmount,
+    netPaid,
+    currency,
+  });
 
   // Count enrollments with outstanding payments
   const outstandingCount = enrollments.filter(e => e.payment_status !== 'paid' && (e.total_amount - e.paid_amount) > 0).length;
@@ -109,8 +141,8 @@ export function PaymentSummary() {
       </div>
 
       {/* Payment Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* Total Paid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {/* Total Paid (Net Amount) */}
         <div className="p-4 rounded-lg bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border border-green-200/50 dark:border-green-800/50">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
@@ -119,8 +151,13 @@ export function PaymentSummary() {
             </p>
           </div>
           <p className="text-2xl font-bold text-green-700 dark:text-green-300">
-            {formatCurrency(totalPaid, currency)}
+            {formatCurrency(netPaid, currency)}
           </p>
+          {totalRefunded > 0 && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1" suppressHydrationWarning>
+              {formatCurrency(totalPaid, currency)} - {formatCurrency(totalRefunded, currency)}
+            </p>
+          )}
         </div>
 
         {/* Outstanding Amount */}
@@ -172,6 +209,24 @@ export function PaymentSummary() {
             {enrollments.length} {t('user.dashboard.payment.activeEnrollments', 'active enrollments')}
           </p>
         </div>
+
+        {/* Total Refunded */}
+        {totalRefunded > 0 && (
+          <div className="p-4 rounded-lg bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/20 dark:to-violet-950/20 border border-purple-200/50 dark:border-purple-800/50">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingDown className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              <p className="text-xs font-medium text-purple-700 dark:text-purple-300" suppressHydrationWarning>
+                {t('user.dashboard.payment.totalRefunded', 'Total Refunded')}
+              </p>
+            </div>
+            <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">
+              {formatCurrency(totalRefunded, currency)}
+            </p>
+            <p className="text-xs text-purple-600 dark:text-purple-400 mt-1" suppressHydrationWarning>
+              {t('user.dashboard.payment.netPaid', 'Net paid')}: {formatCurrency(netPaid, currency)}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Payment Progress Bar */}
@@ -182,17 +237,22 @@ export function PaymentSummary() {
               {t('user.dashboard.payment.overallProgress', 'Overall Payment Progress')}
             </p>
             <p className="text-sm font-bold">
-              {Math.round((totalPaid / totalAmount) * 100)}%
+              {Math.round((netPaid / totalAmount) * 100)}%
             </p>
           </div>
           <div className="w-full bg-secondary rounded-full h-3 overflow-hidden">
             <div
               className={`bg-gradient-to-r from-green-500 to-emerald-500 h-3 transition-all duration-500 ${isRtl ? 'rounded-r-full' : 'rounded-l-full'}`}
               style={{
-                width: `${Math.min(100, (totalPaid / totalAmount) * 100)}%`,
+                width: `${Math.min(100, (netPaid / totalAmount) * 100)}%`,
               }}
             />
           </div>
+          {totalRefunded > 0 && (
+            <p className="text-xs text-purple-600 dark:text-purple-400 mt-1" suppressHydrationWarning>
+              {t('user.dashboard.payment.refundedNote', 'Includes')} {formatCurrency(totalRefunded, currency)} {t('user.dashboard.payment.refundedText', 'in refunds')}
+            </p>
+          )}
         </div>
       )}
 
@@ -208,26 +268,32 @@ export function PaymentSummary() {
           {enrollments
             .filter(e => e.payment_status !== 'paid' && (e.total_amount - e.paid_amount) > 0)
             .slice(0, 3) // Show max 3
-            .map((enrollment) => (
-              <div
-                key={enrollment.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {enrollment.product_name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
-                  </p>
+            .map((enrollment) => {
+              // Calculate net paid (after refunds)
+              const netPaidForEnrollment = enrollment.paid_amount - (enrollment.refunded_amount || 0);
+              const outstandingForEnrollment = enrollment.total_amount - netPaidForEnrollment;
+
+              return (
+                <div
+                  key={enrollment.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {enrollment.product_name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatCurrency(netPaidForEnrollment, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge variant="outline" className="text-amber-600 border-amber-600/50 bg-amber-50 dark:bg-amber-950/20">
+                      {formatCurrency(outstandingForEnrollment, enrollment.currency)}
+                    </Badge>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Badge variant="outline" className="text-amber-600 border-amber-600/50 bg-amber-50 dark:bg-amber-950/20">
-                    {formatCurrency(enrollment.total_amount - enrollment.paid_amount, enrollment.currency)}
-                  </Badge>
-                </div>
-              </div>
-            ))}
+              );
+            })}
         </div>
       )}
 

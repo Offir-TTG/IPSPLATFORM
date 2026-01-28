@@ -196,22 +196,58 @@ export async function GET(request: NextRequest) {
     // Calculate accurate paid_amount from payment_schedules for each enrollment
     const enrichedEnrollments = await Promise.all(
       (enrollments || []).map(async (enrollment) => {
-        // Get all paid payment schedules for this enrollment
-        const { data: paidSchedules } = await supabase
+        // Get all payment schedules for this enrollment
+        const { data: paymentSchedules } = await supabase
           .from('payment_schedules')
-          .select('amount')
+          .select('id, amount, status')
           .eq('enrollment_id', enrollment.id)
-          .eq('status', 'paid');
+          .eq('tenant_id', userData.tenant_id);
 
-        // Calculate total paid amount from schedules
-        const calculatedPaidAmount = paidSchedules
-          ? paidSchedules.reduce((sum, schedule) => sum + parseFloat(schedule.amount.toString()), 0)
-          : 0;
+        // Get all payments for this enrollment (has refund data)
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('payment_schedule_id, refunded_amount, status')
+          .eq('enrollment_id', enrollment.id)
+          .eq('tenant_id', userData.tenant_id);
 
-        // Return enrollment with calculated paid_amount
+        // Create payment lookup map by schedule_id
+        const paymentsBySchedule = new Map();
+        payments?.forEach((payment: any) => {
+          if (payment.payment_schedule_id) {
+            paymentsBySchedule.set(payment.payment_schedule_id, payment);
+          }
+        });
+
+        // Enrich schedules with refund information from payments
+        const enrichedSchedules = (paymentSchedules || []).map((schedule: any) => {
+          const payment = paymentsBySchedule.get(schedule.id);
+
+          // If there's a payment record with refund data, add it to the schedule
+          if (payment && (payment.refunded_amount || payment.status === 'refunded' || payment.status === 'partially_refunded')) {
+            return {
+              ...schedule,
+              refunded_amount: payment.refunded_amount ? parseFloat(payment.refunded_amount.toString()) : 0,
+            };
+          }
+
+          return {
+            ...schedule,
+            refunded_amount: 0,
+          };
+        });
+
+        // Calculate total paid amount from paid schedules
+        const paidSchedules = enrichedSchedules.filter(schedule => schedule.status === 'paid');
+        const calculatedPaidAmount = paidSchedules.reduce(
+          (sum, schedule) => sum + parseFloat(schedule.amount.toString()),
+          0
+        );
+
+        // Return enrollment with calculated paid_amount and enriched payment_schedules array
         return {
           ...enrollment,
           paid_amount: calculatedPaidAmount,
+          payment_schedules: enrichedSchedules,
         };
       })
     );

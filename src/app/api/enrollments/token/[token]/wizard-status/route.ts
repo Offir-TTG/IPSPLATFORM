@@ -95,27 +95,74 @@ export async function GET(
 
     const product = Array.isArray(enrollment.product) ? enrollment.product[0] : enrollment.product;
 
-    // Check if profile is complete from wizard_profile_data
-    // Parse if it's a JSON string, otherwise use as-is
+    // Check if profile is complete
+    // For existing users (user_id set), fetch profile from users table
+    // For new users, check wizard_profile_data
     let profileData = enrollment.wizard_profile_data || {};
-    if (typeof profileData === 'string') {
-      try {
-        profileData = JSON.parse(profileData);
-      } catch (e) {
-        console.error('[Wizard Status] Failed to parse wizard_profile_data:', e);
-        profileData = {};
+    let userProfileComplete = false;
+
+    if (enrollment.user_id) {
+      // Existing user - fetch profile from users table
+      console.log('[Wizard Status] Existing user detected (user_id:', enrollment.user_id, ') - fetching profile from users table');
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('first_name, last_name, email, phone, location')
+        .eq('id', enrollment.user_id)
+        .single();
+
+      if (!userError && userData) {
+        profileData = {
+          first_name: userData.first_name || '',
+          last_name: userData.last_name || '',
+          email: userData.email || '',
+          phone: userData.phone || '',
+          address: userData.location || '' // Use location field from users table
+        };
+
+        // Check if profile is complete
+        const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'address'];
+        userProfileComplete = requiredFields.every(field => {
+          const value = profileData[field as keyof typeof profileData];
+          return value !== null && value !== undefined && value !== '';
+        });
+
+        console.log('[Wizard Status] Loaded profile from users table:', {
+          profileData,
+          userProfileComplete
+        });
+      } else {
+        console.error('[Wizard Status] Failed to fetch user profile:', userError);
       }
+    } else {
+      // New user - check wizard_profile_data
+      // Parse if it's a JSON string, otherwise use as-is
+      if (typeof profileData === 'string') {
+        try {
+          profileData = JSON.parse(profileData);
+        } catch (e) {
+          console.error('[Wizard Status] Failed to parse wizard_profile_data:', e);
+          profileData = {};
+        }
+      }
+
+      const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'address'];
+      userProfileComplete = requiredFields.every(field => {
+        const value = profileData[field];
+        return value !== null && value !== undefined && value !== '';
+      });
+
+      console.log('[Wizard Status] New user - checking wizard_profile_data:', {
+        profileData,
+        userProfileComplete
+      });
     }
-    const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'address'];
-    const userProfileComplete = requiredFields.every(field => {
-      const value = profileData[field];
-      return value !== null && value !== undefined && value !== '';
-    });
 
     // DEBUG: Log profile completion check
     console.log('[Wizard Status] Enrollment ID:', enrollment.id);
+    console.log('[Wizard Status] user_id:', enrollment.user_id);
     console.log('[Wizard Status] wizard_profile_data:', enrollment.wizard_profile_data);
-    console.log('[Wizard Status] profileData:', profileData);
+    console.log('[Wizard Status] Final profileData:', profileData);
     console.log('[Wizard Status] userProfileComplete:', userProfileComplete);
 
     // Determine if payment is required

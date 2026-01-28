@@ -78,6 +78,39 @@ export async function GET(request: NextRequest) {
         countQuery = countQuery.lte('amount', parseFloat(maxAmount));
       }
 
+      // CRITICAL: Need to filter by productId at database level, not post-enrichment
+      // But productId is on enrollments table, not payment_schedules
+      // We need to fetch enrollment IDs that match the product filter first
+      let enrollmentIdsToFilter: string[] | null = null;
+
+      if (productId) {
+        const { data: filteredEnrollments } = await supabase
+          .from('enrollments')
+          .select('id')
+          .eq('product_id', productId)
+          .eq('tenant_id', userData.tenant_id);
+
+        enrollmentIdsToFilter = filteredEnrollments?.map(e => e.id) || [];
+
+        // If no enrollments match, return early
+        if (enrollmentIdsToFilter.length === 0) {
+          return NextResponse.json({
+            schedules: [],
+            total: 0,
+            summary: {
+              total_scheduled: 0,
+              total_amount: 0,
+              pending: 0,
+              paid: 0,
+              overdue: 0,
+            },
+          });
+        }
+
+        // Apply enrollment ID filter to count query
+        countQuery = countQuery.in('enrollment_id', enrollmentIdsToFilter);
+      }
+
       const { count } = await countQuery;
       total = count || 0;
 
@@ -89,6 +122,11 @@ export async function GET(request: NextRequest) {
 
       if (enrollmentId) {
         query = query.eq('enrollment_id', enrollmentId);
+      }
+
+      // Apply productId filter via enrollment IDs
+      if (enrollmentIdsToFilter && enrollmentIdsToFilter.length > 0) {
+        query = query.in('enrollment_id', enrollmentIdsToFilter);
       }
 
       if (status) {
@@ -209,9 +247,8 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      if (productId) {
-        filteredSchedules = filteredSchedules.filter(s => s.product_id === productId);
-      }
+      // Note: productId filter is now applied at database level (above)
+      // No need to filter again here
 
       schedules = filteredSchedules;
     }

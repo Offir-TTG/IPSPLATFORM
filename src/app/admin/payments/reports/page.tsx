@@ -277,14 +277,13 @@ export default function ReportsPage() {
 
         {/* Report Tabs */}
         <Tabs value={reportType} onValueChange={setReportType}>
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             <TabsTrigger value="revenue"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.revenue', 'Revenue')}</span></TabsTrigger>
             <TabsTrigger value="status"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.status', 'Status')}</span></TabsTrigger>
             <TabsTrigger value="cashflow"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.cashflow', 'Cash Flow')}</span></TabsTrigger>
             <TabsTrigger value="products"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.products', 'Products')}</span></TabsTrigger>
             <TabsTrigger value="users"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.users', 'Users')}</span></TabsTrigger>
             <TabsTrigger value="plans"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.plans', 'Plans')}</span></TabsTrigger>
-            <TabsTrigger value="operational"><span suppressHydrationWarning>{t('admin.payments.reports.tabs.operational', 'Operational')}</span></TabsTrigger>
           </TabsList>
 
           {/* Revenue Dashboard */}
@@ -315,11 +314,6 @@ export default function ReportsPage() {
           {/* Payment Plans Analysis */}
           <TabsContent value="plans" className="space-y-6">
             <PaymentPlansReport t={t} isRtl={isRtl} />
-          </TabsContent>
-
-          {/* Operational Report */}
-          <TabsContent value="operational" className="space-y-6">
-            <OperationalReport t={t} isRtl={isRtl} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1897,117 +1891,3 @@ function PaymentPlansReport({ t, isRtl }: { t: TranslationFunction; isRtl: boole
 }
 
 // Operational Report
-function OperationalReport({ t, isRtl }: { t: TranslationFunction; isRtl: boolean }) {
-  return (
-    <>
-      {/* Pending Actions */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.reports.overduePayments', 'Overdue Payments')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">5</div>
-            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.requiresAction', 'Requires action')}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.reports.failedPayments', 'Failed Payments')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">3</div>
-            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.toRetry', 'To retry')}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.reports.pausedSchedules', 'Paused Schedules')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">2</div>
-            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.temporarilyOnHold', 'Temporarily on hold')}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.reports.endingSoon', 'Ending Soon')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">7</div>
-            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>{t('admin.payments.reports.subscriptionsThisMonth', 'Subscriptions this month')}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Admin Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.recentAdminActions', 'Recent Admin Actions')}</CardTitle>
-          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.recentAdminActionsDescription', 'Recent administrative actions on payments')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[
-              { date: '2025-01-15 10:30', admin: 'Admin User', action: 'Adjusted payment date', user: 'John Doe', reason: 'User requested extension' },
-              { date: '2025-01-14 14:20', admin: 'Finance Manager', action: 'Paused payments', user: 'Jane Smith', reason: 'Medical leave' },
-              { date: '2025-01-13 09:15', admin: 'Admin User', action: 'Resumed payments', user: 'Bob Johnson', reason: 'Return from leave' },
-            ].map((item: any, index: any) => (
-              <div key={index} className="flex items-start gap-3 p-3 border rounded-lg">
-                <div className="flex-1">
-                  <p className="font-medium">{item.action}</p>
-                  <p className="text-sm text-muted-foreground">
-                    User: {item.user} • By: {item.admin}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">{item.reason}</p>
-                </div>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {item.date}
-                </span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* System Health */}
-      <Card>
-        <CardHeader>
-          <CardTitle suppressHydrationWarning>{t('admin.payments.reports.systemHealth', 'System Health')}</CardTitle>
-          <CardDescription suppressHydrationWarning>{t('admin.payments.reports.systemHealthDescription', 'Payment system health metrics')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span suppressHydrationWarning>{t('admin.payments.reports.webhookSuccessRate', 'Webhook Success Rate')}</span>
-              <span className="font-bold text-green-600">99.5%</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span suppressHydrationWarning>{t('admin.payments.reports.avgProcessingTime', 'Avg Processing Time')}</span>
-              <span className="font-bold">2.3s</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span suppressHydrationWarning>{t('admin.payments.reports.failedWebhooks', 'Failed Webhooks')}</span>
-              <span className="font-bold">2</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span suppressHydrationWarning>{t('admin.payments.reports.lastReconciliation', 'Last Reconciliation')}</span>
-              <span className="font-bold">2 <span suppressHydrationWarning>{t('admin.payments.reports.hoursAgo', 'hours ago')}</span></span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
