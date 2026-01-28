@@ -60,10 +60,6 @@ export async function GET(request: NextRequest) {
         courses (
           id,
           title
-        ),
-        programs (
-          id,
-          title
         )
       `)
       .gte('start_time', now.toISOString())
@@ -153,7 +149,7 @@ export async function GET(request: NextRequest) {
               courseId: lesson.course_id,
               programId: lesson.program_id,
               courseName: (lesson.courses as any)?.title || '',
-              programName: (lesson.programs as any)?.title || '',
+              programName: '', // Program name not available via foreign key
               zoomMeetingId: lesson.zoom_meeting_id,
               minutesUntilStart: minutesUntilStart,
               enrollmentId: enrollment.id,

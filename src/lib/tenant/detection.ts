@@ -46,10 +46,15 @@ export async function getTenantByDomain(domain: string): Promise<Tenant | null> 
 
     const { data, error } = await supabase
       .rpc('get_tenant_by_domain', { p_domain: domain })
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error fetching tenant by domain:', error);
+      return null;
+    }
+
+    if (!data) {
+      console.log(`No tenant found for domain: ${domain}`);
       return null;
     }
 

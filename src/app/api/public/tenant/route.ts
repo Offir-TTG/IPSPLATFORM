@@ -3,6 +3,9 @@ import { getCurrentTenant } from '@/lib/tenant/detection';
 
 const DEFAULT_LOGO_URL = '/IPS.png'; // Default logo path in public folder
 
+// Mark route as dynamic since it uses request headers for tenant detection
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // Get current tenant from request (handles subdomain, custom domain, and localhost)
