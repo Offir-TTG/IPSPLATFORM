@@ -143,25 +143,49 @@ export async function createScheduledInvoice(
     let selectedPaymentMethodId: string | undefined = paymentMethodId; // Use provided payment method if specified
 
     if (!selectedPaymentMethodId) {
-      // No payment method specified - get customer's default or first available
-      console.log('[Invoice Service] No payment method specified, checking customer defaults');
+      // No payment method specified - get customer's DEFAULT payment method (not just any card)
+      console.log('[Invoice Service] No payment method specified, fetching customer\'s default payment method');
       try {
-        const paymentMethods = await stripe.paymentMethods.list({
-          customer: customerId,
-          limit: 1,
-        });
+        // Retrieve customer to get their default payment method
+        const customer = await stripe.customers.retrieve(customerId);
 
-        if (paymentMethods.data.length === 0) {
-          console.error(`[Invoice Service] ⚠️ CRITICAL: Customer ${customerId} has NO payment method!`);
-          console.error(`[Invoice Service] Invoice will be created but charge will fail.`);
-          console.error(`[Invoice Service] User needs to add payment method first.`);
+        if (customer.deleted) {
+          console.error(`[Invoice Service] ⚠️ CRITICAL: Customer ${customerId} has been deleted!`);
         } else {
-          const pm = paymentMethods.data[0];
-          selectedPaymentMethodId = pm.id;
-          console.log(`[Invoice Service] ✓ Using customer's default payment method: ${pm.type} ending in ${(pm as any).card?.last4 || 'N/A'} (${selectedPaymentMethodId})`);
+          // Check for default payment method in invoice_settings
+          const defaultPaymentMethod = (customer as any).invoice_settings?.default_payment_method;
+
+          if (defaultPaymentMethod) {
+            selectedPaymentMethodId = typeof defaultPaymentMethod === 'string'
+              ? defaultPaymentMethod
+              : defaultPaymentMethod.id;
+
+            // Fetch payment method details for logging
+            if (selectedPaymentMethodId) {
+              const pm = await stripe.paymentMethods.retrieve(selectedPaymentMethodId);
+              console.log(`[Invoice Service] ✓ Using customer's DEFAULT payment method: ${pm.type} ending in ${(pm as any).card?.last4 || 'N/A'} (${selectedPaymentMethodId})`);
+            }
+          } else {
+            // No default set - fall back to first available payment method
+            console.log('[Invoice Service] No default payment method set, fetching first available');
+            const paymentMethods = await stripe.paymentMethods.list({
+              customer: customerId,
+              limit: 1,
+            });
+
+            if (paymentMethods.data.length === 0) {
+              console.error(`[Invoice Service] ⚠️ CRITICAL: Customer ${customerId} has NO payment method!`);
+              console.error(`[Invoice Service] Invoice will be created but charge will fail.`);
+              console.error(`[Invoice Service] User needs to add payment method first.`);
+            } else {
+              const pm = paymentMethods.data[0];
+              selectedPaymentMethodId = pm.id;
+              console.log(`[Invoice Service] ✓ Using first available payment method: ${pm.type} ending in ${(pm as any).card?.last4 || 'N/A'} (${selectedPaymentMethodId})`);
+            }
+          }
         }
       } catch (error) {
-        console.error(`[Invoice Service] Error checking payment methods:`, error);
+        console.error(`[Invoice Service] Error fetching customer's default payment method:`, error);
       }
     } else {
       console.log(`[Invoice Service] ✓ Using specified payment method: ${selectedPaymentMethodId}`);

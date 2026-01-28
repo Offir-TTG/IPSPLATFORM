@@ -78,7 +78,7 @@ export async function logAuditEvent(params: AuditEventParams): Promise<void> {
       .from('users')
       .select('role')
       .eq('id', params.userId)
-      .single();
+      .single() as { data: { role: string } | null; error: any };
 
     // Skip logging if user is admin or super_admin
     if (userData?.role === 'admin' || userData?.role === 'super_admin') {

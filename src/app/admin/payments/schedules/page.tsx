@@ -90,6 +90,7 @@ export default function SchedulesPage() {
   const [selectedEnrollmentForRestructure, setSelectedEnrollmentForRestructure] = useState<string | null>(null);
   const [cardSelectionDialogOpen, setCardSelectionDialogOpen] = useState(false);
   const [selectedScheduleForCardChange, setSelectedScheduleForCardChange] = useState<PaymentSchedule | null>(null);
+  const [cardSelectionMode, setCardSelectionMode] = useState<'change' | 'charge'>('charge');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalSchedules, setTotalSchedules] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -1021,6 +1022,7 @@ export default function SchedulesPage() {
                           onChargeNow={() => handleChargeNow(schedule.id)}
                           onChangeCard={() => {
                             setSelectedScheduleForCardChange(schedule);
+                            setCardSelectionMode('change');
                             setCardSelectionDialogOpen(true);
                           }}
                           onRestructure={() => {
@@ -1157,6 +1159,7 @@ export default function SchedulesPage() {
           open={cardSelectionDialogOpen}
           scheduleId={selectedScheduleForCardChange?.id || null}
           scheduleName={selectedScheduleForCardChange?.user_name}
+          mode={cardSelectionMode}
           onClose={() => {
             setCardSelectionDialogOpen(false);
             setSelectedScheduleForCardChange(null);

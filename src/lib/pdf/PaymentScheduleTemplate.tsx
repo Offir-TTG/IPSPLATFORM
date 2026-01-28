@@ -338,7 +338,7 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
                         </Text>
                       </View>
                       <Text style={[hasRefund ? styles.refundedText : styles.tableCell, styles.col6]}>
-                        {hasRefund ? `(${formatCurrency(schedule.refunded_amount)})` : '-'}
+                        {hasRefund ? `(${formatCurrency(schedule.refunded_amount ?? 0)})` : '-'}
                       </Text>
                       <Text style={[styles.tableCell, styles.col5]}>
                         {formatCurrency(schedule.amount)}
@@ -374,7 +374,7 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
                         {formatCurrency(schedule.amount)}
                       </Text>
                       <Text style={[hasRefund ? styles.refundedText : styles.tableCell, styles.col6]}>
-                        {hasRefund ? `(${formatCurrency(schedule.refunded_amount)})` : '-'}
+                        {hasRefund ? `(${formatCurrency(schedule.refunded_amount ?? 0)})` : '-'}
                       </Text>
                       <View style={[styles.col7, { paddingRight: 5 }]}>
                         <Text style={getStatusStyle(displayStatus)}>

@@ -1561,9 +1561,9 @@ export default function ProfilePage() {
                               <div className="text-2xl font-bold">
                                 {formatCurrency(invoice.amount_due, invoice.currency)}
                               </div>
-                              {invoice.refund_amount > 0 && (
+                              {(invoice.refund_amount ?? 0) > 0 && (
                                 <div className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">
-                                  {t('invoices.refunded_amount', 'Refunded')}: {formatCurrency(invoice.refund_amount, invoice.currency)}
+                                  {t('invoices.refunded_amount', 'Refunded')}: {formatCurrency(invoice.refund_amount ?? 0, invoice.currency)}
                                 </div>
                               )}
                             </div>
