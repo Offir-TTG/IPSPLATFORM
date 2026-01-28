@@ -52,9 +52,7 @@ export async function GET(request: NextRequest) {
         title,
         description,
         course_id,
-        program_id,
         start_time,
-        end_time,
         zoom_meeting_id,
         tenant_id,
         courses (
@@ -94,16 +92,30 @@ export async function GET(request: NextRequest) {
 
         console.log(`[Cron] Processing lesson: ${lesson.title} (starts in ${minutesUntilStart} minutes)`);
 
-        // Get all active students enrolled in this course/program
-        const enrollmentQuery = supabase
+        // Get all active students enrolled in this course
+        // Step 1: Find products for this course
+        const { data: products, error: productError } = await supabase
+          .from('products')
+          .select('id')
+          .eq('course_id', lesson.course_id)
+          .eq('tenant_id', lesson.tenant_id);
+
+        if (productError || !products || products.length === 0) {
+          console.log(`[Cron] No products found for course ${lesson.course_id}`);
+          continue;
+        }
+
+        const productIds = products.map(p => p.id);
+
+        // Step 2: Get enrollments for these products
+        const { data: enrollments, error: enrollError } = await supabase
           .from('enrollments')
           .select(`
             id,
             user_id,
-            course_id,
-            program_id,
+            product_id,
             tenant_id,
-            users (
+            users!enrollments_user_id_fkey (
               id,
               email,
               first_name,
@@ -111,16 +123,9 @@ export async function GET(request: NextRequest) {
               preferred_language
             )
           `)
+          .in('product_id', productIds)
           .eq('tenant_id', lesson.tenant_id)
           .eq('status', 'active');
-
-        if (lesson.course_id) {
-          enrollmentQuery.eq('course_id', lesson.course_id);
-        } else if (lesson.program_id) {
-          enrollmentQuery.eq('program_id', lesson.program_id);
-        }
-
-        const { data: enrollments, error: enrollError } = await enrollmentQuery;
 
         if (enrollError) {
           console.error(`[Cron] Error fetching enrollments for lesson ${lesson.id}:`, enrollError);
@@ -145,11 +150,8 @@ export async function GET(request: NextRequest) {
               lessonTitle: lesson.title,
               lessonDescription: lesson.description,
               lessonStartTime: lesson.start_time,
-              lessonEndTime: lesson.end_time,
               courseId: lesson.course_id,
-              programId: lesson.program_id,
               courseName: (lesson.courses as any)?.title || '',
-              programName: '', // Program name not available via foreign key
               zoomMeetingId: lesson.zoom_meeting_id,
               minutesUntilStart: minutesUntilStart,
               enrollmentId: enrollment.id,
@@ -167,13 +169,25 @@ export async function GET(request: NextRequest) {
             },
           }));
 
+        console.log(`[Cron] Created ${triggerEvents.length} trigger events for lesson ${lesson.id}`);
+        if (triggerEvents.length > 0) {
+          console.log(`[Cron] Sample event data:`, JSON.stringify(triggerEvents[0], null, 2));
+        }
+
         // Process all events in batch for this lesson
-        const result = await processBatchTriggerEvents(triggerEvents) as any;
+        const results = await processBatchTriggerEvents(triggerEvents);
 
-        console.log(`[Cron] Lesson ${lesson.id}: Processed ${result.processed} events, queued ${result.queued} emails`);
+        // Count successful events and queued emails
+        const processed = results.filter(r => r.success && !r.skipped).length;
+        const queued = results.filter(r => r.emailQueueId).length;
 
-        totalProcessed += result.processed;
-        totalEmailsQueued += result.queued;
+        console.log(`[Cron] Lesson ${lesson.id}: Processed ${processed} events, queued ${queued} emails`);
+        if (results.length > 0 && results.length <= 3) {
+          console.log(`[Cron] Result details:`, JSON.stringify(results, null, 2));
+        }
+
+        totalProcessed += processed;
+        totalEmailsQueued += queued;
 
       } catch (lessonError) {
         console.error(`[Cron] Error processing lesson ${lesson.id}:`, lessonError);
