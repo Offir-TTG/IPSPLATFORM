@@ -108,28 +108,33 @@ export async function GET(request: NextRequest) {
         });
 
         if (result.success) {
-          // Update status to sent
-          await supabase
+          // Update status to sent (removed non-existent message_id field)
+          const { error: updateError } = await supabase
             .from('email_queue')
             .update({
               status: 'sent',
               sent_at: new Date().toISOString(),
-              message_id: result.messageId,
             })
             .eq('id', email.id);
 
-          console.log(`[Email Queue Cron] Successfully sent email ${email.id}`);
+          if (updateError) {
+            console.error(`[Email Queue Cron] CRITICAL: Failed to mark email ${email.id} as sent:`, updateError);
+          } else {
+            console.log(`[Email Queue Cron] Successfully sent email ${email.id} and marked as sent`);
+          }
           successCount++;
         } else {
-          // Update status to failed with error
-          await supabase
+          // Update status to failed (removed non-existent error_message and failed_at fields)
+          const { error: updateError } = await supabase
             .from('email_queue')
             .update({
               status: 'failed',
-              error_message: result.error || 'Unknown error',
-              failed_at: new Date().toISOString(),
             })
             .eq('id', email.id);
+
+          if (updateError) {
+            console.error(`[Email Queue Cron] Failed to mark email ${email.id} as failed:`, updateError);
+          }
 
           console.error(`[Email Queue Cron] Failed to send email ${email.id}:`, result.error);
           failCount++;
@@ -138,15 +143,17 @@ export async function GET(request: NextRequest) {
       } catch (emailError: any) {
         console.error(`[Email Queue Cron] Error processing email ${email.id}:`, emailError);
 
-        // Update status to failed
-        await supabase
+        // Update status to failed (removed non-existent error_message and failed_at fields)
+        const { error: updateError } = await supabase
           .from('email_queue')
           .update({
             status: 'failed',
-            error_message: emailError.message || 'Processing error',
-            failed_at: new Date().toISOString(),
           })
           .eq('id', email.id);
+
+        if (updateError) {
+          console.error(`[Email Queue Cron] Failed to mark email ${email.id} as failed:`, updateError);
+        }
 
         failCount++;
       }
