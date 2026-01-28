@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 
 interface StripeConfig {
   stripe: Stripe;
@@ -14,11 +14,13 @@ interface StripeConfig {
  * This function fetches Stripe configuration from the integrations table
  * for the current tenant and returns an initialized Stripe client.
  *
+ * Uses admin client to bypass RLS for cron jobs and server-side operations.
+ *
  * @param tenantId - Optional tenant ID. If not provided, uses the first active Stripe integration
  * @returns Promise<StripeConfig> - Stripe client and configuration
  */
 export async function getStripeClient(tenantId?: string): Promise<StripeConfig> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Query for Stripe integration
   let query = supabase
