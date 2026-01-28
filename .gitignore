@@ -44,10 +44,10 @@ next-env.d.ts
 Thumbs.db
 .DS_Store
 
-# Windows reserved names
-nul
-CON
-PRN
-AUX
-COM*
-LPT*
+# Windows reserved names (anchor to root to avoid matching folders)
+/nul
+/CON
+/PRN
+/AUX
+/COM[0-9]
+/LPT[0-9]
