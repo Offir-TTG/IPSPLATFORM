@@ -319,7 +319,7 @@ export async function createUpcomingInvoices(daysAhead: number = 30): Promise<{
   const { data: schedules, error } = await supabase
     .from('payment_schedules')
     .select('id, tenant_id, scheduled_date')
-    .in('status', ['pending', 'failed']) // Include failed for retries
+    .in('status', ['pending', 'failed', 'adjusted']) // Include failed for retries and adjusted schedules
     .lte('scheduled_date', futureDate.toISOString())
     .is('stripe_invoice_id', null); // No invoice created yet
 
@@ -341,7 +341,17 @@ export async function createUpcomingInvoices(daysAhead: number = 30): Promise<{
 
   // Process each schedule
   for (const schedule of schedules) {
-    const result = await createScheduledInvoice(schedule.id, schedule.tenant_id);
+    // Check if schedule is due today or in the past - if so, charge immediately
+    // Otherwise, Stripe will reject due_date in the past
+    const scheduledDate = new Date(schedule.scheduled_date);
+    const now = new Date();
+    const chargeNow = scheduledDate <= now;
+
+    if (chargeNow) {
+      console.log(`[Invoice Service] Schedule ${schedule.id} is due now or overdue, charging immediately`);
+    }
+
+    const result = await createScheduledInvoice(schedule.id, schedule.tenant_id, chargeNow);
 
     if (result.error) {
       results.failed++;
