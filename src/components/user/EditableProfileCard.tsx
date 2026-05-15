@@ -79,7 +79,7 @@ export function EditableProfileCard({
   isSaving,
   t,
   avatarUrl,
-  onChangeAvatar
+  onChangeAvatar,
 }: EditableProfileCardProps) {
   // Get direction from the useUserLanguage hook
   const { direction } = useUserLanguage();
@@ -641,10 +641,10 @@ export function EditableProfileCard({
 
         <Separator className="my-4" />
 
-        {/* Location & Timezone Section */}
+        {/* Location section — timezone moved out to Regional Settings. */}
         <div style={sectionTitleStyle}>
           <MapPin className="h-4 w-4" />
-          <span>{t('user.profile.edit.location_timezone')}</span>
+          <span>{t('user.profile.edit.location')}</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
@@ -686,83 +686,11 @@ export function EditableProfileCard({
             )}
           </div>
 
-          {/* Timezone with Custom Searchable Dropdown */}
-          <div style={fieldStyle} ref={timezoneDropdownRef}>
-            <label style={labelStyle}>
-              {t('user.profile.edit.timezone')} <span style={{ color: 'hsl(var(--destructive))' }}>*</span>
-            </label>
-            {isEditing ? (
-              <div className="relative">
-                <div
-                  onClick={() => setShowTimezoneDropdown(!showTimezoneDropdown)}
-                  style={{
-                    ...inputStyle,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer'
-                  }}
-                  className="focus:outline-none focus:ring-2 focus:ring-primary hover:border-primary/50"
-                >
-                  <span>
-                    {timezones.find(tz => tz.value === formData.timezone)?.label || formData.timezone}
-                  </span>
-                  <ChevronDown className={`h-4 w-4 transition-transform ${showTimezoneDropdown ? 'rotate-180' : ''}`} />
-                </div>
-
-                {showTimezoneDropdown && (
-                  <div
-                    className="absolute z-50 w-full mt-2 bg-background border border-border rounded-lg shadow-lg"
-                    style={{ maxHeight: '320px' }}
-                  >
-                    {/* Search Input */}
-                    <div className="p-2 border-b border-border sticky top-0 bg-background">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <input
-                          type="text"
-                          value={timezoneSearch}
-                          onChange={(e) => setTimezoneSearch(e.target.value)}
-                          placeholder={t('user.profile.edit.search_timezone') || 'Search timezone...'}
-                          className="w-full pl-9 pr-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Timezone List */}
-                    <div className="overflow-y-auto" style={{ maxHeight: '260px' }}>
-                      {filteredTimezones.length > 0 ? (
-                        filteredTimezones.map((tz) => (
-                          <div
-                            key={tz.value}
-                            onClick={() => {
-                              setFormData({ ...formData, timezone: tz.value });
-                              setShowTimezoneDropdown(false);
-                              setTimezoneSearch('');
-                            }}
-                            className={`px-4 py-2.5 cursor-pointer hover:bg-accent text-sm ${
-                              formData.timezone === tz.value ? 'bg-accent font-medium' : ''
-                            }`}
-                          >
-                            {tz.label}
-                          </div>
-                        ))
-                      ) : (
-                        <div className="px-4 py-3 text-sm text-muted-foreground text-center">
-                          {t('user.profile.edit.no_timezone_found') || 'No timezone found'}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={valueStyle}>
-                {user.timezone ? `${user.timezone} (UTC${moment.tz(user.timezone).format('Z')})` : t('user.profile.edit.not_specified')}
-              </div>
-            )}
-          </div>
+          {/* Timezone field intentionally removed from the profile editor —
+              it now lives exclusively under Preferences → Regional Settings
+              and is edited via TimezonePreferenceDialog. The formData still
+              tracks `timezone` so the existing PATCH payload remains
+              well-formed, but the user does not edit it from here. */}
         </div>
 
         <Separator className="my-4" />

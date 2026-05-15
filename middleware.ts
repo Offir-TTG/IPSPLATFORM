@@ -39,6 +39,32 @@ export async function middleware(request: NextRequest) {
   }
 
   // ============================================================================
+  // Catalog redirect: legacy /browse* routes → IParentingSchool catalog
+  // ============================================================================
+  // The product catalog moved to the IParentingSchool marketing site.
+  // Any visitor (or stale link / bookmark / search-engine result) that
+  // hits the old browse URLs gets bounced to the right destination.
+  // Skip when NEXT_PUBLIC_IPARENTING_URL is unset (dev fallback:
+  // serve a normal 404 instead of redirecting to nowhere).
+  if (
+    pathname === '/browse' ||
+    pathname.startsWith('/browse/') ||
+    pathname === '/browse-courses' ||
+    pathname === '/browse-programs'
+  ) {
+    const base = process.env.NEXT_PUBLIC_IPARENTING_URL;
+    if (base) {
+      // /browse-programs → /#programs (programs section on the home).
+      // Everything else → /courses (the main catalog index).
+      const target =
+        pathname === '/browse-programs'
+          ? `${base}/#programs`
+          : `${base}/courses`;
+      return NextResponse.redirect(target, { status: 308 });
+    }
+  }
+
+  // ============================================================================
   // STEP 1: Refresh Supabase Auth Session
   // ============================================================================
   // This is CRITICAL for auth to work correctly in Next.js App Router

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant, validateUserTenantAccess, getUserTenantRole } from '@/lib/tenant/detection';
 
 export async function POST(request: NextRequest) {
@@ -55,20 +56,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Reads of the just-authenticated user's own profile/tenant rows use
+    // the service-role client. RLS on `public.users` (and `tenants`) is
+    // stricter than just `auth.uid() = id` — it relies on a session GUC
+    // the browser sets but this server-side route can't replicate, which
+    // made the user's own SELECTs return 0 rows and surfaced as
+    // "User profile not found" right after a successful password reset.
+    // We've already verified the identity via `signInWithPassword`, so
+    // reading `authData.user.id`'s row with the admin client is safe.
+    const admin = createAdminClient();
+
     // Get current tenant from URL (for org-based routes)
     let tenant = await getCurrentTenant(request);
 
     // If no tenant found from URL (e.g., /login instead of /org/slug/login),
     // try to find tenant from user's profile
     if (!tenant) {
-      const { data: userData } = await supabase
+      const { data: userData } = await admin
         .from('users')
         .select('tenant_id')
         .eq('id', authData.user.id)
         .single();
 
       if (userData?.tenant_id) {
-        const { data: tenantData } = await supabase
+        const { data: tenantData } = await admin
           .from('tenants')
           .select('*')
           .eq('id', userData.tenant_id)
@@ -115,8 +126,10 @@ export async function POST(request: NextRequest) {
     // Get user's role in this tenant
     const tenantRole = await getUserTenantRole(authData.user.id, tenant.id);
 
-    // Get user profile data
-    const { data: userData, error: userError} = await supabase
+    // Get user profile data — same reasoning as above: identity already
+    // verified by `signInWithPassword`, so read with the admin client to
+    // bypass the tenant-context RLS that this server route can't satisfy.
+    const { data: userData, error: userError} = await admin
       .from('users')
       .select('*')
       .eq('id', authData.user.id)

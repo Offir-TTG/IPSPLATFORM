@@ -90,7 +90,15 @@ export async function POST(request: NextRequest) {
     }
     console.log('✅ User verified in tenant');
 
-    // Generate password reset link without sending email
+    // Generate password reset link without sending email.
+    //
+    // We deliberately *do not* email Supabase's `action_link` here. That link
+    // routes through Supabase's verify endpoint and redirects with a PKCE
+    // `?code=` to the browser — but the browser client never created a
+    // matching `code_verifier` (the code was minted server-side via the
+    // admin API), so `detectSessionInUrl` silently fails and the confirm
+    // page sees no auth event. We use `hashed_token` instead and have the
+    // confirm page call `verifyOtp` (OTP flow — no code_verifier needed).
     const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/reset-password/confirm`;
     console.log('🔗 Generating reset link...');
     console.log('   Redirect URL:', redirectUrl);
@@ -111,7 +119,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const resetUrl = resetData.properties.action_link;
+    const hashedToken = resetData.properties?.hashed_token;
+    if (!hashedToken) {
+      console.error('❌ generateLink response missing hashed_token');
+      return NextResponse.json(
+        { success: false, error: 'Failed to generate password reset link' },
+        { status: 500 }
+      );
+    }
+    const resetUrl = `${redirectUrl}?token_hash=${encodeURIComponent(hashedToken)}&type=recovery`;
     console.log('✅ Reset link generated successfully');
     console.log('   Link preview:', resetUrl.substring(0, 80) + '...');
 

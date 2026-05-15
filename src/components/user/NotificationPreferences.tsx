@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Bell,
@@ -15,12 +17,20 @@ import {
   Loader2,
   Save,
   AlertCircle,
+  Layers,
+  Globe,
 } from 'lucide-react';
 import { useUserLanguage } from '@/context/AppContext';
 import { toast } from 'sonner';
 import type { NotificationCategory } from '@/types/notifications';
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
+
+// SMS delivery currently goes through Twilio (paid). Until a free
+// provider is wired up, SMS is force-disabled in the UI. The backend
+// dispatcher already respects sms_enabled=false (deliveryOrchestrator.ts)
+// so flipping this guard re-enables both UI and delivery in one place.
+const SMS_AVAILABLE = false;
 
 interface NotificationPreferences {
   id?: string;
@@ -69,8 +79,17 @@ const DEFAULT_CATEGORY_PREFS: CategoryPreferences = {
   system: { in_app: true, email: false, sms: false, push: false },
 };
 
-export function NotificationPreferences() {
+interface NotificationPreferencesProps {
+  // Existing Regional Settings UI (language + timezone) rendered inside a
+  // 4th tab when provided. Kept as a render slot so the profile page
+  // continues to own the data, the change dialog, and the formatting
+  // logic — we just host the visual on this tab strip.
+  regionalSlot?: React.ReactNode;
+}
+
+export function NotificationPreferences({ regionalSlot }: NotificationPreferencesProps = {}) {
   const { t } = useUserLanguage();
+  const showRegional = !!regionalSlot;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
@@ -141,11 +160,15 @@ export function NotificationPreferences() {
 
   const updateMasterChannel = (channel: 'email_enabled' | 'sms_enabled' | 'push_enabled', enabled: boolean) => {
     if (!preferences) return;
+    // Guard: ignore attempts to enable SMS while the channel is unavailable.
+    if (channel === 'sms_enabled' && !SMS_AVAILABLE && enabled) return;
     setPreferences({ ...preferences, [channel]: enabled });
   };
 
   const updateCategoryChannel = (category: NotificationCategory, channel: keyof ChannelPreferences, enabled: boolean) => {
     if (!preferences) return;
+    // Guard: ignore SMS per-category toggles while SMS is unavailable.
+    if (channel === 'sms' && !SMS_AVAILABLE && enabled) return;
     setPreferences({
       ...preferences,
       category_preferences: {
@@ -192,252 +215,308 @@ export function NotificationPreferences() {
 
   return (
     <div className="space-y-6">
-      {/* Master Channel Toggles */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Bell className="h-5 w-5" />
-          {t('user.notifications.preferences.masterChannels', 'Delivery Channels')}
-        </h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          {t('user.notifications.preferences.masterChannelsDesc', 'Control which channels you want to receive notifications through')}
-        </p>
+      <Tabs defaultValue="channels" className="w-full">
+        <TabsList className={`grid w-full ${showRegional ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          <TabsTrigger value="channels" className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {t('user.notifications.preferences.tabs.channels', 'Channels')}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="categories" className="flex items-center gap-2">
+            <Layers className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {t('user.notifications.preferences.tabs.categories', 'Categories')}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="quiet" className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {t('user.notifications.preferences.tabs.quietHours', 'Quiet Hours')}
+            </span>
+          </TabsTrigger>
+          {showRegional && (
+            <TabsTrigger value="regional" className="flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              <span className="hidden sm:inline">
+                {t('user.profile.preferences.regional_settings', 'הגדרות אזוריות')}
+              </span>
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-        <div className="space-y-4">
-          {/* In-App (always on) */}
-          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30 opacity-60">
-            <div className="flex items-center gap-3">
+        {/* ===== CHANNELS TAB ===== */}
+        <TabsContent value="channels" className="mt-6">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Bell className="h-5 w-5" />
-              <div>
-                <p className="font-medium">{t('user.notifications.preferences.inApp', 'In-App Notifications')}</p>
-                <p className="text-sm text-muted-foreground">{t('user.notifications.preferences.inAppDesc', 'Notifications within the platform')}</p>
+              {t('user.notifications.preferences.masterChannels', 'Delivery Channels')}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              {t('user.notifications.preferences.masterChannelsDesc', 'Control which channels you want to receive notifications through')}
+            </p>
+
+            <div className="space-y-4">
+              {/* In-App (always on) */}
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30 opacity-60">
+                <div className="flex items-center gap-3">
+                  <Bell className="h-5 w-5" />
+                  <div>
+                    <p className="font-medium">{t('user.notifications.preferences.inApp', 'In-App Notifications')}</p>
+                    <p className="text-sm text-muted-foreground">{t('user.notifications.preferences.inAppDesc', 'Notifications within the platform')}</p>
+                  </div>
+                </div>
+                <Switch checked={true} disabled />
               </div>
-            </div>
-            <Switch checked={true} disabled />
-          </div>
 
-          {/* Email */}
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center gap-3">
-              <Mail className="h-5 w-5" />
-              <div>
-                <p className="font-medium">{t('user.notifications.preferences.email', 'Email Notifications')}</p>
-                <p className="text-sm text-muted-foreground">{t('user.notifications.preferences.emailDesc', 'Receive notifications via email')}</p>
-              </div>
-            </div>
-            <Switch
-              checked={preferences.email_enabled}
-              onCheckedChange={(checked) => updateMasterChannel('email_enabled', checked)}
-            />
-          </div>
-
-          {/* SMS */}
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center gap-3">
-              <Smartphone className="h-5 w-5" />
-              <div>
-                <p className="font-medium">{t('user.notifications.preferences.sms', 'SMS/WhatsApp Notifications')}</p>
-                <p className="text-sm text-muted-foreground">{t('user.notifications.preferences.smsDesc', 'Receive urgent notifications via SMS')}</p>
-              </div>
-            </div>
-            <Switch
-              checked={preferences.sms_enabled}
-              onCheckedChange={(checked) => updateMasterChannel('sms_enabled', checked)}
-            />
-          </div>
-
-          {/* Phone Number for SMS */}
-          {preferences.sms_enabled && (
-            <div className="p-4 border rounded-lg bg-muted/30">
-              <Label htmlFor="phone" className="text-sm font-medium mb-2 block">
-                {t('user.notifications.preferences.phoneNumber', 'Phone Number for SMS')}
-              </Label>
-              <div dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
-                <PhoneInput
-                  international
-                  defaultCountry="US"
-                  value={preferences.phone_number || ''}
-                  onChange={(value) => {
-                    // Limit to 17 characters (max for international phone numbers)
-                    const maxLength = 17;
-                    if (value && value.length > maxLength) {
-                      setPhoneError(t('user.notifications.preferences.phoneTooLong', `Phone number is too long (max ${maxLength} characters)`));
-                      return;
-                    }
-
-                    setPreferences({ ...preferences, phone_number: value || '' });
-
-                    // Real-time validation
-                    if (value && value.length > 5) {
-                      if (!isValidPhoneNumber(value)) {
-                        setPhoneError(t('user.notifications.preferences.phoneInvalidSimple', 'Please enter a valid phone number'));
-                      } else {
-                        setPhoneError(null);
-                      }
-                    } else if (!value) {
-                      setPhoneError(null);
-                    }
-                  }}
-                  placeholder="+1 234 567 8900"
-                  className="phone-input-preferences"
-                  smartCaret={true}
-                  numberInputProps={{
-                    maxLength: 17
-                  }}
+              {/* Email */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Mail className="h-5 w-5" />
+                  <div>
+                    <p className="font-medium">{t('user.notifications.preferences.email', 'Email Notifications')}</p>
+                    <p className="text-sm text-muted-foreground">{t('user.notifications.preferences.emailDesc', 'Receive notifications via email')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={preferences.email_enabled}
+                  onCheckedChange={(checked) => updateMasterChannel('email_enabled', checked)}
                 />
               </div>
-              <style jsx global>{`
-                .phone-input-preferences {
-                  width: 100%;
-                  padding: 0.625rem 0.75rem;
-                  border: 1px solid hsl(var(--border));
-                  border-radius: calc(var(--radius) - 2px);
-                  font-size: 0.875rem;
-                  background-color: hsl(var(--background));
-                  color: hsl(var(--foreground));
-                  transition: all 0.2s ease;
-                  display: flex;
-                  align-items: center;
-                  direction: ltr !important;
-                  text-align: left !important;
-                }
-                .phone-input-preferences .PhoneInputInput {
-                  padding: 0;
-                  border: none;
-                  outline: none;
-                  font-size: 0.875rem;
-                  background-color: transparent;
-                  color: hsl(var(--foreground));
-                  direction: ltr !important;
-                  text-align: left !important;
-                }
-                .phone-input-preferences .PhoneInputInput:focus {
-                  outline: none;
-                }
-                .phone-input-preferences .PhoneInputCountry {
-                  padding-right: 0.5rem;
-                  direction: ltr !important;
-                }
-              `}</style>
-              {phoneError && (
-                <p className="text-xs text-destructive mt-1.5">
-                  {phoneError}
-                </p>
+
+              {/* SMS — force-disabled while SMS_AVAILABLE is false. The
+                  toggle stays visible (greyed) and a badge explains why. */}
+              <div className={`flex items-center justify-between p-4 border rounded-lg ${!SMS_AVAILABLE ? 'opacity-60' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <Smartphone className="h-5 w-5" />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium">{t('user.notifications.preferences.sms', 'SMS/WhatsApp Notifications')}</p>
+                      {!SMS_AVAILABLE && (
+                        <Badge variant="secondary" className="text-[10px] font-semibold">
+                          {t('user.notifications.preferences.smsUnavailable', 'Currently unavailable')}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {SMS_AVAILABLE
+                        ? t('user.notifications.preferences.smsDesc', 'Receive urgent notifications via SMS')
+                        : t('user.notifications.preferences.smsDescDisabled', 'SMS delivery is temporarily disabled. We will re-enable it when a provider is configured.')}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={SMS_AVAILABLE ? preferences.sms_enabled : false}
+                  onCheckedChange={(checked) => updateMasterChannel('sms_enabled', checked)}
+                  disabled={!SMS_AVAILABLE}
+                />
+              </div>
+
+              {/* Phone Number for SMS — only relevant while SMS is enabled */}
+              {SMS_AVAILABLE && preferences.sms_enabled && (
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <Label htmlFor="phone" className="text-sm font-medium mb-2 block">
+                    {t('user.notifications.preferences.phoneNumber', 'Phone Number for SMS')}
+                  </Label>
+                  <div dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+                    <PhoneInput
+                      international
+                      defaultCountry="US"
+                      value={preferences.phone_number || ''}
+                      onChange={(value) => {
+                        const maxLength = 17;
+                        if (value && value.length > maxLength) {
+                          setPhoneError(t('user.notifications.preferences.phoneTooLong', `Phone number is too long (max ${maxLength} characters)`));
+                          return;
+                        }
+                        setPreferences({ ...preferences, phone_number: value || '' });
+                        if (value && value.length > 5) {
+                          if (!isValidPhoneNumber(value)) {
+                            setPhoneError(t('user.notifications.preferences.phoneInvalidSimple', 'Please enter a valid phone number'));
+                          } else {
+                            setPhoneError(null);
+                          }
+                        } else if (!value) {
+                          setPhoneError(null);
+                        }
+                      }}
+                      placeholder="+1 234 567 8900"
+                      className="phone-input-preferences"
+                      smartCaret={true}
+                      numberInputProps={{ maxLength: 17 }}
+                    />
+                  </div>
+                  <style jsx global>{`
+                    .phone-input-preferences {
+                      width: 100%;
+                      padding: 0.625rem 0.75rem;
+                      border: 1px solid hsl(var(--border));
+                      border-radius: calc(var(--radius) - 2px);
+                      font-size: 0.875rem;
+                      background-color: hsl(var(--background));
+                      color: hsl(var(--foreground));
+                      transition: all 0.2s ease;
+                      display: flex;
+                      align-items: center;
+                      direction: ltr !important;
+                      text-align: left !important;
+                    }
+                    .phone-input-preferences .PhoneInputInput {
+                      padding: 0;
+                      border: none;
+                      outline: none;
+                      font-size: 0.875rem;
+                      background-color: transparent;
+                      color: hsl(var(--foreground));
+                      direction: ltr !important;
+                      text-align: left !important;
+                    }
+                    .phone-input-preferences .PhoneInputInput:focus { outline: none; }
+                    .phone-input-preferences .PhoneInputCountry {
+                      padding-right: 0.5rem;
+                      direction: ltr !important;
+                    }
+                  `}</style>
+                  {phoneError && (
+                    <p className="text-xs text-destructive mt-1.5">{phoneError}</p>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-      </Card>
+          </Card>
+        </TabsContent>
 
-      {/* Category Preferences */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">
-          {t('user.notifications.preferences.categorySettings', 'Notification Categories')}
-        </h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          {t('user.notifications.preferences.categorySettingsDesc', 'Choose which channels to use for each type of notification')}
-        </p>
+        {/* ===== CATEGORIES TAB ===== */}
+        <TabsContent value="categories" className="mt-6">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">
+              {t('user.notifications.preferences.categorySettings', 'Notification Categories')}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              {t('user.notifications.preferences.categorySettingsDesc', 'Choose which channels to use for each type of notification')}
+            </p>
 
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b">
-                <th className="text-start p-3 font-medium">{t('user.notifications.preferences.category', 'Category')}</th>
-                <th className="text-center p-3 font-medium w-24">
-                  <Bell className="h-4 w-4 mx-auto" />
-                  <span className="text-xs mt-1 block">{t('user.notifications.preferences.inAppShort', 'In-App')}</span>
-                </th>
-                <th className="text-center p-3 font-medium w-24">
-                  <Mail className="h-4 w-4 mx-auto" />
-                  <span className="text-xs mt-1 block">{t('user.notifications.preferences.emailShort', 'Email')}</span>
-                </th>
-                <th className="text-center p-3 font-medium w-24">
-                  <Smartphone className="h-4 w-4 mx-auto" />
-                  <span className="text-xs mt-1 block">{t('user.notifications.preferences.smsShort', 'SMS')}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((category) => (
-                <tr key={category.key} className="border-b hover:bg-muted/30">
-                  <td className="p-3">
-                    <div>
-                      <p className="font-medium">{t(category.labelKey, category.key)}</p>
-                      <p className="text-xs text-muted-foreground">{t(category.descKey, '')}</p>
-                    </div>
-                  </td>
-                  <td className="text-center p-3">
-                    <Switch
-                      checked={preferences.category_preferences[category.key]?.in_app ?? true}
-                      disabled
-                      className="mx-auto opacity-50"
-                    />
-                  </td>
-                  <td className="text-center p-3">
-                    <Switch
-                      checked={preferences.category_preferences[category.key]?.email ?? true}
-                      onCheckedChange={(checked) => updateCategoryChannel(category.key, 'email', checked)}
-                      disabled={!preferences.email_enabled}
-                      className="mx-auto"
-                    />
-                  </td>
-                  <td className="text-center p-3">
-                    <Switch
-                      checked={preferences.category_preferences[category.key]?.sms ?? false}
-                      onCheckedChange={(checked) => updateCategoryChannel(category.key, 'sms', checked)}
-                      disabled={!preferences.sms_enabled}
-                      className="mx-auto"
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-start p-3 font-medium">{t('user.notifications.preferences.category', 'Category')}</th>
+                    <th className="text-center p-3 font-medium w-24">
+                      <Bell className="h-4 w-4 mx-auto" />
+                      <span className="text-xs mt-1 block">{t('user.notifications.preferences.inAppShort', 'In-App')}</span>
+                    </th>
+                    <th className="text-center p-3 font-medium w-24">
+                      <Mail className="h-4 w-4 mx-auto" />
+                      <span className="text-xs mt-1 block">{t('user.notifications.preferences.emailShort', 'Email')}</span>
+                    </th>
+                    <th className="text-center p-3 font-medium w-24">
+                      <Smartphone className="h-4 w-4 mx-auto" />
+                      <span className="text-xs mt-1 block">{t('user.notifications.preferences.smsShort', 'SMS')}</span>
+                      {!SMS_AVAILABLE && (
+                        <Badge variant="secondary" className="mt-1 text-[9px] font-semibold">
+                          {t('user.notifications.preferences.smsUnavailableShort', 'N/A')}
+                        </Badge>
+                      )}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map((category) => (
+                    <tr key={category.key} className="border-b hover:bg-muted/30">
+                      <td className="p-3">
+                        <div>
+                          <p className="font-medium">{t(category.labelKey, category.key)}</p>
+                          <p className="text-xs text-muted-foreground">{t(category.descKey, '')}</p>
+                        </div>
+                      </td>
+                      <td className="text-center p-3">
+                        <Switch
+                          checked={preferences.category_preferences[category.key]?.in_app ?? true}
+                          disabled
+                          className="mx-auto opacity-50"
+                        />
+                      </td>
+                      <td className="text-center p-3">
+                        <Switch
+                          checked={preferences.category_preferences[category.key]?.email ?? true}
+                          onCheckedChange={(checked) => updateCategoryChannel(category.key, 'email', checked)}
+                          disabled={!preferences.email_enabled}
+                          className="mx-auto"
+                        />
+                      </td>
+                      <td className="text-center p-3">
+                        <Switch
+                          checked={SMS_AVAILABLE ? (preferences.category_preferences[category.key]?.sms ?? false) : false}
+                          onCheckedChange={(checked) => updateCategoryChannel(category.key, 'sms', checked)}
+                          disabled={!SMS_AVAILABLE || !preferences.sms_enabled}
+                          className="mx-auto"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </TabsContent>
 
-      {/* Quiet Hours */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Clock className="h-5 w-5" />
-          {t('user.notifications.preferences.quietHours', 'Quiet Hours')}
-        </h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          {t('user.notifications.preferences.quietHoursDesc', 'No external notifications (email, SMS) during these hours')}
-        </p>
+        {/* ===== QUIET HOURS TAB ===== */}
+        <TabsContent value="quiet" className="mt-6">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              {t('user.notifications.preferences.quietHours', 'Quiet Hours')}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              {t('user.notifications.preferences.quietHoursDesc', 'No external notifications (email, SMS) during these hours')}
+            </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <Label htmlFor="quiet-start">{t('user.notifications.preferences.quietStart', 'Start Time')}</Label>
-            <Input
-              id="quiet-start"
-              type="time"
-              value={preferences.quiet_hours_start || '22:00'}
-              onChange={(e) => setPreferences({ ...preferences, quiet_hours_start: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label htmlFor="quiet-end">{t('user.notifications.preferences.quietEnd', 'End Time')}</Label>
-            <Input
-              id="quiet-end"
-              type="time"
-              value={preferences.quiet_hours_end || '08:00'}
-              onChange={(e) => setPreferences({ ...preferences, quiet_hours_end: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label htmlFor="timezone">{t('user.notifications.preferences.timezone', 'Timezone')}</Label>
-            <Input
-              id="timezone"
-              type="text"
-              value={preferences.quiet_hours_timezone || 'UTC'}
-              disabled
-              className="bg-muted"
-            />
-          </div>
-        </div>
-      </Card>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="quiet-start">{t('user.notifications.preferences.quietStart', 'Start Time')}</Label>
+                <Input
+                  id="quiet-start"
+                  type="time"
+                  value={preferences.quiet_hours_start || '22:00'}
+                  onChange={(e) => setPreferences({ ...preferences, quiet_hours_start: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="quiet-end">{t('user.notifications.preferences.quietEnd', 'End Time')}</Label>
+                <Input
+                  id="quiet-end"
+                  type="time"
+                  value={preferences.quiet_hours_end || '08:00'}
+                  onChange={(e) => setPreferences({ ...preferences, quiet_hours_end: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="timezone">{t('user.notifications.preferences.timezone', 'Timezone')}</Label>
+                <Input
+                  id="timezone"
+                  type="text"
+                  value={preferences.quiet_hours_timezone || 'UTC'}
+                  disabled
+                  className="bg-muted"
+                />
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
 
-      {/* Save Button */}
+        {/* ===== REGIONAL SETTINGS TAB =====
+            Rendered when the parent passes `regionalSlot`. The profile
+            page owns the data (preferences.regional.*) and the language
+            dialog — we just host the visual here so it lives on the same
+            tab strip as the notification preferences. */}
+        {showRegional && (
+          <TabsContent value="regional" className="mt-6">
+            {regionalSlot}
+          </TabsContent>
+        )}
+      </Tabs>
+
+      {/* Save Button — outside the tabs so it persists across all of them */}
       <div className="flex justify-end">
         <Button onClick={savePreferences} disabled={saving}>
           {saving ? (

@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useUserLanguage } from '@/context/AppContext';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { formatInTimezone, resolveDisplayTimezone } from '@/lib/datetime/timezone';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -183,10 +185,14 @@ export default function CourseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { t, direction, language } = useUserLanguage();
+  const { data: userProfile } = useUserProfile();
   const courseId = params.id as string;
 
   const [loading, setLoading] = useState(true);
   const [courseData, setCourseData] = useState<CourseData | null>(null);
+  // Collapse the (often long) course description by default; show a
+  // "Show more / Show less" toggle when the cleaned text is long.
+  const [descExpanded, setDescExpanded] = useState(false);
   const [expandedMedia, setExpandedMedia] = useState<{ type: 'zoom' | 'recording', url: string, lessonTitle: string } | null>(null);
   const [activeMeetings, setActiveMeetings] = useState<Set<string>>(new Set());
   const [viewingMaterial, setViewingMaterial] = useState<{
@@ -632,11 +638,57 @@ export default function CourseDetailPage() {
                     />
                   )}
                   <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
-                  {course.description && (
-                    <p className="text-muted-foreground mb-4">
-                      {course.description.replace(/<[^>]*>/g, '')}
-                    </p>
-                  )}
+                  {course.description && (() => {
+                    // Preserve paragraph structure: <p>…</p> blocks become
+                    // double newlines, <br> becomes a single newline, then
+                    // strip remaining inline HTML and render with
+                    // `whitespace-pre-line` so the breaks show as paragraphs.
+                    const text = course.description
+                      .replace(/<\/p>/gi, '\n\n')
+                      .replace(/<br\s*\/?>/gi, '\n')
+                      .replace(/<[^>]+>/g, '')
+                      .replace(/&nbsp;/g, ' ')
+                      .replace(/&amp;/g, '&')
+                      .replace(/&lt;/g, '<')
+                      .replace(/&gt;/g, '>')
+                      .replace(/&quot;/g, '"')
+                      .replace(/&#39;|&apos;/g, "'")
+                      .replace(/([.,:!?])([֐-׿A-Za-z])/g, '$1 $2')
+                      .replace(/[ \t]+/g, ' ')
+                      .replace(/\n{3,}/g, '\n\n')
+                      .trim();
+
+                    if (!text) return null;
+
+                    // Show the toggle when the text is long enough to be
+                    // worth collapsing — short descriptions render fully
+                    // without a button.
+                    const paragraphs = text.split(/\n\n/);
+                    const needsToggle = text.length > 280 || paragraphs.length > 2;
+
+                    return (
+                      <div className="mb-4">
+                        <p
+                          className={`text-muted-foreground whitespace-pre-line leading-relaxed ${
+                            needsToggle && !descExpanded ? 'line-clamp-6' : ''
+                          }`}
+                        >
+                          {text}
+                        </p>
+                        {needsToggle && (
+                          <button
+                            type="button"
+                            onClick={() => setDescExpanded((v) => !v)}
+                            className="mt-2 text-sm font-medium text-primary hover:underline focus:outline-none focus-visible:underline"
+                          >
+                            {descExpanded
+                              ? t('user.courses.description.showLess', 'הצג פחות')
+                              : t('user.courses.description.showMore', 'הצג עוד')}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {course.instructor && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <BookOpen className="h-4 w-4" />
@@ -752,13 +804,23 @@ export default function CourseDetailPage() {
                                                   <div className="flex items-center gap-1.5">
                                                     <Calendar className="h-3.5 w-3.5" />
                                                     <span className="font-medium">
-                                                      {new Date(lesson.start_time).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                                                        year: 'numeric',
-                                                        month: 'short',
-                                                        day: 'numeric',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit'
-                                                      })}
+                                                      {formatInTimezone(
+                                                        lesson.start_time,
+                                                        resolveDisplayTimezone({
+                                                          recipientTz: userProfile?.preferences?.regional?.timezone,
+                                                          lessonTz: (lesson as any).timezone,
+                                                          tenantTz: userProfile?.preferences?.regional?.tenantTimezone,
+                                                        }),
+                                                        {
+                                                          year: 'numeric',
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          hour: '2-digit',
+                                                          minute: '2-digit',
+                                                          hour12: true,
+                                                        },
+                                                        language === 'he' ? 'he-IL' : 'en-US',
+                                                      )}
                                                     </span>
                                                   </div>
                                                 )}
@@ -831,7 +893,23 @@ export default function CourseDetailPage() {
                                                           <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
                                                             <Calendar className="h-4 w-4" />
                                                             <span className="font-medium">
-                                                              {new Date(lesson.start_time).toLocaleString()}
+                                                              {formatInTimezone(
+                                                                lesson.start_time,
+                                                                resolveDisplayTimezone({
+                                                                  recipientTz: userProfile?.preferences?.regional?.timezone,
+                                                                  lessonTz: (lesson as any).timezone,
+                                                                  tenantTz: userProfile?.preferences?.regional?.tenantTimezone,
+                                                                }),
+                                                                {
+                                                                  year: 'numeric',
+                                                                  month: 'short',
+                                                                  day: 'numeric',
+                                                                  hour: 'numeric',
+                                                                  minute: '2-digit',
+                                                                  hour12: true,
+                                                                },
+                                                                language === 'he' ? 'he-IL' : 'en-US',
+                                                              )}
                                                             </span>
                                                           </div>
                                                         )}
@@ -917,7 +995,23 @@ export default function CourseDetailPage() {
                                                           <div className="flex items-center gap-2 text-sm text-purple-800 dark:text-purple-200">
                                                             <Calendar className="h-4 w-4" />
                                                             <span className="font-medium">
-                                                              {new Date(lesson.start_time).toLocaleString()}
+                                                              {formatInTimezone(
+                                                                lesson.start_time,
+                                                                resolveDisplayTimezone({
+                                                                  recipientTz: userProfile?.preferences?.regional?.timezone,
+                                                                  lessonTz: (lesson as any).timezone,
+                                                                  tenantTz: userProfile?.preferences?.regional?.tenantTimezone,
+                                                                }),
+                                                                {
+                                                                  year: 'numeric',
+                                                                  month: 'short',
+                                                                  day: 'numeric',
+                                                                  hour: 'numeric',
+                                                                  minute: '2-digit',
+                                                                  hour12: true,
+                                                                },
+                                                                language === 'he' ? 'he-IL' : 'en-US',
+                                                              )}
                                                             </span>
                                                           </div>
                                                         )}

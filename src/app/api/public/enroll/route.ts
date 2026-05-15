@@ -97,17 +97,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for duplicate enrollment (only if user is logged in)
+    // Check for existing enrollment (only if user is logged in).
+    //
+    // A 'draft' enrollment isn't a real enrollment yet — it's an
+    // unfinished wizard session. Returning 409 for drafts would lock
+    // users out the moment they abandon the wizard, since enrollments
+    // are inserted as 'draft' BEFORE the wizard runs. So: resume the
+    // draft (return its token), and block re-enrollment only for
+    // non-draft statuses (active / completed / etc.).
     if (userId) {
       const { data: existingEnrollment } = await supabase
         .from('enrollments')
-        .select('id, status')
+        .select('id, status, enrollment_token, token_expires_at')
         .eq('user_id', userId)
         .eq('product_id', product_id)
         .eq('tenant_id', tenant.id)
         .maybeSingle();
 
-      if (existingEnrollment) {
+      if (existingEnrollment && existingEnrollment.status !== 'draft') {
         return NextResponse.json(
           {
             error: 'Already enrolled',
@@ -116,6 +123,32 @@ export async function POST(request: NextRequest) {
           },
           { status: 409 }
         );
+      }
+
+      if (existingEnrollment && existingEnrollment.status === 'draft' && existingEnrollment.enrollment_token) {
+        // Resume the draft. If the wizard token has expired, refresh
+        // it so the link is usable again.
+        const adminClient = createAdminClient();
+        const expiresAt = existingEnrollment.token_expires_at
+          ? new Date(existingEnrollment.token_expires_at)
+          : null;
+
+        if (!expiresAt || expiresAt < new Date()) {
+          const newExpiry = new Date();
+          newExpiry.setDate(newExpiry.getDate() + 7);
+          await adminClient
+            .from('enrollments')
+            .update({ token_expires_at: newExpiry.toISOString() })
+            .eq('id', existingEnrollment.id);
+        }
+
+        return NextResponse.json({
+          success: true,
+          enrollment_id: existingEnrollment.id,
+          enrollment_token: existingEnrollment.enrollment_token,
+          wizard_url: `/enroll/${existingEnrollment.enrollment_token}`,
+          resumed: true,
+        });
       }
     }
 

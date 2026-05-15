@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { useAdminLanguage, useTenant } from '@/context/AppContext';
+import { renderEmailLayout } from '@/lib/email/layout';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +47,7 @@ interface CategoryConfig {
 
 export default function EmailTemplatesPage() {
   const { t, direction } = useAdminLanguage();
-  const { tenantId } = useTenant();
+  const { tenantId, tenantName } = useTenant();
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -64,6 +65,43 @@ export default function EmailTemplatesPage() {
   const [previewVersions, setPreviewVersions] = useState<{ en?: EmailTemplateVersion; he?: EmailTemplateVersion }>({});
   const [previewLoading, setPreviewLoading] = useState(false);
   const [activePreviewLanguage, setActivePreviewLanguage] = useState<'en' | 'he'>('en');
+
+  // Tenant email branding for the preview dialog — same fallback chain
+  // as `renderTemplate.ts` so what admins see matches what users get.
+  const [emailBranding, setEmailBranding] = useState<{
+    organizationName?: string;
+    primaryColor?: string;
+    buttonColor?: string;
+    logoUrl?: string;
+    footerNote?: string;
+    headerStyle?: 'logo' | 'text' | 'none';
+  }>({});
+
+  useEffect(() => {
+    if (!tenantId) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/tenant');
+        const json = await res.json();
+        if (!json.success || !json.data) return;
+        const d = json.data;
+        setEmailBranding({
+          organizationName: d.name || tenantName || undefined,
+          primaryColor: d.email_primary_color || d.primary_color || undefined,
+          buttonColor:
+            d.email_button_color ||
+            d.email_primary_color ||
+            d.primary_color ||
+            undefined,
+          logoUrl: d.email_logo_url || d.logo_url || undefined,
+          footerNote: d.email_footer_text || undefined,
+          headerStyle: (d.email_header_style as 'logo' | 'text' | 'none' | undefined) || undefined,
+        });
+      } catch (err) {
+        console.error('Failed to load tenant email branding for preview:', err);
+      }
+    })();
+  }, [tenantId, tenantName]);
 
   useEffect(() => {
     loadTemplates();
@@ -544,15 +582,31 @@ export default function EmailTemplatesPage() {
                       }}>
                         {t('emails.editor.html_preview', 'HTML Preview')}
                       </h3>
-                      <div style={{
-                        padding: '1rem',
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 'var(--border-radius-md)',
-                        minHeight: '200px',
-                        direction: 'ltr',
-                        textAlign: 'left'
-                      }} dangerouslySetInnerHTML={{ __html: previewVersions.en.body_html }} />
+                      {/* Render the preview through the master email
+                          layout (`renderEmailLayout`) using tenant
+                          branding, inside an iframe so the email's own
+                          styles don't fight with admin UI tokens. This
+                          is the same approach used on the template
+                          editor page. */}
+                      <iframe
+                        title="Email preview"
+                        srcDoc={renderEmailLayout(previewVersions.en.body_html, {
+                          language: 'en',
+                          organizationName: emailBranding.organizationName || tenantName || 'Preview',
+                          primaryColor: emailBranding.primaryColor,
+                          buttonColor: emailBranding.buttonColor,
+                          logoUrl: emailBranding.logoUrl,
+                          footerNote: emailBranding.footerNote,
+                          headerStyle: emailBranding.headerStyle,
+                        })}
+                        style={{
+                          width: '100%',
+                          minHeight: '600px',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: 'var(--border-radius-md)',
+                          backgroundColor: 'white',
+                        }}
+                      />
                     </div>
 
                     {/* Plain Text Preview */}
@@ -622,15 +676,25 @@ export default function EmailTemplatesPage() {
                       }}>
                         {t('emails.editor.html_preview', 'תצוגה מקדימה HTML')}
                       </h3>
-                      <div style={{
-                        padding: '1rem',
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 'var(--border-radius-md)',
-                        minHeight: '200px',
-                        direction: 'rtl',
-                        textAlign: 'right'
-                      }} dangerouslySetInnerHTML={{ __html: previewVersions.he.body_html }} />
+                      <iframe
+                        title="Email preview"
+                        srcDoc={renderEmailLayout(previewVersions.he.body_html, {
+                          language: 'he',
+                          organizationName: emailBranding.organizationName || tenantName || 'Preview',
+                          primaryColor: emailBranding.primaryColor,
+                          buttonColor: emailBranding.buttonColor,
+                          logoUrl: emailBranding.logoUrl,
+                          footerNote: emailBranding.footerNote,
+                          headerStyle: emailBranding.headerStyle,
+                        })}
+                        style={{
+                          width: '100%',
+                          minHeight: '600px',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: 'var(--border-radius-md)',
+                          backgroundColor: 'white',
+                        }}
+                      />
                     </div>
 
                     {/* Plain Text Preview */}

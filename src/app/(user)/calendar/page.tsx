@@ -22,11 +22,14 @@ import {
 import { format, formatDistanceToNow, differenceInMinutes, differenceInHours } from 'date-fns';
 import { he, enUS } from 'date-fns/locale';
 import { useUserLanguage } from '@/context/AppContext';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { formatInTimezone, resolveDisplayTimezone } from '@/lib/datetime/timezone';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function CalendarPage() {
   const { t, language } = useUserLanguage();
+  const { data: userProfile } = useUserProfile();
   const { data, isLoading, error, refetch } = useDashboard();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'today'>('all');
@@ -213,10 +216,26 @@ export default function CalendarPage() {
                   <div className="flex-shrink-0">
                     <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent flex flex-col items-center justify-center border-2 border-primary/10 group-hover:scale-105 transition-transform">
                       <span className="text-2xl font-bold text-primary">
-                        {format(session.startTime, 'd', { locale })}
+                        {formatInTimezone(
+                          session.startTime.toISOString(),
+                          resolveDisplayTimezone({
+                            recipientTz: userProfile?.preferences?.regional?.timezone,
+                            tenantTz: userProfile?.preferences?.regional?.tenantTimezone,
+                          }),
+                          { day: 'numeric' },
+                          language === 'he' ? 'he-IL' : 'en-US',
+                        )}
                       </span>
                       <span className="text-xs font-medium text-muted-foreground uppercase">
-                        {format(session.startTime, 'MMM', { locale })}
+                        {formatInTimezone(
+                          session.startTime.toISOString(),
+                          resolveDisplayTimezone({
+                            recipientTz: userProfile?.preferences?.regional?.timezone,
+                            tenantTz: userProfile?.preferences?.regional?.tenantTimezone,
+                          }),
+                          { month: 'short' },
+                          language === 'he' ? 'he-IL' : 'en-US',
+                        )}
                       </span>
                     </div>
                   </div>
@@ -244,7 +263,15 @@ export default function CalendarPage() {
                         </div>
                         <div>
                           <div className="font-medium text-foreground">
-                            {format(session.startTime, 'h:mm a', { locale })}
+                            {formatInTimezone(
+                              session.startTime.toISOString(),
+                              resolveDisplayTimezone({
+                                recipientTz: userProfile?.preferences?.regional?.timezone,
+                                tenantTz: userProfile?.preferences?.regional?.tenantTimezone,
+                              }),
+                              { hour: 'numeric', minute: '2-digit', hour12: true },
+                              language === 'he' ? 'he-IL' : 'en-US',
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {duration}

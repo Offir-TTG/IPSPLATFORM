@@ -662,6 +662,17 @@ export default function EnrollmentsPage() {
                       </span>
                     </div>
 
+                    {/* Enrollment date — falls back to created_at for drafts
+                        that haven't completed the wizard yet. */}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5" />
+                      <span suppressHydrationWarning>
+                        {enrollment.enrolled_at
+                          ? `${t('admin.enrollments.table.enrolledAt', 'תאריך הרשמה')}: ${formatDate(enrollment.enrolled_at)}`
+                          : `${t('admin.enrollments.table.draftCreated', 'טיוטה נוצרה')}: ${formatDate(enrollment.created_at)}`}
+                      </span>
+                    </div>
+
                     <div className="flex gap-2 pt-2 flex-wrap">
                       {enrollment.status !== 'cancelled' && (
                         <Button
@@ -860,8 +871,10 @@ export default function EnrollmentsPage() {
                       </div>
                     </div>
 
-                    {/* Row 2: Product + Payment Details */}
-                    <div className="grid grid-cols-3 gap-4 px-4 py-3">
+                    {/* Row 2: Product + Payment Details + Enrollment Date.
+                        For drafts, enrolled_at is null — fall back to
+                        created_at so the cell never shows blank. */}
+                    <div className="grid grid-cols-4 gap-4 px-4 py-3">
                       {/* Product Info */}
                       <div className="flex flex-col gap-1">
                         <div className="text-xs text-muted-foreground" suppressHydrationWarning>
@@ -905,6 +918,24 @@ export default function EnrollmentsPage() {
                         <div className="text-xs font-medium text-muted-foreground">
                           {formatPercentage(enrollment.paid_amount, enrollment.total_amount)}% {t('admin.enrollments.completed', 'הושלם')}
                         </div>
+                      </div>
+
+                      {/* Enrollment Date */}
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                          {t('admin.enrollments.table.enrolledAt', 'תאריך הרשמה')}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-sm font-medium">
+                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span suppressHydrationWarning>
+                            {formatDate(enrollment.enrolled_at || enrollment.created_at)}
+                          </span>
+                        </div>
+                        {!enrollment.enrolled_at && (
+                          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                            {t('admin.enrollments.table.draftCreated', 'טיוטה נוצרה')}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

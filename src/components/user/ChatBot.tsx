@@ -36,7 +36,8 @@ interface QuickAction {
 }
 
 export function ChatBot() {
-  const { t } = useUserLanguage();
+  const { t, direction } = useUserLanguage();
+  const isRtl = direction === 'rtl';
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -232,10 +233,11 @@ export function ChatBot() {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-r from-primary to-purple-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center group"
+        aria-label={t('chatbot.title', 'Learning Assistant')}
+        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-primary to-purple-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center group"
       >
         <MessageCircle className="h-6 w-6 group-hover:scale-110 transition-transform" />
-        <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-500 rounded-full border-2 border-white"></span>
+        <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-500 rounded-full border-2 border-background" />
       </button>
     );
   }
@@ -243,16 +245,19 @@ export function ChatBot() {
   return (
     <div className="fixed bottom-6 right-6 z-50 w-[380px] h-[600px] bg-background border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-purple-600 text-white p-4 flex items-center justify-between" dir="rtl">
-        <div className="flex items-center gap-3 flex-1">
-          <Avatar className="h-10 w-10 border-2 border-white">
+      <div className="bg-gradient-to-r from-primary to-purple-600 text-white p-4 flex items-center justify-between" dir={direction}>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <Avatar className="h-10 w-10 border-2 border-white/40 shrink-0">
             <AvatarFallback className="bg-white text-primary font-bold">
               AI
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1">
-            <h3 className="font-semibold text-white">{t('chatbot.title', 'Learning Assistant')}</h3>
-            <p className="text-xs text-white/90">{t('chatbot.status', 'Online • Ready to help')}</p>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-white truncate">{t('chatbot.title', 'Learning Assistant')}</h3>
+            <p className="text-xs text-white/90 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+              {t('chatbot.status', 'Online • Ready to help')}
+            </p>
           </div>
         </div>
         <Button
@@ -265,99 +270,160 @@ export function ChatBot() {
         </Button>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4" dir="rtl">
+      {/* Messages — direction follows the user's language. Each message
+          renders as: optional bot avatar + bubble + optional result/action
+          attachments below the bubble (NOT inside it, so they get full
+          width). Bubbles use asymmetric rounded corners for a speech-
+          bubble feel: user bubbles point toward the user, bot bubbles
+          point toward the bot avatar. */}
+      <ScrollArea className="flex-1 px-3 py-4 bg-muted/20" dir={direction}>
         <div className="space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn(
-                'flex',
-                message.type === 'user' ? 'justify-end' : 'justify-start'
-              )}
-            >
-              <div
-                className={cn(
-                  'max-w-[80%] rounded-2xl px-4 py-2',
-                  message.type === 'user'
-                    ? 'bg-primary text-white'
-                    : 'bg-muted'
-                )}
-                dir="rtl"
-              >
-                <p className={cn(
-                  "text-sm text-right",
-                  message.type === 'user' ? 'text-white' : ''
-                )}>{message.content}</p>
+          {messages.map((message) => {
+            const isUser = message.type === 'user';
+            const timeLabel = message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-                {/* Results */}
+            return (
+              <div
+                key={message.id}
+                className={cn(
+                  'flex flex-col gap-1.5',
+                  isUser ? 'items-end' : 'items-start'
+                )}
+              >
+                {/* Bubble row: bot has an avatar to the start, user is bubble-only. */}
+                <div
+                  className={cn(
+                    'flex items-end gap-2 max-w-[85%]',
+                    isUser ? 'flex-row-reverse' : 'flex-row'
+                  )}
+                >
+                  {!isUser && (
+                    <Avatar className="h-7 w-7 shrink-0 border border-border">
+                      <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white text-[10px] font-semibold">
+                        AI
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
+                  <div
+                    className={cn(
+                      'px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+                      isUser
+                        ? cn(
+                            'bg-gradient-to-br from-primary to-purple-600 rounded-2xl',
+                            // Tail pointing toward the user (start-side bottom corner squared).
+                            isRtl ? 'rounded-bl-md' : 'rounded-br-md'
+                          )
+                        : cn(
+                            'bg-background border border-border rounded-2xl',
+                            isRtl ? 'rounded-br-md' : 'rounded-bl-md'
+                          )
+                    )}
+                  >
+                    {/* Force the color on the <p> itself rather than relying on
+                        inheritance — some global styles reset <p> color and
+                        the user bubble was rendering black on purple. */}
+                    <p
+                      className={cn(
+                        'whitespace-pre-wrap break-words',
+                        isUser ? 'text-white' : 'text-foreground'
+                      )}
+                    >
+                      {message.content}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Timestamp — sits below the bubble in a muted color so it
+                    doesn't compete with the message text. */}
+                <span
+                  className={cn(
+                    'text-[10px] text-muted-foreground/70 px-1',
+                    isUser ? 'pe-1' : 'ps-9' // align under bot bubble (past the avatar)
+                  )}
+                >
+                  {timeLabel}
+                </span>
+
+                {/* Search-result cards — rendered OUTSIDE the bubble so they
+                    get full width and breathing room. Indented past the
+                    avatar to visually belong to the bot message above. */}
                 {message.results && message.results.length > 0 && (
-                  <div className="mt-3 space-y-2" dir="rtl">
-                    {message.results.slice(0, 5).map((result) => (
-                      <button
-                        key={result.result_id}
-                        onClick={() => handleResultClick(result.result_url)}
-                        className="w-full text-right p-3 bg-background hover:bg-accent rounded-lg transition-colors border"
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className="flex-1 min-w-0 text-right">
-                            <p className="font-medium text-sm truncate text-right">{result.result_title}</p>
-                            {result.result_description && (
-                              <p className="text-xs text-muted-foreground line-clamp-1 text-right">
-                                {result.result_description}
-                              </p>
-                            )}
-                            {result.result_metadata?.course_title && (
-                              <Badge variant="secondary" className="mt-1 text-xs">
-                                {result.result_metadata.course_title}
-                              </Badge>
-                            )}
+                  <div className={cn('w-full space-y-1.5 mt-1', !isUser && 'ps-9')}>
+                    {message.results.slice(0, 5).map((result) => {
+                      const TypeIcon =
+                        result.result_type === 'course' ? BookOpen :
+                        result.result_type === 'lesson' ? Video :
+                        result.result_type === 'file' ? FileText :
+                        Navigation;
+                      return (
+                        <button
+                          key={result.result_id}
+                          onClick={() => handleResultClick(result.result_url)}
+                          className="w-full text-start p-3 bg-background hover:bg-accent rounded-xl transition-all border border-border hover:border-primary/40 hover:shadow-sm group"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/15 transition-colors">
+                              <TypeIcon className="h-4 w-4 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{result.result_title}</p>
+                              {result.result_description && (
+                                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                                  {result.result_description}
+                                </p>
+                              )}
+                              {result.result_metadata?.course_title && (
+                                <Badge variant="secondary" className="mt-1.5 text-[10px] h-5 px-1.5">
+                                  {result.result_metadata.course_title}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
-                          {result.result_type === 'course' && <BookOpen className="h-4 w-4 text-primary mt-0.5 flex-shrink-0 mr-auto" />}
-                          {result.result_type === 'lesson' && <Video className="h-4 w-4 text-primary mt-0.5 flex-shrink-0 mr-auto" />}
-                          {result.result_type === 'file' && <FileText className="h-4 w-4 text-primary mt-0.5 flex-shrink-0 mr-auto" />}
-                          {result.result_type === 'announcement' && <Navigation className="h-4 w-4 text-primary mt-0.5 flex-shrink-0 mr-auto" />}
-                        </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Quick-action chips — also outside the bubble. Pill-shaped,
+                    wrap freely instead of forcing a 2-column grid. */}
+                {message.quickActions && message.quickActions.length > 0 && (
+                  <div className={cn('flex flex-wrap gap-1.5 mt-1', !isUser && 'ps-9')}>
+                    {message.quickActions.map((action, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleQuickAction(action.action)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-background border border-border text-xs font-medium hover:border-primary hover:bg-primary/5 hover:text-primary transition-all"
+                      >
+                        {action.icon}
+                        <span>{action.label}</span>
                       </button>
                     ))}
                   </div>
                 )}
-
-                {/* Quick Actions */}
-                {message.quickActions && (
-                  <div className="mt-3 grid grid-cols-2 gap-2" dir="rtl">
-                    {message.quickActions.map((action, index) => (
-                      <Button
-                        key={index}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleQuickAction(action.action)}
-                        className="flex justify-between gap-2 bg-background"
-                      >
-                        {action.icon}
-                        <span className="text-xs flex-1 text-right">{action.label}</span>
-                      </Button>
-                    ))}
-                  </div>
-                )}
-
-                <p className={cn(
-                  "text-xs opacity-60 mt-1 text-right",
-                  message.type === 'user' ? 'text-white' : ''
-                )}>
-                  {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
+          {/* Typing indicator — matches the bot-message shape with avatar +
+              bubble so it doesn't visually jump when the real reply arrives. */}
           {isTyping && (
-            <div className="flex justify-start">
-              <div className="bg-muted rounded-2xl px-4 py-3">
-                <div className="flex gap-1">
-                  <span className="h-2 w-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                  <span className="h-2 w-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                  <span className="h-2 w-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+            <div className="flex items-end gap-2">
+              <Avatar className="h-7 w-7 shrink-0 border border-border">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white text-[10px] font-semibold">
+                  AI
+                </AvatarFallback>
+              </Avatar>
+              <div
+                className={cn(
+                  'bg-background border border-border px-4 py-3 rounded-2xl shadow-sm',
+                  isRtl ? 'rounded-br-md' : 'rounded-bl-md'
+                )}
+              >
+                <div className="flex gap-1 items-center">
+                  <span className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                 </div>
               </div>
             </div>
@@ -367,20 +433,31 @@ export function ChatBot() {
         </div>
       </ScrollArea>
 
-      {/* Input */}
-      <div className="border-t p-4" dir="rtl">
+      {/* Input — direction-aware so the placeholder and caret sit correctly
+          in both Hebrew and English. */}
+      <div className="border-t p-3 bg-background" dir={direction}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             handleSendMessage(inputValue);
           }}
-          className="flex gap-2 flex-row-reverse"
+          className="flex gap-2 items-center"
         >
+          <Input
+            ref={inputRef}
+            type="text"
+            placeholder={t('chatbot.placeholder', 'Ask me anything...')}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            className="flex-1 rounded-full bg-background text-foreground placeholder:text-muted-foreground border-border focus-visible:ring-1 focus-visible:ring-primary"
+            dir={direction}
+            disabled={isTyping}
+          />
           <Button
             type="submit"
             size="icon"
             disabled={!inputValue.trim() || isTyping}
-            className="bg-gradient-to-r from-primary to-purple-600"
+            className="rounded-full bg-gradient-to-br from-primary to-purple-600 shrink-0 shadow-sm hover:shadow-md transition-shadow"
           >
             {isTyping ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -388,16 +465,6 @@ export function ChatBot() {
               <Send className="h-4 w-4" />
             )}
           </Button>
-          <Input
-            ref={inputRef}
-            type="text"
-            placeholder={t('chatbot.placeholder', 'Ask me anything...')}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="flex-1 text-right"
-            dir="rtl"
-            disabled={isTyping}
-          />
         </form>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 type UserRole = 'admin' | 'instructor' | 'student';
 
@@ -34,8 +34,16 @@ export function withAuth(
         );
       }
 
-      // Get user details with role
-      const { data: userData, error: userError } = await supabase
+      // Identity is already verified by `auth.getUser()` (it validates the
+      // JWT against Supabase Auth). The `public.users` table has stricter
+      // RLS than just `auth.uid() = id` — it relies on a tenant-context
+      // GUC that's set by the browser but not by API routes, so reading
+      // the authenticated user's *own* row with the cookie client returns
+      // 0 rows and would surface as a misleading 404 across every endpoint
+      // wrapped by `withAuth`. Use the admin client for this single
+      // narrowly-scoped read of `id = user.id`.
+      const admin = createAdminClient();
+      const { data: userData, error: userError } = await admin
         .from('users')
         .select('id, email, role, tenant_id')
         .eq('id', user.id)

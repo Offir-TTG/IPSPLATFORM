@@ -49,7 +49,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useAdminLanguage } from '@/context/AppContext';
+import { useAdminLanguage, useTenant } from '@/context/AppContext';
+import {
+  wallTimeToUTC,
+  utcToWallTime,
+  formatInTimezone,
+  resolveDisplayTimezone,
+  nextRoundHourInTimezone,
+} from '@/lib/datetime/timezone';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { CourseImageUploader } from '@/components/lms/CourseImageUploader';
 import { LessonTopicsBuilder } from '@/components/lms/LessonTopicsBuilder';
@@ -160,7 +167,8 @@ function SortableModule({
   creatingZoomFor,
   t,
   direction,
-  isRtl
+  isRtl,
+  tenantTimezone,
 }: {
   module: Module;
   onToggleExpand: () => void;
@@ -177,6 +185,9 @@ function SortableModule({
   t: (key: string, fallback: string) => string;
   direction: 'ltr' | 'rtl';
   isRtl: boolean;
+  /** Tenant's configured timezone — forwarded to each lesson card so
+      legacy lessons without `timezone` fall back to it, not a literal. */
+  tenantTimezone: string;
 }) {
   const {
     attributes,
@@ -283,6 +294,7 @@ function SortableModule({
                     t={t}
                     direction={direction}
                     isRtl={isRtl}
+                    tenantTimezone={tenantTimezone}
                   />
                 ))}
               </SortableContext>
@@ -320,7 +332,8 @@ function SortableLesson({
   creatingZoomFor,
   t,
   direction,
-  isRtl
+  isRtl,
+  tenantTimezone,
 }: {
   lesson: Lesson;
   moduleId: string;
@@ -333,6 +346,9 @@ function SortableLesson({
   t: (key: string, fallback: string) => string;
   direction: 'ltr' | 'rtl';
   isRtl: boolean;
+  /** Tenant's configured timezone — used as the fallback when a lesson
+      hasn't got its own `timezone` set (legacy records). */
+  tenantTimezone: string;
 }) {
   const {
     attributes,
@@ -399,29 +415,46 @@ function SortableLesson({
 
           {/* Meta Info Row - Date, Duration, Topics, Zoom */}
           <div className="flex items-center gap-3 flex-wrap text-xs">
-            {/* Date and Time - Most Important */}
-            {lesson.start_time && (
-              <div className="flex items-center gap-1 font-medium text-foreground">
-                <Clock className="h-3.5 w-3.5" />
-                <span>
-                  {new Date(lesson.start_time).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  })}
-                  {' • '}
-                  {new Date(lesson.start_time).toLocaleTimeString(undefined, {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
-              </div>
-            )}
+            {/* Date and Time - Most Important.
+                - Pin `timeZone` to the lesson's saved tz so the time
+                  doesn't shift by the admin's browser offset.
+                - Pin the locale to the admin UI language (he-IL or en-US)
+                  so the card stays in one language instead of mixing
+                  Hebrew UI with English month names. */}
+            {lesson.start_time && (() => {
+              // Admin view: no recipient timezone, so the chain collapses
+              // to `lesson.timezone || tenantTimezone`. See the canonical
+              // rule in `src/lib/datetime/timezone.ts`.
+              const displayTz = resolveDisplayTimezone({
+                lessonTz: lesson.timezone,
+                tenantTz: tenantTimezone,
+              });
+              const locale = isRtl ? 'he-IL' : 'en-US';
+              return (
+                <div className="flex items-center gap-1 font-medium text-foreground">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>
+                    {formatInTimezone(lesson.start_time, displayTz, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    }, locale)}
+                    {' • '}
+                    {formatInTimezone(lesson.start_time, displayTz, {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    }, locale)}
+                  </span>
+                </div>
+              );
+            })()}
 
-            {/* Duration */}
+            {/* Duration — translate the "m" unit so it follows the UI
+                language ('m' in English, 'דק׳' in Hebrew). */}
             {lesson.duration && (
               <div className="flex items-center gap-1 text-muted-foreground">
-                <span>({lesson.duration}m)</span>
+                <span>({lesson.duration}{t('lms.builder.minutes_short', 'm')})</span>
               </div>
             )}
 
@@ -433,12 +466,16 @@ function SortableLesson({
               </div>
             )}
 
-            {/* Video Meeting Status */}
+            {/* Video Meeting Status — labels go through `t()` so the
+                wording follows the admin UI language. The brand names
+                themselves (Zoom, Daily.co) stay constant as fallbacks. */}
             {(lesson.zoom_meeting_id || lesson.zoom_session?.daily_room_name) && (
               <div className="flex items-center gap-1.5">
                 <Video className={`h-3 w-3 ${lesson.zoom_session?.platform === 'daily' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`} />
                 <span className={lesson.zoom_session?.platform === 'daily' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}>
-                  {lesson.zoom_session?.platform === 'daily' ? 'Daily.co' : 'Zoom'}
+                  {lesson.zoom_session?.platform === 'daily'
+                    ? t('lms.builder.platform_daily', 'Daily.co')
+                    : t('lms.builder.platform_zoom', 'Zoom')}
                 </span>
                 {lesson.zoom_session?.has_recording && (
                   <span className="text-muted-foreground">• {t('lms.builder.recorded', 'Recorded')}</span>
@@ -521,7 +558,31 @@ export default function CourseBuilderPage() {
   const params = useParams();
   const router = useRouter();
   const { t, direction } = useAdminLanguage();
+  const { tenantId } = useTenant();
   const isRtl = direction === 'rtl';
+
+  // Tenant currency + timezone, loaded once on mount. Drives:
+  //  - The "Lifetime Sales" amount formatting (was hardcoded ₪)
+  //  - The default timezone in the lesson form (was hardcoded
+  //    'Asia/Jerusalem'), so creating a lesson defaults to the tenant's
+  //    own timezone, not Israel.
+  const [tenantCurrency, setTenantCurrency] = useState<string>('USD');
+  const [tenantTimezone, setTenantTimezone] = useState<string>('Asia/Jerusalem');
+  useEffect(() => {
+    if (!tenantId) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/tenant');
+        const json = await res.json();
+        if (json.success && json.data) {
+          if (json.data.currency) setTenantCurrency(json.data.currency);
+          if (json.data.timezone) setTenantTimezone(json.data.timezone);
+        }
+      } catch (err) {
+        console.error('Failed to load tenant currency/timezone:', err);
+      }
+    })();
+  }, [tenantId]);
 
   const [course, setCourse] = useState<Course | null>(null);
   const [modules, setModules] = useState<Module[]>([]);
@@ -562,6 +623,9 @@ export default function CourseBuilderPage() {
 
   // Message states
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+  // Dialog-scoped error so messages render inside the open dialog instead of
+  // disappearing behind it on the parent page.
+  const [lessonDialogError, setLessonDialogError] = useState<string | null>(null);
 
   // Helper to show status messages
   const showMessage = (type: 'success' | 'error' | 'warning', text: string, duration = 3000) => {
@@ -582,7 +646,10 @@ export default function CourseBuilderPage() {
     description: '',
     start_time: new Date().toISOString().slice(0, 16),
     duration_minutes: '60',
-    timezone: 'Asia/Jerusalem', // Default timezone
+    // Default timezone is overridden by the tenant's configured timezone
+    // once it loads (see effect below). Hardcoded fallback for the
+    // initial render before the fetch resolves.
+    timezone: 'Asia/Jerusalem',
     is_published: true,
     // Video meeting settings
     create_meeting: false,
@@ -657,6 +724,15 @@ export default function CourseBuilderPage() {
     zoom_record_speaker_view: false, // Record active speaker with shared screen
     zoom_recording_disclaimer: false, // Show recording disclaimer
   });
+
+  // Note: previously had a useEffect here that synced lessonForm.timezone
+  // to tenantTimezone on tenant-fetch. Removed because it could race with
+  // `openEditLessonDialog` setting the form's timezone from the lesson —
+  // when the tenant fetch resolved after the user opened the edit dialog,
+  // the effect would overwrite the lesson's own timezone (e.g. switching
+  // a NY lesson's form back to Asia/Jerusalem). If we ever want tenant
+  // timezone as the default for *new* lessons, do it inside the
+  // "Add Lesson" click handler instead.
 
   // Bridge link state
   const [bridgeLink, setBridgeLink] = useState<any>(null);
@@ -1220,18 +1296,21 @@ export default function CourseBuilderPage() {
   };
 
   const handleCreateLesson = async () => {
+    // Clear any previous in-dialog error.
+    setLessonDialogError(null);
+
     if (!lessonForm.title.trim() || !selectedModule) {
-      showMessage('error', t('lms.builder.title_required', 'Title is required'));
+      setLessonDialogError(t('lms.builder.title_required', 'Title is required'));
       return;
     }
 
     if (lessonForm.create_meeting) {
       if (lessonForm.meeting_platform === 'zoom' && !lessonForm.zoom_topic.trim()) {
-        showMessage('error', t('lms.builder.zoom_topic_required', 'Zoom meeting topic is required when creating Zoom meeting'));
+        setLessonDialogError(t('lms.builder.zoom_topic_required', 'Zoom meeting topic is required when creating Zoom meeting'));
         return;
       }
       if (lessonForm.meeting_platform === 'daily' && !lessonForm.daily_room_name.trim()) {
-        showMessage('error', t('lms.builder.daily_room_name_required', 'Daily.co room name is required when creating Daily.co room'));
+        setLessonDialogError(t('lms.builder.daily_room_name_required', 'Daily.co room name is required when creating Daily.co room'));
         return;
       }
     }
@@ -1239,10 +1318,27 @@ export default function CourseBuilderPage() {
     try {
       setSaving(true);
 
+      // Convert the wall-clock datetime from the form into a UTC ISO string
+      // for Postgres storage. Uses the shared `wallTimeToUTC` util — see
+      // `src/lib/datetime/timezone.ts` for the canonical rules.
+      const startTimeUTC = lessonForm.start_time
+        ? wallTimeToUTC(lessonForm.start_time, lessonForm.timezone || tenantTimezone)
+        : lessonForm.start_time;
+
       // Determine if we're editing or creating
       const isEditing = !!editingLesson;
       const url = isEditing ? `/api/lms/lessons/${editingLesson.id}` : '/api/lms/lessons';
       const method = isEditing ? 'PATCH' : 'POST';
+
+      // Resolve {n}/{date}/etc. tokens in the lesson title — the Zoom topic
+      // and Daily.co room name already get this treatment below, so the
+      // title was the inconsistent one. Use lesson position-in-module for
+      // {n} (1-based) on new lessons; preserve the existing order on edit.
+      const lessonNumberForTitle = isEditing
+        ? (editingLesson.order ?? 0) + 1
+        : (selectedModule.lessons?.length || 0) + 1;
+      const lessonDateForTitle = lessonForm.start_time ? new Date(lessonForm.start_time) : null;
+      const resolvedTitle = replaceTokens(lessonForm.title, lessonNumberForTitle, lessonDateForTitle);
 
       const response = await fetch(url, {
         method,
@@ -1250,11 +1346,13 @@ export default function CourseBuilderPage() {
         body: JSON.stringify({
           course_id: params.id,
           module_id: selectedModule.id,
-          title: lessonForm.title,
+          title: resolvedTitle,
           description: lessonForm.description || null,
           duration: lessonForm.duration_minutes ? parseInt(lessonForm.duration_minutes) : null,
           is_published: lessonForm.is_published,
-          start_time: lessonForm.start_time,
+          // UTC-converted (see wallTimeToUTC above) so Postgres stores the
+          // correct absolute moment regardless of admin's browser timezone.
+          start_time: startTimeUTC,
           timezone: lessonForm.timezone,
           order: isEditing ? editingLesson.order : (selectedModule.lessons?.length || 0),
         }),
@@ -1297,7 +1395,9 @@ export default function CourseBuilderPage() {
               const lessonNumber = (selectedModule.lessons?.length || 0) + 1;
               const zoomTopicWithTokens = replaceTokens(lessonForm.zoom_topic, lessonNumber, lessonDate);
 
-              // Create Zoom meeting
+              // Create Zoom meeting. Sends UTC ISO + timezone separately —
+              // matching the UPDATE path and the canonical write rule
+              // (every fetch with start_time sends UTC).
               const zoomResponse = await fetch('/api/lms/zoom/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1305,8 +1405,9 @@ export default function CourseBuilderPage() {
                   lesson_id: lessonData.id,
                   topic: zoomTopicWithTokens,
                   agenda: lessonForm.zoom_agenda || null,
-                  start_time: lessonForm.start_time,
+                  start_time: startTimeUTC,
                   duration: parseInt(lessonForm.duration_minutes),
+                  timezone: lessonForm.timezone || tenantTimezone,
                 }),
               });
 
@@ -1326,21 +1427,25 @@ export default function CourseBuilderPage() {
           }
         }
 
-        // Update Zoom meeting if lesson is being edited and has a Zoom meeting
+        // Update Zoom meeting if lesson is being edited and has a Zoom meeting.
+        //
+        // CRITICAL: this PATCH must send the SAME UTC ISO that the main
+        // lesson PATCH sent (`startTimeUTC`). Previously this branch was
+        // sending the *naive* form value (`lessonForm.start_time + ":00"`),
+        // which the server's `zoomService.updateMeetingForLesson` then
+        // wrote back to `lessons.start_time` via its compatibility update
+        // path — overwriting the correctly-converted 21:00 UTC value with
+        // the user's naive 17:00 wall-clock and producing the classic
+        // "save shows 5pm, refresh shows 1pm" 4-hour drift.
         if (isEditing && editingLesson.zoom_meeting_id) {
           try {
-            // Format start_time with seconds for Zoom API (YYYY-MM-DDTHH:mm:ss)
-            const formattedStartTime = lessonForm.start_time.length === 16
-              ? `${lessonForm.start_time}:00`
-              : lessonForm.start_time;
-
             const zoomResponse = await fetch(`/api/lms/lessons/${lessonData.id}/zoom-session`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 topic: lessonForm.title,
                 agenda: lessonForm.description || null,
-                start_time: formattedStartTime,
+                start_time: startTimeUTC,
                 duration: parseInt(lessonForm.duration_minutes),
                 timezone: lessonForm.timezone,
               }),
@@ -1388,9 +1493,11 @@ export default function CourseBuilderPage() {
         setLessonForm({
           title: '',
           description: '',
-          start_time: new Date().toISOString().slice(0, 16),
+          // Default to next round hour in the tenant's tz, not UTC, so the
+          // input shows a sensible wall-clock the admin can edit naturally.
+          start_time: nextRoundHourInTimezone(tenantTimezone),
           duration_minutes: '60',
-          timezone: 'Asia/Jerusalem',
+          timezone: tenantTimezone,
           is_published: true,
           create_meeting: false,
           meeting_platform: 'daily',
@@ -1410,11 +1517,13 @@ export default function CourseBuilderPage() {
 
         showMessage('success', successMsg);
       } else {
-        showMessage('error', result.error || t('lms.builder.lesson_save_failed', 'Failed to save lesson'), 5000);
+        // Save error is shown INSIDE the dialog (which is still open) instead
+        // of behind it via the page-level toast.
+        setLessonDialogError(result.error || t('lms.builder.lesson_save_failed', 'Failed to save lesson'));
       }
     } catch (error) {
       console.error('Failed to save lesson:', error);
-      showMessage('error', t('lms.builder.lesson_save_failed', 'Failed to save lesson'), 5000);
+      setLessonDialogError(t('lms.builder.lesson_save_failed', 'Failed to save lesson'));
     } finally {
       setSaving(false);
     }
@@ -1488,16 +1597,16 @@ export default function CourseBuilderPage() {
     setEditingLesson(lesson);
     setSelectedModule(module);
 
-    // Format start_time for datetime-local input (YYYY-MM-DDTHH:MM)
-    let formattedStartTime = new Date().toISOString().slice(0, 16);
-    if (lesson.start_time) {
-      try {
-        const startDate = new Date(lesson.start_time);
-        // datetime-local input expects format: YYYY-MM-DDTHH:MM
-        formattedStartTime = startDate.toISOString().slice(0, 16);
-      } catch (e) {
-        console.error('Error parsing lesson start_time:', e);
-      }
+    // Format start_time for the <input type="datetime-local"> field.
+    // The input expects naive `YYYY-MM-DDTHH:MM` — we render the stored
+    // UTC timestamp in the lesson's own timezone via the shared util.
+    const lessonTimezone = lesson.timezone || tenantTimezone;
+    let formattedStartTime = lesson.start_time
+      ? utcToWallTime(lesson.start_time, lessonTimezone)
+      : '';
+    if (!formattedStartTime) {
+      // No stored start_time → use next round hour in the lesson tz.
+      formattedStartTime = nextRoundHourInTimezone(lessonTimezone);
     }
 
     // Populate the form with lesson data
@@ -1508,7 +1617,7 @@ export default function CourseBuilderPage() {
       description: lesson.description || '',
       start_time: formattedStartTime,
       duration_minutes: duration.toString(),
-      timezone: lesson.timezone || 'Asia/Jerusalem',
+      timezone: lesson.timezone || tenantTimezone,
       is_published: lesson.is_published,
       create_meeting: false, // Don't show meeting creation option in edit mode
       meeting_platform: 'daily',
@@ -1882,37 +1991,31 @@ export default function CourseBuilderPage() {
     try {
       setSaving(true);
 
-      // Calculate lesson dates based on recurrence pattern
-      // We'll send date/time strings and let the backend handle timezone conversion
+      // Each date is converted from wall-clock-in-the-selected-timezone to
+      // a UTC ISO string before being sent to the API. See `wallTimeToUTC`
+      // in `src/lib/datetime/timezone.ts`.
+      const bulkTimezone = bulkLessonForm.timezone || tenantTimezone;
+
       const lessonDateStrings: string[] = [];
 
       if (bulkLessonForm.is_recurring && bulkLessonForm.recurrence_pattern === 'weekly') {
-        // Weekly recurring lessons
         const startDate = new Date(bulkLessonForm.start_date);
 
-        // Use the start_date as the first lesson date (don't adjust to different day)
-        // This ensures the first lesson happens on the date the user selected
         for (let i = 0; i < count; i++) {
           const lessonDate = new Date(startDate);
-          lessonDate.setDate(lessonDate.getDate() + (i * 7)); // Add weeks
-
-          // Format as YYYY-MM-DD for the date part
+          lessonDate.setDate(lessonDate.getDate() + (i * 7));
           const dateStr = lessonDate.toISOString().slice(0, 10);
-          // Combine with time: YYYY-MM-DDTHH:MM (no timezone, backend will handle it)
-          lessonDateStrings.push(`${dateStr}T${bulkLessonForm.start_time}:00`);
+          // Wall-clock in `bulkTimezone` → UTC ISO before sending.
+          lessonDateStrings.push(wallTimeToUTC(`${dateStr}T${bulkLessonForm.start_time}`, bulkTimezone));
         }
       } else {
-        // Daily or custom interval
         const startDate = new Date(bulkLessonForm.start_date);
 
         for (let i = 0; i < count; i++) {
           const lessonDate = new Date(startDate);
-          lessonDate.setDate(lessonDate.getDate() + i); // Add days
-
-          // Format as YYYY-MM-DD for the date part
+          lessonDate.setDate(lessonDate.getDate() + i);
           const dateStr = lessonDate.toISOString().slice(0, 10);
-          // Combine with time: YYYY-MM-DDTHH:MM (no timezone, backend will handle it)
-          lessonDateStrings.push(`${dateStr}T${bulkLessonForm.start_time}:00`);
+          lessonDateStrings.push(wallTimeToUTC(`${dateStr}T${bulkLessonForm.start_time}`, bulkTimezone));
         }
       }
 
@@ -1979,10 +2082,12 @@ export default function CourseBuilderPage() {
           titlePattern: 'Session {n}',
           is_recurring: true,
           recurrence_pattern: 'weekly',
-          start_date: new Date().toISOString().slice(0, 10),
+          // Today's date in tenant tz (not UTC), so admin sees the right
+          // local day even when saving late at night.
+          start_date: nextRoundHourInTimezone(tenantTimezone).slice(0, 10),
           start_time: '18:00',
           duration_minutes: '60',
-          timezone: 'Asia/Jerusalem',
+          timezone: tenantTimezone,
           weekly_days: [0],
           end_type: 'count',
           end_count: '5',
@@ -2265,9 +2370,11 @@ export default function CourseBuilderPage() {
                                 setLessonForm({          // Reset form to defaults
                                   title: '',
                                   description: '',
-                                  start_time: new Date().toISOString().slice(0, 16),
+                                  // Next round hour in tenant tz — see
+                                  // src/lib/datetime/timezone.ts
+                                  start_time: nextRoundHourInTimezone(tenantTimezone),
                                   duration_minutes: '60',
-                                  timezone: 'Asia/Jerusalem',
+                                  timezone: tenantTimezone,
                                   is_published: true,
                                   create_meeting: false,
                                   meeting_platform: 'daily',
@@ -2290,7 +2397,7 @@ export default function CourseBuilderPage() {
                                     start_date: date,
                                     start_time: time,
                                     duration_minutes: lessonForm.duration_minutes || '60',
-                                    timezone: lessonForm.timezone || 'Asia/Jerusalem',
+                                    timezone: lessonForm.timezone || tenantTimezone,
                                   });
                                 }
                                 setShowBulkLessonDialog(true);
@@ -2318,6 +2425,7 @@ export default function CourseBuilderPage() {
                               t={t}
                               direction={direction}
                               isRtl={isRtl}
+                              tenantTimezone={tenantTimezone}
                             />
                           ))
                         )}
@@ -2410,10 +2518,17 @@ export default function CourseBuilderPage() {
                       </p>
                     </div>
 
-                    {/* Lifetime Sales */}
+                    {/* Lifetime Sales — currency comes from tenant
+                        settings (e.g. 'USD' → $, 'ILS' → ₪, 'EUR' → €).
+                        Locale matches the admin UI language so number
+                        grouping ('1,000' vs '1.000') stays consistent. */}
                     <div className={`mb-4 ${isRtl ? 'text-right' : ''}`}>
                       <div className="text-2xl font-bold">
-                        ₪{enrollmentStats.lifetimeSales.toLocaleString()}
+                        {new Intl.NumberFormat(isRtl ? 'he-IL' : 'en-US', {
+                          style: 'currency',
+                          currency: tenantCurrency,
+                          maximumFractionDigits: 0,
+                        }).format(enrollmentStats.lifetimeSales)}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {t('lms.builder.lifetime_sales', 'Lifetime Sales')}
@@ -2623,7 +2738,15 @@ export default function CourseBuilderPage() {
       </Dialog>
 
       {/* Lesson Dialog */}
-      <Dialog open={showLessonDialog} onOpenChange={setShowLessonDialog}>
+      <Dialog
+        open={showLessonDialog}
+        onOpenChange={(open) => {
+          // Clear any in-dialog error whenever the dialog opens or closes so
+          // a stale error doesn't carry over into the next session.
+          if (!open) setLessonDialogError(null);
+          setShowLessonDialog(open);
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir={direction}>
           <DialogHeader>
             <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
@@ -2639,6 +2762,17 @@ export default function CourseBuilderPage() {
               }
             </DialogDescription>
           </DialogHeader>
+          {/* In-dialog error banner — renders validation and API errors so
+              the user sees them inline instead of behind the dialog. */}
+          {lessonDialogError && (
+            <div
+              role="alert"
+              className={`rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive ${isRtl ? 'text-right' : 'text-left'}`}
+              dir={direction}
+            >
+              {lessonDialogError}
+            </div>
+          )}
           <div className="space-y-6 py-4">
             {/* Lesson Details */}
             <div className="space-y-4">

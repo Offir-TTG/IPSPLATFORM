@@ -4,23 +4,12 @@ export const dynamic = 'force-dynamic';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   BookOpen,
   Users,
   Clock,
   GraduationCap,
   Sparkles,
-  PlayCircle,
-  LayoutGrid,
-  List,
-  MoreHorizontal,
   ArrowRight,
   CheckCircle,
   Award,
@@ -28,8 +17,9 @@ import {
   Lightbulb,
   HelpCircle,
   ChevronDown,
+  Presentation,
+  Compass,
 } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useUserLanguage } from '@/context/AppContext';
 import { PublicHeader } from '@/components/public/index';
@@ -37,88 +27,20 @@ import { PublicFooter } from '@/components/public/index';
 import { BackToTop } from '@/components/public/BackToTop';
 import { useEffect, useState } from 'react';
 
-interface Product {
-  id: string;
-  title: string;
-  description: string;
-  image_url: string;
-  product_type: 'program' | 'course';
-  payment_model: string;
-  price?: number;
-  currency?: string;
-  total_courses?: number;
-  total_lessons: number;
-  total_hours: number;
-  student_count: number;
-  instructor?: string | null;
-}
-
+/** Public homepage for IPSPlatform. Product catalog moved to the
+ *  IParentingSchool marketing site, so this page is institutional
+ *  branding only — hero, stats, How-It-Works, accreditation, FAQ.
+ *  "Browse courses" lives in the header (PublicHeader). */
 export default function LandingPage() {
   const { t, direction } = useUserLanguage();
   const [mounted, setMounted] = useState(false);
-  const [courses, setCourses] = useState<Product[]>([]);
-  const [programs, setPrograms] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [programsView, setProgramsView] = useState<'grid' | 'list'>('list');
-  const [coursesView, setCoursesView] = useState<'grid' | 'list'>('list');
 
+  // Hydration guard — render nothing until mounted so the t() values
+  // (which depend on client-side language detection) don't mismatch
+  // the SSR output.
   useEffect(() => {
     setMounted(true);
-    fetchData();
   }, []);
-
-  const fetchData = async () => {
-    try {
-      const [coursesResponse, programsResponse] = await Promise.all([
-        fetch('/api/public/products?type=course&limit=6'),
-        fetch('/api/public/products?type=program&limit=6'),
-      ]);
-
-      const coursesData = await coursesResponse.json();
-      const programsData = await programsResponse.json();
-
-      console.log('Courses API response:', coursesData);
-      console.log('Programs API response:', programsData);
-
-      if (coursesData.success && coursesData.products) {
-        setCourses(coursesData.products);
-        console.log('Set courses:', coursesData.products.length);
-      }
-      if (programsData.success && programsData.products) {
-        setPrograms(programsData.products);
-        console.log('Set programs:', programsData.products.length);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper function to strip HTML tags from description
-  const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html.replace(/<[^>]*>/g, '');
-  };
-
-  // Helper function to format price display
-  const formatPrice = (product: Product) => {
-    if (product.payment_model === 'free') {
-      return <Badge className="bg-green-600 hover:bg-green-700 text-white">{t('public.products.free', 'Free')}</Badge>;
-    }
-
-    if (product.price && product.currency) {
-      return (
-        <Badge className="bg-background/95 border border-border text-foreground hover:bg-background">
-          <span dir="ltr">
-            {product.currency} {product.price.toFixed(2)}
-          </span>
-        </Badge>
-      );
-    }
-
-    return null;
-  };
 
   if (!mounted) {
     return null;
@@ -199,317 +121,17 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Featured Programs */}
-      <section id="programs" className="py-12 md:py-16">
-        <div className="container mx-auto px-4">
-          <div className="mb-8 flex flex-col items-center justify-between gap-4 md:flex-row">
-            <div className="text-center md:text-start">
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
-                <GraduationCap className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold text-primary">
-                  {t('public.programs.badge', 'Structured Learning')}
-                </span>
-              </div>
-              <h2 className="mb-4 text-4xl font-bold text-foreground md:text-5xl">
-                {t('public.programs.title', 'Featured Programs')}
-              </h2>
-              <p className="text-lg text-muted-foreground md:text-xl">
-                {t('public.programs.subtitle', 'Structured learning paths to master your skills')}
-              </p>
-            </div>
-            <TooltipProvider>
-              <div className={`flex gap-2 ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={programsView === 'grid' ? 'default' : 'outline'}
-                      size="icon"
-                      onClick={() => setProgramsView('grid')}
-                      aria-label="Grid view"
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('public.programs.gridView', 'Grid View')}</p>
-                  </TooltipContent>
-                </Tooltip>
+      {/* ============ Learn With Us — cross-link to IParentingSchool ============
+          Three cards pointing at the catalog surfaces that live on the
+          marketing site. Programs → home anchor, Courses → /courses,
+          Lectures → /lectures. Base URL from env so it's
+          environment-configurable; the section silently doesn't render
+          when the env var is missing (e.g. early dev setup).
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={programsView === 'list' ? 'default' : 'outline'}
-                      size="icon"
-                      onClick={() => setProgramsView('list')}
-                      aria-label="List view"
-                    >
-                      <List className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('public.programs.listView', 'List View')}</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                {!loading && programs.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="icon" asChild>
-                        <Link href="/browse-programs">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('public.programs.viewAll', 'View All Programs')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-            </TooltipProvider>
-          </div>
-
-          {loading ? (
-            <div className={programsView === 'grid' ? 'grid gap-8 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <Card key={i} className="overflow-hidden">
-                  <div className={programsView === 'grid' ? 'h-56 animate-pulse bg-muted' : 'flex gap-4 p-4'}>
-                    {programsView === 'list' && <div className="h-32 w-48 flex-shrink-0 animate-pulse bg-muted" />}
-                    <div className="space-y-4 p-6">
-                      <div className="h-6 w-3/4 animate-pulse rounded bg-muted" />
-                      <div className="h-4 w-full animate-pulse rounded bg-muted" />
-                      <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          ) : programs.length > 0 ? (
-            <div className={programsView === 'grid' ? 'grid gap-8 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
-              {programs.map((program) => (
-                <Link key={program.id} href={`/program/${program.id}`}>
-                  <Card className={`group overflow-hidden border-2 transition-all hover:border-primary hover:shadow-xl ${programsView === 'list' ? 'flex flex-col md:flex-row' : 'h-full'}`}>
-                    <div className={`relative overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5 ${programsView === 'grid' ? 'h-56' : 'h-48 md:h-auto md:w-64 flex-shrink-0'}`}>
-                      <Image
-                        src={program.image_url}
-                        alt={program.title}
-                        fill
-                        className="object-cover transition-transform duration-300 group-hover:scale-110"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <div className="flex items-center gap-2">
-                          <div className="rounded-full bg-primary/90 px-3 py-1 text-xs font-semibold text-primary-foreground">
-                            {t('public.programs.program', 'Program')}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="absolute top-4 right-4">
-                        {formatPrice(program)}
-                      </div>
-                    </div>
-                    <div className="p-8 flex-1">
-                      <h3 className={`mb-3 font-bold text-foreground transition-colors group-hover:text-primary ${programsView === 'grid' ? 'line-clamp-2 text-xl' : 'text-2xl'}`}>
-                        {program.title}
-                      </h3>
-                      <p className={`mb-4 text-sm text-muted-foreground ${programsView === 'grid' ? 'line-clamp-2' : 'line-clamp-3'}`}>
-                        {stripHtml(program.description)}
-                      </p>
-
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                        {(program.total_courses ?? 0) > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <BookOpen className="h-4 w-4" />
-                            <span className="font-medium">{program.total_courses} {t('public.programs.courses', 'courses')}</span>
-                          </div>
-                        )}
-                        {program.total_hours > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="h-4 w-4" />
-                            <span className="font-medium">{program.total_hours} {t('public.programs.hours', 'hours')}</span>
-                          </div>
-                        )}
-                        {program.student_count > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <Users className="h-4 w-4" />
-                            <span className="font-medium">{program.student_count}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">
-                {t('public.programs.noPrograms', 'No programs available at the moment')}
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Featured Courses */}
-      <section id="courses" className="bg-muted/30 py-16 md:py-24">
-        <div className="container mx-auto px-4">
-          <div className="mb-8 flex flex-col items-center justify-between gap-4 md:flex-row">
-            <div className="text-center md:text-start">
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
-                <BookOpen className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold text-primary">
-                  {t('public.courses.badge', 'Individual Courses')}
-                </span>
-              </div>
-              <h2 className="mb-4 text-4xl font-bold text-foreground md:text-5xl">
-                {t('public.courses.title', 'Featured Courses')}
-              </h2>
-              <p className="text-lg text-muted-foreground md:text-xl">
-                {t('public.courses.subtitle', 'Start with our most popular standalone courses')}
-              </p>
-            </div>
-            <TooltipProvider>
-              <div className={`flex gap-2 ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={coursesView === 'grid' ? 'default' : 'outline'}
-                      size="icon"
-                      onClick={() => setCoursesView('grid')}
-                      aria-label="Grid view"
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('public.courses.gridView', 'Grid View')}</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={coursesView === 'list' ? 'default' : 'outline'}
-                      size="icon"
-                      onClick={() => setCoursesView('list')}
-                      aria-label="List view"
-                    >
-                      <List className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('public.courses.listView', 'List View')}</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                {!loading && courses.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="icon" asChild>
-                        <Link href="/browse-courses">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('public.courses.viewAll', 'View All Courses')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-            </TooltipProvider>
-          </div>
-
-          {loading ? (
-            <div className={coursesView === 'grid' ? 'grid gap-8 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <Card key={i} className="overflow-hidden">
-                  <div className={coursesView === 'grid' ? 'h-56 animate-pulse bg-muted' : 'flex gap-4 p-4'}>
-                    {coursesView === 'list' && <div className="h-32 w-48 flex-shrink-0 animate-pulse bg-muted" />}
-                    <div className="space-y-4 p-6">
-                      <div className="h-6 w-3/4 animate-pulse rounded bg-muted" />
-                      <div className="h-4 w-full animate-pulse rounded bg-muted" />
-                      <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          ) : courses.length > 0 ? (
-            <div className={coursesView === 'grid' ? 'grid gap-8 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
-              {courses.map((course) => (
-                <Link key={course.id} href={`/course/${course.id}`}>
-                  <Card className={`group overflow-hidden border-2 transition-all hover:border-primary hover:shadow-xl ${coursesView === 'list' ? 'flex flex-col md:flex-row' : 'h-full'}`}>
-                    <div className={`relative overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5 ${coursesView === 'grid' ? 'h-56' : 'h-48 md:h-auto md:w-64 flex-shrink-0'}`}>
-                      <Image
-                        src={course.image_url}
-                        alt={course.title}
-                        fill
-                        className="object-cover transition-transform duration-300 group-hover:scale-110"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <div className="flex items-center gap-2">
-                          <div className="rounded-full bg-primary/90 px-3 py-1 text-xs font-semibold text-primary-foreground">
-                            {t('public.courses.course', 'Course')}
-                          </div>
-                          {course.instructor && (
-                            <div className="flex items-center gap-2 text-white">
-                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
-                                <Users className="h-3 w-3" />
-                              </div>
-                              <span className="text-xs font-medium">{course.instructor}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="absolute top-4 right-4">
-                        {formatPrice(course)}
-                      </div>
-                    </div>
-                    <div className="p-8 flex-1">
-                      <h3 className={`mb-3 font-bold text-foreground transition-colors group-hover:text-primary ${coursesView === 'grid' ? 'line-clamp-2 text-xl' : 'text-2xl'}`}>
-                        {course.title}
-                      </h3>
-                      <p className={`mb-4 text-sm text-muted-foreground ${coursesView === 'grid' ? 'line-clamp-2' : 'line-clamp-3'}`}>
-                        {stripHtml(course.description)}
-                      </p>
-
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                        {course.total_lessons > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <PlayCircle className="h-4 w-4" />
-                            <span className="font-medium">{course.total_lessons} {t('public.courses.lessons', 'lessons')}</span>
-                          </div>
-                        )}
-                        {course.total_hours > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="h-4 w-4" />
-                            <span className="font-medium">{course.total_hours} {t('public.courses.hours', 'hours')}</span>
-                          </div>
-                        )}
-                        {course.student_count > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <Users className="h-4 w-4" />
-                            <span className="font-medium">{course.student_count}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">
-                {t('public.courses.noCourses', 'No courses available at the moment')}
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
+          Copy is hardcoded bilingual because these new keys aren't yet
+          in the DB-backed `t()` translation table. Once a DB row is
+          added we can swap to `t('public.learnWithUs.…')` calls. */}
+      <LearnWithUsSection isRtl={direction === 'rtl'} />
 
       {/* How It Works Section */}
       <section className="py-16 md:py-20 bg-gradient-to-b from-background to-muted/30">
@@ -742,7 +364,6 @@ export default function LandingPage() {
 // FAQ Item Component
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  const { direction } = useUserLanguage();
 
   return (
     <Card className="overflow-hidden">
@@ -763,5 +384,156 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// ============================================================================
+// LearnWithUsSection — three-card cross-link to the IParentingSchool catalog
+// ============================================================================
+
+/** Single learning-track card. Renders inside LearnWithUsSection. */
+function TrackCard({
+  href,
+  Icon,
+  title,
+  description,
+  cta,
+  isRtl,
+}: {
+  href: string;
+  Icon: typeof GraduationCap;
+  title: string;
+  description: string;
+  cta: string;
+  isRtl: boolean;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group block"
+    >
+      <Card className="h-full p-6 md:p-8 border-2 hover:border-primary hover:shadow-lg transition-all">
+        <div className="mb-5 flex justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+            <Icon className="h-7 w-7" />
+          </div>
+        </div>
+        <h3 className="text-xl md:text-2xl font-bold text-center mb-3">
+          {title}
+        </h3>
+        <p className="text-muted-foreground text-center leading-relaxed mb-5">
+          {description}
+        </p>
+        <div className="flex justify-center text-primary font-semibold gap-1.5 items-center">
+          <span>{cta}</span>
+          <ArrowRight className={`h-4 w-4 ${isRtl ? 'rotate-180' : ''} group-hover:translate-x-1 transition-transform`} />
+        </div>
+      </Card>
+    </a>
+  );
+}
+
+/** "Learn With Us" — three cards linking out to the IParentingSchool
+ *  marketing site (programs / courses / lectures). Hebrew + English
+ *  copy lives inline (not in the DB translation table) so the section
+ *  works out of the box; migrate to `t()` once the keys exist server-side. */
+function LearnWithUsSection({ isRtl }: { isRtl: boolean }) {
+  const base = process.env.NEXT_PUBLIC_IPARENTING_URL;
+  if (!base) return null;
+
+  const copy = isRtl
+    ? {
+        badge: 'מה ללמוד אצלנו',
+        title: 'התחילו את מסע הלמידה שלכם',
+        subtitle:
+          'בחרו את המסלול שמתאים לכם — מתוכניות לימוד מקיפות ועד הרצאות וסדנאות בודדות.',
+        programs: {
+          title: 'תוכניות לימוד',
+          description:
+            'מסלולי לימוד מובנים בליווי אקדמי, לאנשי מקצוע ולמדריכי הורים בכל שלבי הקריירה.',
+          cta: 'לתוכניות הלימוד',
+        },
+        courses: {
+          title: 'קורסים',
+          description:
+            'קורסים פרטניים להעמקה בתחומים ספציפיים — הורות אדלריאנית, ADHD, ויסות חושי ועוד.',
+          cta: 'לכל הקורסים',
+        },
+        lectures: {
+          title: 'הרצאות וסדנאות',
+          description:
+            'מפגשים חד-פעמיים — הרצאות מבוא, סדנאות מעשיות וכנסים מקצועיים פתוחים להורים ולמטפלים.',
+          cta: 'להרצאות ולסדנאות',
+        },
+      }
+    : {
+        badge: 'Learn With Us',
+        title: 'Start Your Learning Journey',
+        subtitle:
+          'Pick the path that fits — from full study programs to individual lectures and workshops.',
+        programs: {
+          title: 'Study Programs',
+          description:
+            'Structured learning paths with academic backing, for professionals and parent coaches at every career stage.',
+          cta: 'View Programs',
+        },
+        courses: {
+          title: 'Courses',
+          description:
+            'Individual courses for deep-dives into specific topics — Adlerian parenting, ADHD, sensory regulation, and more.',
+          cta: 'View Courses',
+        },
+        lectures: {
+          title: 'Lectures & Workshops',
+          description:
+            'One-off sessions — intro talks, hands-on workshops, and professional conferences open to parents and clinicians.',
+          cta: 'View Lectures & Workshops',
+        },
+      };
+
+  return (
+    <section className="py-16 md:py-20" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div className="container mx-auto px-4">
+        <div className="text-center mb-12 max-w-2xl mx-auto">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
+            <Compass className="h-4 w-4 text-primary" />
+            <span className="text-sm font-semibold text-primary">{copy.badge}</span>
+          </div>
+          <h2 className="text-4xl font-bold text-foreground md:text-5xl mb-4">
+            {copy.title}
+          </h2>
+          <p className="text-lg text-muted-foreground">{copy.subtitle}</p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-3 max-w-6xl mx-auto">
+          <TrackCard
+            href={`${base}/#programs`}
+            Icon={GraduationCap}
+            title={copy.programs.title}
+            description={copy.programs.description}
+            cta={copy.programs.cta}
+            isRtl={isRtl}
+          />
+          <TrackCard
+            href={`${base}/courses`}
+            Icon={BookOpen}
+            title={copy.courses.title}
+            description={copy.courses.description}
+            cta={copy.courses.cta}
+            isRtl={isRtl}
+          />
+          <TrackCard
+            href={`${base}/lectures`}
+            Icon={Presentation}
+            title={copy.lectures.title}
+            description={copy.lectures.description}
+            cta={copy.lectures.cta}
+            isRtl={isRtl}
+          />
+        </div>
+      </div>
+    </section>
   );
 }

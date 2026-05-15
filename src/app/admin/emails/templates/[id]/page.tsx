@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import { PlainTextEditor } from '@/components/admin/PlainTextEditor';
+import { renderEmailLayout } from '@/lib/email/layout';
 
 interface EmailTemplate {
   id: string;
@@ -91,7 +92,7 @@ interface TemplateVersion {
 export default function EditEmailTemplatePage() {
   const params = useParams();
   const { t, direction } = useAdminLanguage();
-  const { tenantId } = useTenant();
+  const { tenantId, tenantName } = useTenant();
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   const isMobile = windowWidth <= 640;
   const isRtl = direction === 'rtl';
@@ -104,6 +105,19 @@ export default function EditEmailTemplatePage() {
   const [categories, setCategories] = useState<CategoryConfig[]>(DEFAULT_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [showPreview, setShowPreview] = useState(false);
+
+  // Tenant email branding — fetched so the preview iframe renders with
+  // the exact same header color, logo, button color, header style and
+  // footer that users will see in their inbox. Without this, the preview
+  // falls back to layout defaults and looks nothing like the real email.
+  const [emailBranding, setEmailBranding] = useState<{
+    organizationName?: string;
+    primaryColor?: string;
+    buttonColor?: string;
+    logoUrl?: string;
+    footerNote?: string;
+    headerStyle?: 'logo' | 'text' | 'none';
+  }>({});
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -131,6 +145,34 @@ export default function EditEmailTemplatePage() {
       loadTemplate();
     }
   }, [params.id, tenantId]);
+
+  // Load tenant branding once on mount so the preview iframe matches
+  // what `renderTemplate.ts` produces server-side (same fallback chain).
+  useEffect(() => {
+    if (!tenantId) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/tenant');
+        const json = await res.json();
+        if (!json.success || !json.data) return;
+        const d = json.data;
+        setEmailBranding({
+          organizationName: d.name || tenantName || undefined,
+          primaryColor: d.email_primary_color || d.primary_color || undefined,
+          buttonColor:
+            d.email_button_color ||
+            d.email_primary_color ||
+            d.primary_color ||
+            undefined,
+          logoUrl: d.email_logo_url || d.logo_url || undefined,
+          footerNote: d.email_footer_text || undefined,
+          headerStyle: (d.email_header_style as 'logo' | 'text' | 'none' | undefined) || undefined,
+        });
+      } catch (err) {
+        console.error('Failed to load tenant email branding for preview:', err);
+      }
+    })();
+  }, [tenantId, tenantName]);
 
   async function loadCategories() {
     try {
@@ -642,17 +684,35 @@ export default function EditEmailTemplatePage() {
               }}>
                 {t('emails.editor.html_preview', 'HTML Preview')}
               </Label>
-              <div style={{
-                padding: '1.5rem',
-                borderRadius: 'var(--border-radius-md)',
-                border: '1px solid hsl(var(--border))',
-                backgroundColor: 'white',
-                minHeight: '300px',
-                fontSize: 'var(--font-size-base)',
-                lineHeight: '1.6',
-                direction: activeLanguage === 'he' ? 'rtl' : 'ltr',
-                textAlign: activeLanguage === 'he' ? 'right' : 'left'
-              }} dangerouslySetInnerHTML={{ __html: formData[activeLanguage].body_html }} />
+              {/*
+                Preview renders the body through the master email layout
+                (`renderEmailLayout`) so admins see exactly what users will
+                receive — branded header, footer, bulletproof buttons, and
+                the gradient-→-solid-color fallback that fixes invisible
+                buttons in Gmail/Outlook. Rendering inside an iframe with
+                srcDoc isolates the email's HTML/CSS from the admin UI's
+                styles (otherwise the table layout would inherit admin
+                font/color tokens and look wrong).
+              */}
+              <iframe
+                title="Email preview"
+                srcDoc={renderEmailLayout(formData[activeLanguage].body_html, {
+                  language: activeLanguage,
+                  organizationName: emailBranding.organizationName || tenantName || 'Preview',
+                  primaryColor: emailBranding.primaryColor,
+                  buttonColor: emailBranding.buttonColor,
+                  logoUrl: emailBranding.logoUrl,
+                  footerNote: emailBranding.footerNote,
+                  headerStyle: emailBranding.headerStyle,
+                })}
+                style={{
+                  width: '100%',
+                  minHeight: '600px',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: 'var(--border-radius-md)',
+                  backgroundColor: 'white',
+                }}
+              />
             </div>
 
             {/* Plain Text Preview */}

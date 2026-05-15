@@ -69,6 +69,7 @@ function SortableSection({
   onCancelEdit,
   children,
   t,
+  editingInHint,
 }: {
   section: NavSection;
   sectionIndex: number;
@@ -82,6 +83,7 @@ function SortableSection({
   onCancelEdit: () => void;
   children: React.ReactNode;
   t: (key: string, fallback: string) => string;
+  editingInHint?: string;
 }) {
   const {
     attributes,
@@ -113,18 +115,23 @@ function SortableSection({
               <GripVertical className="h-5 w-5 text-muted-foreground" />
             </div>
             {isEditing ? (
-              <div className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-2 flex-1 flex-wrap">
                 <input
                   type="text"
                   value={editingName}
                   onChange={(e) => onEditName(section.id, e.target.value)}
-                  className="px-2 py-1 border rounded text-lg font-semibold flex-1"
+                  className="px-2 py-1 border rounded text-lg font-semibold flex-1 min-w-0"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') onSaveEdit();
                     if (e.key === 'Escape') onCancelEdit();
                   }}
                 />
+                {editingInHint && (
+                  <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
+                    {editingInHint}
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -182,6 +189,7 @@ function SortableItem({
   editingName,
   onSaveEdit,
   onCancelEdit,
+  editingInHint,
 }: {
   item: NavItem;
   sectionId: string;
@@ -191,6 +199,7 @@ function SortableItem({
   editingName: string;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
+  editingInHint?: string;
 }) {
   const {
     attributes,
@@ -224,18 +233,23 @@ function SortableItem({
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </div>
         {isEditing ? (
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-2 flex-1 flex-wrap">
             <input
               type="text"
               value={editingName}
               onChange={(e) => onEditName(item.id, e.target.value)}
-              className="px-2 py-1 border rounded font-medium flex-1"
+              className="px-2 py-1 border rounded font-medium flex-1 min-w-0"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onSaveEdit();
                 if (e.key === 'Escape') onCancelEdit();
               }}
             />
+            {editingInHint && (
+              <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
+                {editingInHint}
+              </span>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -288,7 +302,15 @@ function SortableItem({
 }
 
 export default function NavigationPage() {
-  const { t, language, clearTranslationCache } = useAdminLanguage();
+  const { t, language, availableLanguages, clearTranslationCache } = useAdminLanguage();
+
+  // Human-readable label for the language being edited — shown next to the
+  // edit input so the admin clearly sees "Editing in עברית" / "English"
+  // and doesn't expect the other language to update too.
+  const currentLanguageLabel =
+    availableLanguages.find((l) => l.code === language)?.native_name
+    || language.toUpperCase();
+  const editingInHint = t('navigation.editingIn', 'עריכה ב-{lang}').replace('{lang}', currentLanguageLabel);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sections, setSections] = useState<NavSection[]>([]);
@@ -556,16 +578,23 @@ export default function NavigationPage() {
   const handleSaveEdit = async () => {
     if (!editingTranslationKey || !editingName) return;
 
+    // Snapshot what we're editing — handleCancelEdit() resets these and
+    // we want the optimistic update + the API call to use the same values.
+    const savedSectionId = editingSectionId;
+    const savedItemId = editingItemId;
+    const savedName = editingName;
+    const savedKey = editingTranslationKey;
+
     try {
       // Update translation in database
       const response = await fetch('/api/admin/translations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          translation_key: editingTranslationKey,
-          translation_value: editingName,
-          language_code: language, // Update current admin language translation
-          category: editingTranslationKey.split('.')[0],
+          translation_key: savedKey,
+          translation_value: savedName,
+          language_code: language, // current admin language only — see note below
+          category: savedKey.split('.')[0],
           context: 'admin',
         }),
       });
@@ -576,14 +605,34 @@ export default function NavigationPage() {
         throw new Error(result.error || 'Failed to update translation');
       }
 
-      // Clear translation cache to force reload of fresh translations
+      // Optimistic local update so the UI reflects the new label
+      // immediately. The previous flow relied on `clearTranslationCache()`
+      // followed by a 100ms sleep + `fetchNavigationConfig()` which uses
+      // `t()` to resolve labels — that's racy because the translation
+      // re-fetch is asynchronous and the page often rendered with stale
+      // strings. Updating the local `sections` state directly removes the
+      // dependency on the translation cache for this view.
+      setSections((prev) =>
+        prev.map((section) => {
+          if (savedSectionId && !savedItemId && section.id === savedSectionId) {
+            return { ...section, label: savedName };
+          }
+          if (savedItemId) {
+            return {
+              ...section,
+              items: section.items.map((item) =>
+                item.id === savedItemId ? { ...item, label: savedName } : item
+              ),
+            };
+          }
+          return section;
+        })
+      );
+
+      // Still bust the translation cache so other consumers (admin
+      // sidebar in the layout, other open tabs) pick up the new value
+      // on their next read. Don't await — we no longer need the result.
       clearTranslationCache();
-
-      // Wait a bit for the cache to clear and reload
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Reload navigation config to get fresh translations
-      await fetchNavigationConfig();
 
       toast.success(t('navigation.nameUpdated', 'Name updated successfully'));
       handleCancelEdit();
@@ -711,6 +760,7 @@ export default function NavigationPage() {
                   onSaveEdit={handleSaveEdit}
                   onCancelEdit={handleCancelEdit}
                   t={t}
+                  editingInHint={editingInHint}
                 >
                   <DndContext
                     sensors={sensors}
@@ -733,6 +783,7 @@ export default function NavigationPage() {
                             editingName={editingName}
                             onSaveEdit={handleSaveEdit}
                             onCancelEdit={handleCancelEdit}
+                            editingInHint={editingInHint}
                           />
                         ))}
                       </div>

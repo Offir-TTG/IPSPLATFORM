@@ -145,15 +145,60 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { error } = await supabase
+    // Step 1: Check for active enrollments (pending or active status)
+    const { data: activeEnrollments } = await supabase
+      .from('enrollments')
+      .select('id, status, user:users!enrollments_user_id_fkey(id, first_name, last_name, email)')
+      .eq('product_id', params.id)
+      .in('status', ['pending', 'active']);
+
+    // If there are active enrollments, prevent deletion
+    if (activeEnrollments && activeEnrollments.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Cannot delete product: it has ${activeEnrollments.length} active enrollment(s). Please cancel all active enrollments first.`,
+        error_he: `לא ניתן למחוק את המוצר: יש לו ${activeEnrollments.length} רישומים פעילים. נא לבטל את כל הרישומים הפעילים תחילה.`,
+        dependencies: {
+          enrollments: activeEnrollments
+        }
+      }, { status: 400 });
+    }
+
+    // Step 2: Delete cancelled/completed enrollments (since product_id is NOT NULL, we can't just clear it)
+    const { data: deletedEnrollments, error: deleteEnrollmentsError } = await supabase
+      .from('enrollments')
+      .delete()
+      .eq('product_id', params.id)
+      .in('status', ['cancelled', 'completed'])
+      .select();
+
+    console.log('Delete enrollments result:', { deletedEnrollments, deleteEnrollmentsError });
+
+    if (deleteEnrollmentsError) {
+      console.error('Error deleting cancelled/completed enrollments:', deleteEnrollmentsError);
+      return NextResponse.json({
+        success: false,
+        error: `Failed to delete cancelled/completed enrollments: ${deleteEnrollmentsError.message}`,
+        error_he: `שגיאה במחיקת רישומים מבוטלים/שהושלמו: ${deleteEnrollmentsError.message}`
+      }, { status: 500 });
+    }
+
+    console.log(`Deleted ${deletedEnrollments?.length || 0} cancelled/completed enrollments`);
+
+    // Step 3: Now try to delete the product
+    const { error: deleteError } = await supabase
       .from('products')
       .delete()
       .eq('id', params.id)
       .eq('tenant_id', userData.tenant_id);
 
-    if (error) {
-      console.error('Delete product error:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (deleteError) {
+      console.error('Delete product error:', deleteError);
+      return NextResponse.json({
+        success: false,
+        error: deleteError.message,
+        error_he: 'שגיאה במחיקת המוצר'
+      }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });

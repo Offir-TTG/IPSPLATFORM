@@ -2,13 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUserLanguage } from '@/context/AppContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { LoadingState } from '@/components/user/LoadingState';
 import { supabase } from '@/lib/supabase/client';
 
 export default function ResetPasswordConfirmPage() {
@@ -22,65 +23,104 @@ export default function ResetPasswordConfirmPage() {
   const [sessionReady, setSessionReady] = useState(false);
   const isRtl = direction === 'rtl';
 
-  useEffect(() => {
-    let mounted = true;
-    let hasSession = false;
+  // `useUserLanguage().t` is a fresh function on every render. If we put
+  // `t` in the effect's dep array, the effect re-runs on every render —
+  // and `verifyOtp` consumes the token, so the second call always fails
+  // and pushes the page into an "invalid link" loop. We capture the latest
+  // `t` in a ref and run the effect exactly once with `[]` deps.
+  const tRef = useRef(t);
+  tRef.current = t;
+  const verifyAttempted = useRef(false);
 
+  useEffect(() => {
     // Debug: Log the full URL
     console.log('[Reset Password] Full URL:', window.location.href);
     console.log('[Reset Password] Search params:', window.location.search);
-    console.log('[Reset Password] Hash:', window.location.hash);
 
-    // Listen for auth state changes - Supabase will handle PKCE automatically with detectSessionInUrl
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Listener is set up on every effect run (StrictMode's dev double-mount
+    // re-creates it — that's fine, the prior subscription is cleaned up).
+    // Don't gate the verifyOtp callback on a `mounted` local, because the
+    // first effect's cleanup flips it before the promise resolves; React 18
+    // makes setState-after-unmount a harmless no-op, and the state hooks
+    // persist across the StrictMode remount cycle anyway.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[Reset Password] Auth event:', event, 'Has session:', !!session);
-
-      if (!mounted) return;
-
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        console.log('[Reset Password] Recovery session detected');
-        hasSession = true;
         setSessionReady(true);
         setError('');
       } else if (session) {
-        console.log('[Reset Password] Existing session found via event');
-        hasSession = true;
         setSessionReady(true);
         setError('');
       }
     });
 
-    // Check immediately for existing session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (!mounted) return;
+    // verifyOtp consumes the token, so it must run at most once across all
+    // effect runs (including StrictMode's intentional double-mount in dev).
+    if (!verifyAttempted.current) {
+      verifyAttempted.current = true;
 
-      if (error) {
-        console.error('[Reset Password] Session error:', error);
-      }
+      const params = new URLSearchParams(window.location.search);
+      const tokenHash = params.get('token_hash');
+      const type = params.get('type');
 
-      if (session) {
-        console.log('[Reset Password] Session found immediately');
-        hasSession = true;
-        setSessionReady(true);
-        setError('');
+      if (tokenHash && type === 'recovery') {
+        console.log('[Reset Password] Verifying OTP recovery token...');
+        supabase.auth
+          .verifyOtp({ token_hash: tokenHash, type: 'recovery' })
+          .then(({ error: verifyError }) => {
+            if (verifyError) {
+              console.error('[Reset Password] verifyOtp failed:', verifyError);
+              setError(
+                tRef.current(
+                  'auth.resetConfirm.invalidLink',
+                  'Invalid or expired reset link. Please request a new one.'
+                )
+              );
+            } else {
+              console.log('[Reset Password] verifyOtp succeeded');
+              setSessionReady(true);
+              setError('');
+            }
+          });
       } else {
-        // Wait for Supabase to process the URL (PKCE or hash token)
-        console.log('[Reset Password] No immediate session, waiting for Supabase to process URL...');
-        setTimeout(() => {
-          if (!mounted) return;
-          if (!hasSession) {
-            console.log('[Reset Password] No session after timeout - showing error');
-            setError(t('auth.resetConfirm.invalidLink', 'Invalid or expired reset link. Please request a new one.'));
+        // Fallback: legacy hash-token links / existing recovery session.
+        supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+          if (sessionError) {
+            console.error('[Reset Password] Session error:', sessionError);
           }
-        }, 5000); // Increased to 5 seconds to give PKCE more time
+          if (session) {
+            setSessionReady(true);
+            setError('');
+          } else {
+            setTimeout(() => {
+              setSessionReady((prev) => {
+                if (prev) return prev; // session arrived after all
+                setError(
+                  tRef.current(
+                    'auth.resetConfirm.invalidLink',
+                    'Invalid or expired reset link. Please request a new one.'
+                  )
+                );
+                return prev;
+              });
+            }, 5000);
+          }
+        });
       }
-    });
+    }
 
     return () => {
-      mounted = false;
       subscription.unsubscribe();
     };
-  }, [t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Don't render translated copy until the language context has hydrated
+  // — otherwise the SSR default (English) flashes/mismatches the client's
+  // resolved locale (Hebrew) and React throws a hydration error.
+  if (translationsLoading) {
+    return <LoadingState variant="page" />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

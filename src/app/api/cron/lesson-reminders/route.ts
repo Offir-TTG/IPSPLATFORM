@@ -44,7 +44,11 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const lookAheadTime = new Date(now.getTime() + 25 * 60 * 60 * 1000); // 25 hours ahead
 
-    // Get all upcoming lessons within the look-ahead window
+    // Get all upcoming lessons within the look-ahead window.
+    // `lessons.timezone` (creation context) and `tenants.timezone` are
+    // both included so the email trigger engine can render lesson times
+    // in each recipient's correct timezone via the canonical fallback
+    // chain (see `src/lib/datetime/timezone.ts`).
     const { data: upcomingLessons, error: lessonsError } = await supabase
       .from('lessons')
       .select(`
@@ -53,11 +57,15 @@ export async function GET(request: NextRequest) {
         description,
         course_id,
         start_time,
+        timezone,
         zoom_meeting_id,
         tenant_id,
         courses (
           id,
           title
+        ),
+        tenants (
+          timezone
         )
       `)
       .gte('start_time', now.toISOString())
@@ -120,7 +128,8 @@ export async function GET(request: NextRequest) {
               email,
               first_name,
               last_name,
-              preferred_language
+              preferred_language,
+              timezone
             )
           `)
           .in('product_id', productIds)
@@ -139,11 +148,12 @@ export async function GET(request: NextRequest) {
 
         console.log(`[Cron] Found ${enrollments.length} enrolled students for lesson ${lesson.id}`);
 
-        // Check which students already have emails queued or sent for this lesson
-        // Fetch all pending/sent emails for this tenant and filter by lessonId in JavaScript
+        // Check which students already have emails queued or sent for this lesson.
+        // `email_queue.user_id` is the recipient. Match on `lessonId` stored
+        // in `template_variables` (canonical key per the trigger engine).
         const { data: existingEmails, error: emailCheckError } = await supabase
           .from('email_queue')
-          .select('id, template_variables, user_id')
+          .select('id, template_variables, user_id, status')
           .eq('tenant_id', lesson.tenant_id)
           .in('status', ['pending', 'sent']);
 
@@ -151,15 +161,14 @@ export async function GET(request: NextRequest) {
           console.error(`[Cron] Error checking existing emails:`, emailCheckError);
         }
 
-        // Filter for this specific lesson and create Set of user IDs
         const alreadyQueuedUserIds = new Set(
-          existingEmails
-            ?.filter(e => e.template_variables?.lessonId === lesson.id)
-            .map(e => e.user_id || e.template_variables?.userId)
-            .filter(Boolean) || []
+          (existingEmails || [])
+            .filter(e => (e.template_variables as any)?.lessonId === lesson.id)
+            .map(e => (e as any).user_id || (e.template_variables as any)?.userId)
+            .filter(Boolean)
         );
 
-        console.log(`[Cron] ${alreadyQueuedUserIds.size} students already have emails for lesson ${lesson.id} (out of ${existingEmails?.length || 0} total queued emails)`);
+        console.log(`[Cron] ${alreadyQueuedUserIds.size} students already have emails for lesson ${lesson.id} (out of ${existingEmails?.length || 0} total queued emails for this tenant)`);
 
         // Create trigger events for each student (skip those who already have emails)
         const triggerEvents = enrollments
@@ -173,6 +182,11 @@ export async function GET(request: NextRequest) {
               lessonTitle: lesson.title,
               lessonDescription: lesson.description,
               lessonStartTime: lesson.start_time,
+              // Timezone context for the trigger engine to render
+              // `{{lessonTime}}` and `{{lessonDate}}` in the recipient's
+              // resolved timezone (see `src/lib/email/triggerEngine.ts`).
+              lessonTimezone: (lesson as any).timezone || null,
+              tenantTimezone: (lesson.tenants as any)?.timezone || null,
               courseId: lesson.course_id,
               courseName: (lesson.courses as any)?.title || '',
               zoomMeetingId: lesson.zoom_meeting_id,
@@ -182,6 +196,10 @@ export async function GET(request: NextRequest) {
               email: (enrollment.users as any).email,
               userName: (enrollment.users as any).first_name,
               languageCode: (enrollment.users as any).preferred_language || 'en',
+              // Recipient's own timezone preference. The trigger engine
+              // resolves the display timezone via the canonical chain:
+              //   recipientTimezone → lessonTimezone → tenantTimezone → 'Asia/Jerusalem'
+              recipientTimezone: (enrollment.users as any).timezone || null,
             },
             userId: enrollment.user_id,
             metadata: {

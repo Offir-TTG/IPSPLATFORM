@@ -9,8 +9,13 @@ export interface NotificationPreferences {
 }
 
 export interface RegionalPreferences {
-  language: string;
-  timezone: string;
+  language: string | null;
+  /** Student's saved timezone (null = no preference set). */
+  timezone: string | null;
+  /** Tenant's default timezone, included so the client can implement the
+   *  display-timezone fallback chain without a second round-trip.
+   *  See `src/lib/datetime/timezone.ts`. */
+  tenantTimezone: string | null;
 }
 
 export interface UserPreferences {

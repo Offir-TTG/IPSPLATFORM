@@ -45,7 +45,7 @@ export function WeeklyActivity({ weeklyData }: WeeklyActivityProps) {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-primary">{totalWeekHours.toFixed(1)}h</p>
+            <p className="text-2xl font-bold text-primary">{totalWeekHours.toFixed(1)} {t('user.dashboard.stats.hours', 'h')}</p>
             <p className="text-xs text-muted-foreground">
               {totalWeekLessons} {t('user.dashboard.weeklyActivity.lessons', 'lessons')}
             </p>
@@ -65,7 +65,7 @@ export function WeeklyActivity({ weeklyData }: WeeklyActivityProps) {
                   <div className="w-full flex flex-col justify-end items-center h-full">
                     {day.hours > 0 && (
                       <span className="text-xs font-medium text-foreground mb-1">
-                        {day.hours.toFixed(1)}h
+                        {day.hours.toFixed(1)} {t('user.dashboard.stats.hours', 'h')}
                       </span>
                     )}
                     <div
@@ -110,7 +110,7 @@ export function WeeklyActivity({ weeklyData }: WeeklyActivityProps) {
                   {t('user.dashboard.weeklyActivity.avgDaily', 'Avg Daily')}
                 </p>
                 <p className="text-sm font-bold">
-                  {(totalWeekHours / 7).toFixed(1)}h
+                  {(totalWeekHours / 7).toFixed(1)} {t('user.dashboard.stats.hours', 'h')}
                 </p>
               </div>
             </div>

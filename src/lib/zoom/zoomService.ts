@@ -5,6 +5,22 @@
 
 import { createAdminClient } from '@/lib/supabase/server';
 import { ZoomClient } from './client';
+import { utcToWallTime } from '@/lib/datetime/timezone';
+
+/**
+ * Zoom's API has a quirk: when both `start_time` (with `Z` UTC suffix) and
+ * `timezone` are provided, Zoom strips the `Z` and treats the time portion as
+ * a wall-clock value in the supplied `timezone`. To get the meeting scheduled
+ * at the correct absolute moment, we must send the **wall-clock-in-timezone**
+ * form (no `Z`, no offset) and let Zoom interpret it with the `timezone` field.
+ *
+ * Caller hands us UTC ISO; this helper converts it to `YYYY-MM-DDTHH:mm:ss`
+ * (no offset) suitable for the Zoom API body.
+ */
+function toZoomWallClock(utcIso: string, timezone: string): string {
+  const wall = utcToWallTime(utcIso, timezone); // "YYYY-MM-DDTHH:mm"
+  return `${wall}:00`; // append seconds → "YYYY-MM-DDTHH:mm:ss"
+}
 
 // ============================================================================
 // TYPES
@@ -200,15 +216,19 @@ export class ZoomService {
         topic = parts.join(' - ') || 'Live Session';
       }
 
-      // Create Zoom meeting with provided options or defaults
+      // Create Zoom meeting with provided options or defaults.
+      // Convert UTC ISO → wall-clock-in-timezone for Zoom (see
+      // `toZoomWallClock` for why).
       const meetingType: 2 | 8 = (options?.type ?? 2) as 2 | 8; // 2 = scheduled meeting
+      const meetingTimezone = options?.timezone || lesson.timezone || 'UTC';
+      const meetingStartUTC = options?.start_time || lesson.start_time;
       const meetingOptions: CreateMeetingOptions = {
         topic,
         type: meetingType,
         agenda: options?.agenda,
-        start_time: options?.start_time || lesson.start_time,
+        start_time: meetingStartUTC ? toZoomWallClock(meetingStartUTC, meetingTimezone) : meetingStartUTC,
         duration: options?.duration || lesson.duration || 60,
-        timezone: options?.timezone || lesson.timezone || 'UTC',
+        timezone: meetingTimezone,
         password: options?.password,
         settings: {
           host_video: options?.settings?.host_video ?? true,
@@ -545,8 +565,13 @@ export class ZoomService {
         updateParams.agenda = options.agenda;
       }
 
+      // Zoom expects wall-clock-in-timezone, not UTC ISO. Convert here.
+      // The lesson's stored timezone is the source of truth for the
+      // conversion target (falling back to the caller-supplied timezone,
+      // which is what the form sends — they match in normal cases).
+      const zoomTimezone = options?.timezone || lesson.timezone || 'UTC';
       if (options?.start_time) {
-        updateParams.start_time = options.start_time;
+        updateParams.start_time = toZoomWallClock(options.start_time, zoomTimezone);
       }
 
       if (options?.duration) {
@@ -595,15 +620,34 @@ export class ZoomService {
         return { success: false, error: 'Failed to update Zoom session in database' };
       }
 
-      // Update lesson with new Zoom info (for backward compatibility)
+      // Update lesson with new Zoom info (for backward compatibility).
+      //
+      // Defensive guard: only write back fields that actually differ from
+      // the row we already read. `lessonService.updateLesson` writes the
+      // canonical values *before* this Zoom sync runs, so by the time we
+      // reach this code, `options?.start_time` and the freshly-read
+      // `lesson.start_time` are typically the same string. A redundant
+      // update is wasteful and used to be a source of timezone drift —
+      // skipping the no-op write removes that risk entirely.
       if (options?.start_time || options?.duration) {
-        await supabase
-          .from('lessons')
-          .update({
-            start_time: options?.start_time || lesson.start_time,
-            duration: options?.duration || lesson.duration,
-          })
-          .eq('id', lessonId);
+        const writeBack: { start_time?: string; duration?: number } = {};
+        const desiredStart = options?.start_time || lesson.start_time;
+        const desiredDuration = options?.duration || lesson.duration;
+        if (
+          options?.start_time &&
+          new Date(desiredStart).getTime() !== new Date(lesson.start_time).getTime()
+        ) {
+          writeBack.start_time = desiredStart;
+        }
+        if (options?.duration && desiredDuration !== lesson.duration) {
+          writeBack.duration = desiredDuration;
+        }
+        if (Object.keys(writeBack).length > 0) {
+          await supabase
+            .from('lessons')
+            .update(writeBack)
+            .eq('id', lessonId);
+        }
       }
 
       return { success: true, data: updatedSession };

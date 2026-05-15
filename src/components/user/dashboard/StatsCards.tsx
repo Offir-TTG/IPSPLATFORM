@@ -15,23 +15,24 @@ export function StatsCards({ stats }: StatsCardsProps) {
   // Get locale for date formatting
   const locale = language === 'he' ? 'he-IL' : 'en-US';
 
-  // Format hours for display
+  // Format hours for display — keep a space between the number and the unit
+  // letter so Hebrew renders as "3 ש" instead of running together as "3ש".
   const formatHours = (hours: number) => {
     const hoursUnit = t('user.dashboard.stats.hours', 'h');
     const minutesUnit = t('user.dashboard.stats.minutes', 'm');
 
-    if (hours === 0) return `0${hoursUnit}`;
+    if (hours === 0) return `0 ${hoursUnit}`;
 
     const totalMinutes = Math.round(hours * 60);
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
 
     if (h === 0) {
-      return `${m}${minutesUnit}`;
+      return `${m} ${minutesUnit}`;
     } else if (m === 0) {
-      return `${h}${hoursUnit}`;
+      return `${h} ${hoursUnit}`;
     } else {
-      return `${h}${hoursUnit} ${m}${minutesUnit}`;
+      return `${h} ${hoursUnit} ${m} ${minutesUnit}`;
     }
   };
 
@@ -95,7 +96,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
     {
       title: t('user.dashboard.stats.attendance', 'Attendance'),
       value: `${Math.round(stats.attendance_rate || 0)}%`,
-      subtitle: `${stats.attendance_present || 0}/${stats.total_attendance || 0}`,
+      subtitle: `${stats.attendance_present || 0} / ${stats.total_attendance || 0}`,
       icon: UserCheck,
       color: 'text-purple-600 dark:text-purple-400',
       bg: 'bg-purple-50 dark:bg-purple-500/10',

@@ -1,6 +1,6 @@
 'use client';
 
-import { Sparkles, GraduationCap, Video, Bell, TrendingUp, User } from 'lucide-react';
+import { Sparkles, GraduationCap, Video, Bell, TrendingUp, User, Sun, Sunset, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
@@ -21,23 +21,24 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
   const totalLessons = stats.total_lessons || (stats.completed_lessons + stats.in_progress_lessons);
   const completionRate = totalLessons > 0 ? (stats.completed_lessons / totalLessons) * 100 : 0;
 
-  // Format hours for display
+  // Format hours for display — keep a space between the number and the unit
+  // so Hebrew renders as "3 ש" instead of "3ש".
   const formatHours = (hours: number) => {
     const hoursUnit = t('user.dashboard.stats.hours', 'h');
     const minutesUnit = t('user.dashboard.stats.minutes', 'm');
 
-    if (hours === 0) return `0${hoursUnit}`;
+    if (hours === 0) return `0 ${hoursUnit}`;
 
     const totalMinutes = Math.round(hours * 60);
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
 
     if (h === 0) {
-      return `${m}${minutesUnit}`;
+      return `${m} ${minutesUnit}`;
     } else if (m === 0) {
-      return `${h}${hoursUnit}`;
+      return `${h} ${hoursUnit}`;
     } else {
-      return `${h}${hoursUnit} ${m}${minutesUnit}`;
+      return `${h} ${hoursUnit} ${m} ${minutesUnit}`;
     }
   };
 
@@ -48,12 +49,20 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
     return t('user.dashboard.hero.greeting.evening', 'Good evening');
   };
 
-  const getGreetingEmoji = () => {
+  // Modern Lucide icon for the time-of-day greeting (no emoji).
+  const getGreetingIcon = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return '☀️';
-    if (hour < 18) return '👋';
-    return '🌙';
+    if (hour < 12) return Sun;
+    if (hour < 18) return Sunset;
+    return Moon;
   };
+  const GreetingIcon = getGreetingIcon();
+  const greetingIconColor =
+    new Date().getHours() < 12
+      ? 'text-amber-500'
+      : new Date().getHours() < 18
+        ? 'text-orange-500'
+        : 'text-indigo-400';
 
   const quickActions = [
     {
@@ -95,7 +104,7 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
             <Sparkles className="h-5 w-5 text-primary animate-pulse" />
             <span className="text-sm font-semibold text-primary">{getGreeting()}</span>
           </div>
-          <span className="text-2xl">{getGreetingEmoji()}</span>
+          <GreetingIcon className={`h-5 w-5 ${greetingIconColor}`} aria-hidden="true" />
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8 items-center">

@@ -246,22 +246,46 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailResult>
     // Get configured transporter
     const transporter = await getTransporter(options.tenantId);
 
-    // Determine from address and name
-    let fromAddress = options.from || smtpConfig.from || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@platform.com';
-
-    // Add "from name" if available
-    if (smtpConfig.fromName && !options.from) {
-      fromAddress = `${smtpConfig.fromName} <${smtpConfig.from}>`;
+    // Fetch tenant-level email branding (sender name + reply-to) so admins
+    // can override the SMTP integration's `from_name` and set a custom
+    // reply-to without touching SMTP credentials. Failure is non-fatal —
+    // we fall back to the integration's values.
+    let tenantSenderName: string | undefined;
+    let tenantReplyTo: string | undefined;
+    if (options.tenantId) {
+      try {
+        const adminSb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        const { data: tenantBranding } = await adminSb
+          .from('tenants')
+          .select('email_sender_name, email_reply_to')
+          .eq('id', options.tenantId)
+          .single();
+        tenantSenderName = tenantBranding?.email_sender_name || undefined;
+        tenantReplyTo = tenantBranding?.email_reply_to || undefined;
+      } catch (err) {
+        console.warn('[Email] Could not load tenant email branding, falling back to SMTP defaults', err);
+      }
     }
 
-    // Prepare email options
+    // Determine from address and name. Tenant override (admin-set) wins
+    // over SMTP integration's `from_name`.
+    let fromAddress = options.from || smtpConfig.from || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@platform.com';
+    const effectiveFromName = tenantSenderName || smtpConfig.fromName;
+    if (effectiveFromName && !options.from) {
+      fromAddress = `${effectiveFromName} <${smtpConfig.from || fromAddress}>`;
+    }
+
+    // Prepare email options. Explicit `options.replyTo` wins over tenant.
     const mailOptions = {
       from: fromAddress,
       to: options.to,
       subject: options.subject,
       html: options.html,
       text: options.text,
-      replyTo: options.replyTo,
+      replyTo: options.replyTo || tenantReplyTo,
       cc: options.cc,
       bcc: options.bcc,
       attachments: options.attachments,

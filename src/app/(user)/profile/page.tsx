@@ -56,6 +56,7 @@ import { toast } from 'sonner';
 import { EditableProfileCard } from '@/components/user/EditableProfileCard';
 import { PaymentMethodsManager } from '@/components/user/PaymentMethodsManager';
 import { LanguagePreferenceDialog } from '@/components/user/LanguagePreferenceDialog';
+import { TimezonePreferenceDialog } from '@/components/user/TimezonePreferenceDialog';
 import { NotificationPreferences } from '@/components/user/NotificationPreferences';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -161,6 +162,7 @@ export default function ProfilePage() {
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [isLanguageDialogOpen, setIsLanguageDialogOpen] = useState(false);
+  const [isTimezoneDialogOpen, setIsTimezoneDialogOpen] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -871,26 +873,100 @@ export default function ProfilePage() {
   const { user, preferences, security } = profileData;
   const avatarUrl = user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`;
 
+  // Sidebar nav items — single source of truth for icon + label + value
+  // mapping. Order here = order in the sidebar.
+  const sidebarItems: Array<{
+    value: string;
+    icon: React.ComponentType<{ className?: string }>;
+    labelKey: string;
+    labelFallback: string;
+  }> = [
+    { value: 'profile',     icon: User,        labelKey: 'user.profile.tabs.profile',     labelFallback: 'Profile' },
+    { value: 'billing',     icon: CreditCard,  labelKey: 'user.profile.tabs.billing',     labelFallback: 'Billing' },
+    { value: 'security',    icon: Shield,      labelKey: 'user.profile.tabs.security',    labelFallback: 'Security' },
+    { value: 'preferences', icon: Bell,        labelKey: 'user.profile.tabs.preferences', labelFallback: 'Preferences' },
+  ];
+
+  const displayName = `${user.first_name || ''} ${user.last_name || ''}`.trim()
+    || t('user.profile.title', 'My Profile');
+
   return (
     <div className="container mx-auto py-6 px-4 max-w-6xl" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold" suppressHydrationWarning>
-          {t('user.profile.title')}
-        </h1>
-        <p className="text-muted-foreground" suppressHydrationWarning>
-          {t('user.profile.subtitle')}
-        </p>
-      </div>
+      {/* HERO — identity at a glance: avatar (click to change), name,
+          email, and a role badge. Gradient surface so the rest of the
+          page (cards in the content area) feels visually distinct. */}
+      <Card className="overflow-hidden mb-6 border-0 shadow-sm bg-gradient-to-br from-primary/10 via-primary/5 to-transparent">
+        <div className="p-6 sm:p-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6">
+            {/* Avatar with edit overlay */}
+            <button
+              type="button"
+              onClick={() => setIsAvatarDialogOpen(true)}
+              className="relative group shrink-0 rounded-full ring-4 ring-background shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-primary"
+              aria-label={t('user.profile.buttons.change_avatar', 'Change avatar')}
+            >
+              <Image
+                src={avatarUrl}
+                alt={displayName}
+                width={96}
+                height={96}
+                className="h-20 w-20 sm:h-24 sm:w-24 rounded-full object-cover"
+              />
+              <div className="absolute inset-0 rounded-full bg-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Upload className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+              </div>
+            </button>
 
-      {/* Tabs */}
+            {/* Identity column */}
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-bold truncate" suppressHydrationWarning>
+                {displayName}
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
+                {user.email && (
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{user.email}</span>
+                  </span>
+                )}
+                {(user as any).role && (
+                  <Badge variant="secondary" className="capitalize font-medium">
+                    {t(`user.profile.role.${(user as any).role}`, String((user as any).role))}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* MAIN — sidebar nav + active-section content. Tabs still owns
+          state via value/onValueChange; we just replace the default
+          TabsList with a vertical sidebar styled list. */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-2xl grid-cols-4 mb-8">
-          <TabsTrigger value="profile">{t('user.profile.tabs.profile')}</TabsTrigger>
-          <TabsTrigger value="billing">{t('user.profile.tabs.billing')}</TabsTrigger>
-          <TabsTrigger value="security">{t('user.profile.tabs.security')}</TabsTrigger>
-          <TabsTrigger value="preferences">{t('user.profile.tabs.preferences')}</TabsTrigger>
-        </TabsList>
+        <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+          {/* Sidebar — sticky on lg+, horizontally scrollable on mobile. */}
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <TabsList className="flex h-auto w-full gap-1 bg-transparent p-0 overflow-x-auto lg:flex-col lg:overflow-x-visible">
+              {sidebarItems.map(({ value, icon: Icon, labelKey, labelFallback }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className={cn(
+                    'w-full justify-start gap-3 h-10 px-3 rounded-md text-sm font-medium shrink-0',
+                    'data-[state=active]:bg-primary data-[state=active]:text-primary-foreground',
+                    'data-[state=active]:shadow-sm hover:bg-accent transition-colors'
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{t(labelKey, labelFallback)}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </aside>
+
+          {/* Content area — min-w-0 prevents grid blow-out on long content */}
+          <div className="min-w-0 space-y-6">
 
         {/* PROFILE TAB */}
         <TabsContent value="profile" className="space-y-6">
@@ -1737,54 +1813,75 @@ export default function ProfilePage() {
           </Card>
         </TabsContent>
 
-        {/* PREFERENCES TAB */}
+        {/* PREFERENCES TAB
+            Regional Settings (language + timezone) is rendered as a 4th
+            tab INSIDE <NotificationPreferences> via the `regionalSlot`
+            prop, so it sits next to Channels / Categories / Quiet Hours
+            instead of being a separate card below them. */}
         <TabsContent value="preferences" className="space-y-6">
-          <NotificationPreferences />
+          <NotificationPreferences
+            regionalSlot={
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Globe className="h-5 w-5" />
+                  {t('user.profile.preferences.regional_settings')}
+                </h3>
 
-          <Card className="p-6">
-            <h3 className="text-xl font-bold mb-6">{t('user.profile.preferences.regional_settings')}</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Globe className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="font-medium">{t('user.profile.preferences.language')}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {preferences.regional.language === null
+                            ? t('user.profile.preferences.languageAuto', 'Auto (Organization Default)')
+                            : preferences.regional.language === 'en'
+                            ? 'English'
+                            : preferences.regional.language === 'he'
+                            ? 'עברית'
+                            : preferences.regional.language === 'es'
+                            ? 'Español'
+                            : preferences.regional.language === 'fr'
+                            ? 'Français'
+                            : preferences.regional.language}
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setIsLanguageDialogOpen(true)}>
+                      {t('user.profile.preferences.change')}
+                    </Button>
+                  </div>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Globe className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">{t('user.profile.preferences.language')}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {preferences.regional.language === null
-                        ? t('user.profile.preferences.languageAuto', 'Auto (Organization Default)')
-                        : preferences.regional.language === 'en'
-                        ? 'English'
-                        : preferences.regional.language === 'he'
-                        ? 'עברית'
-                        : preferences.regional.language === 'es'
-                        ? 'Español'
-                        : preferences.regional.language === 'fr'
-                        ? 'Français'
-                        : preferences.regional.language}
-                    </p>
+                  <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                    <div className="flex items-center gap-3">
+                      <Clock className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="font-medium">{t('user.profile.preferences.timezone')}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {preferences.regional.timezone
+                            ? preferences.regional.timezone
+                            : preferences.regional.tenantTimezone
+                            ? `${preferences.regional.tenantTimezone} · ${t('user.profile.preferences.timezoneAutoBadge', 'אוטומטי (ברירת מחדל של הארגון)')}`
+                            : t('user.profile.preferences.timezoneAutoBadge', 'אוטומטי (ברירת מחדל של הארגון)')}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsTimezoneDialogOpen(true)}
+                    >
+                      {t('user.profile.preferences.change')}
+                    </Button>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setIsLanguageDialogOpen(true)}>
-                  {t('user.profile.preferences.change')}
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
-                <div className="flex items-center gap-3">
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">{t('user.profile.preferences.timezone')}</p>
-                    <p className="text-sm text-muted-foreground">{preferences.regional.timezone}</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" disabled>
-                  {t('user.profile.preferences.change')}
-                </Button>
-              </div>
-            </div>
-          </Card>
+              </Card>
+            }
+          />
         </TabsContent>
+          </div>
+        </div>
       </Tabs>
 
       {/* Upload Avatar Dialog */}
@@ -2192,6 +2289,21 @@ export default function ProfilePage() {
         onLanguageChanged={() => {
           // Refresh profile data after language change
           queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+        }}
+      />
+
+      {/* Timezone Preference Dialog — focused picker for just the timezone,
+          parallel to the Language Preference Dialog. We `refetchQueries`
+          (not just invalidate) so the Regional Settings card shows the
+          new value immediately; useUserProfile has staleTime=5min and
+          plain invalidation defers the refetch. */}
+      <TimezonePreferenceDialog
+        open={isTimezoneDialogOpen}
+        onOpenChange={setIsTimezoneDialogOpen}
+        currentTimezone={profileData?.preferences.regional.timezone || null}
+        tenantTimezone={profileData?.preferences.regional.tenantTimezone || null}
+        onTimezoneChanged={() => {
+          queryClient.refetchQueries({ queryKey: ['userProfile'] });
         }}
       />
     </div>

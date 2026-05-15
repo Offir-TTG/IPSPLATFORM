@@ -30,41 +30,99 @@ export async function checkCourseAccess(
 ): Promise<AccessCheckResult> {
   const supabase = await createClient();
 
-  // Get enrollment with payment schedules
-  const { data: enrollment, error } = await supabase
+  // Enrollments link to products, not courses. Find an enrollment whose
+  // product points at this course (standalone) OR whose product points at a
+  // program that contains this course.
+  //
+  // NOTE: payment_schedules is fetched as a separate query — PostgREST
+  // doesn't have a discoverable FK relationship between enrollments and
+  // payment_schedules in its schema cache, so embedding here returns
+  // "Could not find a relationship" and zero rows.
+  const { data: enrollments, error } = await supabase
     .from('enrollments')
     .select(`
       id,
       status,
       payment_status,
-      payment_schedules (
+      products!inner (
         id,
-        status,
-        scheduled_date,
-        original_due_date,
-        amount
+        type,
+        course_id,
+        program_id
       )
     `)
     .eq('user_id', userId)
-    .eq('course_id', courseId)
     .eq('tenant_id', tenantId)
-    .single();
+    .in('status', ['active', 'completed', 'pending']);
 
-  if (error || !enrollment) {
+  if (error || !enrollments || enrollments.length === 0) {
     return { hasAccess: false, reason: 'course_not_found' };
   }
 
-  // Check enrollment status
+  // Look for a matching enrollment: direct course product, then program path.
+  let enrollment: typeof enrollments[number] | null = null;
+  for (const enr of enrollments) {
+    const product: any = Array.isArray(enr.products) ? enr.products[0] : enr.products;
+    if (!product) continue;
+    if (product.type === 'course' && product.course_id === courseId) {
+      enrollment = enr;
+      break;
+    }
+  }
+
+  if (!enrollment) {
+    // Fall back to program path.
+    const programEnrollments = enrollments.filter((enr) => {
+      const product: any = Array.isArray(enr.products) ? enr.products[0] : enr.products;
+      return product?.type === 'program' && product.program_id;
+    });
+
+    if (programEnrollments.length > 0) {
+      const programIds = programEnrollments.map((enr) => {
+        const product: any = Array.isArray(enr.products) ? enr.products[0] : enr.products;
+        return product.program_id;
+      });
+
+      const { data: programMatch } = await supabase
+        .from('program_courses')
+        .select('program_id')
+        .eq('course_id', courseId)
+        .in('program_id', programIds)
+        .maybeSingle();
+
+      if (programMatch) {
+        enrollment = programEnrollments.find((enr) => {
+          const product: any = Array.isArray(enr.products) ? enr.products[0] : enr.products;
+          return product.program_id === programMatch.program_id;
+        }) ?? null;
+      }
+    }
+  }
+
+  if (!enrollment) {
+    return { hasAccess: false, reason: 'course_not_found' };
+  }
+
+  // Check enrollment status (defensive — query already filtered, but the
+  // grace-period logic below relies on 'active'/'completed' semantics).
   if (!['active', 'completed'].includes(enrollment.status)) {
     return { hasAccess: false, reason: 'enrollment_inactive' };
   }
+
+  // Fetch payment schedules separately — see note above re: missing
+  // PostgREST relationship between enrollments and payment_schedules.
+  const { data: paymentSchedules } = await supabase
+    .from('payment_schedules')
+    .select('id, status, scheduled_date, original_due_date, amount')
+    .eq('enrollment_id', enrollment.id);
 
   // Check payment status with grace period
   const now = new Date();
   const GRACE_PERIOD_DAYS = PAYMENT_CONFIG.gracePeriodDays;
 
-  // Find overdue schedules (past grace period)
-  const overdueSchedules = (enrollment.payment_schedules as any[]).filter((schedule) => {
+  // Find overdue schedules (past grace period). For free courses paymentSchedules
+  // is an empty array, so this correctly yields hasAccess: true.
+  const overdueSchedules = (paymentSchedules ?? []).filter((schedule: any) => {
     if (schedule.status === 'paid') return false;
 
     const dueDate = new Date(schedule.original_due_date || schedule.scheduled_date);

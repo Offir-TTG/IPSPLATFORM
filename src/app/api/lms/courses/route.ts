@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { courseService } from '@/lib/lms/courseService';
+import { courseService } from '@/lib/lms/courseService.server';
 
 export const dynamic = 'force-dynamic';
 

@@ -256,7 +256,10 @@ export default function ProgramDetailPage() {
       <div className="container mx-auto px-4">
         <Breadcrumbs
           items={[
-            { label: t('breadcrumbs.programs', 'Programs'), href: '/browse-programs' },
+            // No `href` — the catalog moved to IParentingSchool, so
+            // we render the "Programs" crumb as a non-clickable label
+            // for context instead of linking to a removed route.
+            { label: t('breadcrumbs.programs', 'Programs') },
             { label: product.title },
           ]}
         />

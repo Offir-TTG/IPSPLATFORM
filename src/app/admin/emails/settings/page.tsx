@@ -86,6 +86,26 @@ export default function EmailSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Email branding state — wired to the new tenants.email_* columns. These
+  // feed the master layout in src/lib/email/layout.ts on every render.
+  const [branding, setBranding] = useState({
+    email_primary_color: '#4f46e5',
+    email_button_color: '',
+    email_logo_url: '',
+    email_footer_text: '',
+    email_sender_name: '',
+    email_reply_to: '',
+    email_header_style: 'text' as 'logo' | 'text' | 'none',
+  });
+  // Site-wide branding fallback — surfaced to the admin so they know the
+  // email_* fields are *optional overrides*; leaving them empty just
+  // inherits the platform's main logo and primary color.
+  const [siteDefaults, setSiteDefaults] = useState<{
+    logo_url: string | null;
+    primary_color: string | null;
+  }>({ logo_url: null, primary_color: null });
+  const [savingBranding, setSavingBranding] = useState(false);
+
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
@@ -95,8 +115,70 @@ export default function EmailSettingsPage() {
   useEffect(() => {
     if (tenantId) {
       loadSettings();
+      loadBranding();
     }
   }, [tenantId]);
+
+  async function loadBranding() {
+    try {
+      const res = await fetch('/api/admin/tenant');
+      const json = await res.json();
+      if (json.success && json.data) {
+        setBranding({
+          email_primary_color: json.data.email_primary_color || json.data.primary_color || '#4f46e5',
+          email_button_color: json.data.email_button_color || '',
+          email_logo_url: json.data.email_logo_url || '',
+          email_footer_text: json.data.email_footer_text || '',
+          email_sender_name: json.data.email_sender_name || '',
+          email_reply_to: json.data.email_reply_to || '',
+          email_header_style: (json.data.email_header_style as 'logo' | 'text' | 'none') || 'text',
+        });
+        setSiteDefaults({
+          logo_url: json.data.logo_url || null,
+          primary_color: json.data.primary_color || null,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load email branding:', err);
+    }
+  }
+
+  async function handleSaveBranding() {
+    try {
+      setSavingBranding(true);
+      const res = await fetch('/api/admin/tenant', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        // Send empty strings as null so optional fields actually clear in DB.
+        body: JSON.stringify({
+          email_primary_color: branding.email_primary_color || null,
+          email_button_color: branding.email_button_color || null,
+          email_logo_url: branding.email_logo_url || null,
+          email_footer_text: branding.email_footer_text || null,
+          email_sender_name: branding.email_sender_name || null,
+          email_reply_to: branding.email_reply_to || null,
+          email_header_style: branding.email_header_style,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Save failed');
+      }
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('emails.settings.branding_saved', 'Email branding saved'),
+      });
+    } catch (err) {
+      console.error('Failed to save email branding:', err);
+      toast({
+        title: t('common.error', 'Error'),
+        description: err instanceof Error ? err.message : 'Failed to save email branding',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBranding(false);
+    }
+  }
 
   async function loadSettings() {
     try {
@@ -221,6 +303,209 @@ export default function EmailSettingsPage() {
             {t('emails.settings.description', 'Configure email template categories and badge colors')}
           </p>
         </div>
+
+        {/* Email Branding ─ drives the master email layout */}
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('emails.settings.branding.title', 'Email Branding')}</CardTitle>
+            <CardDescription>
+              {t(
+                'emails.settings.branding.description',
+                'Customize how every outgoing email looks. These settings drive the master email layout — header color, logo, footer, and sender details apply to every email type.'
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>{t('emails.settings.branding.primary_color', 'Header Color')}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="color"
+                    value={branding.email_primary_color}
+                    onChange={(e) => setBranding({ ...branding, email_primary_color: e.target.value })}
+                    style={{ width: '4rem', padding: '0.25rem', height: '2.5rem' }}
+                  />
+                  <Input
+                    value={branding.email_primary_color}
+                    onChange={(e) => setBranding({ ...branding, email_primary_color: e.target.value })}
+                    placeholder={siteDefaults.primary_color || '#4f46e5'}
+                  />
+                </div>
+                {siteDefaults.primary_color && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    style={{ padding: 0, height: 'auto', fontSize: 'var(--font-size-xs)' }}
+                    onClick={() =>
+                      setBranding({ ...branding, email_primary_color: siteDefaults.primary_color || '#4f46e5' })
+                    }
+                  >
+                    {t('emails.settings.branding.use_site_color', 'Use site color')}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>{t('emails.settings.branding.button_color', 'Button Color')}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="color"
+                    value={branding.email_button_color || branding.email_primary_color}
+                    onChange={(e) => setBranding({ ...branding, email_button_color: e.target.value })}
+                    style={{ width: '4rem', padding: '0.25rem', height: '2.5rem' }}
+                  />
+                  <Input
+                    value={branding.email_button_color}
+                    onChange={(e) => setBranding({ ...branding, email_button_color: e.target.value })}
+                    placeholder={branding.email_primary_color || '#4f46e5'}
+                  />
+                </div>
+                {/* When empty, the button colour falls back to the
+                    header colour. Surfacing this so admins know they
+                    can leave it blank to match. */}
+                <p
+                  suppressHydrationWarning
+                  style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'hsl(var(--muted-foreground))',
+                    margin: 0,
+                  }}
+                >
+                  {t(
+                    'emails.settings.branding.button_default_hint',
+                    'Leave empty to match the header color'
+                  )}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{t('emails.settings.branding.header_style', 'Header Style')}</Label>
+                <select
+                  value={branding.email_header_style}
+                  onChange={(e) =>
+                    setBranding({ ...branding, email_header_style: e.target.value as 'logo' | 'text' | 'none' })
+                  }
+                  style={{
+                    width: '100%',
+                    height: '2.5rem',
+                    padding: '0 0.75rem',
+                    borderRadius: 'var(--border-radius-md)',
+                    border: '1px solid hsl(var(--border))',
+                    backgroundColor: 'hsl(var(--background))',
+                    color: 'hsl(var(--foreground))',
+                  }}
+                >
+                  <option value="text">{t('emails.settings.branding.header_text', 'Organization name (text)')}</option>
+                  <option value="logo">{t('emails.settings.branding.header_logo', 'Logo image')}</option>
+                  <option value="none">{t('emails.settings.branding.header_none', 'No header')}</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('emails.settings.branding.logo_url', 'Logo URL (used when header style is Logo)')}</Label>
+              <Input
+                value={branding.email_logo_url}
+                onChange={(e) => setBranding({ ...branding, email_logo_url: e.target.value })}
+                placeholder={
+                  siteDefaults.logo_url
+                    ? siteDefaults.logo_url
+                    : t('emails.settings.branding.logo_url_placeholder', 'https://your-cdn.com/logo.png')
+                }
+              />
+              {/* Show the site default + a quick "use it" button so admins
+                  don't have to copy/paste the URL from elsewhere. Leaving
+                  this field empty automatically falls back to the site
+                  logo at render time (see renderTemplate.ts). */}
+              {siteDefaults.logo_url ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <p
+                    suppressHydrationWarning
+                    style={{
+                      fontSize: 'var(--font-size-xs)',
+                      color: 'hsl(var(--muted-foreground))',
+                      margin: 0,
+                    }}
+                  >
+                    {t(
+                      'emails.settings.branding.logo_default_hint',
+                      'Leave empty to use your site logo'
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    style={{ padding: 0, height: 'auto', fontSize: 'var(--font-size-xs)' }}
+                    onClick={() =>
+                      setBranding({ ...branding, email_logo_url: siteDefaults.logo_url || '' })
+                    }
+                  >
+                    {t('emails.settings.branding.use_site_logo', 'Use site logo')}
+                  </Button>
+                </div>
+              ) : (
+                <p
+                  suppressHydrationWarning
+                  style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'hsl(var(--muted-foreground))',
+                    margin: 0,
+                  }}
+                >
+                  {t(
+                    'emails.settings.branding.logo_no_default_hint',
+                    'No site logo set. Set one in tenant settings to use it as the email logo automatically.'
+                  )}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('emails.settings.branding.footer_text', 'Footer Text')}</Label>
+              <Input
+                value={branding.email_footer_text}
+                onChange={(e) => setBranding({ ...branding, email_footer_text: e.target.value })}
+                placeholder={t(
+                  'emails.settings.branding.footer_placeholder',
+                  'e.g. Contact support at help@example.com'
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>{t('emails.settings.branding.sender_name', 'Sender Display Name')}</Label>
+                <Input
+                  value={branding.email_sender_name}
+                  onChange={(e) => setBranding({ ...branding, email_sender_name: e.target.value })}
+                  placeholder={t('emails.settings.branding.sender_placeholder', 'e.g. Acme Academy')}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>{t('emails.settings.branding.reply_to', 'Reply-To Address')}</Label>
+                <Input
+                  type="email"
+                  value={branding.email_reply_to}
+                  onChange={(e) => setBranding({ ...branding, email_reply_to: e.target.value })}
+                  placeholder="support@example.com"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={handleSaveBranding} disabled={savingBranding}>
+                <Save className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                {savingBranding
+                  ? t('common.saving', 'Saving...')
+                  : t('emails.settings.branding.save', 'Save Branding')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Preview */}
         <Card>

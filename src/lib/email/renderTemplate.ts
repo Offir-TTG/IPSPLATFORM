@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { renderEmailLayout } from './layout';
 
 export interface RenderTemplateOptions {
   templateKey: string;
@@ -86,6 +87,18 @@ export async function renderEmailTemplate(options: RenderTemplateOptions): Promi
   try {
     const supabase = await createClient();
 
+    // Fetch tenant branding alongside the template so the master layout
+    // can render with the admin's chosen colour / logo / header style /
+    // footer text. We also pull the tenant's site-wide `logo_url` and
+    // `primary_color` so email-specific fields can *fall back* to the
+    // main site branding when an admin leaves them empty — no need to
+    // configure a logo twice.
+    const { data: tenantBranding } = await supabase
+      .from('tenants')
+      .select('name, logo_url, primary_color, email_primary_color, email_button_color, email_logo_url, email_footer_text, email_header_style')
+      .eq('id', options.tenantId)
+      .single();
+
     // Fetch template from database
     const { data: template, error: templateError } = await supabase
       .from('email_templates')
@@ -124,8 +137,46 @@ export async function renderEmailTemplate(options: RenderTemplateOptions): Promi
 
     // Render the template
     const subject = renderTemplate(version.subject, allVariables);
-    const bodyHtml = renderTemplate(version.body_html, allVariables);
+    const innerBodyHtml = renderTemplate(version.body_html, allVariables);
     const bodyText = renderTemplate(version.body_text, allVariables);
+
+    // Wrap the rendered inner body in the master email layout — single
+    // source of truth for branding/header/footer/scaffolding.
+    //
+    // Branding resolution order (first non-empty wins):
+    //   1. Email-specific tenant column (admin set it for emails only)
+    //   2. Site-wide tenant column (the platform's main branding)
+    //   3. Caller-supplied options.brandingColors
+    //   4. Layout's hardcoded defaults
+    //
+    // This means an admin who set `tenants.logo_url` once for the site
+    // gets that logo on every email automatically; they only need to
+    // touch `email_logo_url` if they want a *different* logo in emails.
+    const bodyHtml = renderEmailLayout(innerBodyHtml, {
+      language: options.languageCode,
+      organizationName:
+        options.variables?.organizationName ||
+        tenantBranding?.name ||
+        undefined,
+      primaryColor:
+        tenantBranding?.email_primary_color ||
+        tenantBranding?.primary_color ||
+        options.brandingColors?.primaryColor,
+      // Button colour: dedicated setting wins, otherwise inherits the
+      // primary colour so the button matches the header by default.
+      buttonColor:
+        tenantBranding?.email_button_color ||
+        tenantBranding?.email_primary_color ||
+        tenantBranding?.primary_color ||
+        undefined,
+      secondaryColor: options.brandingColors?.secondaryColor,
+      logoUrl:
+        tenantBranding?.email_logo_url ||
+        tenantBranding?.logo_url ||
+        undefined,
+      footerNote: tenantBranding?.email_footer_text || undefined,
+      headerStyle: (tenantBranding?.email_header_style as 'logo' | 'text' | 'none' | undefined) || undefined,
+    });
 
     return {
       subject,

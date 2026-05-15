@@ -24,10 +24,11 @@ export const POST = withAuth(async (
       );
     }
 
-    // Check file size (5MB limit)
-    if (file.size > 5 * 1024 * 1024) {
+    // Check file size (20MB limit)
+    const MAX_BYTES = 20 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
       return NextResponse.json(
-        { success: false, error: 'File size exceeds 5MB limit' },
+        { success: false, error: 'lms.courses.image_too_large', message: 'File size exceeds 20MB limit' },
         { status: 400 }
       );
     }

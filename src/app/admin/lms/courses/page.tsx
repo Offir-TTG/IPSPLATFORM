@@ -109,6 +109,8 @@ export default function CoursesListPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showCannotDeleteDialog, setShowCannotDeleteDialog] = useState(false);
+  const [deleteDependencies, setDeleteDependencies] = useState<{ products: any[], programs: any[] }>({ products: [], programs: [] });
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
@@ -250,6 +252,16 @@ export default function CoursesListPage() {
   // Upload image through server-side API for proper authentication
   const uploadCourseImage = async (file: File, courseId?: string): Promise<string | null> => {
     try {
+      // Client-side size check first so the user gets an immediate localized
+      // error instead of an English 400 from the server. Keep this in sync
+      // with the MAX_BYTES limit in /api/lms/courses/upload-image/route.ts.
+      const MAX_BYTES = 20 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        throw new Error(
+          t('lms.courses.image_too_large', 'Image is too large. Maximum size is 20MB.')
+        );
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       if (courseId) {
@@ -266,7 +278,15 @@ export default function CoursesListPage() {
       if (result.success) {
         return result.url;
       } else {
-        throw new Error(result.error || 'Failed to upload image');
+        // The server returns the translation key in `result.error` (e.g.
+        // `lms.courses.image_too_large`) with an English `result.message`
+        // as the fallback. If it's not a translation key, fall back to
+        // whatever string came back.
+        const errKey: string = result.error || 'lms.courses.image_upload_error';
+        const fallback: string = result.message || result.error || 'Failed to upload image';
+        throw new Error(
+          errKey.startsWith('lms.') ? t(errKey, fallback) : fallback
+        );
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -387,7 +407,7 @@ export default function CoursesListPage() {
 
         toast({
           title: t('common.success', 'Success'),
-          description: t('lms.courses.created', 'Course created successfully'),
+          description: t('lms.msg.create_success', 'Course created successfully'),
         });
         setShowCreateDialog(false);
         setCreateError(null);
@@ -503,7 +523,18 @@ export default function CoursesListPage() {
           }
         } catch (uploadError) {
           console.error('Image upload error:', uploadError);
-          setEditError(t('lms.courses.image_upload_error', 'Failed to upload image. Course updated without new image.'));
+          // The thrown error from `uploadCourseImage` is already translated
+          // (size-check message, server error mapped through t(), etc.).
+          // Surface it directly so the user sees a meaningful message in
+          // their locale instead of a generic English fallback.
+          const message =
+            uploadError instanceof Error
+              ? uploadError.message
+              : t(
+                  'lms.courses.image_upload_error',
+                  'Failed to upload image. Course updated without new image.'
+                );
+          setEditError(message);
         }
       } else if (imagePreview === null && selectedCourse.image_url) {
         // Image was removed
@@ -531,7 +562,7 @@ export default function CoursesListPage() {
       if (result.success) {
         toast({
           title: t('common.success', 'Success'),
-          description: t('lms.courses.updated', 'Course updated successfully'),
+          description: t('lms.msg.update_success', 'Course updated successfully'),
         });
         setShowEditDialog(false);
         setEditError(null);
@@ -652,6 +683,12 @@ export default function CoursesListPage() {
     }
   };
 
+  // Handle delete click
+  const handleDeleteClick = (course: Course) => {
+    setSelectedCourse(course);
+    setShowDeleteDialog(true);
+  };
+
   // Handle delete course
   const handleDeleteCourse = async () => {
     if (!selectedCourse) return;
@@ -662,20 +699,60 @@ export default function CoursesListPage() {
         method: 'DELETE',
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = t('lms.courses.delete_error', 'Failed to delete course');
+        let hasDependencies = false;
+
+        try {
+          const errorJson = JSON.parse(errorText);
+
+          // Check if error contains dependency information
+          if (errorJson.dependencies && (errorJson.dependencies.products?.length > 0 || errorJson.dependencies.programs?.length > 0)) {
+            hasDependencies = true;
+            setDeleteDependencies(errorJson.dependencies);
+            setShowDeleteDialog(false);
+            setShowCannotDeleteDialog(true);
+            return;
+          }
+
+          // Use Hebrew error if available and language is Hebrew
+          errorMessage = (language === 'he' && errorJson.error_he)
+            ? errorJson.error_he
+            : (errorJson.error || errorMessage);
+        } catch {
+          // If parsing fails, use the default message
+        }
+
+        if (!hasDependencies) {
+          toast({
+            title: t('common.error', 'Error'),
+            description: errorMessage,
+            variant: 'destructive',
+          });
+        }
+        return;
+      }
+
       const result = await response.json();
 
       if (result.success) {
         toast({
           title: t('common.success', 'Success'),
-          description: t('lms.courses.deleted', 'Course deleted successfully'),
+          description: t('lms.msg.delete_success', 'Course deleted successfully'),
         });
         setShowDeleteDialog(false);
         setSelectedCourse(null);
         loadCourses();
       } else {
+        // Use Hebrew error if available and language is Hebrew
+        const errorMessage = (language === 'he' && result.error_he)
+          ? result.error_he
+          : (result.error || t('lms.courses.delete_error', 'Failed to delete course'));
+
         toast({
           title: t('common.error', 'Error'),
-          description: result.error || t('lms.courses.delete_error', 'Failed to delete course'),
+          description: errorMessage,
           variant: 'destructive',
         });
       }
@@ -1017,10 +1094,7 @@ export default function CoursesListPage() {
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => {
-                          setSelectedCourse(course);
-                          setShowDeleteDialog(true);
-                        }}
+                        onClick={() => handleDeleteClick(course)}
                       >
                         <Trash2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-3 w-3`} />
                         <span suppressHydrationWarning>{t('lms.courses.delete', 'Delete')}</span>
@@ -1240,10 +1314,7 @@ export default function CoursesListPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            setSelectedCourse(course);
-                            setShowDeleteDialog(true);
-                          }}
+                          onClick={() => handleDeleteClick(course)}
                           style={{
                             flex: 1,
                             minWidth: isMobile ? 'auto' : '100px',
@@ -2459,6 +2530,92 @@ export default function CoursesListPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Cannot Delete Dialog */}
+        <AlertDialog open={showCannotDeleteDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowCannotDeleteDialog(false);
+            setDeleteDependencies({ products: [], programs: [] });
+          }
+        }}>
+          <AlertDialogContent
+            className="max-w-[90vw] sm:max-w-[600px]"
+            style={{ direction }}
+            dir={direction}>
+            <AlertDialogHeader>
+              <AlertDialogTitle className={`${isRtl ? 'text-right' : 'text-left'} text-destructive`}>
+                <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                  <X className="h-5 w-5" />
+                  <span suppressHydrationWarning>
+                    {language === 'he' ? 'לא ניתן למחוק קורס' : 'Cannot Delete Course'}
+                  </span>
+                </div>
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className={`${isRtl ? 'text-right' : 'text-left'} space-y-4`}>
+                  <p suppressHydrationWarning className="font-medium text-foreground">
+                    {language === 'he'
+                      ? `לא ניתן למחוק את "${selectedCourse?.title}" מכיוון שהוא משויך למשאבים הבאים:`
+                      : `Cannot delete "${selectedCourse?.title}" because it is attached to the following:`
+                    }
+                  </p>
+
+                  {deleteDependencies.products.length > 0 && (
+                    <div className={`space-y-2 ${isRtl ? 'text-right' : 'text-left'}`}>
+                      <p className="font-semibold" suppressHydrationWarning>
+                        {language === 'he' ? 'מוצרים:' : 'Products:'}
+                      </p>
+                      <ul className={`list-disc space-y-1 ${isRtl ? 'pr-6 mr-0' : 'pl-6 ml-0'}`} dir={direction}>
+                        {deleteDependencies.products.map((product: any) => (
+                          <li key={product.id} className="text-sm">
+                            {product.title}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {deleteDependencies.programs.length > 0 && (
+                    <div className={`space-y-2 ${isRtl ? 'text-right' : 'text-left'}`}>
+                      <p className="font-semibold" suppressHydrationWarning>
+                        {language === 'he' ? 'תוכניות:' : 'Programs:'}
+                      </p>
+                      <ul className={`list-disc space-y-1 ${isRtl ? 'pr-6 mr-0' : 'pl-6 ml-0'}`} dir={direction}>
+                        {deleteDependencies.programs.map((program: any) => (
+                          <li key={program.id} className="text-sm">
+                            {program.name}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                    {language === 'he'
+                      ? 'נא להסיר את הקורס מכל המשאבים המצורפים לפני המחיקה.'
+                      : 'Please remove the course from all attached resources before deleting.'
+                    }
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className={`flex gap-3 mt-6 pt-6 border-t ${isRtl ? 'flex-row-reverse' : ''}`}>
+              <Button
+                variant="default"
+                onClick={() => {
+                  setShowCannotDeleteDialog(false);
+                  setDeleteDependencies({ products: [], programs: [] });
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}
+              >
+                <Check className="h-4 w-4" />
+                <span suppressHydrationWarning>
+                  {language === 'he' ? 'הבנתי' : 'OK'}
+                </span>
+              </Button>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {

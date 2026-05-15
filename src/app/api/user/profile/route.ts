@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
@@ -10,10 +10,17 @@ export const GET = withAuth(
   async (request: NextRequest, user: any) => {
     let tenantId: string | undefined;
     try {
+      // Identity is already verified by `withAuth` (which validates the
+      // JWT). RLS on `public.users` and `public.tenant_users` is stricter
+      // than `auth.uid() = id` and rejects the user's own row read from
+      // API routes that can't set the tenant-context GUC the browser sets.
+      // Use the admin client for these self-scoped reads — same pattern
+      // as `withAuth` itself.
       const supabase = await createClient();
+      const admin = createAdminClient();
 
       // Get tenant_id for audit logging
-      const { data: tenantUser } = await supabase
+      const { data: tenantUser } = await admin
         .from('tenant_users')
         .select('tenant_id')
         .eq('user_id', user.id)
@@ -22,7 +29,7 @@ export const GET = withAuth(
       tenantId = tenantUser?.tenant_id;
 
       // Fetch user profile data
-      const { data: userData, error: userError } = await supabase
+      const { data: userData, error: userError } = await admin
         .from('users')
         .select('*')
         .eq('id', user.id)
@@ -37,6 +44,16 @@ export const GET = withAuth(
         );
       }
 
+      // Fetch tenant defaults (timezone + language) so the client can
+      // implement the canonical display-timezone fallback chain:
+      //   student.timezone → lesson.timezone → tenant.timezone → 'Asia/Jerusalem'
+      // See `src/lib/datetime/timezone.ts` for the rule.
+      const { data: tenantDefaults } = await admin
+        .from('tenants')
+        .select('timezone, default_language')
+        .eq('id', tenantId)
+        .single();
+
       // Build user preferences from user data
       const preferences = {
         notifications: {
@@ -46,13 +63,15 @@ export const GET = withAuth(
           course_announcements: true,
         },
         regional: {
-          language: userData.preferred_language || null, // User's saved language preference (null means use tenant default)
-          timezone: userData.timezone || 'Asia/Jerusalem', // User's timezone
+          language: userData.preferred_language || null, // null = follow tenant default
+          timezone: userData.timezone || null,           // null = follow tenant default / lesson tz
+          tenantTimezone: tenantDefaults?.timezone || null, // for fallback chain on client
         },
       };
 
-      // Fetch active sessions from audit_sessions table
-      const { data: sessions, error: sessionsError } = await supabase
+      // Fetch active sessions from audit_sessions table — also a
+      // self-scoped read, so use admin client.
+      const { data: sessions } = await admin
         .from('audit_sessions')
         .select('*')
         .eq('user_id', user.id)
@@ -85,20 +104,10 @@ export const GET = withAuth(
         },
       });
 
-      // Set language cookie for SSR (prevents flash on page refresh)
-      // If user has preferred_language set, use it; otherwise get tenant default
-      let languageForCookie = userData.preferred_language;
-
-      if (!languageForCookie) {
-        // User has "Auto" preference - fetch tenant default
-        const { data: tenantData } = await supabase
-          .from('tenants')
-          .select('default_language')
-          .eq('id', tenantId)
-          .single();
-
-        languageForCookie = tenantData?.default_language || 'he';
-      }
+      // Set language cookie for SSR (prevents flash on page refresh).
+      // Reuses `tenantDefaults` already fetched above; falls back to 'he'.
+      const languageForCookie =
+        userData.preferred_language || tenantDefaults?.default_language || 'he';
 
       response.cookies.set('user_language', languageForCookie, {
         httpOnly: false, // Needs to be readable by client

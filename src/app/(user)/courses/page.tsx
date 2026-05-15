@@ -88,6 +88,46 @@ function getCourseStatus(progress: number, completedLessons: number, totalLesson
   return 'in_progress';
 }
 
+// Extract a clean, single-paragraph teaser from the rich-text description
+// stored against a course. Stored content is properly paragraphed in the
+// admin editor — concatenating everything into one string and then clamping
+// to 2 lines produces a confusing fragment-of-paragraph-2 + half-of-3
+// mash-up. So we take ONLY the first paragraph and strip its inline HTML.
+function sanitizeDescription(html: string | null | undefined): string {
+  if (!html) return '';
+
+  // Find the first paragraph. The rich-text editor stores content as
+  // `<p>...</p>` blocks; some legacy rows use `<br><br>` between
+  // paragraphs. Fall back to the whole string if no boundary is found.
+  let firstParagraph = html;
+  const pMatch = html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (pMatch && pMatch[1].trim()) {
+    firstParagraph = pMatch[1];
+  } else {
+    const brBreak = html.search(/<br\s*\/?>\s*<br\s*\/?>/i);
+    if (brBreak !== -1) firstParagraph = html.slice(0, brBreak);
+  }
+
+  return firstParagraph
+    // Strip any remaining inline HTML (the first paragraph may still contain
+    // <strong>, <em>, <a>, etc.).
+    .replace(/<[^>]+>/g, ' ')
+    // Decode the entities we actually see in our content.
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    // Defensive: insert a missing space after a sentence-ending punctuation
+    // mark when the next char is a Hebrew or Latin letter. The clean
+    // source in the rich-text editor already spaces these correctly;
+    // this catches any legacy row that doesn't.
+    .replace(/([.,:!?])([֐-׿A-Za-z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function getDefaultImage(courseName: string | null): string {
   // Generate a consistent image based on course name hash
   const images = [
@@ -421,7 +461,7 @@ export default function CoursesPage() {
           return (
             <Card key={course.id} className="overflow-hidden group hover:shadow-xl transition-all duration-300">
               {/* Image Header */}
-              <div className="relative h-48 bg-muted overflow-hidden">
+              <div className="relative h-40 bg-muted overflow-hidden">
                 <Image
                   src={courseImage}
                   alt={course.course_name}
@@ -517,10 +557,10 @@ export default function CoursesPage() {
               </div>
 
               {/* Content */}
-              <div className="p-6 flex flex-col" style={{ minHeight: '400px' }}>
-                {/* Program Tag - Fixed Height */}
-                <div style={{ minHeight: '2rem', marginBottom: '0.5rem' }}>
-                  {course.program_name && (
+              <div className="p-4 flex flex-col">
+                {/* Program Tag — only rendered when present, no reserved space */}
+                {course.program_name && (
+                  <div style={{ marginBottom: '0.5rem' }}>
                     <span style={{
                       display: 'inline-block',
                       paddingInlineStart: '0.625rem',
@@ -537,8 +577,8 @@ export default function CoursesPage() {
                     }}>
                       {course.program_name}
                     </span>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* Title - Fixed Height */}
                 <h3 className="line-clamp-2 group-hover:text-primary transition-colors" style={{
@@ -555,24 +595,26 @@ export default function CoursesPage() {
                 }}>{course.course_name}</h3>
 
                 {/* Description - Fixed Height */}
-                <div style={{ minHeight: '3rem', marginBottom: '1rem' }}>
-                  {course.course_description && (
-                    <div
-                      className="line-clamp-2"
-                      style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontFamily: 'var(--font-family-primary)',
-                        color: 'hsl(var(--text-muted))'
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: course.course_description.replace(/<p>/g, '').replace(/<\/p>/g, '')
-                      }}
-                    />
-                  )}
-                </div>
+                {(() => {
+                  const desc = sanitizeDescription(course.course_description);
+                  return desc ? (
+                    <div style={{ marginBottom: '1rem' }}>
+                      <p
+                        className="line-clamp-2"
+                        style={{
+                          fontSize: 'var(--font-size-sm)',
+                          fontFamily: 'var(--font-family-primary)',
+                          color: 'hsl(var(--text-muted))'
+                        }}
+                      >
+                        {desc}
+                      </p>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Progress Section - Fixed Height */}
-                <div style={{ minHeight: '6rem', marginBottom: '1rem' }}>
+                <div style={{ marginBottom: status !== 'not_started' ? '1rem' : 0 }}>
                   {status !== 'not_started' && (
                     <div className="pb-4 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
                       <div className="flex items-center justify-between mb-2">
@@ -858,7 +900,7 @@ export default function CoursesPage() {
                   return (
                     <Card key={course.id} className="overflow-hidden group hover:shadow-xl transition-all duration-300">
                       {/* Same card structure as program courses */}
-                      <div className="relative h-48 bg-muted overflow-hidden">
+                      <div className="relative h-40 bg-muted overflow-hidden">
                         <Image
                           src={courseImage}
                           alt={course.course_name}
@@ -948,8 +990,7 @@ export default function CoursesPage() {
                           </div>
                         )}
                       </div>
-                      <div className="p-6 flex flex-col" style={{ minHeight: '400px' }}>
-                        <div style={{ minHeight: '2rem', marginBottom: '0.5rem' }}></div>
+                      <div className="p-4 flex flex-col">
                         <h3 className="line-clamp-2 group-hover:text-primary transition-colors" style={{
                           fontSize: 'var(--font-size-xl)',
                           fontFamily: 'var(--font-family-heading)',
@@ -962,22 +1003,24 @@ export default function CoursesPage() {
                           WebkitBoxOrient: 'vertical',
                           overflow: 'hidden'
                         }}>{course.course_name}</h3>
-                        <div style={{ minHeight: '3rem', marginBottom: '1rem' }}>
-                          {course.course_description && (
-                            <div
-                              className="line-clamp-2"
-                              style={{
-                                fontSize: 'var(--font-size-sm)',
-                                fontFamily: 'var(--font-family-primary)',
-                                color: 'hsl(var(--text-muted))'
-                              }}
-                              dangerouslySetInnerHTML={{
-                                __html: course.course_description.replace(/<p>/g, '').replace(/<\/p>/g, '')
-                              }}
-                            />
-                          )}
-                        </div>
-                        <div style={{ minHeight: '6rem', marginBottom: '1rem' }}>
+                        {(() => {
+                          const desc = sanitizeDescription(course.course_description);
+                          return desc ? (
+                            <div style={{ marginBottom: '1rem' }}>
+                              <p
+                                className="line-clamp-2"
+                                style={{
+                                  fontSize: 'var(--font-size-sm)',
+                                  fontFamily: 'var(--font-family-primary)',
+                                  color: 'hsl(var(--text-muted))'
+                                }}
+                              >
+                                {desc}
+                              </p>
+                            </div>
+                          ) : null;
+                        })()}
+                        <div style={{ marginBottom: status !== 'not_started' ? '1rem' : 0 }}>
                           {status !== 'not_started' && (
                             <div className="pb-4 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
                               <div className="flex items-center justify-between mb-2">

@@ -121,11 +121,27 @@ export async function GET(request: NextRequest) {
     // Create a map of user details
     const usersMap = new Map(usersData?.map((u) => [u.id, u]) || []);
 
-    // Merge tenant_users with user details
-    let tenantUsers = tenantUsersData.map((tu) => ({
-      ...tu,
-      users: usersMap.get(tu.user_id) || null,
-    }));
+    // Merge tenant_users with user details, dropping orphans where the
+    // matching `users` row no longer exists. Surface them in the server
+    // log so the data inconsistency can be cleaned up — the UI can't
+    // render or act on a row that has no name / email / auth account.
+    const orphanedUserIds: string[] = [];
+    let tenantUsers = tenantUsersData
+      .map((tu) => {
+        const userRow = usersMap.get(tu.user_id);
+        if (!userRow) {
+          orphanedUserIds.push(tu.user_id);
+          return null;
+        }
+        return { ...tu, users: userRow };
+      })
+      .filter((tu): tu is NonNullable<typeof tu> => tu !== null);
+
+    if (orphanedUserIds.length > 0) {
+      console.warn(
+        `[tenant/users] Dropped ${orphanedUserIds.length} orphaned tenant_users row(s) for tenant ${tenant.id}: user_ids=${orphanedUserIds.join(',')}`
+      );
+    }
 
     // Apply search filter
     if (search) {

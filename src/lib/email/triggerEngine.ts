@@ -338,7 +338,24 @@ function calculateScheduledTime(
     return reminderDate > now ? reminderDate : null;
   }
 
-  // Case 3: Delay by X minutes
+  // Case 3a: Send X minutes BEFORE an event (e.g. 30 min before a lesson).
+  // The Create/Edit Trigger dialog encodes "before event" by storing
+  // delay_minutes as a NEGATIVE number. Resolve against lessonStartTime
+  // first (used by /api/cron/lesson-reminders) then fall back to a generic
+  // eventDate. Returns null (→ send immediately) if the reminder time has
+  // already passed, so late enrollments still get notified.
+  if (trigger.delay_minutes !== null && trigger.delay_minutes !== undefined && trigger.delay_minutes < 0) {
+    const eventTimeRaw = eventData.lessonStartTime || eventData.eventDate;
+    if (eventTimeRaw) {
+      const eventTime = new Date(eventTimeRaw);
+      const minutesBefore = Math.abs(trigger.delay_minutes);
+      const reminderDate = new Date(eventTime.getTime() - minutesBefore * 60 * 1000);
+      return reminderDate > now ? reminderDate : null;
+    }
+    // Negative delay configured but no event time present → defer to default.
+  }
+
+  // Case 3b: Delay by X minutes AFTER now.
   if (trigger.delay_minutes && trigger.delay_minutes > 0) {
     const scheduledDate = new Date(now);
     scheduledDate.setMinutes(scheduledDate.getMinutes() + trigger.delay_minutes);
@@ -380,6 +397,43 @@ function extractTemplateVariables(
       variables.formattedEventTime = date.toLocaleTimeString();
     } catch (error) {
       console.warn('Error formatting event date:', error);
+    }
+  }
+
+  // Lesson reminders: render `lessonStartTime` (UTC ISO) into
+  // `{{lessonDate}}` and `{{lessonTime}}` using the recipient's resolved
+  // display timezone. The cron upstream attaches:
+  //   - recipientTimezone (from users.timezone)
+  //   - lessonTimezone    (from lessons.timezone)
+  //   - tenantTimezone    (from tenants.timezone)
+  // We import here to avoid a circular dep in this server file.
+  if (eventData.lessonStartTime) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const {
+        resolveDisplayTimezone,
+        formatInTimezone,
+      } = require('@/lib/datetime/timezone') as typeof import('@/lib/datetime/timezone');
+      const tz = resolveDisplayTimezone({
+        recipientTz: eventData.recipientTimezone,
+        lessonTz: eventData.lessonTimezone,
+        tenantTz: eventData.tenantTimezone,
+      });
+      const locale = eventData.languageCode === 'he' ? 'he-IL' : 'en-US';
+      variables.lessonDate = formatInTimezone(
+        eventData.lessonStartTime,
+        tz,
+        { year: 'numeric', month: '2-digit', day: '2-digit' },
+        locale,
+      );
+      variables.lessonTime = formatInTimezone(
+        eventData.lessonStartTime,
+        tz,
+        { hour: '2-digit', minute: '2-digit', hour12: false },
+        locale,
+      );
+    } catch (error) {
+      console.warn('Error formatting lessonStartTime:', error);
     }
   }
 
