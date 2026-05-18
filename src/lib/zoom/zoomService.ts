@@ -354,6 +354,152 @@ export class ZoomService {
   }
 
   /**
+   * Pull recording info for a specific lesson directly from Zoom's API.
+   *
+   * Use case: a `recording.completed` webhook was missed (e.g. local dev
+   * without an exposed tunnel, prod outage, app reconfigured) but Zoom
+   * has the recording. Admin can call this to backfill `zoom_sessions`
+   * and `lessons.recording_url` without re-running the meeting.
+   *
+   * Mirrors `processRecordingWebhook` but the recording payload comes
+   * from `GET /meetings/{meetingId}/recordings` instead of the webhook
+   * envelope. Same downstream writes: `zoom_sessions.*` + the legacy
+   * `lessons.recording_url` mirror that the user-portal reads.
+   */
+  async syncLessonRecording(lessonId: string): Promise<{
+    success: boolean;
+    error?: string;
+    /** Machine-readable code so the UI can pick a localized message
+     *  instead of surfacing Zoom's raw English error text. */
+    errorCode?: 'no_session' | 'no_meeting_id' | 'no_recording' | 'api_error' | 'db_error';
+    data?: {
+      recordingUrl: string | null;
+      recordingStatus: string;
+      filesFound: number;
+    };
+  }> {
+    try {
+      const supabase = createAdminClient();
+
+      // Find the zoom_session row for this lesson — it carries the
+      // numeric meeting_id we need to query Zoom's API.
+      const { data: zoomSession, error: sessionError } = await supabase
+        .from('zoom_sessions')
+        .select('id, lesson_id, zoom_meeting_id')
+        .eq('lesson_id', lessonId)
+        .single();
+
+      if (sessionError || !zoomSession) {
+        return { success: false, error: 'No Zoom session found for this lesson', errorCode: 'no_session' };
+      }
+
+      const meetingId = zoomSession.zoom_meeting_id;
+      if (!meetingId) {
+        return { success: false, error: 'Zoom session has no meeting id', errorCode: 'no_meeting_id' };
+      }
+
+      // Ask Zoom for the recordings on this meeting.
+      const zoomClient = await this.getZoomClient();
+      let recordingsResp;
+      try {
+        recordingsResp = await zoomClient.getRecordings(meetingId);
+      } catch (apiError: any) {
+        // Detect "no recording exists" via Zoom's own signals so we can
+        // surface a localized message instead of the raw English error.
+        //   - HTTP 404      → meeting or recording absent
+        //   - zoomCode 3301 → "There is no recording for this meeting"
+        //   - zoomCode 3001 → "Meeting does not exist"
+        // Fall back to text matching for anything unusual the SDK returns.
+        const msg = String(apiError?.message || 'Failed to fetch recordings from Zoom');
+        const status: number | undefined = apiError?.status;
+        const zoomCode: number | undefined = apiError?.zoomCode;
+        const isNoRecording =
+          status === 404 ||
+          zoomCode === 3301 ||
+          zoomCode === 3001 ||
+          /no recording/i.test(msg) ||
+          /not found/i.test(msg) ||
+          /does ?n[o']t exist/i.test(msg);
+
+        console.log('[syncLessonRecording] zoom error:', {
+          status,
+          zoomCode,
+          msg,
+          classified: isNoRecording ? 'no_recording' : 'api_error',
+        });
+
+        return {
+          success: false,
+          error: msg,
+          errorCode: isNoRecording ? 'no_recording' : 'api_error',
+        };
+      }
+
+      const recordingFiles = (recordingsResp as any)?.recording_files || [];
+      const playUrl = (recordingsResp as any)?.share_url || (recordingsResp as any)?.play_url || null;
+      const mp4 = recordingFiles.find((f: any) => f.file_type === 'MP4');
+      const downloadUrl = mp4?.download_url || null;
+
+      if (!playUrl && !downloadUrl) {
+        // Recording exists in API response but no usable URL — mark
+        // status appropriately so the UI shows the right "not ready"
+        // message instead of silently failing.
+        await supabase
+          .from('zoom_sessions')
+          .update({
+            recording_status: 'processing',
+            recording_files: recordingFiles,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', zoomSession.id);
+
+        return {
+          success: true,
+          data: { recordingUrl: null, recordingStatus: 'processing', filesFound: recordingFiles.length },
+        };
+      }
+
+      // Update zoom_session with recording info.
+      const { error: updateError } = await supabase
+        .from('zoom_sessions')
+        .update({
+          recording_status: 'ready',
+          recording_files: recordingFiles,
+          recording_play_url: playUrl,
+          recording_download_url: downloadUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', zoomSession.id);
+
+      if (updateError) {
+        return {
+          success: false,
+          error: 'Failed to update zoom session: ' + updateError.message,
+          errorCode: 'db_error',
+        };
+      }
+
+      // Mirror to lessons.recording_url so the user-portal reader sees it.
+      const recordingUrl = playUrl || downloadUrl;
+      await supabase
+        .from('lessons')
+        .update({
+          recording_url: recordingUrl,
+          status: 'completed',
+        })
+        .eq('id', lessonId);
+
+      return {
+        success: true,
+        data: { recordingUrl, recordingStatus: 'ready', filesFound: recordingFiles.length },
+      };
+    } catch (error: any) {
+      console.error('Error syncing lesson recording:', error);
+      return { success: false, error: error?.message || 'Internal server error' };
+    }
+  }
+
+  /**
    * Get current or next lesson for instructor bridge
    */
   async getCurrentLessonForBridge(bridgeSlug: string): Promise<{

@@ -46,6 +46,7 @@ interface Course {
   completed_lessons: number;
   total_lessons: number;
   instructor: string | null;
+  instructor_avatar: string | null;
   payment_status: string;
   total_amount: number;
   paid_amount: number;
@@ -594,6 +595,33 @@ export default function CoursesPage() {
                   overflow: 'hidden'
                 }}>{course.course_name}</h3>
 
+                {/* Instructor */}
+                {course.instructor && (
+                  <div className="flex items-center gap-2" style={{
+                    fontSize: 'var(--font-size-sm)',
+                    fontFamily: 'var(--font-family-primary)',
+                    color: 'hsl(var(--text-muted))',
+                    marginBottom: '0.75rem'
+                  }}>
+                    {course.instructor_avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={course.instructor_avatar}
+                        alt={course.instructor}
+                        className="h-6 w-6 rounded-full object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div
+                        aria-hidden="true"
+                        className="h-6 w-6 rounded-full flex items-center justify-center bg-primary/10 text-primary text-xs font-semibold flex-shrink-0"
+                      >
+                        {course.instructor.split(' ').map((p) => p.charAt(0)).filter(Boolean).slice(0, 2).join('')}
+                      </div>
+                    )}
+                    <span className="truncate">{t('user.courses.instructor', 'Instructor')}: {course.instructor}</span>
+                  </div>
+                )}
+
                 {/* Description - Fixed Height */}
                 {(() => {
                   const desc = sanitizeDescription(course.course_description);
@@ -1003,6 +1031,31 @@ export default function CoursesPage() {
                           WebkitBoxOrient: 'vertical',
                           overflow: 'hidden'
                         }}>{course.course_name}</h3>
+                        {course.instructor && (
+                          <div className="flex items-center gap-2" style={{
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-family-primary)',
+                            color: 'hsl(var(--text-muted))',
+                            marginBottom: '0.75rem'
+                          }}>
+                            {course.instructor_avatar ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={course.instructor_avatar}
+                                alt={course.instructor}
+                                className="h-6 w-6 rounded-full object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div
+                                aria-hidden="true"
+                                className="h-6 w-6 rounded-full flex items-center justify-center bg-primary/10 text-primary text-xs font-semibold flex-shrink-0"
+                              >
+                                {course.instructor.split(' ').map((p) => p.charAt(0)).filter(Boolean).slice(0, 2).join('')}
+                              </div>
+                            )}
+                            <span className="truncate">{t('user.courses.instructor', 'Instructor')}: {course.instructor}</span>
+                          </div>
+                        )}
                         {(() => {
                           const desc = sanitizeDescription(course.course_description);
                           return desc ? (
@@ -1316,6 +1369,26 @@ export default function CoursesPage() {
                       <h3 className="text-lg md:text-xl font-bold line-clamp-1 group-hover:text-primary transition-colors">
                         {course.course_name}
                       </h3>
+                      {course.instructor && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                          {course.instructor_avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={course.instructor_avatar}
+                              alt={course.instructor}
+                              className="h-5 w-5 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div
+                              aria-hidden="true"
+                              className="h-5 w-5 rounded-full flex items-center justify-center bg-primary/10 text-primary text-[10px] font-semibold flex-shrink-0"
+                            >
+                              {course.instructor.split(' ').map((p) => p.charAt(0)).filter(Boolean).slice(0, 2).join('')}
+                            </div>
+                          )}
+                          <span className="truncate">{t('user.courses.instructor', 'Instructor')}: {course.instructor}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Stats Row */}
@@ -1455,6 +1528,26 @@ export default function CoursesPage() {
                       <h3 className="text-lg md:text-xl font-bold line-clamp-1 group-hover:text-primary transition-colors">
                         {course.course_name}
                       </h3>
+                      {course.instructor && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                          {course.instructor_avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={course.instructor_avatar}
+                              alt={course.instructor}
+                              className="h-5 w-5 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div
+                              aria-hidden="true"
+                              className="h-5 w-5 rounded-full flex items-center justify-center bg-primary/10 text-primary text-[10px] font-semibold flex-shrink-0"
+                            >
+                              {course.instructor.split(' ').map((p) => p.charAt(0)).filter(Boolean).slice(0, 2).join('')}
+                            </div>
+                          )}
+                          <span className="truncate">{t('user.courses.instructor', 'Instructor')}: {course.instructor}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Stats Row */}

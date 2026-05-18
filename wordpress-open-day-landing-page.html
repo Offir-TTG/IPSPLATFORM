@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>יום פתוח - הכשרה בהדרכת הורים בגישת אדלר</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Heebo', 'Assistant', Arial, sans-serif;
+            direction: rtl;
+            line-height: 1.8;
+            color: #333;
+            background-color: #fff;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, #2c5f7d 0%, #4a8fb0 100%);
+            color: white;
+            padding: 80px 20px;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 2.8em;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+
+        .hero p {
+            font-size: 1.3em;
+            margin-bottom: 30px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Navigation */
+        .nav-menu {
+            background-color: #1e4456;
+            padding: 15px 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .nav-menu ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0 20px;
+        }
+
+        .nav-menu li {
+            margin: 5px 15px;
+        }
+
+        .nav-menu a {
+            color: white;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+            font-size: 1.05em;
+        }
+
+        .nav-menu a:hover {
+            color: #ffa94d;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Section */
+        section {
+            padding: 60px 20px;
+        }
+
+        section:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        section h2 {
+            font-size: 2.2em;
+            color: #2c5f7d;
+            margin-bottom: 30px;
+            text-align: center;
+            position: relative;
+            padding-bottom: 15px;
+        }
+
+        section h2::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 50%;
+            transform: translateX(50%);
+            width: 80px;
+            height: 4px;
+            background: linear-gradient(90deg, #ffa94d, #ff8c42);
+            border-radius: 2px;
+        }
+
+        section p {
+            font-size: 1.15em;
+            margin-bottom: 20px;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Lists */
+        .content-list {
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 0;
+        }
+
+        .content-list li {
+            background: white;
+            margin: 15px 0;
+            padding: 20px 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            font-size: 1.1em;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .content-list li:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.12);
+        }
+
+        /* Info Boxes */
+        .info-box {
+            background: white;
+            border-right: 5px solid #ffa94d;
+            padding: 25px;
+            margin: 25px auto;
+            max-width: 900px;
+            border-radius: 8px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .info-box h3 {
+            color: #2c5f7d;
+            font-size: 1.5em;
+            margin-bottom: 15px;
+        }
+
+        /* Highlight Box */
+        .highlight-box {
+            background: linear-gradient(135deg, #fff4e6 0%, #ffe8cc 100%);
+            border: 2px solid #ffa94d;
+            padding: 30px;
+            margin: 30px auto;
+            max-width: 900px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .highlight-box h3 {
+            color: #2c5f7d;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+        }
+
+        /* Button */
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #ff8c42 0%, #ffa94d 100%);
+            color: white;
+            padding: 18px 45px;
+            font-size: 1.3em;
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: 50px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(255, 140, 66, 0.3);
+            border: none;
+            cursor: pointer;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(255, 140, 66, 0.4);
+        }
+
+        /* Footer */
+        footer {
+            background-color: #1e4456;
+            color: white;
+            text-align: center;
+            padding: 30px 20px;
+            margin-top: 40px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2em;
+            }
+
+            .hero p {
+                font-size: 1.1em;
+            }
+
+            section h2 {
+                font-size: 1.8em;
+            }
+
+            .nav-menu ul {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .nav-menu li {
+                margin: 8px 0;
+            }
+
+            .cta-button {
+                padding: 15px 35px;
+                font-size: 1.15em;
+            }
+        }
+
+        /* Icon Styling */
+        .emoji-icon {
+            font-size: 1.3em;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Hero Section -->
+    <div class="hero">
+        <div class="container">
+            <h1>יום פתוח - הכשרה מקצועית בהדרכת הורים</h1>
+            <p>גישת אדלר למקצוענים | הזדמנות ייחודית להעמיק ולהתמקצע</p>
+        </div>
+    </div>
+
+    <!-- Navigation Menu -->
+    <nav class="nav-menu">
+        <ul>
+            <li><a href="#about">אודות היום הפתוח</a></li>
+            <li><a href="#target">למי זה מתאים</a></li>
+            <li><a href="#learn">מה תלמדו</a></li>
+            <li><a href="#structure">מבנה התוכנית</a></li>
+            <li><a href="#academic">המסלול האקדמאי</a></li>
+            <li><a href="#career">הזדמנויות קריירה</a></li>
+            <li><a href="#faq">שאלות ותשובות</a></li>
+            <li><a href="#register">הרשמה</a></li>
+        </ul>
+    </nav>
+
+    <!-- About Section -->
+    <section id="about">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>אודות היום הפתוח</h2>
+            <p>יום פתוח ייחודי לאנשי מקצוע המעוניינים להעמיק ולהתמקצע בתחום הדרכת ההורים בגישת אדלר.</p>
+            <p>במהלך המפגש תיחשפו לתוכנית האקדמית, לגישה המקצועית ולכלים המעשיים שתוכלו לשלב כבר בעשייה הקיימת שלכם.</p>
+        </div>
+    </section>
+
+    <!-- Target Audience -->
+    <section id="target">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>למי זה מתאים</h2>
+            <p style="text-align: center; margin-bottom: 30px;">היום הפתוח מיועד ל:</p>
+            <ul class="content-list">
+                <li>אנשי טיפול (פסיכולוגים, עובדים סוציאליים, מטפלים רגשיים)</li>
+                <li>אנשי חינוך (יועצים, מורים, מדריכים)</li>
+                <li>מאמנים ומנחי קבוצות</li>
+                <li>בעלי רקע מקצועי בעבודה עם הורים או ילדים</li>
+            </ul>
+            <div class="info-box">
+                <p style="font-size: 1.2em; margin: 0;"><strong>אם אתם כבר עובדים עם אנשים — התוכנית הזו יכולה להרחיב משמעותית את היכולת וההשפעה שלכם.</strong></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- What You'll Learn -->
+    <section id="learn">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>מה תלמדו ביום הפתוח</h2>
+            <ul class="content-list">
+                <li>היכרות עם עקרונות הגישה של אלפרד אדלר</li>
+                <li>כיצד הדרכת הורים משתלבת בעבודה טיפולית/חינוכית</li>
+                <li>דוגמאות מעשיות מעבודה עם הורים</li>
+                <li>מבט אמיתי על תהליך ההכשרה וההתפתחות המקצועית</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Program Structure -->
+    <section id="structure">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>מבנה התוכנית</h2>
+            <ul class="content-list">
+                <li>תוכנית לימודים אונליין בשעות נוחות</li>
+                <li>מפגשים חיים עם מרצים מובילים בתחום</li>
+                <li>שילוב בין ידע תיאורטי לעבודה פרקטית</li>
+                <li>תרגול, סימולציות ועבודה עם מקרים אמיתיים</li>
+            </ul>
+            <div class="info-box">
+                <p style="font-size: 1.15em; margin: 0;">הדגש בתוכנית הוא על <strong>יישום</strong> — איך לקחת את הידע ולהשתמש בו כבר במהלך הלימודים.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Academic Track -->
+    <section id="academic">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>המסלול האקדמאי</h2>
+            <div class="highlight-box">
+                <h3>התוכנית פועלת בשיתוף:</h3>
+                <p style="font-size: 1.25em; margin: 15px 0;"><strong>הפקולטה למדעי הרווחה והבריאות</strong></p>
+                <p style="font-size: 1.25em; margin: 15px 0;"><strong>אוניברסיטת חיפה</strong></p>
+            </div>
+            <p style="text-align: center; margin-top: 30px; font-size: 1.2em;"><strong>ומעניקה:</strong></p>
+            <ul class="content-list">
+                <li>הכשרה מקצועית מעמיקה</li>
+                <li>תעודה מטעם היחידה ללימודי המשך</li>
+                <li>מסגרת אקדמית איכותית ומוכרת</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Career Opportunities -->
+    <section id="career">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>הזדמנויות קריירה</h2>
+            <p style="text-align: center; margin-bottom: 30px; font-size: 1.2em;">ההכשרה מאפשרת לכם:</p>
+            <ul class="content-list">
+                <li>להרחיב את סל השירותים שלכם</li>
+                <li>לשלב הדרכת הורים בעבודה הקיימת</li>
+                <li>לעבוד באופן פרטי או במסגרת ארגונית</li>
+                <li>להעמיק את ההשפעה המקצועית שלכם</li>
+            </ul>
+            <div class="info-box">
+                <p style="font-size: 1.2em; margin: 0;"><strong>מדובר בהתמחות מבוקשת שמוסיפה ערך משמעותי לכל איש מקצוע.</strong></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>שאלות ותשובות</h2>
+            <p style="text-align: center; margin-bottom: 30px;">במהלך היום הפתוח יוקדש זמן לשאלות, כולל:</p>
+            <ul class="content-list">
+                <li>עומס לימודים ושילוב עם עבודה</li>
+                <li>דרישות התוכנית</li>
+                <li>אפשרויות תעסוקה לאחר סיום</li>
+                <li>התאמה אישית לכל משתתף</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Registration -->
+    <section id="register">
+        <div class="container">
+            <h2><span class="emoji-icon">🔹</span>הרשמה</h2>
+            <div class="highlight-box">
+                <h3>מספר המקומות מוגבל</h3>
+                <p style="font-size: 1.2em; margin: 20px 0;">הבטיחו את מקומכם כבר עכשיו והצטרפו למפגש שיכול להרחיב את הקריירה שלכם לשלב הבא.</p>
+                <a href="#" class="cta-button">👉 הרשמה ליום הפתוח</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 בית הספר להורות. כל הזכויות שמורות.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

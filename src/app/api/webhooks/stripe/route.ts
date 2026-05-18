@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/payments/stripeService';
+import { emitPersonBecameCustomer } from '@/lib/persons/outbox';
 
 export const dynamic = 'force-dynamic';
 
@@ -213,6 +214,112 @@ async function handleCheckoutSessionCompleted(supabase: any, event: Stripe.Event
       payment_method: session.payment_method_types?.[0],
       created_at: new Date().toISOString()
     });
+  }
+
+  // ─── Cross-platform notify ────────────────────────────────────────
+  // Tell IParentingSchool the buyer has become a paying customer.
+  // Idempotent: their handler is a no-op when lifecycle_stage is
+  // already 'customer', so re-emits on subsequent purchases are safe.
+  await emitBecameCustomerForEnrollment(supabase, {
+    enrollmentId: enrollmentId ?? null,
+    studentId: studentId ?? null,
+    amount: (session.amount_total ?? 0) / 100,
+    currency: (session.currency ?? 'usd').toUpperCase(),
+    paidAt: new Date().toISOString(),
+  });
+}
+
+/** Resolve user_id + product info from the enrollment metadata, then
+ *  enqueue the person.became_customer outbox event. Best-effort: a
+ *  missing person_id (signup-pending still unresolved) is logged and
+ *  skipped — a future event will re-emit once the link arrives. */
+async function emitBecameCustomerForEnrollment(
+  supabase: any,
+  args: {
+    enrollmentId: string | null;
+    studentId: string | null;
+    amount: number;
+    currency: string;
+    paidAt: string;
+  },
+): Promise<void> {
+  try {
+    let userId: string | null = args.studentId;
+    let productId: string | null = null;
+
+    if (!userId && args.enrollmentId) {
+      const { data: enr } = await supabase
+        .from('enrollments')
+        .select('user_id, product_id')
+        .eq('id', args.enrollmentId)
+        .maybeSingle();
+      userId = enr?.user_id ?? null;
+      productId = enr?.product_id ?? null;
+    } else if (args.enrollmentId) {
+      const { data: enr } = await supabase
+        .from('enrollments')
+        .select('product_id')
+        .eq('id', args.enrollmentId)
+        .maybeSingle();
+      productId = enr?.product_id ?? null;
+    }
+
+    if (!userId) {
+      console.warn('[stripe] became_customer: no user_id resolved for enrollment', args.enrollmentId);
+      return;
+    }
+
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('person_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!userRow?.person_id) {
+      // Either the user signed up while IParentingSchool was down
+      // (person.enrollment_pending still in flight) or the link hasn't
+      // landed yet. The drainer + person.linked round-trip will
+      // populate users.person_id; we skip here and IParentingSchool
+      // will learn about the customer status on the NEXT triggering
+      // event (admin viewing the contact, or any later sync). Not
+      // ideal — see plan risk #6 — but acceptable for v1.
+      console.warn(
+        '[stripe] became_customer: users.person_id is null; deferring emit',
+        userId,
+      );
+      return;
+    }
+
+    let productSummary: {
+      product_name: string;
+      product_type: string | null;
+      amount: number;
+      currency: string;
+    } | null = null;
+    if (productId) {
+      const { data: prod } = await supabase
+        .from('products')
+        .select('title, type')
+        .eq('id', productId)
+        .maybeSingle();
+      if (prod) {
+        productSummary = {
+          product_name: prod.title,
+          product_type: prod.type ?? null,
+          amount: args.amount,
+          currency: args.currency,
+        };
+      }
+    }
+
+    await emitPersonBecameCustomer(supabase, {
+      personId: userRow.person_id,
+      userId,
+      firstPurchaseAt: args.paidAt,
+      productSummary,
+    });
+  } catch (e) {
+    console.error('[stripe] became_customer emit failed:', e);
   }
 }
 

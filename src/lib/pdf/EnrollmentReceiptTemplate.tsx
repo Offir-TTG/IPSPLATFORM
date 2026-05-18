@@ -50,8 +50,9 @@ const formatDate = (dateStr: string, language: 'en' | 'he'): string => {
 };
 
 // Helper function to format currency
-const formatCurrency = (amount: number, currency: string): string => {
-  return `${currency} ${amount.toFixed(2)}`;
+const formatCurrency = (amount: number | null | undefined, currency: string): string => {
+  const safe = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+  return `${currency} ${safe.toFixed(2)}`;
 };
 
 // Helper to get payment status color

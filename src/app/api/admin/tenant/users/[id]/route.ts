@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 
 export const dynamic = 'force-dynamic';
@@ -48,9 +48,15 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
+    // RLS on `tenant_users` is self-scoped, so the cookie client only
+    // returns the calling admin's own row — even though we just verified
+    // they're an admin. Use the admin client for the target-user lookups
+    // (same pattern as the list endpoint). All queries are bounded to
+    // `tenant.id`, so cross-tenant data leakage is impossible.
+    const adminClient = createAdminClient();
+
     console.log('[GET /api/admin/tenant/users/[id]] Querying for target user...');
-    // Get the tenant_user record first
-    const { data: targetTenantUser, error: tenantUserError } = await supabase
+    const { data: targetTenantUser, error: tenantUserError } = await adminClient
       .from('tenant_users')
       .select('*')
       .eq('tenant_id', tenant.id)
@@ -69,7 +75,7 @@ export async function GET(
     }
 
     // Get user details from users table
-    const { data: userDetails, error: userError } = await supabase
+    const { data: userDetails, error: userError } = await adminClient
       .from('users')
       .select('*')
       .eq('id', targetTenantUser.user_id)
@@ -84,13 +90,13 @@ export async function GET(
     }
 
     // Get enrollment statistics
-    const { count: enrollmentCount } = await supabase
+    const { count: enrollmentCount } = await adminClient
       .from('enrollments')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', targetTenantUser.user_id)
       .eq('tenant_id', tenant.id);
 
-    const { count: completedCount } = await supabase
+    const { count: completedCount } = await adminClient
       .from('enrollments')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', targetTenantUser.user_id)
@@ -176,8 +182,13 @@ export async function PATCH(
       );
     }
 
+    // Same RLS workaround as GET — the cookie client only returns the
+    // calling admin's own tenant_users row. Authorization already verified
+    // above; admin client below is scoped to `tenant.id` on every query.
+    const adminClient = createAdminClient();
+
     // Verify target user belongs to this tenant (id param is user_id)
-    const { data: targetTenantUser } = await supabase
+    const { data: targetTenantUser } = await adminClient
       .from('tenant_users')
       .select('id')
       .eq('tenant_id', tenant.id)
@@ -210,7 +221,7 @@ export async function PATCH(
 
     // Update users table if there are changes
     if (Object.keys(userUpdates).length > 0) {
-      const { error: userError } = await supabase
+      const { error: userError } = await adminClient
         .from('users')
         .update(userUpdates)
         .eq('id', id);
@@ -226,7 +237,7 @@ export async function PATCH(
 
     // Update tenant_users table if there are changes
     if (Object.keys(tenantUserUpdates).length > 0) {
-      const { error: tenantUserError } = await supabase
+      const { error: tenantUserError } = await adminClient
         .from('tenant_users')
         .update(tenantUserUpdates)
         .eq('tenant_id', tenant.id)
@@ -241,7 +252,8 @@ export async function PATCH(
       }
     }
 
-    // Log audit event
+    // Log audit event (kept on cookie client so RLS-aware inserts behave
+    // identically to before; audit_events insert was working previously).
     await supabase.from('audit_events').insert({
       user_id: user.id,
       event_type: 'UPDATE',
@@ -254,8 +266,8 @@ export async function PATCH(
       risk_level: body.role || body.status ? 'medium' : 'low',
     });
 
-    // Fetch updated tenant_user
-    const { data: updatedTenantUser } = await supabase
+    // Fetch updated tenant_user (admin client — same RLS reason)
+    const { data: updatedTenantUser } = await adminClient
       .from('tenant_users')
       .select('*')
       .eq('tenant_id', tenant.id)
@@ -263,7 +275,7 @@ export async function PATCH(
       .single();
 
     // Fetch updated user details
-    const { data: updatedUserDetails } = await supabase
+    const { data: updatedUserDetails } = await adminClient
       .from('users')
       .select('*')
       .eq('id', id)

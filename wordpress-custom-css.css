@@ -1,0 +1,364 @@
+/**
+ * Custom CSS for Open Day Landing Page
+ * הוסף את הקוד הזה ב: WordPress Dashboard > Appearance > Customize > Additional CSS
+ * או: Elementor > Site Settings > Custom CSS
+ */
+
+/* Import Noto Sans Hebrew Font */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@400;500;600;700&display=swap');
+
+/* Global Settings */
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    direction: rtl;
+    font-family: 'Noto Sans Hebrew', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #333;
+    background-color: #fff;
+}
+
+/* Hero Section */
+.od-hero {
+    background: linear-gradient(135deg, #6839AA 0%, #C2439A 100%);
+    color: white;
+    padding: 80px 20px;
+    text-align: center;
+    margin: 0 !important;
+    width: 100vw;
+    position: relative;
+    left: 50%;
+    right: 50%;
+    margin-left: -50vw !important;
+    margin-right: -50vw !important;
+}
+
+.od-hero h1 {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    font-size: 2.8em;
+    margin-bottom: 20px;
+    font-weight: 600;
+    color: white !important;
+    line-height: 1.4em;
+    letter-spacing: -0.2px;
+}
+
+.od-hero p {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    font-size: 22px;
+    margin-bottom: 0;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    color: white !important;
+    line-height: 1.4em;
+}
+
+/* Sticky Navigation */
+.od-nav {
+    background-color: #54595F;
+    padding: 15px 0;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04);
+    margin: 0 !important;
+    width: 100vw;
+    position: relative;
+    left: 50%;
+    right: 50%;
+    margin-left: -50vw !important;
+    margin-right: -50vw !important;
+}
+
+.od-nav ul {
+    list-style: none;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 0;
+    margin: 0;
+}
+
+.od-nav li {
+    margin: 5px 15px;
+    list-style: none;
+}
+
+.od-nav a {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    color: white !important;
+    text-decoration: none !important;
+    font-weight: 500;
+    transition: color 0.3s;
+    font-size: 18px;
+}
+
+.od-nav a:hover {
+    color: #F3E8FC !important;
+}
+
+/* Container */
+.od-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Sections */
+.od-section {
+    padding: 60px 20px;
+    margin: 0;
+    clear: both;
+}
+
+.od-section-alt {
+    background-color: #f8f9fa;
+    width: 100vw;
+    position: relative;
+    left: 50%;
+    right: 50%;
+    margin-left: -50vw !important;
+    margin-right: -50vw !important;
+}
+
+.od-section h2 {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    font-size: 2.2em;
+    color: #764192 !important;
+    margin-bottom: 30px;
+    text-align: center;
+    position: relative;
+    padding-bottom: 15px;
+    font-weight: 600;
+    line-height: 1.4em;
+    letter-spacing: -0.2px;
+}
+
+.od-section h2::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 50%;
+    transform: translateX(50%);
+    width: 80px;
+    height: 4px;
+    background: linear-gradient(90deg, #A286CB, #6839AA);
+    border-radius: 2px;
+}
+
+.od-section p {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    font-size: 18px;
+    margin-bottom: 20px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    color: #333;
+    line-height: 1.5;
+}
+
+/* Lists */
+.od-list {
+    max-width: 800px;
+    margin: 30px auto;
+    padding: 0;
+    list-style: none;
+}
+
+.od-list li {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    background: white;
+    margin: 15px 0;
+    padding: 20px 25px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    font-size: 18px;
+    transition: transform 0.3s, box-shadow 0.3s;
+    list-style: none;
+    color: #333;
+    line-height: 1.5;
+}
+
+.od-list li:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
+}
+
+.od-list li::before {
+    content: '✓';
+    color: #A286CB;
+    font-weight: bold;
+    display: inline-block;
+    width: 1.5em;
+    margin-left: 10px;
+    font-size: 1.2em;
+}
+
+/* Info Box */
+.od-info-box {
+    background: white;
+    border-right: 5px solid #A286CB;
+    padding: 25px;
+    margin: 25px auto;
+    max-width: 900px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04);
+}
+
+.od-info-box p {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    margin-bottom: 0;
+    color: #333;
+    font-size: 18px;
+}
+
+.od-info-box h3 {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    color: #764192;
+    font-size: 1.5em;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+/* Highlight Box */
+.od-highlight {
+    background: linear-gradient(135deg, #F3E8FC 0%, #fae8ff 100%);
+    border: 2px solid #A286CB;
+    padding: 30px;
+    margin: 30px auto;
+    max-width: 900px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04);
+}
+
+.od-highlight h3 {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    color: #764192 !important;
+    font-size: 1.8em;
+    margin-bottom: 20px;
+    font-weight: 600;
+    line-height: 1.4em;
+}
+
+.od-highlight p {
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    color: #333 !important;
+    font-size: 18px;
+    line-height: 1.5;
+}
+
+/* CTA Button */
+.od-cta {
+    display: inline-block;
+    background: linear-gradient(135deg, #6839AA 0%, #C2439A 100%);
+    color: white !important;
+    padding: 18px 45px;
+    font-family: 'Noto Sans Hebrew', sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    text-decoration: none !important;
+    border-radius: 50px;
+    transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(104, 57, 170, 0.3);
+    border: none;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.od-cta:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(104, 57, 170, 0.4);
+    background: linear-gradient(135deg, #764192 0%, #C2439A 100%);
+    color: white !important;
+    text-decoration: none !important;
+}
+
+/* Emoji Icons */
+.emoji-icon {
+    font-size: 1.3em;
+    margin-left: 8px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .od-hero {
+        padding: 60px 15px;
+    }
+
+    .od-hero h1 {
+        font-size: 2em;
+    }
+
+    .od-hero p {
+        font-size: 1.1em;
+    }
+
+    .od-section {
+        padding: 40px 15px;
+    }
+
+    .od-section h2 {
+        font-size: 1.8em;
+    }
+
+    .od-nav ul {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .od-nav li {
+        margin: 8px 0;
+    }
+
+    .od-cta {
+        padding: 15px 35px;
+        font-size: 1.15em;
+    }
+
+    .od-list li {
+        font-size: 1em;
+        padding: 15px 20px;
+    }
+
+    .od-info-box,
+    .od-highlight {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .od-hero h1 {
+        font-size: 1.6em;
+    }
+
+    .od-hero p {
+        font-size: 1em;
+    }
+
+    .od-section h2 {
+        font-size: 1.5em;
+    }
+
+    .od-nav a {
+        font-size: 0.95em;
+    }
+}
+
+/* Override Elementor defaults if needed */
+.elementor-widget-html .od-section,
+.elementor-widget-html .od-hero,
+.elementor-widget-html .od-nav {
+    margin: 0 !important;
+}
+
+/* Ensure full width sections break out of Elementor container */
+.elementor-widget-html {
+    width: 100%;
+}

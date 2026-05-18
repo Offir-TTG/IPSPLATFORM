@@ -40,7 +40,9 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Loader2, Shield, User, Info } from 'lucide-react';
+import { Loader2, Shield, User, Info, Camera } from 'lucide-react';
+import Image from 'next/image';
+import { useRef } from 'react';
 import { useAdminLanguage } from '@/context/AppContext';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
@@ -83,6 +85,8 @@ export function UserDetailDrawer({
   const [userDetails, setUserDetails] = useState<any>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const form = useForm<UserUpdateForm>({
     resolver: zodResolver(userUpdateSchema),
@@ -181,6 +185,66 @@ export function UserDetailDrawer({
     }
   };
 
+  // Admin avatar upload: client-side validation, POST to the admin-only
+  // endpoint, then refetch the user so the new avatar shows immediately
+  // (also propagates the change to the parent list via onUpdate()).
+  const handleAvatarFileSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file || !userId) return;
+
+    // Reset the input so picking the same file again still fires onChange.
+    if (avatarFileInputRef.current) avatarFileInputRef.current.value = '';
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error(
+        t(
+          'admin.users.drawer.avatar.tooLarge',
+          'File is too large (max 2 MB).'
+        )
+      );
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error(
+        t('admin.users.drawer.avatar.notImage', 'File must be an image.')
+      );
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(
+        `/api/admin/tenant/users/${userId}/upload-avatar`,
+        { method: 'POST', body: formData }
+      );
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Upload failed');
+      }
+
+      toast.success(
+        t(
+          'admin.users.drawer.avatar.uploaded',
+          'Profile image updated successfully'
+        )
+      );
+      await fetchUserDetails();
+      onUpdate();
+    } catch (err: any) {
+      console.error('Avatar upload error:', err);
+      toast.error(
+        err?.message ||
+          t('admin.users.drawer.avatar.uploadFailed', 'Failed to upload image')
+      );
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const handleClose = () => {
     if (hasChanges) {
       setShowUnsavedDialog(true);
@@ -218,6 +282,62 @@ export function UserDetailDrawer({
         ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-6">
+              {/* Avatar block — admin can upload a profile image on the
+                  user's behalf. Sits above the Tabs so it's visible
+                  regardless of which tab is active. */}
+              <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/30">
+                <div className="relative h-16 w-16 shrink-0 rounded-full overflow-hidden bg-muted flex items-center justify-center ring-2 ring-background">
+                  {userDetails?.user?.users?.avatar_url ? (
+                    <Image
+                      src={userDetails.user.users.avatar_url}
+                      alt={userDetails.user.users.first_name || 'User avatar'}
+                      width={64}
+                      height={64}
+                      className="h-16 w-16 object-cover"
+                    />
+                  ) : (
+                    <span className="text-lg font-semibold text-muted-foreground">
+                      {(userDetails?.user?.users?.first_name?.[0] || '?').toUpperCase()}
+                      {(userDetails?.user?.users?.last_name?.[0] || '').toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">
+                    {t('admin.users.drawer.avatar.title', 'Profile Image')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'admin.users.drawer.avatar.hint',
+                      'JPG or PNG, up to 2 MB.'
+                    )}
+                  </p>
+                </div>
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarFileSelected}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => avatarFileInputRef.current?.click()}
+                  disabled={uploadingAvatar}
+                >
+                  {uploadingAvatar ? (
+                    <Loader2 className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'} animate-spin`} />
+                  ) : (
+                    <Camera className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                  )}
+                  {userDetails?.user?.users?.avatar_url
+                    ? t('admin.users.drawer.avatar.change', 'Change image')
+                    : t('admin.users.drawer.avatar.upload', 'Upload image')}
+                </Button>
+              </div>
+
               <Tabs defaultValue="basic" className="w-full" dir={direction}>
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="basic">

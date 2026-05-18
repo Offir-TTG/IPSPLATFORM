@@ -114,8 +114,14 @@ export interface Product {
   alternative_payment_plan_ids?: string[];  // Additional payment plan options
   allow_plan_selection?: boolean;           // Allow users to choose plan at checkout
 
-  // Keap integration
+  // Keap integration (legacy single tag — still read by the unused Keap
+  // bridge; kept for backwards compat until that path is retired).
   keap_tag?: string | null;
+
+  // CRM tag-on-purchase — slugs reference IParentingSchool's `crm_tags`
+  // taxonomy. When the buyer completes enrollment, these get applied to
+  // their CRM contact via the cross-repo apply-tags endpoint.
+  crm_tag_slugs?: string[];
 
   // Email template configuration
   enrollment_invitation_template_key?: string;    // Template for enrollment invitations
@@ -188,8 +194,11 @@ export interface ProductFormData {
   alternative_payment_plan_ids?: string[];
   allow_plan_selection?: boolean;
 
-  // Keap integration
+  // Keap integration (legacy)
   keap_tag?: string;
+
+  // CRM tags applied to the buyer's contact on enrollment
+  crm_tag_slugs?: string[];
 
   // Email template configuration
   enrollment_invitation_template_key?: string;

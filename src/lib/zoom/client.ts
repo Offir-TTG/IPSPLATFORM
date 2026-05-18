@@ -313,7 +313,12 @@ export class ZoomClient {
   }
 
   /**
-   * Get meeting recordings
+   * Get meeting recordings.
+   *
+   * On Zoom error, throws an Error with extra fields attached so callers
+   * can classify the failure without regex-matching the message:
+   *   - `status`: HTTP status code (e.g. 404 = no recording / meeting)
+   *   - `zoomCode`: Zoom's numeric error code (e.g. 3301 = no recording)
    */
   async getRecordings(meetingId: string): Promise<ZoomRecordingResponse> {
     try {
@@ -323,7 +328,11 @@ export class ZoomClient {
       console.error('Failed to get Zoom recordings:', error);
       if (axios.isAxiosError(error)) {
         const errorMsg = error.response?.data?.message || error.message;
-        throw new Error(`Failed to get Zoom recordings: ${errorMsg}`);
+        const enriched: Error & { status?: number; zoomCode?: number } =
+          new Error(`Failed to get Zoom recordings: ${errorMsg}`);
+        enriched.status = error.response?.status;
+        enriched.zoomCode = error.response?.data?.code;
+        throw enriched;
       }
       throw new Error('Failed to get Zoom recordings');
     }

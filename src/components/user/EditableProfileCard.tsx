@@ -371,70 +371,39 @@ export function EditableProfileCard({
 
   return (
     <Card className="overflow-hidden">
-      {/* Header with Avatar - Mobile Optimized */}
-      <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
-          {/* Avatar */}
-          <div className="relative group">
-            <Image
-              src={avatarUrl}
-              alt={`${user.first_name} ${user.last_name}`}
-              width={100}
-              height={100}
-              className="rounded-full border-4 border-white shadow-lg cursor-pointer transition-transform group-hover:scale-105"
-              onClick={onChangeAvatar}
-            />
-            <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer" onClick={onChangeAvatar}>
-              <Edit className="h-6 w-6 text-white" />
-            </div>
-          </div>
-
-          {/* User Info */}
-          <div className="flex-1 text-center sm:text-start">
-            <h2 className="text-2xl sm:text-3xl font-bold text-heading mb-2">
-              {user.first_name} {user.last_name}
-            </h2>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-3">
-              <span className="inline-flex items-center px-3 py-1 bg-secondary text-secondary-foreground rounded-full text-xs font-medium">
-                {t(`user.profile.role.${user.role}`)}
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">{user.email}</p>
-          </div>
-
-          {/* Action Button */}
-          <div className="w-full sm:w-auto">
-            {!isEditing ? (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity"
-              >
-                <Edit className="h-4 w-4" />
-                <span>{t('user.profile.buttons.edit_profile')}</span>
-              </button>
-            ) : (
-              <div className="flex gap-2 w-full sm:w-auto">
-                <button
-                  onClick={handleCancel}
-                  disabled={isSaving}
-                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 border border-border rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t('user.profile.edit.cancel')}</span>
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {!isSaving && <Save className="h-4 w-4" />}
-                  <span className="hidden sm:inline">{isSaving ? t('user.profile.edit.saving') : t('user.profile.edit.save')}</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Action toolbar — avatar / name / email already live in the page
+          hero above this card, so this header only carries the
+          edit/save/cancel controls to avoid duplicating identity info. */}
+      <div className="flex items-center justify-end gap-2 border-b bg-muted/30 p-3 sm:px-5">
+        {!isEditing ? (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity"
+          >
+            <Edit className="h-4 w-4" />
+            <span>{t('user.profile.buttons.edit_profile')}</span>
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={handleCancel}
+              disabled={isSaving}
+              className="flex items-center justify-center gap-2 px-4 py-2 border border-border rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <X className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('user.profile.edit.cancel')}</span>
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {!isSaving && <Save className="h-4 w-4" />}
+              <span className="hidden sm:inline">{isSaving ? t('user.profile.edit.saving') : t('user.profile.edit.save')}</span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* Profile Content */}

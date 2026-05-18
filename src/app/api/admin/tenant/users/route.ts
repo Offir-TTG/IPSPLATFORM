@@ -37,6 +37,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
+    // Use the admin client for the listing reads below: when RLS on
+    // `tenant_users` / `users` is self-scoped, the cookie client returns
+    // only the calling admin's own row, so the list collapses to a single
+    // user. Authorization for this list endpoint is already enforced via
+    // the role check above, and every query is bounded to `tenant.id`.
+    const adminClient = createAdminClient();
+
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get('search');
@@ -48,7 +55,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10');
 
     // Build query for tenant_users
-    let query = supabase
+    let query = adminClient
       .from('tenant_users')
       .select('*', { count: 'exact' })
       .eq('tenant_id', tenant.id);
@@ -104,8 +111,8 @@ export async function GET(request: NextRequest) {
     // Get user IDs
     const userIds = tenantUsersData.map((tu) => tu.user_id);
 
-    // Fetch user details from users table
-    const { data: usersData, error: usersError } = await supabase
+    // Fetch user details from users table (admin client — see note above).
+    const { data: usersData, error: usersError } = await adminClient
       .from('users')
       .select('*')
       .in('id', userIds);

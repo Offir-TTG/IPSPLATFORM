@@ -270,12 +270,23 @@ export const GET = withAuth(
         ? Math.round((completedLessons / totalLessons) * 100)
         : 0;
 
-      // Get instructor name
-      let instructorName = null;
-      if (course.users) {
-        const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
-        if (instructor) {
-          instructorName = `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim();
+      // Get instructor name. The embedded `users!courses_instructor_id_fkey`
+      // join above is silently nulled by RLS on `public.users` (typically
+      // self-scoped: a student can only read their own row), so we look up
+      // the instructor directly with the admin client. Authorization is
+      // already gated by withAuth + the enrollment check below; we only
+      // surface the instructor's display name.
+      let instructorName: string | null = null;
+      let instructorAvatar: string | null = null;
+      if (course.instructor_id) {
+        const { data: instructorRow } = await adminClient
+          .from('users')
+          .select('first_name, last_name, avatar_url')
+          .eq('id', course.instructor_id)
+          .maybeSingle();
+        if (instructorRow) {
+          instructorName = `${instructorRow.first_name || ''} ${instructorRow.last_name || ''}`.trim() || null;
+          instructorAvatar = instructorRow.avatar_url || null;
         }
       }
 
@@ -350,8 +361,15 @@ export const GET = withAuth(
         event_category: 'ATTENDANCE',
         resource_type: 'course_content',
         resource_id: courseId,
-        resource_name: `Course: ${course.title}`,
-        action: 'Accessed course content',
+        // Store just the title; the audit table prepends the translated
+        // resource-type label ("Course Content" / "תוכן קורס") via
+        // `audit.resource.course_content`, so a hardcoded "Course:" prefix
+        // here would be untranslatable English noise in the Hebrew UI.
+        resource_name: course.title,
+        // Use the translation-key form so AuditEventsTable.formatActionName
+        // resolves it to the localized label instead of showing the
+        // literal English string forever.
+        action: 'audit.action.access_course_content',
         description: `Student accessed course content with ${processedModules.length} modules, ${totalLessons} lessons, and ${totalTopics} topics`,
         status: 'success',
         risk_level: 'low',
@@ -383,6 +401,7 @@ export const GET = withAuth(
             description: course.description,
             image_url: course.image_url,
             instructor: instructorName,
+            instructor_avatar: instructorAvatar,
           },
           enrollment: activeEnrollment || null,
           modules: processedModules,

@@ -194,6 +194,28 @@ export const GET = withAuth(
       const lessonsByCourse = new Map<string, any[]>();
       const progressByEnrollment = new Map<string, any[]>();
 
+      // Instructor name lookup: fetch via the admin client so RLS on `users`
+      // (which is typically self-scoped) doesn't strip the instructor row
+      // from the result. We've already authorized the caller as a student
+      // via withAuth; the only data we expose is the instructor's display
+      // name for their enrolled courses.
+      const instructorIds = Array.from(new Set(
+        allCoursesToProcess
+          .map((c: any) => c.instructor_id)
+          .filter(Boolean)
+      ));
+      const instructorMap = new Map<string, { name: string; avatar: string | null }>();
+      if (instructorIds.length > 0) {
+        const { data: instructorRows } = await adminClient
+          .from('users')
+          .select('id, first_name, last_name, avatar_url')
+          .in('id', instructorIds);
+        for (const row of instructorRows || []) {
+          const name = `${row.first_name || ''} ${row.last_name || ''}`.trim();
+          if (name) instructorMap.set(row.id, { name, avatar: row.avatar_url || null });
+        }
+      }
+
       // Group lessons by course
       for (const lesson of allLessons || []) {
         const courseId = (lesson.modules as any)?.course_id || (lesson.modules as any)?.[0]?.course_id;
@@ -235,10 +257,7 @@ export const GET = withAuth(
           const totalLessons = lessons.length;
           const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-          const instructor = Array.isArray(course.users) ? course.users[0] : course.users;
-          const instructorName = instructor
-            ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
-            : null;
+          const instructorInfo = instructorMap.get((course as any).instructor_id) || null;
 
           // Check payment-based access
           let accessCheck: { hasAccess: boolean; reason?: string; overdueAmount?: number; overdueDays?: number } = { hasAccess: true };
@@ -261,7 +280,8 @@ export const GET = withAuth(
             overall_progress: progress,
             completed_lessons: completedLessons,
             total_lessons: totalLessons,
-            instructor: instructorName,
+            instructor: instructorInfo?.name ?? null,
+            instructor_avatar: instructorInfo?.avatar ?? null,
             payment_status: enrollment.payment_status,
             total_amount: enrollment.total_amount,
             paid_amount: enrollment.paid_amount,
@@ -293,10 +313,7 @@ export const GET = withAuth(
               const totalLessons = lessons.length;
               const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-              const instructor = Array.isArray((course as any).users) ? (course as any).users[0] : (course as any).users;
-              const instructorName = instructor
-                ? `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim()
-                : null;
+              const instructorInfo = instructorMap.get((course as any).instructor_id) || null;
 
               // Check payment-based access for program courses
               let accessCheck: { hasAccess: boolean; reason?: string; overdueAmount?: number; overdueDays?: number } = { hasAccess: true };
@@ -319,7 +336,8 @@ export const GET = withAuth(
                 overall_progress: progress,
                 completed_lessons: completedLessons,
                 total_lessons: totalLessons,
-                instructor: instructorName,
+                instructor: instructorInfo?.name ?? null,
+                instructor_avatar: instructorInfo?.avatar ?? null,
                 payment_status: enrollment.payment_status,
                 total_amount: enrollment.total_amount,
                 paid_amount: enrollment.paid_amount,
@@ -348,6 +366,7 @@ export const GET = withAuth(
               completed_lessons: 0,
               total_lessons: 0,
               instructor: null,
+              instructor_avatar: null,
               payment_status: enrollment.payment_status,
               total_amount: enrollment.total_amount,
               paid_amount: enrollment.paid_amount,

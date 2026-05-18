@@ -202,7 +202,7 @@ We're excited to have you join us!
   <p style="font-size: 13px; color: #666; text-align: center;">Or copy this link: <a href="{{enrollmentUrl}}">{{enrollmentUrl}}</a></p>
 
   <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
-    <strong style="color: #856404;">⏰ This invitation expires in {{expiresIn}} days</strong>
+    <strong style="color: #856404;">This invitation expires in {{expiresIn}} days</strong>
   </div>
 
   <p style="text-align: center; color: #666; font-size: 13px;">{{organizationName}}</p>
@@ -224,7 +224,7 @@ Payment Plan: {{paymentPlanName}}
 Visit the link below to view details and complete your enrollment:
 {{enrollmentUrl}}
 
-⏰ This invitation expires in {{expiresIn}} days
+This invitation expires in {{expiresIn}} days
 
 ---
 {{organizationName}}
@@ -270,7 +270,7 @@ If you have questions, please contact support.
   <p style="font-size: 13px; color: #666; text-align: center;">או העתק קישור זה: <a href="{{enrollmentUrl}}">{{enrollmentUrl}}</a></p>
 
   <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
-    <strong style="color: #856404;">⏰ ההזמנה תפוג בעוד {{expiresIn}} ימים</strong>
+    <strong style="color: #856404;">ההזמנה תפוג בעוד {{expiresIn}} ימים</strong>
   </div>
 
   <p style="text-align: center; color: #666; font-size: 13px;">{{organizationName}}</p>
@@ -292,7 +292,7 @@ If you have questions, please contact support.
 בקר בקישור למטה כדי לצפות בפרטים ולהשלים את ההרשמה:
 {{enrollmentUrl}}
 
-⏰ ההזמנה תפוג בעוד {{expiresIn}} ימים
+ההזמנה תפוג בעוד {{expiresIn}} ימים
 
 ---
 {{organizationName}}
@@ -328,7 +328,7 @@ If you have questions, please contact support.
 
   {{#if daysRemaining}}
   <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
-    <strong style="color: #856404;">⏰ Only {{daysRemaining}} days left to enroll!</strong>
+    <strong style="color: #856404;">Only {{daysRemaining}} days left to enroll!</strong>
   </div>
   {{/if}}
 
@@ -369,7 +369,7 @@ We noticed you haven't completed your enrollment for: {{productName}}
 Type: {{productType}}
 
 {{#if daysRemaining}}
-⏰ Only {{daysRemaining}} days left to enroll!
+Only {{daysRemaining}} days left to enroll!
 {{/if}}
 
 {{#if startDate}}
@@ -396,7 +396,7 @@ Questions? Contact our support team.
 
   {{#if daysRemaining}}
   <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
-    <strong style="color: #856404;">⏰ נותרו רק {{daysRemaining}} ימים להרשמה!</strong>
+    <strong style="color: #856404;">נותרו רק {{daysRemaining}} ימים להרשמה!</strong>
   </div>
   {{/if}}
 
@@ -437,7 +437,7 @@ Questions? Contact our support team.
 סוג: {{productType}}
 
 {{#if daysRemaining}}
-⏰ נותרו רק {{daysRemaining}} ימים להרשמה!
+נותרו רק {{daysRemaining}} ימים להרשמה!
 {{/if}}
 
 {{#if startDate}}
@@ -650,16 +650,16 @@ Keep this email for your records.
 
   <div style="background: linear-gradient(to right, #f8f9ff 0%, #ffffff 100%); border-left: 4px solid {{primaryColor}}; padding: 20px; margin: 25px 0; border-radius: 6px;">
     <h3 style="margin: 0 0 15px 0;">{{lessonTitle}}</h3>
-    <p style="margin: 5px 0;"><strong>📅 Date:</strong> {{formatDate lessonDate language}}</p>
-    <p style="margin: 5px 0;"><strong>🕐 Time:</strong> {{lessonTime}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Date:</strong> {{formatDate lessonDate language}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Time:</strong> {{lessonTime}}</p>
     {{#if duration}}
-    <p style="margin: 5px 0;"><strong>⏱️ Duration:</strong> {{duration}} minutes</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><circle cx="12" cy="14" r="8"/><polyline points="12 10 12 14 15 14"/><line x1="10" y1="2" x2="14" y2="2"/></svg>Duration:</strong> {{duration}} minutes</p>
     {{/if}}
     {{#if instructorName}}
-    <p style="margin: 5px 0;"><strong>👨‍🏫 Instructor:</strong> {{instructorName}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Instructor:</strong> {{instructorName}}</p>
     {{/if}}
     {{#if location}}
-    <p style="margin: 5px 0;"><strong>📍 Location:</strong> {{location}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Location:</strong> {{location}}</p>
     {{/if}}
   </div>
 
@@ -683,16 +683,16 @@ This is a friendly reminder about your upcoming lesson:
 
 {{lessonTitle}}
 
-📅 Date: {{formatDate lessonDate language}}
-🕐 Time: {{lessonTime}}
+Date: {{formatDate lessonDate language}}
+Time: {{lessonTime}}
 {{#if duration}}
-⏱️ Duration: {{duration}} minutes
+Duration: {{duration}} minutes
 {{/if}}
 {{#if instructorName}}
-👨‍🏫 Instructor: {{instructorName}}
+Instructor: {{instructorName}}
 {{/if}}
 {{#if location}}
-📍 Location: {{location}}
+Location: {{location}}
 {{/if}}
 
 {{#if lessonUrl}}
@@ -714,16 +714,16 @@ We look forward to seeing you!
 
   <div style="background: linear-gradient(to left, #f8f9ff 0%, #ffffff 100%); border-right: 4px solid {{primaryColor}}; padding: 20px; margin: 25px 0; border-radius: 6px;">
     <h3 style="margin: 0 0 15px 0;">{{lessonTitle}}</h3>
-    <p style="margin: 5px 0;"><strong>📅 תאריך:</strong> {{formatDate lessonDate language}}</p>
-    <p style="margin: 5px 0;"><strong>🕐 שעה:</strong> {{lessonTime}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>תאריך:</strong> {{formatDate lessonDate language}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>שעה:</strong> {{lessonTime}}</p>
     {{#if duration}}
-    <p style="margin: 5px 0;"><strong>⏱️ משך:</strong> {{duration}} דקות</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><circle cx="12" cy="14" r="8"/><polyline points="12 10 12 14 15 14"/><line x1="10" y1="2" x2="14" y2="2"/></svg>משך:</strong> {{duration}} דקות</p>
     {{/if}}
     {{#if instructorName}}
-    <p style="margin: 5px 0;"><strong>👨‍🏫 מדריך:</strong> {{instructorName}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>מדריך:</strong> {{instructorName}}</p>
     {{/if}}
     {{#if location}}
-    <p style="margin: 5px 0;"><strong>📍 מיקום:</strong> {{location}}</p>
+    <p style="margin: 5px 0;"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:6px;display:inline-block;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>מיקום:</strong> {{location}}</p>
     {{/if}}
   </div>
 
@@ -747,16 +747,16 @@ We look forward to seeing you!
 
 {{lessonTitle}}
 
-📅 תאריך: {{formatDate lessonDate language}}
-🕐 שעה: {{lessonTime}}
+תאריך: {{formatDate lessonDate language}}
+שעה: {{lessonTime}}
 {{#if duration}}
-⏱️ משך: {{duration}} דקות
+משך: {{duration}} דקות
 {{/if}}
 {{#if instructorName}}
-👨‍🏫 מדריך: {{instructorName}}
+מדריך: {{instructorName}}
 {{/if}}
 {{#if location}}
-📍 מיקום: {{location}}
+מיקום: {{location}}
 {{/if}}
 
 {{#if lessonUrl}}
@@ -960,7 +960,7 @@ Thank you for your continued support of {{studentName}}'s education.
       <p style="margin: 5px 0; font-size: 14px;"><strong>Temporary Password:</strong> <code style="background: white; padding: 4px 8px; border-radius: 4px; font-family: monospace;">{{temporaryPassword}}</code></p>
     </div>
     <p style="margin: 10px 0 0 0; font-size: 13px; color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">
-      <strong>⚠️ Important:</strong> Please change your password after your first login for security.
+      <strong>Important:</strong> Please change your password after your first login for security.
     </p>
   </div>
 
@@ -1006,7 +1006,7 @@ Your Login Credentials:
 Email: {{userEmail}}
 Temporary Password: {{temporaryPassword}}
 
-⚠️ IMPORTANT: Please change your password after your first login for security.
+IMPORTANT: Please change your password after your first login for security.
 
 Login to your account: {{loginUrl}}
 
@@ -1044,7 +1044,7 @@ If you have questions, please contact support.
       <p style="margin: 5px 0; font-size: 14px;"><strong>סיסמה זמנית:</strong> <code style="background: white; padding: 4px 8px; border-radius: 4px; font-family: monospace;">{{temporaryPassword}}</code></p>
     </div>
     <p style="margin: 10px 0 0 0; font-size: 13px; color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">
-      <strong>⚠️ חשוב:</strong> אנא שנה את הסיסמה שלך לאחר ההתחברות הראשונה למען האבטחה.
+      <strong>חשוב:</strong> אנא שנה את הסיסמה שלך לאחר ההתחברות הראשונה למען האבטחה.
     </p>
   </div>
 
@@ -1090,7 +1090,7 @@ If you have questions, please contact support.
 אימייל: {{userEmail}}
 סיסמה זמנית: {{temporaryPassword}}
 
-⚠️ חשוב: אנא שנה את הסיסמה שלך לאחר ההתחברות הראשונה למען האבטחה.
+חשוב: אנא שנה את הסיסמה שלך לאחר ההתחברות הראשונה למען האבטחה.
 
 התחבר לחשבון שלך: {{loginUrl}}
 
@@ -1150,7 +1150,7 @@ If you have questions, please contact support.
   <p style="font-size: 13px; color: #666; text-align: center;">Or copy this link: <a href="{{resetUrl}}">{{resetUrl}}</a></p>
 
   <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
-    <strong style="color: #856404;">⏰ This link will expire in {{expiresIn}} hours</strong>
+    <strong style="color: #856404;">This link will expire in {{expiresIn}} hours</strong>
   </div>
 
   <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 25px 0;">
@@ -1182,7 +1182,7 @@ We received a request to reset your password for your {{organizationName}} accou
 Click the link below to create a new password:
 {{resetUrl}}
 
-⏰ This link will expire in {{expiresIn}} hours
+This link will expire in {{expiresIn}} hours
 
 Security Note:
 - If you didn't request this password reset, please ignore this email
@@ -1221,7 +1221,7 @@ If you have questions, please contact support.
   <p style="font-size: 13px; color: #666; text-align: center;">או העתק קישור זה: <a href="{{resetUrl}}">{{resetUrl}}</a></p>
 
   <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0; text-align: center;">
-    <strong style="color: #856404;">⏰ קישור זה יפוג בעוד {{expiresIn}} שעות</strong>
+    <strong style="color: #856404;">קישור זה יפוג בעוד {{expiresIn}} שעות</strong>
   </div>
 
   <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 25px 0;">
@@ -1253,7 +1253,7 @@ If you have questions, please contact support.
 לחץ על הקישור למטה כדי ליצור סיסמה חדשה:
 {{resetUrl}}
 
-⏰ קישור זה יפוג בעוד {{expiresIn}} שעות
+קישור זה יפוג בעוד {{expiresIn}} שעות
 
 הערת אבטחה:
 - אם לא ביקשת איפוס סיסמה זה, אנא התעלם מאימייל זה
@@ -1298,13 +1298,13 @@ If you have questions, please contact support.
   {{#if (eq priority "urgent")}}
   <div style="background: #fee2e2; border: 2px solid #ef4444; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
     <p style="margin: 0; color: #991b1b; font-weight: 600; display: flex; align-items: center;">
-      <span style="font-size: 20px; margin-right: 8px;">⚠️</span> Urgent Notification
+      <span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;background:#991b1b;color:#ffffff;padding:4px 10px;border-radius:9999px;margin-right:8px;">Urgent</span> Urgent Notification
     </p>
   </div>
   {{else if (eq priority "high")}}
   <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
     <p style="margin: 0; color: #92400e; font-weight: 600; display: flex; align-items: center;">
-      <span style="font-size: 20px; margin-right: 8px;">🔔</span> High Priority
+      <span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;background:#92400e;color:#ffffff;padding:4px 10px;border-radius:9999px;margin-right:8px;">High</span> High Priority
     </p>
   </div>
   {{/if}}
@@ -1332,7 +1332,7 @@ If you have questions, please contact support.
 </div>
         `,
         bodyText: `
-{{#if (eq priority "urgent")}}⚠️ URGENT NOTIFICATION{{else if (eq priority "high")}}🔔 HIGH PRIORITY{{/if}}
+{{#if (eq priority "urgent")}}URGENT NOTIFICATION{{else if (eq priority "high")}}HIGH PRIORITY{{/if}}
 
 {{notificationTitle}}
 
@@ -1356,13 +1356,13 @@ This is an automated notification from your learning platform.
   {{#if (eq priority "urgent")}}
   <div style="background: #fee2e2; border: 2px solid #ef4444; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
     <p style="margin: 0; color: #991b1b; font-weight: 600; display: flex; align-items: center;">
-      <span style="font-size: 20px; margin-left: 8px;">⚠️</span> התראה דחופה
+      <span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.8px;background:#991b1b;color:#ffffff;padding:4px 10px;border-radius:9999px;margin-left:8px;">דחוף</span> התראה דחופה
     </p>
   </div>
   {{else if (eq priority "high")}}
   <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
     <p style="margin: 0; color: #92400e; font-weight: 600; display: flex; align-items: center;">
-      <span style="font-size: 20px; margin-left: 8px;">🔔</span> עדיפות גבוהה
+      <span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.8px;background:#92400e;color:#ffffff;padding:4px 10px;border-radius:9999px;margin-left:8px;">חשוב</span> עדיפות גבוהה
     </p>
   </div>
   {{/if}}
@@ -1390,7 +1390,7 @@ This is an automated notification from your learning platform.
 </div>
         `,
         bodyText: `
-{{#if (eq priority "urgent")}}⚠️ התראה דחופה{{else if (eq priority "high")}}🔔 עדיפות גבוהה{{/if}}
+{{#if (eq priority "urgent")}}התראה דחופה{{else if (eq priority "high")}}עדיפות גבוהה{{/if}}
 
 {{notificationTitle}}
 

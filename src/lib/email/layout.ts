@@ -65,6 +65,10 @@ function escapeAttr(s: string | undefined | null): string {
  * Bulletproof button — works in Gmail, Apple Mail, Yahoo, AOL, *and*
  * Outlook (via VML conditional comments). Pass this through Handlebars'
  * triple-mustache (`{{{button ...}}}`) so the HTML isn't escaped.
+ *
+ * Modernized: pill-shaped (12px radius), 52px tall, 17px font, generous
+ * horizontal padding, subtle shadow on supported clients. Outlook still
+ * gets a flat rectangle via the VML path — that's a hard limit of MSO.
  */
 export function bulletproofButton(
   href: string,
@@ -75,21 +79,50 @@ export function bulletproofButton(
   const labelEsc = escapeHtml(label);
   const colorEsc = escapeAttr(color);
   return `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:32px auto;">
   <tr>
-    <td align="center" style="border-radius:8px;background-color:${colorEsc};">
+    <td align="center" style="border-radius:12px;background-color:${colorEsc};box-shadow:0 4px 14px rgba(15,23,42,0.10);">
       <!--[if mso]>
-      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${hrefEsc}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="17%" stroke="f" fillcolor="${colorEsc}">
+      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${hrefEsc}" style="height:52px;v-text-anchor:middle;width:280px;" arcsize="23%" stroke="f" fillcolor="${colorEsc}">
         <w:anchorlock/>
-        <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:600;">${labelEsc}</center>
+        <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:17px;font-weight:600;">${labelEsc}</center>
       </v:roundrect>
       <![endif]-->
       <!--[if !mso]><!-- -->
-      <a href="${hrefEsc}" style="background-color:${colorEsc};border-radius:8px;color:#ffffff;display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;font-weight:600;line-height:48px;text-align:center;text-decoration:none;width:260px;-webkit-text-size-adjust:none;mso-hide:all;">${labelEsc}</a>
+      <a href="${hrefEsc}" style="background-color:${colorEsc};border-radius:12px;color:#ffffff;display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:17px;font-weight:600;line-height:52px;text-align:center;text-decoration:none;padding:0 32px;min-width:200px;letter-spacing:0.1px;-webkit-text-size-adjust:none;mso-hide:all;">${labelEsc}</a>
       <!--<![endif]-->
     </td>
   </tr>
 </table>`;
+}
+
+/**
+ * Heuristic: does this gradient look like a decorative light-fade banner
+ * (e.g. `linear-gradient(to right, #f8f9ff 0%, #ffffff 100%)`), as opposed
+ * to a saturated button-style gradient?
+ *
+ * We treat a gradient as "light" if every hex color in it is near-white
+ * (each RGB channel >= 0xE0). Such gradients are used in templates as
+ * subtle banner backgrounds; replacing them with the button-color override
+ * would put dark inherited text on a saturated background and look broken.
+ */
+function isLightGradient(args: string): boolean {
+  const hexes = args.match(/#[0-9a-fA-F]{3,8}/g);
+  if (!hexes || hexes.length === 0) return false;
+  for (const h of hexes) {
+    const hex = h.replace('#', '');
+    const expanded = hex.length === 3
+      ? hex.split('').map((c) => c + c).join('')
+      : hex.length >= 6
+      ? hex.slice(0, 6)
+      : null;
+    if (!expanded) return false;
+    const r = parseInt(expanded.slice(0, 2), 16);
+    const g = parseInt(expanded.slice(2, 4), 16);
+    const b = parseInt(expanded.slice(4, 6), 16);
+    if ([r, g, b].some((c) => c < 0xe0)) return false;
+  }
+  return true;
 }
 
 /**
@@ -105,15 +138,24 @@ export function bulletproofButton(
  *    `background-color: ${buttonColorOverride}`. This is what the admin
  *    "Button Color" setting controls — admins get a clean, consistent
  *    button colour across every email client, no gradient inheritance.
+ *    BUT: decorative light-fade gradients (banners) are left alone so the
+ *    template's "dark text on light banner" relationship is preserved.
  */
 function addGradientFallback(html: string, buttonColorOverride?: string): string {
   return html.replace(
     /background\s*:\s*linear-gradient\(([^)]+)\)\s*;?/g,
     (_match, args: string) => {
-      if (buttonColorOverride) {
+      const argsStr = String(args);
+      const lightBanner = isLightGradient(argsStr);
+
+      if (buttonColorOverride && !lightBanner) {
+        // Saturated button-style gradient → safe to flatten to the
+        // admin-chosen colour; the surrounding element already declares
+        // `color: white` so contrast is preserved.
         return `background-color: ${buttonColorOverride};`;
       }
-      const firstColorMatch = String(args).match(/#[0-9a-fA-F]{3,8}/);
+
+      const firstColorMatch = argsStr.match(/#[0-9a-fA-F]{3,8}/);
       const fallback = firstColorMatch ? firstColorMatch[0] : '#4f46e5';
       return `background-color: ${fallback}; background-image: linear-gradient(${args});`;
     }
@@ -155,15 +197,23 @@ export function renderEmailLayout(
   // button in the body gets replaced by the chosen solid colour.
   const safeInner = addGradientFallback(innerBody, opts.buttonColor);
 
+  // Colored header band using the tenant's primary color. Text inside
+  // is forced white so a dark/purple background reads correctly. When
+  // headerStyle is 'none' we keep a thin 4px accent stripe at the top
+  // so the email still feels branded.
+  const noHeaderAccentStripe = `<tr>
+        <td style="height:4px;line-height:4px;font-size:0;background-color:${escapeAttr(primary)};">&nbsp;</td>
+      </tr>`;
+
   const headerRow =
     headerStyle === 'none'
-      ? ''
+      ? noHeaderAccentStripe
       : `<tr>
-            <td style="background-color:${escapeAttr(primary)};padding:32px;text-align:center;">
+            <td style="background-color:${escapeAttr(primary)};padding:36px 32px;text-align:center;">
               ${
                 headerStyle === 'logo'
-                  ? `<img src="${escapeAttr(opts.logoUrl!)}" alt="${escapeAttr(orgName)}" width="160" style="display:inline-block;max-width:160px;height:auto;border:0;outline:none;text-decoration:none;">`
-                  : `<div style="color:#ffffff;font-size:22px;font-weight:600;letter-spacing:0.3px;">${escapeHtml(orgName)}</div>`
+                  ? `<img src="${escapeAttr(opts.logoUrl!)}" alt="${escapeAttr(orgName)}" width="140" style="display:inline-block;max-width:140px;height:auto;border:0;outline:none;text-decoration:none;">`
+                  : `<div style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">${escapeHtml(orgName)}</div>`
               }
             </td>
           </tr>`;
@@ -188,22 +238,41 @@ export function renderEmailLayout(
   </noscript>
   <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#1f2937;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;" dir="${dir}">
+<body style="margin:0;padding:0;background-color:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#1f2937;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;" dir="${dir}">
   ${opts.preheader ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;color:transparent;">${escapeHtml(opts.preheader)}</div>` : ''}
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f4f4f7;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f6f7fb;">
     <tr>
-      <td align="center" style="padding:24px 12px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.06),0 1px 2px rgba(15,23,42,0.04);">
           ${headerRow}
           <tr>
-            <td style="padding:36px 32px;color:#1f2937;font-size:15px;line-height:1.7;" dir="${dir}">
+            <td style="padding:44px 40px;color:#27303a;font-size:16px;line-height:1.7;" dir="${dir}">
               ${safeInner}
             </td>
           </tr>
           <tr>
-            <td style="background-color:#f8f9fa;padding:20px 32px;text-align:center;color:#6b7280;font-size:13px;line-height:1.6;">
-              ${opts.footerNote ? `<p style="margin:0 0 8px 0;">${escapeHtml(opts.footerNote)}</p>` : ''}
-              <p style="margin:0;">© ${year} ${escapeHtml(orgName)}</p>
+            <td style="padding:0 40px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="height:1px;line-height:1px;font-size:0;background-color:#eef0f4;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#ffffff;padding:24px 40px 32px;text-align:center;color:#697384;font-size:13px;line-height:1.6;">
+              ${opts.footerNote ? `<p style="margin:0 0 10px 0;color:#697384;">${escapeHtml(opts.footerNote)}</p>` : ''}
+              <p style="margin:0;color:#9aa3b2;font-size:12px;letter-spacing:0.2px;">© ${year} ${escapeHtml(orgName)} · ${lang === 'he' ? 'כל הזכויות שמורות' : 'All rights reserved'}</p>
+            </td>
+          </tr>
+        </table>
+        <!-- Outer soft footer spacing -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;">
+          <tr>
+            <td style="padding:16px 40px 0;text-align:center;color:#9aa3b2;font-size:11px;line-height:1.5;">
+              ${lang === 'he'
+                ? 'נשלח אוטומטית — נא לא להשיב להודעה זו.'
+                : 'This is an automated message — please do not reply.'}
             </td>
           </tr>
         </table>

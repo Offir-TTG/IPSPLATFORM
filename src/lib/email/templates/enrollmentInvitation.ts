@@ -210,7 +210,7 @@ export function getEnrollmentInvitationHtml(
       </div>
 
       <div class="expiry-warning">
-        <strong>⏰ ${t('email.enrollment.expiry', 'This invitation expires in {days} days', { days: String(expiresIn) })}</strong>
+        <strong>${t('email.enrollment.expiry', 'This invitation expires in {days} days', { days: String(expiresIn) })}</strong>
       </div>
     </div>
 
@@ -261,7 +261,7 @@ ${t('email.enrollment.message', 'Visit the link below to view details and comple
 
 ${data.enrollmentUrl}
 
-⏰ ${t('email.enrollment.expiry', 'This invitation expires in {days} days', { days: String(expiresIn) })}
+${t('email.enrollment.expiry', 'This invitation expires in {days} days', { days: String(expiresIn) })}
 
 ---
 ${data.organizationName}

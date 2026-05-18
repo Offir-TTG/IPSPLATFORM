@@ -142,6 +142,7 @@ interface CourseData {
     description: string | null;
     image_url: string | null;
     instructor: string | null;
+    instructor_avatar: string | null;
   };
   enrollment: any;
   modules: Module[];
@@ -689,14 +690,46 @@ export default function CourseDetailPage() {
                       </div>
                     );
                   })()}
-                  {course.instructor && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <BookOpen className="h-4 w-4" />
-                      <span>{t('user.courses.instructor', 'Instructor')}: {course.instructor}</span>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
+
+              {/* Instructor */}
+              {course.instructor && (
+                <Card>
+                  <CardContent className="py-5">
+                    <div className="flex items-center gap-4">
+                      {course.instructor_avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={course.instructor_avatar}
+                          alt={course.instructor}
+                          className="h-14 w-14 rounded-full object-cover ring-2 ring-primary/10"
+                        />
+                      ) : (
+                        <div
+                          aria-hidden="true"
+                          className="h-14 w-14 rounded-full flex items-center justify-center bg-primary/10 text-primary text-lg font-semibold ring-2 ring-primary/10"
+                        >
+                          {course.instructor
+                            .split(' ')
+                            .map((part) => part.charAt(0))
+                            .filter(Boolean)
+                            .slice(0, 2)
+                            .join('')}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {t('user.courses.instructor', 'Instructor')}
+                        </p>
+                        <p className="text-base font-semibold text-foreground truncate">
+                          {course.instructor}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
 
               {/* Course Content - Modules and Lessons */}

@@ -190,8 +190,9 @@ export const EnrollmentInvoiceTemplate: React.FC<{ data: InvoiceData }> = ({ dat
     return `${day}/${month}/${year}`;
   };
 
-  const formatCurrency = (amount: number) => {
-    return `${amount.toLocaleString()} ${enrollment.currency}`;
+  const formatCurrency = (amount: number | null | undefined) => {
+    const safe = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+    return `${safe.toLocaleString()} ${enrollment.currency}`;
   };
 
   return (

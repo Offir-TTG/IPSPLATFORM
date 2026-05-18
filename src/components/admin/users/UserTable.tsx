@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import {
   Table,
   TableBody,
@@ -44,6 +45,9 @@ interface User {
     is_active: boolean;
     created_at: string;
     last_login_at?: string;
+    /** Profile image URL — rendered in the avatar circle when present;
+     *  falls back to initials otherwise. */
+    avatar_url?: string | null;
   };
 }
 
@@ -192,10 +196,22 @@ export function UserTable({
             >
               <TableCell style={{ textAlign: isRtl ? 'right' : 'left' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <span className="text-sm font-medium text-primary">
-                      {getInitials(user.users.first_name, user.users.last_name)}
-                    </span>
+                  {/* Avatar — show the uploaded profile image when present,
+                      fall back to initials in the primary-tinted circle. */}
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                    {user.users.avatar_url ? (
+                      <Image
+                        src={user.users.avatar_url}
+                        alt={`${user.users.first_name} ${user.users.last_name}`}
+                        width={40}
+                        height={40}
+                        className="h-10 w-10 object-cover"
+                      />
+                    ) : (
+                      <span className="text-sm font-medium text-primary">
+                        {getInitials(user.users.first_name, user.users.last_name)}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <div className="font-medium" dir="auto">

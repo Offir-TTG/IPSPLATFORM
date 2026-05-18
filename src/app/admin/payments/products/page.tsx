@@ -608,8 +608,16 @@ export default function ProductsPage() {
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" dir={direction}>
-            <DialogHeader>
+          {/* Sticky header layout: DialogContent becomes a flex column with
+              no own padding; the header keeps its own padding and `shrink-0`
+              so it pins at the top while the form body scrolls below. The
+              shadcn close button is `absolute` on DialogContent so it stays
+              anchored regardless of inner scroll position. */}
+          <DialogContent
+            className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0 flex flex-col"
+            dir={direction}
+          >
+            <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b bg-background">
               <DialogTitle suppressHydrationWarning>
                 {editingProduct
                   ? t('admin.payments.products.form.editTitle', 'Edit Product')
@@ -621,12 +629,14 @@ export default function ProductsPage() {
                   : t('admin.payments.products.form.createDescription', 'Create a new billable product in the system')}
               </DialogDescription>
             </DialogHeader>
-            <ProductForm
-              product={editingProduct}
-              onSave={handleSaveProduct}
-              onCancel={() => setIsDialogOpen(false)}
-              t={t}
-            />
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <ProductForm
+                product={editingProduct}
+                onSave={handleSaveProduct}
+                onCancel={() => setIsDialogOpen(false)}
+                t={t}
+              />
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -941,6 +951,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
         access_duration: product.access_duration || '',
         access_description: product.access_description || '',
         keap_tag: product.keap_tag || undefined,
+        crm_tag_slugs: product.crm_tag_slugs || [],
         enrollment_invitation_template_key: product.enrollment_invitation_template_key,
         enrollment_confirmation_template_key: product.enrollment_confirmation_template_key,
         enrollment_reminder_template_key: product.enrollment_reminder_template_key,
@@ -1526,6 +1537,9 @@ function ProductForm({ product, onSave, onCancel, t }: {
             onSignatureTemplateIdChange={(id) => setFormData({ ...formData, signature_template_id: id })}
             keapTag={formData.keap_tag}
             onKeapTagChange={(tag) => setFormData({ ...formData, keap_tag: tag })}
+            crmTagSlugs={formData.crm_tag_slugs}
+            onCrmTagSlugsChange={(slugs) => setFormData({ ...formData, crm_tag_slugs: slugs })}
+            direction={direction}
             t={t}
           />
         </TabsContent>

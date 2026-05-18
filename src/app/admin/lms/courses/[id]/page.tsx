@@ -45,6 +45,7 @@ import {
   Award,
   Link2,
   Copy,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -165,6 +166,8 @@ function SortableModule({
   onOpenZoomMeeting,
   onCreateZoomMeeting,
   creatingZoomFor,
+  onSyncRecording,
+  syncingRecordingFor,
   t,
   direction,
   isRtl,
@@ -182,6 +185,8 @@ function SortableModule({
   onOpenZoomMeeting: (lessonId: string) => void;
   onCreateZoomMeeting: (lessonId: string, platform?: 'zoom' | 'daily') => void;
   creatingZoomFor: string | null;
+  onSyncRecording: (lessonId: string) => void;
+  syncingRecordingFor: string | null;
   t: (key: string, fallback: string) => string;
   direction: 'ltr' | 'rtl';
   isRtl: boolean;
@@ -291,6 +296,8 @@ function SortableModule({
                     onOpenZoomMeeting={onOpenZoomMeeting}
                     onCreateZoomMeeting={onCreateZoomMeeting}
                     creatingZoomFor={creatingZoomFor}
+                    onSyncRecording={onSyncRecording}
+                    syncingRecordingFor={syncingRecordingFor}
                     t={t}
                     direction={direction}
                     isRtl={isRtl}
@@ -330,6 +337,8 @@ function SortableLesson({
   onOpenZoomMeeting,
   onCreateZoomMeeting,
   creatingZoomFor,
+  onSyncRecording,
+  syncingRecordingFor,
   t,
   direction,
   isRtl,
@@ -343,6 +352,8 @@ function SortableLesson({
   onOpenZoomMeeting: (lessonId: string) => void;
   onCreateZoomMeeting: (lessonId: string, platform?: 'zoom' | 'daily') => void;
   creatingZoomFor: string | null;
+  onSyncRecording: (lessonId: string) => void;
+  syncingRecordingFor: string | null;
   t: (key: string, fallback: string) => string;
   direction: 'ltr' | 'rtl';
   isRtl: boolean;
@@ -488,17 +499,57 @@ function SortableLesson({
           <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
             {/* Video Meeting Actions */}
             {(lesson.zoom_meeting_id || lesson.zoom_session?.daily_room_name) ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => onOpenZoomMeeting(lesson.id)}
-              >
-                <ExternalLink className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-                {lesson.zoom_session?.platform === 'daily'
-                  ? t('lms.builder.open_daily', 'Open Daily.co')
-                  : t('lms.builder.open_zoom', 'Open Zoom')}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => onOpenZoomMeeting(lesson.id)}
+                >
+                  <ExternalLink className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+                  {lesson.zoom_session?.platform === 'daily'
+                    ? t('lms.builder.open_daily', 'Open Daily.co')
+                    : t('lms.builder.open_zoom', 'Open Zoom')}
+                </Button>
+                {/* Manual recording sync — only meaningful for Zoom (Daily.co
+                    recordings would need a separate handler). Shows whenever
+                    there's a zoom_meeting_id; disabled with a "Synced" label
+                    once the recording has been fetched. */}
+                {lesson.zoom_meeting_id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => onSyncRecording(lesson.id)}
+                    disabled={
+                      syncingRecordingFor === lesson.id ||
+                      !!lesson.zoom_session?.has_recording
+                    }
+                    title={
+                      lesson.zoom_session?.has_recording
+                        ? t(
+                            'lms.builder.recording_already_synced',
+                            'Recording already synced'
+                          )
+                        : t(
+                            'lms.builder.sync_recording_tooltip',
+                            'Fetch the recording from Zoom now (use if webhook was missed)'
+                          )
+                    }
+                  >
+                    {syncingRecordingFor === lesson.id ? (
+                      <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
+                    ) : lesson.zoom_session?.has_recording ? (
+                      <CheckCircle className={isRtl ? 'h-3 w-3 ml-1.5 text-green-600' : 'h-3 w-3 mr-1.5 text-green-600'} />
+                    ) : (
+                      <RefreshCw className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+                    )}
+                    {lesson.zoom_session?.has_recording
+                      ? t('lms.builder.recording_synced_short', 'Synced')
+                      : t('lms.builder.sync_recording', 'Sync recording')}
+                  </Button>
+                )}
+              </>
             ) : (
               <Button
                 variant="outline"
@@ -590,6 +641,86 @@ export default function CourseBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [creatingZoomFor, setCreatingZoomFor] = useState<string | null>(null);
+  // Tracks which lesson is currently being backfilled from Zoom's recording
+  // API. Shows a spinner on the row's "Sync recording" button while in flight.
+  const [syncingRecordingFor, setSyncingRecordingFor] = useState<string | null>(null);
+
+  // Manually fetch a lesson's recording from Zoom and update the DB.
+  // Use when the recording.completed webhook didn't fire (local dev with
+  // no tunnel, prod outage, or app reconfigured). See
+  // POST /api/admin/lessons/[id]/sync-recording.
+  const handleSyncRecording = async (lessonId: string) => {
+    try {
+      setSyncingRecordingFor(lessonId);
+      const response = await fetch(`/api/admin/lessons/${lessonId}/sync-recording`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      // 8s for warnings/errors so the admin has time to read the Hebrew
+      // text before it disappears. Default showMessage timeout is 3s,
+      // which is fine for the success toast but too short here.
+      const LONG_TOAST = 8000;
+
+      if (!response.ok || !result.success) {
+        // Map known errorCode values to localized messages so the
+        // admin sees friendly Hebrew text instead of Zoom's raw English
+        // 404 body. Anything we don't recognise falls back to a generic
+        // failure toast carrying the server-provided detail.
+        const code: string | undefined = result.errorCode;
+        if (code === 'no_recording') {
+          showMessage(
+            'warning',
+            t(
+              'lms.builder.recording_not_found_on_zoom',
+              'No recording was found on Zoom for this lesson.'
+            ),
+            LONG_TOAST
+          );
+          return;
+        }
+        if (code === 'no_session' || code === 'no_meeting_id') {
+          showMessage(
+            'warning',
+            t(
+              'lms.builder.recording_no_meeting',
+              'This lesson has no Zoom meeting attached.'
+            ),
+            LONG_TOAST
+          );
+          return;
+        }
+        throw new Error(result.error || 'Failed to sync recording');
+      }
+
+      if (result.data?.recordingUrl) {
+        showMessage(
+          'success',
+          t('lms.builder.recording_synced', 'Recording synced successfully'),
+          LONG_TOAST
+        );
+        await loadCourse();
+      } else {
+        showMessage(
+          'warning',
+          t(
+            'lms.builder.recording_not_ready',
+            'Recording is still processing on Zoom; try again in a few minutes.'
+          ),
+          LONG_TOAST
+        );
+      }
+    } catch (error: any) {
+      console.error('Failed to sync recording:', error);
+      showMessage(
+        'error',
+        t('lms.builder.recording_sync_failed', 'Failed to sync recording'),
+        8000
+      );
+    } finally {
+      setSyncingRecordingFor(null);
+    }
+  };
 
   // Enrollment statistics
   const [enrollmentStats, setEnrollmentStats] = useState({
@@ -2422,6 +2553,8 @@ export default function CourseBuilderPage() {
                               onOpenZoomMeeting={handleOpenZoomMeeting}
                               onCreateZoomMeeting={handleCreateZoomMeeting}
                               creatingZoomFor={creatingZoomFor}
+                              onSyncRecording={handleSyncRecording}
+                              syncingRecordingFor={syncingRecordingFor}
                               t={t}
                               direction={direction}
                               isRtl={isRtl}

@@ -92,7 +92,7 @@ export function getVerificationEmailHtml(data: EmailVerificationData): string {
 <body>
   <div class="container">
     <div class="header">
-      <h1>Welcome to the Platform! 🎉</h1>
+      <h1>Welcome to the Platform</h1>
     </div>
 
     <div class="content">

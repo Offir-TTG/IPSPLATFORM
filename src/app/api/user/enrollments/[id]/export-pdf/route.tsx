@@ -385,8 +385,11 @@ export async function POST(
     }
     console.log('[PDF Export] Final branding config:', JSON.stringify(branding, null, 2));
 
-    // Calculate remaining amount
-    const remainingAmount = enrollment.total_amount - enrollment.paid_amount;
+    // Coerce nullable money fields to numbers up front so arithmetic
+    // (and downstream `.toLocaleString()`) never sees null/NaN.
+    const totalAmount = Number(enrollment.total_amount ?? product.price ?? 0) || 0;
+    const paidAmount = Number(enrollment.paid_amount ?? 0) || 0;
+    const remainingAmount = totalAmount - paidAmount;
 
     // Format data for PDF
     const receiptData = {
@@ -396,11 +399,11 @@ export async function POST(
         product_name: product.title,
         product_type: product.type,
         enrolled_at: enrollment.enrolled_at,
-        total_amount: enrollment.total_amount || product.price,
-        paid_amount: enrollment.paid_amount,
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
         remaining_amount: remainingAmount,
         total_refunded: totalRefunded,
-        net_paid_amount: enrollment.paid_amount - totalRefunded,
+        net_paid_amount: paidAmount - totalRefunded,
         currency: product.currency,
         payment_plan_name: paymentPlanName,
       },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { emitPersonBecameCustomer } from '@/lib/persons/outbox';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export async function POST(
 
     const { data: userData } = await supabase
       .from('users')
-      .select('id, tenant_id, first_name, last_name, phone, address, city, country')
+      .select('id, tenant_id, first_name, last_name, phone, address, city, country, person_id')
       .eq('id', user.id)
       .single();
 
@@ -150,6 +151,38 @@ export async function POST(
         // Log but don't fail enrollment if Keap fails
         console.error('Error applying Keap tag:', keapError);
       }
+    }
+
+    // ─── Cross-platform notify ────────────────────────────────────────
+    // Any successful enrollment — free OR paid — promotes the contact
+    // to "customer" on IParentingSchool. (The Stripe webhook also
+    // fires this for paid checkouts; the IParentingSchool handler is
+    // idempotent so two emits for the same person are a no-op.)
+    // Free products would otherwise never trigger the Stripe path, so
+    // this is the canonical hook point for the customer transition.
+    if (userData.person_id) {
+      const adminClient = createAdminClient();
+      await emitPersonBecameCustomer(adminClient, {
+        personId: userData.person_id,
+        userId: userData.id,
+        firstPurchaseAt: new Date().toISOString(),
+        productSummary: {
+          product_name: product.title,
+          product_type: product.type ?? null,
+          amount: enrollment.total_amount ?? 0,
+          currency: (enrollment.currency ?? 'USD').toUpperCase(),
+        },
+      });
+    } else {
+      // person_id not yet resolved (signup-pending still in flight).
+      // The drainer will deliver person.linked shortly; the contact
+      // remains "contact" until then. An admin viewing the contact
+      // after that point will see the lifecycle catch up the next
+      // time a customer-state event fires.
+      console.warn(
+        '[enrollments/complete] users.person_id is null; skipping became_customer emit',
+        userData.id,
+      );
     }
 
     return NextResponse.json({
