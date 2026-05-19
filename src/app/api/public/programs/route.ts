@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// createClient() reads auth cookies via next/headers, which can't run at
+// build time — force this route to be dynamic so Next stops trying to
+// pre-render it.
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
