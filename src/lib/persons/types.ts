@@ -92,6 +92,10 @@ export type PersonBecameCustomerPayload = {
     amount: number;
     currency: string;
   } | null;
+  /** CRM tag slugs configured on the purchased product. The receiver
+   *  resolves each slug to a `crm_tags.id` and applies it to the
+   *  contact's crm_contact_tags. Empty / omitted = no tag apply. */
+  crm_tag_slugs?: string[];
 };
 
 export type PersonEnrollmentPendingPayload = {
@@ -101,6 +105,15 @@ export type PersonEnrollmentPendingPayload = {
   phone: string | null;
   locale: string | null;
   country: string | null;
+  /** Full Google-formatted address from IPSPlatform's wizard.
+   *  Routed to crm_contacts.address_line1 on initial create. */
+  address_line1?: string | null;
+  /** Structured address parts parsed from Google Places'
+   *  address_components. Each field lands on its own crm_contacts
+   *  column when currently NULL. */
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
   source: {
     type: "course" | "program" | "lecture";
     id: string;

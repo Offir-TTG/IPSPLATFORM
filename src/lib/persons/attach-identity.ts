@@ -38,6 +38,17 @@ export type AttachIdentityInput = {
   phone?: string | null;
   locale?: string | null;
   country?: string | null;
+  /** Single-line address string from the enrollment wizard's profile
+   *  step. Forwarded to IParentingSchool's get-or-create to populate
+   *  the CRM contact's address_line1 on initial create. */
+  addressLine1?: string | null;
+  /** Structured address parts parsed from Google Places' address_components.
+   *  Each field becomes its own column on crm_contacts so the CRM admin can
+   *  filter/segment by city / region / postal. Only the create-time fill
+   *  semantic applies (never overwrite admin-curated values). */
+  city?: string | null;
+  region?: string | null;
+  postalCode?: string | null;
   /** Optional signed token from IParentingSchool's Register redirect.
    *  When present + email matches, skips the get-or-create round-trip. */
   personToken?: string | null;
@@ -61,6 +72,10 @@ export type AttachIdentityInput = {
       amount: number;
       currency: string;
     } | null;
+    /** CRM tag slugs from the purchased product. Forwarded in the
+     *  outbox event payload; IParentingSchool resolves slugs →
+     *  tag_ids and applies them to crm_contact_tags. */
+    crmTagSlugs?: string[];
   } | null;
 };
 
@@ -84,6 +99,10 @@ export async function attachPersonIdentity(
     phone,
     locale,
     country,
+    addressLine1,
+    city,
+    region,
+    postalCode,
     personToken,
     source,
     emitEnrolledEvent,
@@ -96,41 +115,59 @@ export async function attachPersonIdentity(
   }
 
   // ─── Resolve person_id ─────────────────────────────────────────────
+  // Always call get-or-create when we have profile/address data to push.
+  // The signed token (when present) is only a resilience fallback for the
+  // case where IParentingSchool is unreachable — it lets us link the user
+  // locally without a round-trip. But we cannot use the token as a shortcut
+  // and skip the call entirely, because get-or-create is also the channel
+  // that delivers the wizard's name / phone / address parts to the CRM.
   let personId: string | null = null;
   let resolutionFailed = false;
 
   const tokenClaims = verifyPersonToken(personToken ?? null);
-  if (
-    tokenClaims &&
-    tokenClaims.email.trim().toLowerCase() === email.trim().toLowerCase()
-  ) {
+  const tokenMatchesEmail =
+    !!tokenClaims &&
+    tokenClaims.email.trim().toLowerCase() === email.trim().toLowerCase();
+
+  const fullName =
+    [firstName, lastName].filter(Boolean).join(" ").trim() || null;
+  const safeSource =
+    source && SOURCE_TYPES.has(source.type)
+      ? { type: source.type, id: source.id, slug: source.slug }
+      : null;
+
+  const outcome = await getOrCreatePerson({
+    email,
+    name: fullName,
+    phone: phone ?? null,
+    locale: locale ?? null,
+    country: country ?? null,
+    address_line1: addressLine1 ?? null,
+    city: city ?? null,
+    region: region ?? null,
+    postal_code: postalCode ?? null,
+    source: safeSource,
+  });
+
+  if (outcome.ok) {
+    personId = outcome.person_id;
+  } else if (tokenMatchesEmail && tokenClaims) {
+    // Cross-app call failed but we have a trusted token — use its
+    // person_id so the local user.person_id stamp can still happen.
+    // The address/profile parts the token didn't carry will land
+    // later via the person.enrollment_pending fallback below.
     personId = tokenClaims.person_id;
+    resolutionFailed = true;
+    console.warn(
+      "[persons/attach] get-or-create unreachable; falling back to token person_id and queueing enrollment_pending:",
+      outcome.reason,
+    );
   } else {
-    const fullName =
-      [firstName, lastName].filter(Boolean).join(" ").trim() || null;
-    const safeSource =
-      source && SOURCE_TYPES.has(source.type)
-        ? { type: source.type, id: source.id, slug: source.slug }
-        : null;
-
-    const outcome = await getOrCreatePerson({
-      email,
-      name: fullName,
-      phone: phone ?? null,
-      locale: locale ?? null,
-      country: country ?? null,
-      source: safeSource,
-    });
-
-    if (outcome.ok) {
-      personId = outcome.person_id;
-    } else {
-      resolutionFailed = true;
-      console.warn(
-        "[persons/attach] get-or-create unreachable; queueing enrollment_pending:",
-        outcome.reason,
-      );
-    }
+    resolutionFailed = true;
+    console.warn(
+      "[persons/attach] get-or-create unreachable; queueing enrollment_pending:",
+      outcome.reason,
+    );
   }
 
   // ─── Stamp users.person_id ─────────────────────────────────────────
@@ -163,6 +200,7 @@ export async function attachPersonIdentity(
       userId,
       firstPurchaseAt: emitBecameCustomer.firstPurchaseAt,
       productSummary: emitBecameCustomer.productSummary ?? null,
+      crmTagSlugs: emitBecameCustomer.crmTagSlugs ?? [],
     });
   }
 
@@ -179,6 +217,10 @@ export async function attachPersonIdentity(
       phone: phone ?? null,
       locale: locale ?? null,
       country: country ?? null,
+      addressLine1: addressLine1 ?? null,
+      city: city ?? null,
+      region: region ?? null,
+      postalCode: postalCode ?? null,
       source: source ?? null,
     });
   }

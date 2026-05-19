@@ -56,6 +56,7 @@ export async function POST(
           type,
           requires_signature,
           payment_model,
+          crm_tag_slugs,
           keap_tag
         )
       `)
@@ -172,6 +173,9 @@ export async function POST(
           amount: enrollment.total_amount ?? 0,
           currency: (enrollment.currency ?? 'USD').toUpperCase(),
         },
+        crmTagSlugs: Array.isArray((product as { crm_tag_slugs?: string[] }).crm_tag_slugs)
+          ? (product as { crm_tag_slugs?: string[] }).crm_tag_slugs
+          : [],
       });
     } else {
       // person_id not yet resolved (signup-pending still in flight).

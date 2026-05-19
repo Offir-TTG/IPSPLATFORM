@@ -25,6 +25,48 @@ declare global {
   }
 }
 
+// Pull the bits we care about out of Google Places' address_components
+// array. Returns null for parts that aren't present (some addresses
+// don't have a postal_code or a sub-locality). The full formatted
+// string still goes into `address` separately for display.
+type GoogleAddressComponent = {
+  long_name: string;
+  short_name: string;
+  types: string[];
+};
+type AddressParts = {
+  address_line1: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
+};
+function parseGoogleAddressComponents(
+  components: GoogleAddressComponent[],
+): AddressParts {
+  const findOne = (...types: string[]): GoogleAddressComponent | undefined =>
+    components.find((c) => types.some((t) => c.types.includes(t)));
+
+  const streetNumber = findOne('street_number')?.long_name ?? '';
+  const route = findOne('route')?.long_name ?? '';
+  const line1 = [streetNumber, route].filter(Boolean).join(' ').trim();
+
+  return {
+    address_line1: line1 || null,
+    city:
+      findOne('locality', 'postal_town', 'sublocality_level_1', 'sublocality')
+        ?.long_name ?? null,
+    region:
+      findOne('administrative_area_level_1', 'administrative_area_level_2')
+        ?.long_name ?? null,
+    postal_code: findOne('postal_code')?.long_name ?? null,
+    // Country: prefer long name (e.g. "Israel") over the ISO code
+    // ("IL") so the admin's CRM list reads naturally. ISO codes can
+    // be derived later if/when the segmentation engine needs them.
+    country: findOne('country')?.long_name ?? null,
+  };
+}
+
 // Load Google Maps Script
 const loadGoogleMapsScript = (apiKey: string): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -509,7 +551,26 @@ export default function EnrollmentWizardPage() {
         const place = autocompleteRef.current?.getPlace();
 
         if (place && place.formatted_address) {
-          setProfileData((prev: any) => ({ ...prev, address: place.formatted_address || '' }));
+          // Parse the structured address components so the admin
+          // CRM can show each part as its own field (city, region,
+          // postal_code, country) instead of one opaque blob.
+          const parts = parseGoogleAddressComponents(place.address_components || []);
+          console.log('[Wizard] place_changed fired', {
+            formatted_address: place.formatted_address,
+            address_components_count: (place.address_components || []).length,
+            parts,
+          });
+          setProfileData((prev: any) => ({
+            ...prev,
+            address: place.formatted_address || '',
+            address_line1: parts.address_line1,
+            city: parts.city,
+            region: parts.region,
+            postal_code: parts.postal_code,
+            country: parts.country,
+          }));
+        } else {
+          console.warn('[Wizard] place_changed fired but place has no formatted_address', place);
         }
       });
     } catch (error) {
@@ -2050,7 +2111,7 @@ export default function EnrollmentWizardPage() {
             {/* Success Message */}
             <div className="space-y-3">
               <h2 className="text-2xl sm:text-3xl font-bold text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.complete.congratulations', '🎉 Congratulations!')}
+                {t('enrollment.wizard.complete.congratulations', 'Congratulations!')}
               </h2>
               <p className="text-base sm:text-lg text-muted-foreground max-w-md mx-auto" suppressHydrationWarning>
                 {t('enrollment.wizard.complete.success', 'Your enrollment is complete! You can now access your content.')}

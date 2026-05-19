@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, XCircle, Mail, UserPlus, Calendar, CreditCard, Clock } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Mail, UserPlus, Calendar, CreditCard, Clock, Sparkles } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { he, enUS } from 'date-fns/locale';
 import { useLanguage } from '@/context/AppContext';
@@ -348,9 +348,9 @@ export default function EnrollmentPage() {
 
             {enrollment.payment_model === 'free' && (
               <Alert className="border-emerald-200 bg-emerald-50">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <Sparkles className="h-4 w-4 text-emerald-600" />
                 <AlertDescription className="text-emerald-700 font-medium">
-                  {t('enrollment.pricing.free', '🎉 This enrollment is completely free!')}
+                  {t('enrollment.pricing.free', 'This enrollment is completely free!')}
                 </AlertDescription>
               </Alert>
             )}
@@ -387,12 +387,12 @@ export default function EnrollmentPage() {
               >
                 {accepting ? (
                   <>
-                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    <Loader2 className="h-5 w-5 me-2 animate-spin" />
                     {t('enrollment.action.processing', 'Processing...')}
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="h-5 w-5 mr-2" />
+                    <CheckCircle2 className="h-5 w-5 me-2" />
                     {t('enrollment.action.accept', 'Accept Enrollment')}
                   </>
                 )}

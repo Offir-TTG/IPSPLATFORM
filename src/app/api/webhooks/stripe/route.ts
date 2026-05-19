@@ -296,10 +296,11 @@ async function emitBecameCustomerForEnrollment(
       amount: number;
       currency: string;
     } | null = null;
+    let crmTagSlugs: string[] = [];
     if (productId) {
       const { data: prod } = await supabase
         .from('products')
-        .select('title, type')
+        .select('title, type, crm_tag_slugs')
         .eq('id', productId)
         .maybeSingle();
       if (prod) {
@@ -309,6 +310,9 @@ async function emitBecameCustomerForEnrollment(
           amount: args.amount,
           currency: args.currency,
         };
+        if (Array.isArray(prod.crm_tag_slugs)) {
+          crmTagSlugs = prod.crm_tag_slugs;
+        }
       }
     }
 
@@ -317,6 +321,7 @@ async function emitBecameCustomerForEnrollment(
       userId,
       firstPurchaseAt: args.paidAt,
       productSummary,
+      crmTagSlugs,
     });
   } catch (e) {
     console.error('[stripe] became_customer emit failed:', e);

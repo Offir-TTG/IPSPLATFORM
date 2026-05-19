@@ -57,6 +57,10 @@ export async function emitPersonBecameCustomer(
       amount: number;
       currency: string;
     } | null;
+    /** CRM tag slugs on the purchased product. IParentingSchool's
+     *  inbound handler resolves each to a crm_tags.id and inserts
+     *  into crm_contact_tags. */
+    crmTagSlugs?: string[];
   },
 ): Promise<void> {
   try {
@@ -68,6 +72,7 @@ export async function emitPersonBecameCustomer(
         person_id: args.personId,
         first_purchase_at: args.firstPurchaseAt,
         product_summary: args.productSummary ?? null,
+        crm_tag_slugs: args.crmTagSlugs ?? [],
       },
     });
     if (error) {
@@ -91,6 +96,12 @@ export async function emitPersonEnrollmentPending(
     phone: string | null;
     locale: string | null;
     country: string | null;
+    /** Single-line address (Google-formatted) from the wizard. */
+    addressLine1?: string | null;
+    /** Structured address parts parsed from Google's address_components. */
+    city?: string | null;
+    region?: string | null;
+    postalCode?: string | null;
     source: {
       type: "course" | "program" | "lecture";
       id: string;
@@ -110,6 +121,10 @@ export async function emitPersonEnrollmentPending(
         phone: args.phone,
         locale: args.locale,
         country: args.country,
+        address_line1: args.addressLine1 ?? null,
+        city: args.city ?? null,
+        region: args.region ?? null,
+        postal_code: args.postalCode ?? null,
         source: args.source,
       },
     });

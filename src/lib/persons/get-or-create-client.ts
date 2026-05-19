@@ -26,6 +26,16 @@ export type GetOrCreatePersonInput = {
   phone?: string | null;
   locale?: string | null;
   country?: string | null;
+  /** Single-line address string from the enrollment wizard. Stored
+   *  on the CRM contact's address_line1 (only when the contact is
+   *  new — admin-curated address values are not overwritten). */
+  address_line1?: string | null;
+  /** Structured address parts parsed from Google Places' address_components.
+   *  Same create-time fill semantic as address_line1 — only populated when
+   *  the corresponding column on crm_contacts is still NULL. */
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
   source?: Source | null;
   marketing_opt_in?: boolean;
 };

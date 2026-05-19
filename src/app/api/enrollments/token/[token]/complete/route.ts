@@ -110,6 +110,7 @@ export async function POST(
           requires_signature,
           payment_model,
           keap_tag,
+          crm_tag_slugs,
           metadata
         )
       `)
@@ -141,6 +142,14 @@ export async function POST(
     const profileData = profile;
 
     console.log('[Enrollment Complete] Using profile data from request body:', profileData);
+    console.log('[Enrollment Complete] Address parts received:', {
+      address: profileData?.address ?? null,
+      address_line1: profileData?.address_line1 ?? null,
+      city: profileData?.city ?? null,
+      region: profileData?.region ?? null,
+      postal_code: profileData?.postal_code ?? null,
+      country: profileData?.country ?? null,
+    });
 
     // Validate all required steps are complete
 
@@ -1009,6 +1018,17 @@ export async function POST(
             phone: profileData?.phone ?? null,
             locale: profileData?.language ?? null,
             country: profileData?.country ?? null,
+            // Structured address components from Google Places. The
+            // wizard parses address_components into these fields; we
+            // forward each one so the CRM admin's contact-detail
+            // shows separate inputs. address_line1 falls back to the
+            // formatted single-string address when Google didn't
+            // return a street_number + route (e.g., when the user
+            // typed a city-level address without a street).
+            addressLine1: profileData?.address_line1 ?? profileData?.address ?? null,
+            city: profileData?.city ?? null,
+            region: profileData?.region ?? null,
+            postalCode: profileData?.postal_code ?? null,
             personToken: person_token ?? null,
             source: source ?? null,
             emitEnrolledEvent: true,
@@ -1020,6 +1040,9 @@ export async function POST(
                 amount: enrollment.total_amount ?? 0,
                 currency: (enrollment.currency ?? "USD").toUpperCase(),
               },
+              crmTagSlugs: Array.isArray(product?.crm_tag_slugs)
+                ? product.crm_tag_slugs
+                : [],
             },
           });
         }
@@ -1028,7 +1051,7 @@ export async function POST(
         // emit became_customer directly. No get-or-create needed.
         const { data: linkedUser } = await supabase
           .from('users')
-          .select('person_id, email, first_name, last_name, phone')
+          .select('person_id, email, first_name, last_name, phone, location')
           .eq('id', userId)
           .maybeSingle();
         if (linkedUser?.person_id) {
@@ -1043,6 +1066,9 @@ export async function POST(
               amount: enrollment.total_amount ?? 0,
               currency: (enrollment.currency ?? "USD").toUpperCase(),
             },
+            crmTagSlugs: Array.isArray(product?.crm_tag_slugs)
+              ? product.crm_tag_slugs
+              : [],
           });
         } else {
           // Existing user without person_id is rare (legacy account
@@ -1056,6 +1082,9 @@ export async function POST(
               firstName: linkedUser.first_name ?? null,
               lastName: linkedUser.last_name ?? null,
               phone: linkedUser.phone ?? null,
+              // users.location holds the full Google-formatted address
+              // (set in the wizard's user insert as profile.address).
+              addressLine1: (linkedUser as { location?: string | null }).location ?? null,
               personToken: person_token ?? null,
               source: source ?? null,
               emitEnrolledEvent: false, // not new — they were already enrolled
