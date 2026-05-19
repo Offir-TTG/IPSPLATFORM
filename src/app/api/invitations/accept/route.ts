@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { attachPersonIdentity } from '@/lib/persons/attach-identity';
 
 export const dynamic = 'force-dynamic';
 
@@ -211,6 +212,26 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Failed to add user to organization' },
         { status: 500 }
       );
+    }
+
+    // ─── Cross-platform person identity ─────────────────────────────
+    // Accepting an invitation is functionally equivalent to a
+    // registration: resolve a person_id on IParentingSchool (no token
+    // here — invitation flows always go via get-or-create by email)
+    // and stamp it on users.person_id. Emit person.enrolled so
+    // IParentingSchool's lifecycle catches up. Best-effort.
+    try {
+      await attachPersonIdentity({
+        supabase: supabaseAdmin,
+        userId,
+        email: invitation.email,
+        firstName: first_name || invitation.first_name,
+        lastName: last_name || invitation.last_name,
+        phone: phone || null,
+        emitEnrolledEvent: true,
+      });
+    } catch (identityError) {
+      console.error('[invitations/accept] person-identity attach failed:', identityError);
     }
 
     // Mark invitation as accepted

@@ -163,6 +163,27 @@ export async function POST(request: NextRequest) {
         // This can be fixed manually if needed
       }
 
+      // ─── Cross-platform person identity ─────────────────────────────
+      // Organization-creator signup: resolve person_id via
+      // IParentingSchool so the new admin gets linked to a CRM
+      // contact too. Best-effort.
+      try {
+        const { attachPersonIdentity } = await import('@/lib/persons/attach-identity');
+        await attachPersonIdentity({
+          supabase: supabaseAdmin,
+          userId: adminUserId,
+          email,
+          firstName,
+          lastName,
+          emitEnrolledEvent: true,
+        });
+      } catch (identityError) {
+        console.error(
+          '[signup/organization] person-identity attach failed:',
+          identityError,
+        );
+      }
+
       // Step 5: Send verification email
       const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
 

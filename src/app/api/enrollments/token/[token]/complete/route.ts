@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { attachPersonIdentity } from '@/lib/persons/attach-identity';
 
 /**
  * POST /api/enrollments/token/:token/complete
@@ -41,7 +42,17 @@ export async function POST(
     // Use admin client to bypass RLS - enrollment links are accessed by unauthenticated users
     const supabase = createAdminClient();
     const body = await request.json();
-    const { password, profile, docusignEnvelopeId, isExistingUser } = body;
+    const {
+      password,
+      profile,
+      docusignEnvelopeId,
+      isExistingUser,
+      // Cross-platform identity (forwarded by the wizard frontend when
+      // available; both optional — the helper falls back to email-based
+      // get-or-create on IParentingSchool).
+      person_token,
+      source,
+    } = body;
 
     console.log('[Enrollment Complete] Received wizard data:', {
       hasPassword: !!password,
@@ -975,6 +986,96 @@ export async function POST(
       // On error, default to dashboard redirect (safe default)
       shouldRedirectToDashboard = true;
       showConfirmation = false;
+    }
+
+    // ─── Cross-platform person identity ───────────────────────────────
+    // For new users: resolve a person_id via IParentingSchool (signed
+    // token OR get-or-create by email) and stamp users.person_id.
+    // Emit person.enrolled and person.became_customer (this route always
+    // represents a finalised enrollment — free OR paid).
+    // For existing users: skip get-or-create (users.person_id should
+    // already be set from their original signup) and only emit
+    // person.became_customer so IParentingSchool's lifecycle catches up.
+    try {
+      if (!isExistingUser) {
+        const profileEmail = profileData?.email ?? profile?.email;
+        if (profileEmail) {
+          await attachPersonIdentity({
+            supabase,
+            userId,
+            email: profileEmail,
+            firstName: profileData?.first_name ?? null,
+            lastName: profileData?.last_name ?? null,
+            phone: profileData?.phone ?? null,
+            locale: profileData?.language ?? null,
+            country: profileData?.country ?? null,
+            personToken: person_token ?? null,
+            source: source ?? null,
+            emitEnrolledEvent: true,
+            emitBecameCustomer: {
+              firstPurchaseAt: new Date().toISOString(),
+              productSummary: {
+                product_name: product?.title ?? "",
+                product_type: product?.type ?? null,
+                amount: enrollment.total_amount ?? 0,
+                currency: (enrollment.currency ?? "USD").toUpperCase(),
+              },
+            },
+          });
+        }
+      } else {
+        // Existing user: look up their already-stamped person_id and
+        // emit became_customer directly. No get-or-create needed.
+        const { data: linkedUser } = await supabase
+          .from('users')
+          .select('person_id, email, first_name, last_name, phone')
+          .eq('id', userId)
+          .maybeSingle();
+        if (linkedUser?.person_id) {
+          const { emitPersonBecameCustomer } = await import('@/lib/persons/outbox');
+          await emitPersonBecameCustomer(supabase, {
+            personId: linkedUser.person_id,
+            userId,
+            firstPurchaseAt: new Date().toISOString(),
+            productSummary: {
+              product_name: product?.title ?? "",
+              product_type: product?.type ?? null,
+              amount: enrollment.total_amount ?? 0,
+              currency: (enrollment.currency ?? "USD").toUpperCase(),
+            },
+          });
+        } else {
+          // Existing user without person_id is rare (legacy account
+          // pre-cross-platform). Resolve via email so future events
+          // route correctly.
+          if (linkedUser?.email) {
+            await attachPersonIdentity({
+              supabase,
+              userId,
+              email: linkedUser.email,
+              firstName: linkedUser.first_name ?? null,
+              lastName: linkedUser.last_name ?? null,
+              phone: linkedUser.phone ?? null,
+              personToken: person_token ?? null,
+              source: source ?? null,
+              emitEnrolledEvent: false, // not new — they were already enrolled
+              emitBecameCustomer: {
+                firstPurchaseAt: new Date().toISOString(),
+                productSummary: {
+                  product_name: product?.title ?? "",
+                  product_type: product?.type ?? null,
+                  amount: enrollment.total_amount ?? 0,
+                  currency: (enrollment.currency ?? "USD").toUpperCase(),
+                },
+              },
+            });
+          }
+        }
+      }
+    } catch (identityError) {
+      // Cross-platform identity is best-effort — never block the
+      // enrollment-complete response on a downstream notification glitch.
+      console.error('[Enrollment Complete] person-identity attach failed:', identityError);
     }
 
     return NextResponse.json({

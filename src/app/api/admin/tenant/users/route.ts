@@ -325,6 +325,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ─── Cross-platform person identity ─────────────────────────────
+    // Admin-created user: resolve person_id via IParentingSchool's
+    // get-or-create so the user gets linked to their existing
+    // crm_contact (or creates one if the email is new). Best-effort —
+    // a failed cross-app call queues an enrollment_pending event for
+    // later resolution; never blocks the admin "create user" action.
+    try {
+      const { attachPersonIdentity } = await import('@/lib/persons/attach-identity');
+      await attachPersonIdentity({
+        supabase: adminClient,
+        userId: authData.user.id,
+        email,
+        firstName: first_name ?? null,
+        lastName: last_name ?? null,
+        phone: phone ?? null,
+        // Admin-created users are treated as enrolled the moment the
+        // admin adds them — they have an account, role, and tenant
+        // assignment already.
+        emitEnrolledEvent: true,
+      });
+    } catch (identityError) {
+      console.error('[admin/tenant/users] person-identity attach failed:', identityError);
+    }
+
     // Send welcome email with login credentials (if requested)
     if (send_email) {
       try {
