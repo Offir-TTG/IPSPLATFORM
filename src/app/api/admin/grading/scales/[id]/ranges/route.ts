@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { GradeRangeCreateInput } from '@/types/grading';
 import { validateGradeRanges } from '@/lib/grading/gradeCalculator';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/grading/scales/[id]/ranges - Get all grade ranges for a scale
 export async function GET(
   request: NextRequest,

@@ -2,6 +2,10 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import type { GradingScale, GradingScaleCreateInput } from '@/types/grading';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/grading/scales - List all grading scales
 export async function GET(request: NextRequest) {
   try {

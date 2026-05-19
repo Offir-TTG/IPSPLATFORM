@@ -2,6 +2,10 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import type { GradeItem, GradeItemCreateInput } from '@/types/grading';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/lms/courses/[id]/grading/items - List all grade items for a course
 export async function GET(
   request: NextRequest,

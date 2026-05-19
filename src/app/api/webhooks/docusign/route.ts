@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 // DocuSign Connect webhook events
 interface DocuSignWebhookEvent {
   event: string;

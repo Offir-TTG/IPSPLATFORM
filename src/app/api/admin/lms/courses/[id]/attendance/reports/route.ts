@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/lms/courses/[id]/attendance/reports
  * Retrieves attendance statistics for all students in a course

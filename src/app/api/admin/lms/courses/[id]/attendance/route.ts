@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { BulkAttendanceInput, Attendance } from '@/types/lms';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/lms/courses/[id]/attendance
  * Retrieves attendance records for a course

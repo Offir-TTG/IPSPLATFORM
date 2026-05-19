@@ -1,6 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/lms/courses/[id]/grading/grades - List all grades for a course
 export async function GET(
   request: NextRequest,

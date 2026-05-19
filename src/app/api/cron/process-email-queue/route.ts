@@ -11,6 +11,10 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { sendEmail } from '@/lib/email/send';
 import Handlebars from 'handlebars';
 
+// Reads request-scoped APIs (cookies / searchParams / dynamic params) —
+// must run per-request, never pre-rendered.
+export const dynamic = 'force-dynamic';
+
 const CRON_SECRET = process.env.CRON_SECRET || 'K8mX2vN9pL5wQ3yT7hJ6fR4aZ1cD0gH3';
 const BATCH_SIZE = 10; // Process 10 emails per run
 
