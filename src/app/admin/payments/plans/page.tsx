@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import React, { useState, useEffect } from 'react';
@@ -386,7 +386,10 @@ export default function PaymentPlansPage() {
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir={direction}>
+          {/* `max-h-[90vh] overflow-y-auto` removed — DialogContent now
+              defaults to a frozen-header/scrollable-body layout via
+              DialogBody inside PaymentPlanForm. */}
+          <DialogContent className="max-w-2xl" dir={direction}>
             <DialogHeader>
               <DialogTitle suppressHydrationWarning>
                 {editingPlan ? t('admin.payments.plans.form.editTitle', 'Edit Payment Plan') : t('admin.payments.plans.form.createTitle', 'Create Payment Plan')}
@@ -452,7 +455,11 @@ function PaymentPlanForm({ plan, onSave, onCancel, t, direction, isRtl }: {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    // `flex flex-col flex-1 min-h-0` so the form fills the remaining
+    // DialogContent height, letting DialogBody scroll while DialogFooter
+    // stays pinned at the bottom.
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 gap-6">
+      <DialogBody className="space-y-6">
       {/* Basic Info */}
       <div className="space-y-4">
         <div>
@@ -724,6 +731,7 @@ function PaymentPlanForm({ plan, onSave, onCancel, t, direction, isRtl }: {
           </div>
         </CardContent>
       </Card>
+      </DialogBody>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>

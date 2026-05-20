@@ -736,6 +736,7 @@ export default function CourseBuilderPage() {
 
   // Course image URL
   const [courseImageUrl, setCourseImageUrl] = useState<string | null>(null);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
   // Dialog states
   const [showModuleDialog, setShowModuleDialog] = useState(false);
@@ -2373,7 +2374,7 @@ export default function CourseBuilderPage() {
               direction={direction}
             />
 
-            {/* Course Description */}
+            {/* Course Description — collapsed by default with show more/less toggle */}
             {course?.description && (
               <Card>
                 <CardHeader>
@@ -2382,10 +2383,31 @@ export default function CourseBuilderPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div
-                    className={`text-muted-foreground prose prose-sm max-w-none dark:prose-invert ${isRtl ? 'text-right' : 'text-left'}`}
-                    dangerouslySetInnerHTML={{ __html: course.description }}
-                  />
+                  <div className="relative">
+                    <div
+                      className={`text-muted-foreground prose prose-sm max-w-none dark:prose-invert ${isRtl ? 'text-right' : 'text-left'} ${
+                        isDescriptionExpanded ? '' : 'line-clamp-3'
+                      }`}
+                      dangerouslySetInnerHTML={{ __html: course.description }}
+                    />
+                    {!isDescriptionExpanded && (
+                      <div
+                        className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDescriptionExpanded((v) => !v)}
+                    className="mt-2 ml-auto block h-auto px-2 py-1 text-xs"
+                  >
+                    {isDescriptionExpanded
+                      ? t('common.show_less', 'Show less')
+                      : t('common.show_more', 'Show more')}
+                  </Button>
                 </CardContent>
               </Card>
             )}

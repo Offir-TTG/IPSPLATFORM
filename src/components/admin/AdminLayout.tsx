@@ -61,6 +61,9 @@ interface NavItem {
   translation_key?: string;
   visible?: boolean;
   order?: number;
+  /** Sub-items mapped from the custom navigation config. Optional —
+   *  flat (no-children) items are still valid. */
+  children?: NavItem[];
 }
 
 interface NavSection {
@@ -78,6 +81,19 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Which parent items are currently expanded (showing their children).
+  // Keyed by item.key so the set persists across re-renders of identical
+  // items. Default: collapsed. A parent auto-opens when one of its
+  // children is the active route (handled below).
+  const [expandedNavKeys, setExpandedNavKeys] = useState<Set<string>>(new Set());
+  const toggleNavGroup = (key: string) => {
+    setExpandedNavKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const [hydrated, setHydrated] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -330,9 +346,24 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     },
   ];
 
-  // Apply custom navigation config if available
+  // Apply custom navigation config if available.
+  // Sub-items (item.children) are mapped through too — the API returns
+  // a 2-level tree (section → item → sub-item) since the navigation
+  // editor gained nesting support. Dropping `children` here was the
+  // bug that made nested items "disappear" from the rendered sidebar.
   let navSections = baseNavSections;
   if (customNavSections && customNavSections.length > 0) {
+    const mapItem = (item: any): any => ({
+      key: item.translation_key || 'nav.item',
+      icon: item.icon ? (iconMap[item.icon] || Settings) : Settings,
+      href: item.href,
+      children: Array.isArray(item.children)
+        ? item.children
+            .filter((c: any) => c.visible)
+            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+            .map(mapItem)
+        : [],
+    });
     navSections = customNavSections
       .filter(section => section.visible)
       .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -341,11 +372,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         items: section.items
           .filter(item => item.visible)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
-          .map(item => ({
-            key: item.translation_key || 'nav.item',
-            icon: item.icon ? (iconMap[item.icon] || Settings) : Settings,
-            href: item.href,
-          }))
+          .map(mapItem),
       }));
   }
 
@@ -514,25 +541,26 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               </div>
             ) : (
               <div className="flex items-center justify-between gap-2">
-                <Link href="/admin/dashboard" className="flex items-center gap-2">
-                  {tenantLogo ? (
-                    <div className="h-10 w-10 flex items-center justify-center flex-shrink-0">
-                      <img
-                        src={tenantLogo}
-                        alt={tenantName}
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
-                      <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
-                    </div>
-                  )}
-                  <h2 className="font-bold" style={{
-                    color: 'hsl(var(--sidebar-foreground))',
-                    fontSize: 'var(--font-size-lg)',
-                    fontFamily: 'var(--font-family-heading)'
-                  }}>{tenantName}</h2>
+                {/* Sidebar header now shows the "Admin Panel" title
+                    (was: logo + org name). The logo + tenant name moved
+                    to the desktop top header so the org identity reads
+                    against the main content area, and the sidebar
+                    leads with the section the admin is actually in. */}
+                <Link
+                  href="/admin/dashboard"
+                  className="flex items-center gap-2 min-w-0 flex-1"
+                >
+                  <h2
+                    className="font-bold truncate"
+                    style={{
+                      color: 'hsl(var(--sidebar-foreground))',
+                      fontSize: 'var(--font-size-lg)',
+                      fontFamily: 'var(--font-family-heading)',
+                    }}
+                    suppressHydrationWarning
+                  >
+                    {t('admin.title', 'Admin Panel')}
+                  </h2>
                 </Link>
                 <button
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -564,55 +592,137 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                   {section.items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(item.href);
+                    const hasChildren =
+                      Array.isArray(item.children) && item.children.length > 0;
+                    // Auto-expand a parent when one of its children is
+                    // the active route — otherwise the active sub-page
+                    // would be invisible inside a collapsed parent.
+                    const childActiveSomewhere =
+                      hasChildren &&
+                      item.children!.some((c: any) => isActive(c.href));
+                    const isExpanded =
+                      hasChildren &&
+                      (expandedNavKeys.has(item.key) || childActiveSomewhere);
 
                     return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={`
-                          flex items-center gap-3 px-3 py-2 rounded-md transition-colors
-                          ${active ? 'font-medium' : ''}
-                          ${sidebarCollapsed ? 'justify-center' : ''}
-                        `}
-                        style={active ? {
-                          backgroundColor: 'hsl(var(--sidebar-active))',
-                          color: 'hsl(var(--sidebar-active-foreground))',
-                          fontSize: 'var(--font-size-sm)',
-                          fontFamily: 'var(--font-family-primary)'
-                        } : {
-                          color: 'hsl(var(--sidebar-foreground))',
-                          opacity: 0.8,
-                          fontSize: 'var(--font-size-sm)',
-                          fontFamily: 'var(--font-family-primary)'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!active) {
-                            e.currentTarget.style.opacity = '1';
-                            e.currentTarget.style.backgroundColor = 'hsl(var(--sidebar-active) / 0.1)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!active) {
-                            e.currentTarget.style.opacity = '0.8';
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                          }
-                        }}
-                        title={sidebarCollapsed ? t(item.key, item.key.split('.').pop()) : undefined}
-                      >
-                        <Icon className="h-5 w-5 flex-shrink-0" />
-                        {!sidebarCollapsed && (
-                          <>
-                            <span className="flex-1">{t(item.key, item.key.split('.').pop())}</span>
-                            {item.badge && (
-                              <span className="px-2 py-0.5 text-xs bg-destructive text-destructive-foreground rounded-full">
-                                {item.badge}
-                              </span>
-                            )}
-                            {active && <ChevronRight className="h-4 w-4" />}
-                          </>
+                      <div key={item.href}>
+                        <div className="flex items-center gap-1">
+                        <Link
+                          href={item.href}
+                          onClick={() => setSidebarOpen(false)}
+                          className={`
+                            flex items-center gap-3 px-3 py-2 rounded-md transition-colors flex-1
+                            ${active ? 'font-medium' : ''}
+                            ${sidebarCollapsed ? 'justify-center' : ''}
+                          `}
+                          style={active ? {
+                            backgroundColor: 'hsl(var(--sidebar-active))',
+                            color: 'hsl(var(--sidebar-active-foreground))',
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-family-primary)'
+                          } : {
+                            color: 'hsl(var(--sidebar-foreground))',
+                            opacity: 0.8,
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-family-primary)'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!active) {
+                              e.currentTarget.style.opacity = '1';
+                              e.currentTarget.style.backgroundColor = 'hsl(var(--sidebar-active) / 0.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!active) {
+                              e.currentTarget.style.opacity = '0.8';
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }
+                          }}
+                          title={sidebarCollapsed ? t(item.key, item.key.split('.').pop()) : undefined}
+                        >
+                          <Icon className="h-5 w-5 flex-shrink-0" />
+                          {!sidebarCollapsed && (
+                            <>
+                              <span className="flex-1">{t(item.key, item.key.split('.').pop())}</span>
+                              {item.badge && (
+                                <span className="px-2 py-0.5 text-xs bg-destructive text-destructive-foreground rounded-full">
+                                  {item.badge}
+                                </span>
+                              )}
+                              {active && <ChevronRight className="h-4 w-4" />}
+                            </>
+                          )}
+                        </Link>
+                        {/* Chevron toggle — visible only when this item
+                            has children and the sidebar isn't collapsed
+                            (no room to render kids when collapsed). */}
+                        {hasChildren && !sidebarCollapsed && (
+                          <button
+                            type="button"
+                            onClick={() => toggleNavGroup(item.key)}
+                            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                            aria-expanded={isExpanded}
+                            className="p-1 rounded-md hover:bg-accent transition-colors"
+                            style={{ color: 'hsl(var(--sidebar-foreground))' }}
+                          >
+                            <ChevronRight
+                              className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                            />
+                          </button>
                         )}
-                      </Link>
+                        </div>
+
+                        {/* Nested sub-items rendered indented under the
+                            parent. Hidden when the sidebar is collapsed
+                            because there's no horizontal space for the
+                            indent rail. Each sub-item is the same shape
+                            as a top-level item so we render an inline
+                            <Link> rather than recursing — the 2-level
+                            cap is enforced by the editor. */}
+                        {hasChildren && !sidebarCollapsed && isExpanded && (
+                          <div className="ltr:ml-7 rtl:mr-7 mt-1 space-y-1 ltr:border-l rtl:border-r border-sidebar-foreground/15 ltr:pl-2 rtl:pr-2">
+                            {item.children!.map((child: any) => {
+                              const ChildIcon = child.icon;
+                              const childActive = isActive(child.href);
+                              return (
+                                <Link
+                                  key={child.href}
+                                  href={child.href}
+                                  onClick={() => setSidebarOpen(false)}
+                                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors ${childActive ? 'font-medium' : ''}`}
+                                  style={childActive ? {
+                                    backgroundColor: 'hsl(var(--sidebar-active))',
+                                    color: 'hsl(var(--sidebar-active-foreground))',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontFamily: 'var(--font-family-primary)',
+                                  } : {
+                                    color: 'hsl(var(--sidebar-foreground))',
+                                    opacity: 0.75,
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontFamily: 'var(--font-family-primary)',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!childActive) {
+                                      e.currentTarget.style.opacity = '1';
+                                      e.currentTarget.style.backgroundColor = 'hsl(var(--sidebar-active) / 0.08)';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!childActive) {
+                                      e.currentTarget.style.opacity = '0.75';
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                    }
+                                  }}
+                                >
+                                  <ChildIcon className="h-4 w-4 flex-shrink-0" />
+                                  <span className="flex-1">{t(child.key, child.key.split('.').pop())}</span>
+                                  {childActive && <ChevronRight className="h-3 w-3" />}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -679,16 +789,37 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         }
       >
         {/* Desktop header */}
+        {/* Now carries the org identity (logo + tenant name) — was
+            previously "Admin Panel". The Admin Panel label moved to
+            the sidebar so the org identity reads against the main
+            content area. The whole block is a link to the dashboard
+            so the org-mark stays clickable, same as it was before. */}
         <div className="hidden lg:flex sticky top-0 z-20 bg-card/80 backdrop-blur-sm border-b border-border px-6 py-4 items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="font-bold" style={{
-              fontSize: 'var(--font-size-2xl)',
-              fontFamily: 'var(--font-family-heading)',
-              color: 'hsl(var(--text-heading))'
-            }}>
-              {t('admin.title', 'Admin Panel')}
+          <Link href="/admin/dashboard" className="flex items-center gap-3 min-w-0">
+            {tenantLogo ? (
+              <div className="h-10 w-10 flex items-center justify-center flex-shrink-0">
+                <img
+                  src={tenantLogo}
+                  alt={tenantName}
+                  className="max-h-full max-w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
+              </div>
+            )}
+            <h1
+              className="font-bold truncate"
+              style={{
+                fontSize: 'var(--font-size-2xl)',
+                fontFamily: 'var(--font-family-heading)',
+                color: 'hsl(var(--text-heading))',
+              }}
+            >
+              {tenantName}
             </h1>
-          </div>
+          </Link>
 
           <div className="flex items-center gap-2">
             <ThemeToggle />

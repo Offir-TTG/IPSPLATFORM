@@ -762,27 +762,80 @@ export default function LanguagesPage() {
                 borderRadius: 'calc(var(--radius) * 2)',
                 maxWidth: '28rem',
                 width: '100%',
-                padding: '1.5rem',
+                // Padding is removed from the wrapper because the inner
+                // body section needs to scroll edge-to-edge. The header
+                // and footer re-add their own padding.
+                padding: 0,
                 maxHeight: '90vh',
-                overflow: 'auto',
+                // Wrapper itself never scrolls — only the body section
+                // scrolls so header + footer stay frozen.
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
                 direction: direction,
                 textAlign: isRtl ? 'right' : 'left'
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 style={{
-                fontSize: 'var(--font-size-2xl)',
-                fontWeight: 'var(--font-weight-bold)',
-                fontFamily: 'var(--font-family-heading)',
-                color: 'hsl(var(--text-heading))',
-                marginBottom: '1rem',
-                textAlign: isRtl ? 'right' : 'left'
-              }} suppressHydrationWarning>
-                {editingLanguage
-                  ? t('admin.languages.edit', 'Edit Language')
-                  : t('admin.languages.add', 'Add Language')}
-              </h2>
+              {/* ── Frozen header: title + close X ─────────────────── */}
+              <div style={{
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                padding: '1.5rem',
+                paddingBottom: '1rem',
+                borderBottom: '1px solid hsl(var(--border))',
+                flexDirection: isRtl ? 'row-reverse' : 'row',
+              }}>
+                <h2 style={{
+                  fontSize: 'var(--font-size-2xl)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  fontFamily: 'var(--font-family-heading)',
+                  color: 'hsl(var(--text-heading))',
+                  margin: 0,
+                  textAlign: isRtl ? 'right' : 'left',
+                  flex: 1,
+                  minWidth: 0,
+                }} suppressHydrationWarning>
+                  {editingLanguage
+                    ? t('admin.languages.edit', 'Edit Language')
+                    : t('admin.languages.add', 'Add Language')}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => !saving && setShowModal(false)}
+                  disabled={saving}
+                  aria-label={t('common.close', 'Close')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '2rem',
+                    width: '2rem',
+                    borderRadius: 'calc(var(--radius) * 1.5)',
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    color: 'hsl(var(--text-muted))',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    opacity: saving ? 0.4 : 0.7,
+                    transition: 'opacity 0.15s, background-color 0.15s',
+                    flexShrink: 0,
+                  }}
+                  className="hover:bg-accent hover:opacity-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
+              {/* ── Scrollable body ────────────────────────────────── */}
+              <div style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: 'auto',
+                padding: '1.5rem',
+              }}>
               {error && (
                 <div style={{
                   marginBottom: '1rem',
@@ -1263,11 +1316,16 @@ export default function LanguagesPage() {
                   </label>
                 </div>
               </div>
+              </div>
+              {/* ── End scrollable body ─────────────────────────────── */}
 
+              {/* ── Frozen footer: Cancel + Save ────────────────────── */}
               <div style={{
+                flexShrink: 0,
                 display: 'flex',
                 gap: '0.75rem',
-                marginTop: '1.5rem',
+                padding: '1rem 1.5rem 1.5rem 1.5rem',
+                borderTop: '1px solid hsl(var(--border))',
                 flexDirection: isRtl ? 'row-reverse' : 'row'
               }}>
                 <button

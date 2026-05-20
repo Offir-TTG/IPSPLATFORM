@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -608,16 +608,17 @@ export default function ProductsPage() {
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          {/* Sticky header layout: DialogContent becomes a flex column with
-              no own padding; the header keeps its own padding and `shrink-0`
-              so it pins at the top while the form body scrolls below. The
-              shadcn close button is `absolute` on DialogContent so it stays
-              anchored regardless of inner scroll position. */}
+          {/* Sticky-header/body/footer layout. DialogContent's base styles
+              already provide `flex flex-col max-h-[90vh] overflow-hidden`;
+              we add `p-0 gap-0` here so the header and footer can own
+              their own padding + borders. ProductForm renders DialogBody
+              + DialogFooter inside its <form> so the footer's Cancel +
+              Save stay pinned while the tab content scrolls. */}
           <DialogContent
-            className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0 flex flex-col"
+            className="max-w-4xl p-0 gap-0"
             dir={direction}
           >
-            <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b bg-background">
+            <DialogHeader className="px-6 pt-6 pb-4 border-b bg-background">
               <DialogTitle suppressHydrationWarning>
                 {editingProduct
                   ? t('admin.payments.products.form.editTitle', 'Edit Product')
@@ -629,14 +630,12 @@ export default function ProductsPage() {
                   : t('admin.payments.products.form.createDescription', 'Create a new billable product in the system')}
               </DialogDescription>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto px-6 py-6">
-              <ProductForm
-                product={editingProduct}
-                onSave={handleSaveProduct}
-                onCancel={() => setIsDialogOpen(false)}
-                t={t}
-              />
-            </div>
+            <ProductForm
+              product={editingProduct}
+              onSave={handleSaveProduct}
+              onCancel={() => setIsDialogOpen(false)}
+              t={t}
+            />
           </DialogContent>
         </Dialog>
 
@@ -1115,7 +1114,17 @@ function ProductForm({ product, onSave, onCancel, t }: {
   }, []);
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+    // `flex flex-col flex-1 min-h-0` so the form fills the remaining
+    // DialogContent height. The body wraps tabs + alerts inside
+    // DialogBody (scrolls), DialogFooter sits below the body (frozen).
+    //
+    // `mx-0` overrides the DialogBody base's `-mx-6` (those negative
+    // margins assume the parent DialogContent has the default `p-6`
+    // gutters to negate; here DialogContent uses `p-0` so the negative
+    // margins would push content outside the dialog box). We supply
+    // our own `px-6` to indent body content from the dialog edges.
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0" noValidate>
+      <DialogBody className="space-y-6 mx-0 px-6 py-6">
       {/* General Error Alert */}
       {formError && (
         <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
@@ -1544,8 +1553,9 @@ function ProductForm({ product, onSave, onCancel, t }: {
           />
         </TabsContent>
       </Tabs>
+      </DialogBody>
 
-      <DialogFooter>
+      <DialogFooter className="px-6 py-4 border-t bg-background">
         <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
           <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
         </Button>

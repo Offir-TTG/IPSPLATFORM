@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -283,14 +283,21 @@ export function CreateEnrollmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction} className="max-w-2xl max-h-[90vh] overflow-y-auto w-[calc(100%-2rem)] sm:w-full">
+      {/* `max-h-[90vh] overflow-y-auto` removed — DialogContent now
+          defaults to a frozen-header/scrollable-body layout via
+          DialogBody below. */}
+      <DialogContent dir={direction} className="max-w-2xl w-[calc(100%-2rem)] sm:w-full">
         <DialogHeader>
           <DialogTitle className="text-lg sm:text-xl">{t('admin.enrollments.create.title', 'Create Manual Enrollment')}</DialogTitle>
           <DialogDescription className="text-sm">
             {t('admin.enrollments.create.description', 'Manually enroll a user in a product')}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-4">
+        {/* `flex flex-col flex-1 min-h-0` so the form fills the remaining
+            DialogContent height, letting DialogBody scroll while
+            DialogFooter stays pinned at the bottom. */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 gap-4">
+          <DialogBody className="space-y-4 sm:space-y-4">
           {/* Toggle: Existing User vs New User */}
           <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
             <input
@@ -508,6 +515,7 @@ export function CreateEnrollmentDialog({
               {t('admin.enrollments.create.alert', 'This enrollment will be marked as admin-assigned and will bypass the normal purchase flow.')}
             </AlertDescription>
           </Alert>
+          </DialogBody>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-auto">
