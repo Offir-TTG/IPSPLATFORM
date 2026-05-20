@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/drain-outbox",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/process-email-queue",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/lesson-reminders",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
