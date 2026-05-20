@@ -42,7 +42,37 @@ export default function TenantLoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to login');
+        // Translate the most actionable login-status errors so the
+        // user sees the real reason (suspended / inactive / invited)
+        // in their own language instead of the generic English text.
+        let errorMessage = data.error || t('auth.errors.unknown', 'An error occurred during login');
+        switch (data.code as string | undefined) {
+          case 'account_suspended':
+            errorMessage = t(
+              'auth.errors.accountSuspended',
+              'Your account has been suspended. Contact your administrator to restore access.',
+            );
+            break;
+          case 'account_inactive':
+            errorMessage = t(
+              'auth.errors.accountInactive',
+              'Your account is inactive. Contact your administrator to reactivate it.',
+            );
+            break;
+          case 'account_invited':
+            errorMessage = t(
+              'auth.errors.accountInvited',
+              'Please complete your invitation before signing in. Check your email for the invitation link.',
+            );
+            break;
+          case 'no_tenant_access':
+            errorMessage = t(
+              'auth.errors.noAccess',
+              'You do not have access to this organization',
+            );
+            break;
+        }
+        throw new Error(errorMessage);
       }
 
       // Verify user is logging into the correct tenant

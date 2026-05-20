@@ -54,20 +54,64 @@ export default function LoginPage() {
 
       if (!response.ok) {
         console.error('Login failed:', data);
-        // Translate the error message from the API
+        // Translate the error message from the API. We prefer the
+        // structured `code` (returned by our own login route) over
+        // the free-form `error` string, because string-matching
+        // breaks on Hebrew/Spanish API responses. String-matching
+        // remains as a fallback for legacy Supabase-Auth errors.
         let errorMessage = data.error || t('auth.errors.unknown', 'An error occurred during login');
 
-        // Map common Supabase error messages to translated versions
-        if (errorMessage === 'Invalid login credentials') {
-          errorMessage = t('auth.errors.invalidCredentials', 'Invalid email or password');
-        } else if (errorMessage.includes('Email not confirmed')) {
-          errorMessage = t('auth.errors.emailNotConfirmed', 'Please verify your email address');
-        } else if (errorMessage.includes('do not have access')) {
-          errorMessage = t('auth.errors.noAccess', 'You do not have access to this organization');
-        } else if (errorMessage.includes('Tenant not found')) {
-          errorMessage = t('auth.errors.tenantNotFound', 'Organization not found. Please contact support.');
-        } else if (errorMessage.includes('verify your email')) {
-          errorMessage = t('auth.errors.verifyEmail', 'Please verify your email address before logging in');
+        switch (data.code as string | undefined) {
+          case 'account_suspended':
+            errorMessage = t(
+              'auth.errors.accountSuspended',
+              'Your account has been suspended. Contact your administrator to restore access.',
+            );
+            break;
+          case 'account_inactive':
+            errorMessage = t(
+              'auth.errors.accountInactive',
+              'Your account is inactive. Contact your administrator to reactivate it.',
+            );
+            break;
+          case 'account_invited':
+            errorMessage = t(
+              'auth.errors.accountInvited',
+              'Please complete your invitation before signing in. Check your email for the invitation link.',
+            );
+            break;
+          case 'no_tenant_access':
+            errorMessage = t(
+              'auth.errors.noAccess',
+              'You do not have access to this organization',
+            );
+            break;
+          case 'profile_missing':
+            errorMessage = t(
+              'auth.errors.profileMissing',
+              'User profile not found.',
+            );
+            break;
+          case 'status_check_failed':
+            errorMessage = t(
+              'auth.errors.statusCheckFailed',
+              'Unable to verify account status. Please try again.',
+            );
+            break;
+          default:
+            // Legacy string-matching fallback for Supabase Auth errors
+            // and any other response that doesn't carry a `code`.
+            if (errorMessage === 'Invalid login credentials') {
+              errorMessage = t('auth.errors.invalidCredentials', 'Invalid email or password');
+            } else if (errorMessage.includes('Email not confirmed')) {
+              errorMessage = t('auth.errors.emailNotConfirmed', 'Please verify your email address');
+            } else if (errorMessage.includes('do not have access')) {
+              errorMessage = t('auth.errors.noAccess', 'You do not have access to this organization');
+            } else if (errorMessage.includes('Tenant not found')) {
+              errorMessage = t('auth.errors.tenantNotFound', 'Organization not found. Please contact support.');
+            } else if (errorMessage.includes('verify your email')) {
+              errorMessage = t('auth.errors.verifyEmail', 'Please verify your email address before logging in');
+            }
         }
 
         throw new Error(errorMessage);

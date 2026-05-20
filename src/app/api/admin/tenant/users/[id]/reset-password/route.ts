@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 import { renderEmailTemplate } from '@/lib/email/renderTemplate';
 import { sendEmail } from '@/lib/email/send';
+import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,6 +163,22 @@ export async function POST(
         success: false,
         error: 'Failed to render email template',
       }, { status: 500 });
+    }
+
+    // Communication-eligibility gate. Same rule as the self-service
+    // /api/auth/reset-password — deactivated/suspended users can't be
+    // sent a reset link. Surfaces a clear 409 to the admin so they
+    // know to reactivate the user first.
+    const eligible = await isUserEligibleForCommunication(supabase, id);
+    if (!eligible) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Cannot send password reset — user is inactive or suspended. Reactivate the user first.',
+        },
+        { status: 409 },
+      );
     }
 
     // Send custom email using our email service

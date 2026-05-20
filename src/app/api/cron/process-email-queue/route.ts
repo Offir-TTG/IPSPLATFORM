@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendEmail } from '@/lib/email/send';
+import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import Handlebars from 'handlebars';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
@@ -85,6 +86,28 @@ export async function GET(request: NextRequest) {
     for (const email of pendingEmails) {
       try {
         console.log(`[Email Queue Cron] Processing email ${email.id} to ${email.to_email}`);
+
+        // Last-mile communication-eligibility recheck. The email was
+        // gated when it was queued, but the user may have been
+        // deactivated or suspended in the meantime. Mark as failed so
+        // it doesn't get picked up on the next cron tick.
+        if (email.user_id) {
+          const eligible = await isUserEligibleForCommunication(
+            supabase,
+            email.user_id,
+          );
+          if (!eligible) {
+            console.log(
+              `[Email Queue Cron] Skipping email ${email.id} — recipient ${email.user_id} is inactive/suspended`,
+            );
+            await supabase
+              .from('email_queue')
+              .update({ status: 'failed' })
+              .eq('id', email.id);
+            failCount++;
+            continue;
+          }
+        }
 
         // Render template variables in subject, body_html, and body_text
         const variables = email.template_variables || {};

@@ -10,6 +10,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 
 // =====================================================
 // Types
@@ -270,6 +271,16 @@ async function determineRecipient(
     }
 
     if (user) {
+      // Communication-eligibility gate: skip inactive/suspended users.
+      // Returning null here causes the caller to bail without queueing
+      // an email — same code path as a missing recipient.
+      const eligible = await isUserEligibleForCommunication(supabase, user.id);
+      if (!eligible) {
+        console.log(
+          `[triggerEngine] Skipping trigger for user ${user.id} — inactive or suspended`,
+        );
+        return null;
+      }
       return {
         email: user.email,
         name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),

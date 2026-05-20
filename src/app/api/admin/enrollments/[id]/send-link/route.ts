@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
+import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -194,6 +195,26 @@ export async function POST(
     // Determine which email template to use
     // Priority: product-specific template > default template
     const templateKey = product.enrollment_invitation_template_key || 'enrollment.invitation';
+
+    // Communication-eligibility gate. `invited` status is allowed
+    // (the enrollment link IS the invitation); only inactive /
+    // suspended users are blocked. Admin gets a clear 409.
+    if (enrollmentUser?.id) {
+      const eligible = await isUserEligibleForCommunication(
+        supabase,
+        enrollmentUser.id,
+      );
+      if (!eligible) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Cannot send enrollment link — recipient is inactive or suspended. Reactivate the user first.',
+          },
+          { status: 409 },
+        );
+      }
+    }
 
     // Send email using database template
     const emailResult = await sendTemplateEmail({

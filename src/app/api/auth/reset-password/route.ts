@@ -90,6 +90,25 @@ export async function POST(request: NextRequest) {
     }
     console.log('✅ User verified in tenant');
 
+    // Communication-eligibility gate: deactivated / suspended users
+    // can't get a password reset link. We still return the generic
+    // success response so attackers can't enumerate which accounts
+    // are deactivated (consistent with the user-not-found branch).
+    const { isUserEligibleForCommunication } = await import(
+      '@/lib/users/communication-eligible'
+    );
+    const eligible = await isUserEligibleForCommunication(
+      supabaseAdmin,
+      users.id,
+    );
+    if (!eligible) {
+      console.log('⚠️ Skipping reset — user is inactive or suspended');
+      return NextResponse.json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link will be sent',
+      });
+    }
+
     // Generate password reset link without sending email.
     //
     // We deliberately *do not* email Supabase's `action_link` here. That link

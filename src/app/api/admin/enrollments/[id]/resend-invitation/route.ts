@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
+import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -140,6 +141,25 @@ export async function POST(
 
     // Calculate days until expiration
     const expiresIn = Math.ceil((tokenExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+    // Communication-eligibility gate. `invited` status is allowed (the
+    // invitation flow itself depends on it); we block only inactive /
+    // suspended. The admin sees an explicit error so they know to
+    // reactivate the user first instead of silently dropping the send.
+    const eligible = await isUserEligibleForCommunication(
+      supabase,
+      enrollmentUser.id,
+    );
+    if (!eligible) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Cannot resend invitation — recipient is inactive or suspended. Reactivate the user first.',
+        },
+        { status: 409 },
+      );
+    }
 
     try {
       await sendTemplateEmail({

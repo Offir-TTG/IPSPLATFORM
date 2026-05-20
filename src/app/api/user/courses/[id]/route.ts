@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
-import { logAuditEvent } from '@/lib/audit/auditService';
 
 export const dynamic = 'force-dynamic';
 
@@ -354,43 +353,9 @@ export const GET = withAuth(
       // Calculate in-progress lessons
       const inProgressLessons = progressData?.filter(p => p.status === 'in_progress').length || 0;
 
-      // Audit log: Track student accessing course content (helps with attendance tracking)
-      await logAuditEvent({
-        user_id: user.id,
-        event_type: 'READ',
-        event_category: 'ATTENDANCE',
-        resource_type: 'course_content',
-        resource_id: courseId,
-        // Store just the title; the audit table prepends the translated
-        // resource-type label ("Course Content" / "תוכן קורס") via
-        // `audit.resource.course_content`, so a hardcoded "Course:" prefix
-        // here would be untranslatable English noise in the Hebrew UI.
-        resource_name: course.title,
-        // Use the translation-key form so AuditEventsTable.formatActionName
-        // resolves it to the localized label instead of showing the
-        // literal English string forever.
-        action: 'audit.action.access_course_content',
-        description: `Student accessed course content with ${processedModules.length} modules, ${totalLessons} lessons, and ${totalTopics} topics`,
-        status: 'success',
-        risk_level: 'low',
-        student_id: user.id,
-        is_student_record: true,
-        compliance_flags: ['FERPA'],
-        metadata: {
-          course_id: courseId,
-          enrollment_id: enrollmentId,
-          modules_count: processedModules.length,
-          lessons_count: totalLessons,
-          topics_count: totalTopics,
-          materials_count: materials?.length || 0,
-          completed_lessons: completedLessons,
-          in_progress_lessons: inProgressLessons,
-          overall_progress: overallProgress,
-          has_recordings: processedModules.some(m => m.lessons.some(l => l.recording_url)),
-          has_zoom_sessions: processedModules.some(m => m.lessons.some(l => l.zoom_join_url || l.daily_room_url)),
-          access_type: 'self_access'
-        }
-      });
+      // Audit trail captures real changes only — viewing course
+      // content is an access event, not a mutation, so we no longer
+      // write an audit row here.
 
       return NextResponse.json({
         success: true,

@@ -1054,7 +1054,7 @@ export default function LanguagesPage() {
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="English, Hebrew, Spanish..."
+                    placeholder={t('admin.languages.form.namePlaceholder', 'English, Hebrew, Spanish...')}
                     style={{
                       width: '100%',
                       paddingInlineStart: '0.75rem',
@@ -1088,7 +1088,7 @@ export default function LanguagesPage() {
                     type="text"
                     value={formData.native_name}
                     onChange={(e) => setFormData({ ...formData, native_name: e.target.value })}
-                    placeholder="English, עברית, Español..."
+                    placeholder={t('admin.languages.form.nativeNamePlaceholder', 'English, עברית, Español...')}
                     style={{
                       width: '100%',
                       paddingInlineStart: '0.75rem',

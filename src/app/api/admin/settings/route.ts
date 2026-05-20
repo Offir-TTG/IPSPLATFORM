@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 // GET all platform settings
@@ -179,31 +179,66 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Admin already verified above via the `users.role` lookup. The RLS
+    // policy on platform_settings checks `auth.jwt() ->> 'role'` which
+    // doesn't always carry the same value, so the user-scoped client
+    // silently matches zero rows on UPDATE. We've authenticated the
+    // admin ourselves — switch to the service-role client for the
+    // write path, same pattern /api/admin/languages uses.
+    const adminClient = createAdminClient();
+
     // Get old values for audit
-    const oldSettingsData = await supabase
+    const oldSettingsData = await adminClient
       .from('platform_settings')
       .select('*')
       .in('setting_key', settings.map((s: any) => s.setting_key));
 
     const oldSettings = oldSettingsData.data || [];
 
-    // Update each setting
+    // Update each setting.
+    // `.maybeSingle()` so an RLS-hidden row (or an UPDATE that matched
+    // zero rows) returns data:null instead of a PGRST116 error — we
+    // surface the real cause via the second pass below.
     const updatePromises = settings.map(async (setting: any) => {
-      return supabase
+      const res = await adminClient
         .from('platform_settings')
         .update({ setting_value: setting.setting_value })
         .eq('setting_key', setting.setting_key)
         .select()
-        .single();
+        .maybeSingle();
+      return { ...res, setting_key: setting.setting_key };
     });
 
     const results = await Promise.all(updatePromises);
-    const errors = results.filter(r => r.error);
+    const errors = results.filter((r) => r.error);
+    const missing = results.filter((r) => !r.error && !r.data);
 
-    if (errors.length > 0) {
+    if (errors.length > 0 || missing.length > 0) {
+      // Log so the real cause is visible in the server console —
+      // generic "Failed to update some settings" was hiding RLS /
+      // permission / tenant-mismatch failures.
+      for (const r of errors) {
+        console.error(
+          `[settings/PUT] supabase update error for "${r.setting_key}":`,
+          r.error,
+        );
+      }
+      for (const r of missing) {
+        console.error(
+          `[settings/PUT] update matched 0 rows for "${r.setting_key}" — RLS hidden or setting_key missing in this tenant.`,
+        );
+      }
+      const details = [
+        ...errors.map((r) => `${r.setting_key}: ${r.error?.message ?? 'error'}`),
+        ...missing.map((r) => `${r.setting_key}: no row matched`),
+      ].join('; ');
       return NextResponse.json(
-        { success: false, error: 'Failed to update some settings' },
-        { status: 500 }
+        {
+          success: false,
+          error: 'Failed to update some settings',
+          details,
+        },
+        { status: 500 },
       );
     }
 

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initializeTenantContext } from '@/lib/supabase/client';
 import type { Tenant } from '@/lib/tenant/types';
+import { formatCurrency } from '@/lib/currency/format';
 
 // ============================================================================
 // TYPES & CONSTANTS
@@ -32,6 +33,12 @@ interface LanguageInfo {
   direction: Direction;
   is_active: boolean;
   is_default: boolean;
+  // Currency settings — managed from /admin/config/languages. Optional
+  // because legacy rows may pre-date the columns, and consumers always
+  // need a safe fallback.
+  currency_code?: string | null;
+  currency_symbol?: string | null;
+  currency_position?: 'before' | 'after' | null;
 }
 
 interface TenantInfo {
@@ -770,6 +777,53 @@ export function useUserLanguage() {
     setLanguage: context.setUserLanguage,
     t: (key: string, fallback?: string) => context.t(key, fallback, 'user'),
     loading: context.loading,
+  };
+}
+
+/**
+ * Currency formatter that honours the admin-configured currency on
+ * the currently active language. Falls back to the platform default
+ * (Intl `en-US` + ILS) when no language metadata is available, so
+ * existing callers that don't yet pass anything keep working.
+ *
+ * Usage:
+ *   const { format } = useCurrency();
+ *   <span>{format(1234)}</span>
+ */
+export function useCurrency() {
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useCurrency must be used within an AppProvider');
+  }
+
+  // Prefer the language the current surface (user/admin) is in;
+  // fall back to the platform default language. We use whichever
+  // surface has a non-null setter — admin pages will have adminLanguage.
+  const activeCode = context.adminLanguage || context.userLanguage;
+  const lang =
+    context.availableLanguages.find((l) => l.code === activeCode) ||
+    context.availableLanguages.find((l) => l.is_default) ||
+    null;
+
+  const config = lang
+    ? {
+        code: lang.currency_code ?? 'ILS',
+        symbol: lang.currency_symbol ?? null,
+        position: lang.currency_position ?? null,
+        locale:
+          lang.code === 'he'
+            ? 'he-IL'
+            : lang.code === 'es'
+              ? 'es-ES'
+              : 'en-US',
+      }
+    : undefined;
+
+  return {
+    /** Format a number as currency using the admin-configured rules. */
+    format: (amount: number) => formatCurrency(amount, config),
+    /** Resolved config (or undefined if no language metadata loaded yet). */
+    config,
   };
 }
 

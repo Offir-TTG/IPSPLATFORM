@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { logAuditEvent } from '@/lib/audit/auditService';
 
 export const dynamic = 'force-dynamic';
 
@@ -117,34 +116,10 @@ export async function GET(
       console.error('Failed to log attendance:', error);
     }
 
-    // Audit log: Track student joining live lesson (attendance tracking)
-    const course = Array.isArray(lesson.courses) ? lesson.courses[0] : lesson.courses;
-    await logAuditEvent({
-      user_id: user.id,
-      event_type: 'ACCESS',
-      event_category: 'ATTENDANCE',
-      resource_type: 'live_lesson',
-      resource_id: lessonId,
-      resource_name: `Live Lesson: ${lesson.title}`,
-      action: 'Joined live lesson',
-      description: `Student joined live lesson "${lesson.title}" in course "${course?.title}"`,
-      status: 'success',
-      risk_level: 'low',
-      student_id: user.id,
-      is_student_record: true,
-      compliance_flags: ['FERPA'],
-      metadata: {
-        lesson_id: lessonId,
-        lesson_title: lesson.title,
-        course_id: lesson.course_id,
-        course_title: course?.title,
-        enrollment_id: enrollment.id,
-        scheduled_start: zoomSession.scheduled_start,
-        duration_minutes: zoomSession.duration_minutes,
-        joined_at: new Date().toISOString(),
-        access_type: 'self_access'
-      }
-    });
+    // Attendance is already recorded via the `attendance` insert above —
+    // we deliberately do NOT also write an audit event for "joined".
+    // Audit trail captures real changes only; access/attendance events
+    // belong to their own tracking surface, not the audit log.
 
     // Return join URL
     return NextResponse.json({

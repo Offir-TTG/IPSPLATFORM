@@ -38,10 +38,36 @@ function getSupabaseClient() {
 // ============================================================================
 
 /**
+ * Event types that represent ACCESS / VIEW / READ activity rather
+ * than a real state change. The audit trail is meant for mutations
+ * only — viewing data does not belong here. Callers that pass these
+ * types are dropped silently (the function returns null) so the
+ * audit table stays clean even if a future code change re-introduces
+ * the bug.
+ */
+const NON_MUTATION_EVENT_TYPES = new Set([
+  'ACCESS',
+  'READ',
+  'VIEW',
+  'LOGIN',
+  'LOGOUT',
+]);
+
+/**
  * Log an audit event using the database function
  * This is the main function to call from application code
  */
 export async function logAuditEvent(params: CreateAuditEventParams): Promise<string | null> {
+  // Hard filter: audit trail captures real changes only.
+  if (NON_MUTATION_EVENT_TYPES.has((params.event_type || '').toUpperCase())) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[audit] ignoring non-mutation event_type "${params.event_type}" — audit trail tracks changes only`,
+      );
+    }
+    return null;
+  }
+
   try {
     const client = getSupabaseClient();
 

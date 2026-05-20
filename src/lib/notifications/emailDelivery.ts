@@ -5,6 +5,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
+import { filterEligibleRecipientIds } from '@/lib/users/communication-eligible';
 import type { Notification } from '@/types/notifications';
 import type { EmailLanguage } from '@/types/email';
 
@@ -184,6 +185,22 @@ export async function sendNotificationEmailToRecipients(
       if (!error && users) {
         recipientUserIds = users.map(u => u.id);
       }
+    }
+
+    // Strip inactive/suspended users from the recipient list before
+    // we batch-send. One query covers all four scopes; the helper
+    // returns the same list on DB error so a transient failure
+    // doesn't silently muzzle every send.
+    const totalBeforeFilter = recipientUserIds.length;
+    recipientUserIds = await filterEligibleRecipientIds(
+      supabase,
+      recipientUserIds,
+    );
+    const droppedForStatus = totalBeforeFilter - recipientUserIds.length;
+    if (droppedForStatus > 0) {
+      console.log(
+        `[Email Delivery] Dropped ${droppedForStatus} recipients with inactive/suspended status`,
+      );
     }
 
     console.log(`[Email Delivery] Sending to ${recipientUserIds.length} recipients for scope: ${notification.scope}`);

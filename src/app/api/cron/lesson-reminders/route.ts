@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { processBatchTriggerEvents } from '@/lib/email/triggerEngine';
+import { filterEligibleRecipientIds } from '@/lib/users/communication-eligible';
 
 /**
  * Cron job for lesson reminders
@@ -148,6 +149,24 @@ export async function GET(request: NextRequest) {
 
         console.log(`[Cron] Found ${enrollments.length} enrolled students for lesson ${lesson.id}`);
 
+        // Drop enrollments whose user is inactive/suspended. The
+        // enrollment-status filter above ("active") only checks the
+        // enrollment itself; a student can be enrolled-active but
+        // deactivated, in which case they shouldn't get reminders.
+        const enrollmentUserIds = enrollments.map((e) => e.user_id);
+        const eligibleUserIds = new Set(
+          await filterEligibleRecipientIds(supabase, enrollmentUserIds),
+        );
+        const droppedForStatus = enrollments.length - eligibleUserIds.size;
+        if (droppedForStatus > 0) {
+          console.log(
+            `[Cron] Dropped ${droppedForStatus} enrollees with inactive/suspended user status for lesson ${lesson.id}`,
+          );
+        }
+        const eligibleEnrollments = enrollments.filter((e) =>
+          eligibleUserIds.has(e.user_id),
+        );
+
         // Check which students already have emails queued or sent for this lesson.
         // `email_queue.user_id` is the recipient. Match on `lessonId` stored
         // in `template_variables` (canonical key per the trigger engine).
@@ -171,7 +190,7 @@ export async function GET(request: NextRequest) {
         console.log(`[Cron] ${alreadyQueuedUserIds.size} students already have emails for lesson ${lesson.id} (out of ${existingEmails?.length || 0} total queued emails for this tenant)`);
 
         // Create trigger events for each student (skip those who already have emails)
-        const triggerEvents = enrollments
+        const triggerEvents = eligibleEnrollments
           .filter(e => e.users) // Only process if user data exists
           .filter(e => !alreadyQueuedUserIds.has(e.user_id)) // Skip if already queued/sent
           .map(enrollment => ({
@@ -210,7 +229,7 @@ export async function GET(request: NextRequest) {
             },
           }));
 
-        const skippedCount = enrollments.length - triggerEvents.length;
+        const skippedCount = eligibleEnrollments.length - triggerEvents.length;
         console.log(`[Cron] Created ${triggerEvents.length} trigger events for lesson ${lesson.id} (${skippedCount} skipped - already notified)`);
         if (triggerEvents.length > 0) {
           console.log(`[Cron] Sample event data:`, JSON.stringify(triggerEvents[0], null, 2));

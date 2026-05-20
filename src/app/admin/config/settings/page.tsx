@@ -139,17 +139,21 @@ export default function SettingsPage() {
       const result = await response.json();
 
       if (result.success) {
-        setSuccess('Settings saved successfully');
+        setSuccess(
+          t('admin.settings.saveSuccess', 'Settings saved successfully'),
+        );
         await loadSettings();
 
         // Clear success message after 3 seconds
         setTimeout(() => setSuccess(''), 3000);
       } else {
-        setError(result.error || 'Failed to save settings');
+        setError(
+          result.error || t('admin.settings.saveError', 'Failed to save settings'),
+        );
       }
     } catch (err) {
       console.error('Save settings error:', err);
-      setError('Failed to save settings');
+      setError(t('admin.settings.saveError', 'Failed to save settings'));
     } finally {
       setSaving(false);
     }
@@ -171,18 +175,46 @@ export default function SettingsPage() {
       const result = await response.json();
 
       if (result.success) {
-        setSuccess('Translation cache cleared successfully. Page will reload...');
+        setSuccess(
+          t(
+            'admin.settings.cacheCleared',
+            'Translation cache cleared successfully. Page will reload…',
+          ),
+        );
         // Reload page after 1.5 seconds to fetch fresh translations
         setTimeout(() => window.location.reload(), 1500);
       } else {
-        setError(result.error || 'Failed to clear server cache');
+        setError(
+          result.error ||
+            t('admin.settings.cacheClearError', 'Failed to clear server cache'),
+        );
       }
     } catch (err) {
       console.error('Clear cache error:', err);
-      setError('Failed to clear cache');
+      setError(t('admin.settings.cacheClearError', 'Failed to clear cache'));
     } finally {
       setClearingCache(false);
     }
+  };
+
+  /**
+   * Translate a platform_settings row's label/description.
+   * Falls back to the raw DB value (current English) when no
+   * translation exists, so untranslated rows keep rendering today's
+   * text instead of a missing-translation placeholder.
+   *
+   * Convention: key = `admin.settings.${setting_key}.label|description`.
+   * Setting keys already contain dots (e.g. `platform.currency.default`),
+   * so the resulting full key looks like
+   *   admin.settings.platform.currency.default.label
+   * which the `t()` lookup treats as a flat string anyway.
+   */
+  const tSetting = (
+    setting: PlatformSetting,
+    field: 'label' | 'description',
+  ): string => {
+    const fallback = (setting[field] ?? '') as string;
+    return t(`admin.settings.${setting.setting_key}.${field}`, fallback);
   };
 
   const renderSettingInput = (setting: PlatformSetting) => {
@@ -212,7 +244,7 @@ export default function SettingsPage() {
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-family-primary)',
               color: 'hsl(var(--text-body))'
-            }}>{setting.label}</span>
+            }}>{tSetting(setting, 'label')}</span>
           </label>
         );
 
@@ -226,7 +258,7 @@ export default function SettingsPage() {
               color: 'hsl(var(--text-heading))',
               display: 'block',
               marginBottom: '0.5rem'
-            }}>{setting.label}</label>
+            }}>{tSetting(setting, 'label')}</label>
             <input
               type="number"
               value={value || 0}
@@ -255,7 +287,7 @@ export default function SettingsPage() {
                 color: 'hsl(var(--text-muted))',
                 fontFamily: 'var(--font-family-primary)',
                 marginTop: '0.25rem'
-              }}>{setting.description}</p>
+              }}>{tSetting(setting, 'description')}</p>
             )}
           </div>
         );
@@ -270,7 +302,7 @@ export default function SettingsPage() {
               color: 'hsl(var(--text-heading))',
               display: 'block',
               marginBottom: '0.5rem'
-            }}>{setting.label}</label>
+            }}>{tSetting(setting, 'label')}</label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
                 type="color"
@@ -315,7 +347,7 @@ export default function SettingsPage() {
                 color: 'hsl(var(--text-muted))',
                 fontFamily: 'var(--font-family-primary)',
                 marginTop: '0.25rem'
-              }}>{setting.description}</p>
+              }}>{tSetting(setting, 'description')}</p>
             )}
           </div>
         );
@@ -330,7 +362,7 @@ export default function SettingsPage() {
               color: 'hsl(var(--text-heading))',
               display: 'block',
               marginBottom: '0.5rem'
-            }}>{setting.label}</label>
+            }}>{tSetting(setting, 'label')}</label>
             <textarea
               value={typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
               onChange={(e) => {
@@ -365,7 +397,7 @@ export default function SettingsPage() {
                 color: 'hsl(var(--text-muted))',
                 fontFamily: 'var(--font-family-primary)',
                 marginTop: '0.25rem'
-              }}>{setting.description}</p>
+              }}>{tSetting(setting, 'description')}</p>
             )}
           </div>
         );
@@ -380,7 +412,7 @@ export default function SettingsPage() {
               color: 'hsl(var(--text-heading))',
               display: 'block',
               marginBottom: '0.5rem'
-            }}>{setting.label}</label>
+            }}>{tSetting(setting, 'label')}</label>
             <input
               type="text"
               value={value || ''}
@@ -409,7 +441,7 @@ export default function SettingsPage() {
                 color: 'hsl(var(--text-muted))',
                 fontFamily: 'var(--font-family-primary)',
                 marginTop: '0.25rem'
-              }}>{setting.description}</p>
+              }}>{tSetting(setting, 'description')}</p>
             )}
           </div>
         );
@@ -585,17 +617,22 @@ export default function SettingsPage() {
           <div style={{
             backgroundColor: 'hsl(var(--success) / 0.1)',
             border: '1px solid hsl(var(--success))',
-            color: 'hsl(var(--success-foreground))',
+            // Was `--success-foreground` (white-on-green), but the
+            // background here is only 10% tinted — white text became
+            // invisible. Switch to the saturated hue to match the
+            // error notification pattern above.
+            color: 'hsl(var(--success))',
             padding: '0.75rem 1rem',
             borderRadius: 'calc(var(--radius) * 1.5)',
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
             fontSize: 'var(--font-size-sm)',
+            fontWeight: 'var(--font-weight-medium)',
             fontFamily: 'var(--font-family-primary)'
           }}>
             <Check className="h-5 w-5" />
-            <span>{success}</span>
+            <span suppressHydrationWarning>{success}</span>
           </div>
         )}
 

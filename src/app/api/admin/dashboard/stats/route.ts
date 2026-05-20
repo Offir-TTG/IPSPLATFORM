@@ -30,6 +30,27 @@ export async function GET(request: NextRequest) {
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
+    // === PLATFORM CURRENCY ===
+    // platform_settings.platform.currency.default wins over the
+    // language-derived currency on admin surfaces. setting_value is
+    // stored as a JSON string (e.g. '"USD"'), so we strip the quotes.
+    let platformCurrencyCode = 'ILS';
+    const { data: currencySetting } = await supabase
+      .from('platform_settings')
+      .select('setting_value')
+      .eq('setting_key', 'platform.currency.default')
+      .maybeSingle();
+    if (currencySetting?.setting_value) {
+      const raw = currencySetting.setting_value;
+      // setting_value can come back as a JSON-encoded string ('"USD"')
+      // or as a plain string ('USD') depending on the column type.
+      const code =
+        typeof raw === 'string'
+          ? raw.replace(/^"|"$/g, '').trim()
+          : String(raw).trim();
+      if (code) platformCurrencyCode = code;
+    }
+
     // === FINANCIAL METRICS ===
 
     // Get all payment schedules
@@ -225,6 +246,44 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // === SIX-MONTH ROLLUPS (for charts) ===
+    // Compute monthly buckets in-process — both source arrays are
+    // already loaded. The dashboard renders these as line/bar charts.
+    // Months are returned oldest→newest with the YYYY-MM key plus a
+    // short locale-agnostic label the client can format.
+    const monthKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const months: Array<{ key: string; year: number; month: number }> = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ key: monthKey(d), year: d.getFullYear(), month: d.getMonth() });
+    }
+    const revenueHistory = months.map(({ key, year, month }) => {
+      const start = new Date(year, month, 1);
+      const end = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const amount =
+        schedules
+          ?.filter(
+            (s) =>
+              s.status === 'paid' &&
+              s.paid_date &&
+              new Date(s.paid_date) >= start &&
+              new Date(s.paid_date) <= end,
+          )
+          .reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+      return { month: key, amount };
+    });
+    const enrollmentHistory = months.map(({ key, year, month }) => {
+      const start = new Date(year, month, 1);
+      const end = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const count =
+        enrollments?.filter((e) => {
+          const d = new Date(e.created_at);
+          return d >= start && d <= end;
+        }).length || 0;
+      return { month: key, count };
+    });
+
     return NextResponse.json({
       financial: {
         totalRevenue,
@@ -275,6 +334,18 @@ export async function GET(request: NextRequest) {
       recentActivity: {
         enrollments: recentEnrollments || [],
         payments: paymentsWithUsers,
+      },
+      // Last 6 months, oldest → newest. Drives the chart hero on the
+      // admin dashboard (revenue line + enrollments bar).
+      history: {
+        revenue: revenueHistory,
+        enrollments: enrollmentHistory,
+      },
+      // Platform-wide default currency, resolved from platform_settings.
+      // The dashboard renders all money in this code — language only
+      // controls the locale for digit grouping.
+      currency: {
+        code: platformCurrencyCode,
       },
     });
 

@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
 import { useEffect, useState } from 'react';
@@ -17,7 +16,6 @@ import {
   CreditCard,
   Calendar,
   FileText,
-  Settings,
   ArrowUpRight,
   ArrowDownRight,
   Receipt,
@@ -46,17 +44,9 @@ export default function PaymentsPage() {
   const isRtl = direction === 'rtl';
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-  const isMobile = windowWidth <= 640;
 
   useEffect(() => {
     fetchStats();
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const fetchStats = async () => {
@@ -86,50 +76,25 @@ export default function PaymentsPage() {
   return (
     <AdminLayout>
       <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
-          <div>
-            <h1 suppressHydrationWarning style={{
-              fontSize: 'var(--font-size-3xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))'
-            }}>
-              <span suppressHydrationWarning>{t('admin.payments.title', 'Payments')}</span>
-            </h1>
-            <p suppressHydrationWarning style={{
-              color: 'hsl(var(--muted-foreground))',
-              fontSize: 'var(--font-size-sm)',
-              marginTop: '0.25rem'
-            }}>
-              {t('admin.payments.description', 'Manage payment plans, transactions, and financial reports')}
-            </p>
-          </div>
-          <div style={{
-            display: 'flex',
-            gap: '0.5rem',
-            width: isMobile ? '100%' : 'auto',
-            flexDirection: isMobile ? 'column' : 'row'
+        {/* Header — Reports and Payment Plans live in the Quick
+            Actions card grid below, so the top right is intentionally
+            empty. */}
+        <div>
+          <h1 suppressHydrationWarning style={{
+            fontSize: 'var(--font-size-3xl)',
+            fontFamily: 'var(--font-family-heading)',
+            fontWeight: 'var(--font-weight-bold)',
+            color: 'hsl(var(--text-heading))'
           }}>
-            <Link href="/admin/payments/reports" style={{ width: isMobile ? '100%' : 'auto' }}>
-              <Button variant="outline" style={{ width: '100%' }}>
-                <FileText className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('admin.payments.reports', 'Reports')}</span>
-              </Button>
-            </Link>
-            <Link href="/admin/payments/plans" style={{ width: isMobile ? '100%' : 'auto' }}>
-              <Button style={{ width: '100%' }}>
-                <Settings className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('admin.payments.paymentPlans', 'Payment Plans')}</span>
-              </Button>
-            </Link>
-          </div>
+            <span suppressHydrationWarning>{t('admin.payments.title', 'Payments')}</span>
+          </h1>
+          <p suppressHydrationWarning style={{
+            color: 'hsl(var(--muted-foreground))',
+            fontSize: 'var(--font-size-sm)',
+            marginTop: '0.25rem'
+          }}>
+            {t('admin.payments.description', 'Manage payment plans, transactions, and financial reports')}
+          </p>
         </div>
 
         {/* Stats Overview */}
