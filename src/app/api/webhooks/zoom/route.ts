@@ -56,8 +56,39 @@ export async function POST(request: NextRequest) {
       .eq('is_enabled', true)
       .single();
 
-    // Verify webhook signature if secret token is configured
     const secretToken = integration?.settings?.webhook_secret_token || integration?.credentials?.webhook_secret_token;
+
+    // ----------------------------------------------------------------
+    // URL validation challenge — MUST be handled BEFORE signature check.
+    // When you click "Validate the URL" in Zoom's Event Subscriptions
+    // UI, Zoom posts this event WITHOUT signature headers — it's the
+    // first request, proving you own the endpoint. Rejecting it for
+    // missing signature would deadlock the entire setup.
+    // ----------------------------------------------------------------
+    if (payload.event === 'endpoint.url_validation') {
+      if (!secretToken) {
+        console.error('[Zoom Webhook] URL validation requested but no webhook_secret_token configured in the Zoom integration');
+        return NextResponse.json(
+          { error: 'Webhook Secret Token not configured in IPSPlatform' },
+          { status: 500 }
+        );
+      }
+      const plainToken = payload.payload.plainToken;
+      const hash = crypto.createHmac('sha256', secretToken)
+        .update(plainToken)
+        .digest('hex');
+
+      console.log('[Zoom Webhook] Endpoint validation successful');
+      return NextResponse.json({
+        plainToken,
+        encryptedToken: hash,
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // For all OTHER events: verify the HMAC signature if a token is set.
+    // Real Zoom event posts DO carry x-zm-signature + x-zm-request-timestamp.
+    // ----------------------------------------------------------------
     if (secretToken) {
       const signature = request.headers.get('x-zm-signature');
       const timestamp = request.headers.get('x-zm-request-timestamp');
@@ -72,23 +103,6 @@ export async function POST(request: NextRequest) {
         console.error('Invalid Zoom webhook signature');
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
-    }
-
-    // Handle endpoint URL validation
-    if (payload.event === 'endpoint.url_validation') {
-      const plainToken = payload.payload.plainToken;
-
-      // Create HMAC hash
-      const hash = crypto.createHmac('sha256', secretToken || '')
-        .update(plainToken)
-        .digest('hex');
-
-      console.log('[Zoom Webhook] Endpoint validation successful');
-
-      return NextResponse.json({
-        plainToken,
-        encryptedToken: hash
-      });
     }
 
     console.log('[Zoom Webhook] Received event:', payload.event);
