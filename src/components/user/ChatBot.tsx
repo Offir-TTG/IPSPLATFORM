@@ -243,7 +243,7 @@ export function ChatBot() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[380px] h-[600px] bg-background border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[380px] h-[calc(100vh-6rem)] sm:h-[600px] max-h-[600px] bg-background border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-primary to-purple-600 text-white p-4 flex items-center justify-between" dir={direction}>
         <div className="flex items-center gap-3 flex-1 min-w-0">

@@ -248,7 +248,7 @@ export function UserLayout({ children }: UserLayoutProps) {
                     )}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuContent align="end" className="w-[calc(100vw-1rem)] sm:w-80">
                   <DropdownMenuLabel suppressHydrationWarning>{t('user.layout.notifications', 'Notifications')}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <div className="max-h-96 overflow-y-auto">
@@ -316,7 +316,7 @@ export function UserLayout({ children }: UserLayoutProps) {
                     </Avatar>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72 p-2">
+                <DropdownMenuContent align="end" className="w-[calc(100vw-1rem)] sm:w-72 p-2">
                   {/* Modern User Info Card */}
                   <div className="px-3 py-4 mb-2 rounded-lg bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/10">
                     <div className="flex items-center gap-3">
@@ -491,7 +491,7 @@ export function UserLayout({ children }: UserLayoutProps) {
                   <Icon className="h-5 w-5" />
                   <span className="text-xs font-medium" suppressHydrationWarning>{item.name.split(' ')[0]}</span>
                   {item.badge && (
-                    <span className="absolute top-1 ltr:right-6 rtl:left-6 h-4 min-w-[16px] px-1 bg-destructive text-destructive-foreground rounded-full text-[10px] font-semibold flex items-center justify-center">
+                    <span className="absolute top-1 ltr:right-[calc(50%-1.25rem)] rtl:left-[calc(50%-1.25rem)] h-4 min-w-[16px] px-1 bg-destructive text-destructive-foreground rounded-full text-[10px] font-semibold flex items-center justify-center">
                       {item.badge}
                     </span>
                   )}

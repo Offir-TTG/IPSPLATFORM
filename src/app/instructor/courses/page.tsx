@@ -62,18 +62,18 @@ export default function InstructorCoursesPage() {
       userRole={mockData.user.role}
       userName={mockData.user.name}
     >
-      <div className="space-y-8">
+      <div className="space-y-8 p-4 md:p-0">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">My Courses</h1>
-            <p className="text-muted-foreground">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-bold mb-2">My Courses</h1>
+            <p className="text-muted-foreground text-sm md:text-base">
               Manage your courses and track student progress
             </p>
           </div>
           <Link
             href="/instructor/courses/new"
-            className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium"
+            className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium self-start md:self-auto"
           >
             <Plus className="h-5 w-5 mr-2" />
             Create Course

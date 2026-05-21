@@ -169,11 +169,11 @@ export default function StudentGradesPage() {
           <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
           {t('common.back', 'Back')}
         </Button>
-        <div>
-          <h1 className="text-3xl font-bold" suppressHydrationWarning>
+        <div className="min-w-0">
+          <h1 className="text-2xl md:text-3xl font-bold truncate" suppressHydrationWarning>
             {t('user.grades.title', 'My Grades')}
           </h1>
-          <p className="text-muted-foreground" suppressHydrationWarning>
+          <p className="text-muted-foreground text-sm md:text-base truncate" suppressHydrationWarning>
             {course?.title}
           </p>
         </div>
@@ -181,7 +181,7 @@ export default function StudentGradesPage() {
 
       {/* Stats Summary */}
       {summary && (
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium" suppressHydrationWarning>

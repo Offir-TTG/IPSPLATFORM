@@ -947,13 +947,15 @@ export default function ProfilePage() {
         <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
           {/* Sidebar — sticky on lg+, horizontally scrollable on mobile. */}
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <TabsList className="flex h-auto w-full gap-1 bg-transparent p-0 overflow-x-auto lg:flex-col lg:overflow-x-visible">
+            {/* Mobile: 2x2 grid so all 4 tabs are visible at once (no horizontal
+                swiping required). lg+: vertical sidebar with full-width items. */}
+            <TabsList className="grid grid-cols-2 gap-1 bg-transparent p-0 h-auto w-full lg:flex lg:flex-col">
               {sidebarItems.map(({ value, icon: Icon, labelKey, labelFallback }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
                   className={cn(
-                    'w-full justify-start gap-3 h-10 px-3 rounded-md text-sm font-medium shrink-0',
+                    'w-full justify-start gap-2 lg:gap-3 h-10 px-2 lg:px-3 rounded-md text-sm font-medium',
                     'data-[state=active]:bg-primary data-[state=active]:text-primary-foreground',
                     'data-[state=active]:shadow-sm hover:bg-accent transition-colors'
                   )}
@@ -1058,18 +1060,18 @@ export default function ProfilePage() {
 
               {/* Billing Sub-Tabs */}
               <Tabs value={billingSubTab} onValueChange={setBillingSubTab}>
-                <TabsList className="grid w-full max-w-2xl grid-cols-3">
-                  <TabsTrigger value="enrollments">
-                    <BookOpen className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                    {t('user.profile.billing.enrollmentsTab', 'Enrollments')}
+                <TabsList className="grid w-full max-w-2xl grid-cols-3 h-auto">
+                  <TabsTrigger value="enrollments" className="text-xs sm:text-sm">
+                    <BookOpen className={`h-4 w-4 ${isRtl ? 'ml-1 sm:ml-2' : 'mr-1 sm:mr-2'} shrink-0`} />
+                    <span className="truncate">{t('user.profile.billing.enrollmentsTab', 'Enrollments')}</span>
                   </TabsTrigger>
-                  <TabsTrigger value="invoices">
-                    <Receipt className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                    {t('invoices.stripeInvoices', 'Stripe Invoices')}
+                  <TabsTrigger value="invoices" className="text-xs sm:text-sm">
+                    <Receipt className={`h-4 w-4 ${isRtl ? 'ml-1 sm:ml-2' : 'mr-1 sm:mr-2'} shrink-0`} />
+                    <span className="truncate">{t('invoices.stripeInvoices', 'Stripe Invoices')}</span>
                   </TabsTrigger>
-                  <TabsTrigger value="payment-methods">
-                    <CreditCard className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                    {t('user.profile.billing.paymentMethodsTab', 'Payment Methods')}
+                  <TabsTrigger value="payment-methods" className="text-xs sm:text-sm">
+                    <CreditCard className={`h-4 w-4 ${isRtl ? 'ml-1 sm:ml-2' : 'mr-1 sm:mr-2'} shrink-0`} />
+                    <span className="truncate">{t('user.profile.billing.paymentMethodsTab', 'Payment Methods')}</span>
                   </TabsTrigger>
                 </TabsList>
 

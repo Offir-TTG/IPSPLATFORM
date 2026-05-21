@@ -32,8 +32,6 @@ const DialogContent = React.forwardRef<
     dir?: 'ltr' | 'rtl'
   }
 >(({ className, children, dir, ...props }, ref) => {
-  const isRtl = dir === 'rtl'
-
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -42,18 +40,25 @@ const DialogContent = React.forwardRef<
         dir={dir}
         className={cn(
           // Layout: `flex flex-col` so DialogHeader/DialogBody/DialogFooter
-          // can each control shrink/grow. Capped at 90vh with overflow-hidden
-          // so the scroll boundary lives on DialogBody instead of the root.
-          // Existing dialogs without DialogBody render the same as before
-          // (gap-4 spacing preserved, content fits within 90vh without
-          // scroll). Tall dialogs should wrap their middle content in
-          // <DialogBody> to get a frozen header + scrollable body + frozen
-          // footer.
+          // can each control shrink/grow.
           //
-          // Callers that need to override (legacy `overflow-y-auto` on the
-          // root) can still pass that via `className` — it'll win against
-          // these defaults via `cn`'s tailwind-merge.
-          "fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-lg max-h-[90vh] overflow-hidden translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+          // `overflow-y-auto` on the root is the SAFE default — if a dialog
+          // doesn't wrap its middle in <DialogBody>, the whole dialog scrolls
+          // (header + content + footer together) instead of having its
+          // bottom clipped. Dialogs that DO use <DialogBody> still get the
+          // frozen header/footer behavior because DialogBody is
+          // `flex-1 min-h-0 overflow-y-auto` — once its parent's max-height
+          // is reached, the inner body scrolls and the root has nothing
+          // left to overflow.
+          //
+          // `max-h-[90dvh]` uses dynamic viewport height so when the soft
+          // keyboard opens on mobile, the dialog shrinks instead of being
+          // pushed off-screen. dvh has Safari 15.4+ / Chrome 108+ support.
+          //
+          // `w-[calc(100%-2rem)] sm:w-full` keeps a 1rem gap from each
+          // viewport edge on mobile while letting desktop max-w-* utilities
+          // behave exactly as before.
+          "fixed left-[50%] top-[50%] z-50 flex flex-col w-[calc(100%-2rem)] sm:w-full max-w-lg max-h-[90dvh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
           className
         )}
         {...props}
@@ -61,11 +66,11 @@ const DialogContent = React.forwardRef<
         {children}
         {/* Close button is a sibling of DialogBody, so it stays at the
             top corner of the DialogContent box regardless of how the
-            body scrolls. z-20 keeps it above any sticky header decoration. */}
-        <DialogPrimitive.Close className={cn(
-          "absolute top-4 z-20 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground",
-          isRtl ? "left-4" : "right-4"
-        )}>
+            body scrolls. z-20 keeps it above any sticky header decoration.
+            `end-4` is a CSS logical property — auto-flips to the correct
+            side based on the document's `dir` attribute, so callers no
+            longer need to pass a `dir` prop on every Dialog. */}
+        <DialogPrimitive.Close className="absolute top-4 end-4 z-20 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

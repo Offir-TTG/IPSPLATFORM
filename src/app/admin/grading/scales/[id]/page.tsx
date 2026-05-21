@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -304,17 +305,17 @@ export default function GradeRangesPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-6 space-y-6" dir={direction}>
+      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="sm" onClick={() => router.push('/admin/grading/scales')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <Award className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{scale.name}</h1>
-              <p className="text-muted-foreground" suppressHydrationWarning>
+            <Award className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">{scale.name}</h1>
+              <p className="text-muted-foreground text-sm md:text-base" suppressHydrationWarning>
                 {t('admin.grading.ranges.subtitle', 'Manage grade ranges for this scale')}
               </p>
             </div>
@@ -398,8 +399,12 @@ export default function GradeRangesPage() {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>
-                {t('admin.grading.ranges.gradeRanges', 'Grade Ranges')} ({ranges.length})
+              {/* Count in a Badge instead of "(N)" so the parentheses don't
+                  get flipped by the unicode bidi algorithm when English text
+                  sits inside an RTL-leaning context. */}
+              <CardTitle suppressHydrationWarning className="flex items-center gap-2">
+                <span>{t('admin.grading.ranges.gradeRanges', 'Grade Ranges')}</span>
+                <Badge variant="secondary">{ranges.length}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -491,7 +496,7 @@ export default function GradeRangesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-2">
             {/* Grade Label */}
             <div className="space-y-2">
               <Label htmlFor="grade_label" suppressHydrationWarning>
@@ -601,7 +606,7 @@ export default function GradeRangesPage() {
                 onCheckedChange={(checked) => setFormData({ ...formData, is_passing: checked })}
               />
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>

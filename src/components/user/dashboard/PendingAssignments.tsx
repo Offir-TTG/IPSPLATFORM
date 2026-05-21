@@ -205,7 +205,7 @@ export function PendingAssignments({ assignments }: PendingAssignmentsProps) {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 h-auto p-1">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto p-1">
           <TabsTrigger value="all" className="flex items-center gap-2 py-2">
             <FileText className="h-4 w-4" />
             <span className="hidden sm:inline">{t('user.dashboard.assignments.tabs.all', 'All')}</span>

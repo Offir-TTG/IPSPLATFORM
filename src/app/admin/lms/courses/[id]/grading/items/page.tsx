@@ -13,6 +13,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -31,8 +32,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useHelp } from '@/hooks/useHelp';
 
 export default function GradeItemsPage() {
+  useHelp('grading-items');
   const router = useRouter();
   const params = useParams();
   const courseId = params.id as string;
@@ -279,22 +282,22 @@ export default function GradeItemsPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-6 space-y-6" dir={direction}>
+      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/lms/courses/${courseId}`)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <ClipboardList className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{t('admin.grading.items.title', 'Grade Items')}</h1>
-              <p className="text-muted-foreground">
+            <ClipboardList className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">{t('admin.grading.items.title', 'Grade Items')}</h1>
+              <p className="text-muted-foreground text-sm md:text-base">
                 {t('admin.grading.items.subtitle', 'Manage assignments, quizzes, and exams')}
               </p>
             </div>
           </div>
-          <Button onClick={handleOpenCreateDialog}>
+          <Button onClick={handleOpenCreateDialog} className="md:self-auto self-start">
             <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
             <span>{t('admin.grading.items.addItem', 'Add Item')}</span>
           </Button>
@@ -340,10 +343,10 @@ export default function GradeItemsPage() {
                     {categoryItems.map((item) => (
                       <Card key={item.id}>
                         <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
-                                <h3 className="text-lg font-semibold">{item.name}</h3>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2 mb-2">
+                                <h3 className="text-base md:text-lg font-semibold">{item.name}</h3>
                                 <Badge variant="outline">{item.max_points} pts</Badge>
                                 {item.is_extra_credit && (
                                   <Badge variant="default">{t('admin.grading.items.extraCredit', 'Extra Credit')}</Badge>
@@ -355,7 +358,7 @@ export default function GradeItemsPage() {
                               {item.description && (
                                 <p className="text-sm text-muted-foreground mb-2">{item.description}</p>
                               )}
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
                                 {item.due_date && (
                                   <div className="flex items-center gap-1">
                                     <Calendar className="h-4 w-4" />
@@ -367,7 +370,7 @@ export default function GradeItemsPage() {
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 shrink-0">
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -397,7 +400,7 @@ export default function GradeItemsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogContent dir={direction} className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>
               {editingItem ? t('admin.grading.items.dialog.edit', 'Edit Grade Item') : t('admin.grading.items.dialog.add', 'Add Grade Item')}
@@ -409,7 +412,7 @@ export default function GradeItemsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-2">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="name">{t('admin.grading.items.form.name', 'Item Name')} *</Label>
@@ -479,7 +482,7 @@ export default function GradeItemsPage() {
             </div>
 
             {/* Available From/Until */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="available_from">{t('admin.grading.items.form.availableFrom', 'Available From')}</Label>
                 <Input
@@ -547,7 +550,7 @@ export default function GradeItemsPage() {
                 onChange={(e) => setFormData({ ...formData, display_order: parseInt(e.target.value) || 1 })}
               />
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>

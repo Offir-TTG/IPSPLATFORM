@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { Palette, Save, RefreshCw, Moon, Sun, Type, Plus, Minus, ChevronDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -199,6 +200,7 @@ const adjustValue = (value: string, increment: number, step?: number): string =>
 };
 
 export default function ThemeSettingsPage() {
+  useHelp('settings-theme');
   const { t, availableLanguages, language: adminLang } = useAdminLanguage();
   const [theme, setTheme] = useState<ThemeConfig | null>(null);
   const [loading, setLoading] = useState(true);

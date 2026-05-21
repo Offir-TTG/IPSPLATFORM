@@ -154,7 +154,7 @@ export function ProgressOverview({ stats }: ProgressOverviewProps) {
 
         {/* Course Summary */}
         <div className="mt-6 pt-6 border-t">
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
             <div>
               <p className="text-2xl font-bold text-green-500">{stats.completed_courses}</p>
               <p className="text-xs text-muted-foreground mt-1">

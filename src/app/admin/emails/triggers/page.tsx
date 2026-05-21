@@ -304,7 +304,7 @@ export default function TriggersPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-7xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-7xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div className={`flex ${isMobile ? 'flex-col gap-4' : 'flex-row items-center justify-between'}`}>
           <div>

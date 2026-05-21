@@ -135,11 +135,11 @@ export default function CalendarPage() {
           <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
           {t('common.back', 'Back')}
         </Button>
-        <div>
-          <h1 className="text-3xl font-bold" suppressHydrationWarning>
+        <div className="min-w-0">
+          <h1 className="text-2xl md:text-3xl font-bold truncate" suppressHydrationWarning>
             {t('user.calendar.title', 'My Calendar')}
           </h1>
-          <p className="text-muted-foreground" suppressHydrationWarning>
+          <p className="text-muted-foreground text-sm md:text-base" suppressHydrationWarning>
             {t('user.calendar.subtitle', 'View all your upcoming sessions and meetings')}
           </p>
         </div>

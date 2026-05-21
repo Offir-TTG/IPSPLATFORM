@@ -638,7 +638,7 @@ export default function CourseDetailPage() {
                       className="w-full h-48 object-cover rounded-lg mb-4"
                     />
                   )}
-                  <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
+                  <h1 className="text-2xl md:text-3xl font-bold mb-2">{course.title}</h1>
                   {course.description && (() => {
                     // Preserve paragraph structure: <p>…</p> blocks become
                     // double newlines, <br> becomes a single newline, then

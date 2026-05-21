@@ -515,10 +515,10 @@ export default function ProgramDetailPage() {
 
   return (
     <AdminLayout>
-      <div className="p-6 space-y-6" dir={direction}>
+      <div className="p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 md:gap-4 min-w-0">
             <Button
               variant="ghost"
               size="sm"
@@ -527,8 +527,8 @@ export default function ProgramDetailPage() {
               <ArrowLeft className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
               {t('lms.program_detail.back_to_programs', 'Back to Programs')}
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold">
+            <div className="min-w-0">
+              <h1 className="text-xl md:text-2xl font-bold truncate">
                 {program?.name || t('lms.program_detail.untitled_program', 'Untitled Program')}
               </h1>
               {program?.description && stripHtml(program.description).trim() !== '' && (
@@ -555,7 +555,8 @@ export default function ProgramDetailPage() {
             className="gap-2"
           >
             <BookOpen className="h-4 w-4" />
-            {t('lms.program_detail.tab_courses', 'Courses')} ({programCourses.length})
+            <span>{t('lms.program_detail.tab_courses', 'Courses')}</span>
+            <Badge variant="secondary" className="ms-1">{programCourses.length}</Badge>
           </Button>
           <Button
             variant={activeTab === 'students' ? 'default' : 'ghost'}
@@ -563,7 +564,8 @@ export default function ProgramDetailPage() {
             className="gap-2"
           >
             <Users className="h-4 w-4" />
-            {t('lms.program_detail.tab_students', 'Students')} ({students.length})
+            <span>{t('lms.program_detail.tab_students', 'Students')}</span>
+            <Badge variant="secondary" className="ms-1">{students.length}</Badge>
           </Button>
         </div>
 

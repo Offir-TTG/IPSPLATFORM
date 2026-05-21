@@ -69,11 +69,11 @@ export default function MyActivityPage() {
         <div className="space-y-6">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-900 dark:text-white">
-              <Eye className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-              {t('myActivity.title', 'My Activity')}
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-gray-900 dark:text-white">
+              <Eye className="h-6 w-6 md:h-8 md:w-8 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="truncate">{t('myActivity.title', 'My Activity')}</span>
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
+            <p className="text-gray-600 dark:text-gray-400 mt-2 text-sm md:text-base">
               {t('myActivity.subtitle', 'View your account activity and access history')}
             </p>
           </div>

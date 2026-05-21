@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
+import { useHelp } from '@/hooks/useHelp';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
@@ -62,6 +64,7 @@ interface TransactionFilters {
 }
 
 export default function TransactionsPage() {
+  useHelp('payments-transactions');
   const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
   const { toast } = useToast();
   const isRtl = direction === 'rtl';
@@ -362,7 +365,7 @@ export default function TransactionsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -552,9 +555,11 @@ export default function TransactionsPage() {
           </CardContent>
         </Card>
 
-        {/* Transactions Table */}
+        {/* Transactions Table (desktop) / Cards (mobile) */}
         <Card>
           <CardContent className="p-0">
+            <ResponsiveTable>
+            <ResponsiveTable.Desktop>
             <div className="overflow-x-auto">
               <table className="w-full" dir={direction}>
                 <thead className="border-b">
@@ -697,6 +702,75 @@ export default function TransactionsPage() {
                 </tbody>
               </table>
             </div>
+            </ResponsiveTable.Desktop>
+
+            {/* Mobile: one card per transaction. Same handlers, badges,
+                and formatters as the desktop row — just stacked. */}
+            <ResponsiveTable.Mobile className="divide-y" dir={direction}>
+              {paginatedTransactions.map((transaction) => (
+                <div key={transaction.id} className="p-4 space-y-3 hover:bg-muted/50">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium truncate">{transaction.user_name}</div>
+                      <div className="text-xs text-muted-foreground truncate">{transaction.user_email}</div>
+                    </div>
+                    <div className={`flex items-center gap-2 shrink-0 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      {getStatusIcon(transaction.status)}
+                      {getStatusBadge(transaction.status)}
+                    </div>
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-medium">{transaction.product_name}</span>
+                    {transaction.metadata?.payment_number && (
+                      <span className="text-muted-foreground"> · #{transaction.metadata.payment_number}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-muted-foreground">{formatDate(transaction.created_at)}</div>
+                    <div className={isRtl ? 'text-left' : 'text-right'}>
+                      <div className="font-semibold" suppressHydrationWarning>
+                        {formatCurrency(transaction.amount, transaction.currency)}
+                      </div>
+                      {transaction.refund_amount && (
+                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+                          {t('admin.payments.transactions.refundedAmount', 'Refunded')}: {formatCurrency(transaction.refund_amount, transaction.currency)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t">
+                    <Badge variant="outline" suppressHydrationWarning>
+                      {translatePaymentType(transaction.payment_method)}
+                    </Badge>
+                    <div className={`flex gap-1 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTransaction(transaction);
+                          setDetailsDialogOpen(true);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {transaction.status === 'completed' && !transaction.refund_amount && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedTransaction(transaction);
+                            setRefundDialogOpen(true);
+                          }}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </ResponsiveTable.Mobile>
+            </ResponsiveTable>
 
             {sortedTransactions.length === 0 && !loadingTransactions && (
               <div className="py-12 text-center">

@@ -485,17 +485,12 @@ export default function SettingsPage() {
           gap: '1rem'
         }}>
           <div>
-            <h1 style={{
-              fontSize: 'var(--font-size-3xl)',
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2" style={{
               fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
               color: 'hsl(var(--text-heading))',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
             }} suppressHydrationWarning>
-              <Settings className="h-8 w-8" style={{ color: 'hsl(var(--primary))' }} />
-              {t('admin.settings.title', 'Platform Settings')}
+              <Settings className="h-6 w-6 md:h-8 md:w-8 shrink-0" style={{ color: 'hsl(var(--primary))' }} />
+              <span className="truncate">{t('admin.settings.title', 'Platform Settings')}</span>
             </h1>
             <p style={{
               color: 'hsl(var(--text-muted))',

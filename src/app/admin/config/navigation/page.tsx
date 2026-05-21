@@ -2,6 +2,7 @@
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -572,6 +573,7 @@ function SortableItem({
 }
 
 export default function NavigationPage() {
+  useHelp('config-navigation');
   const { t, language, availableLanguages, clearTranslationCache } = useAdminLanguage();
 
   // Human-readable label for the language being edited — shown next to the
@@ -1208,14 +1210,14 @@ export default function NavigationPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl space-y-6">
+      <div className="max-w-6xl space-y-6 p-4 md:p-0">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold" suppressHydrationWarning>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-bold" suppressHydrationWarning>
               {t('navigation.title', 'Navigation Configuration')}
             </h1>
-            <p className="text-muted-foreground mt-1" suppressHydrationWarning>
+            <p className="text-muted-foreground mt-1 text-sm md:text-base" suppressHydrationWarning>
               {t('navigation.subtitle', 'Customize the admin sidebar navigation')}
             </p>
           </div>

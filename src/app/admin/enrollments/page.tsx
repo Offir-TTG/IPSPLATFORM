@@ -17,6 +17,7 @@ import { PaymentPlanDetailsDialog } from '@/components/admin/PaymentPlanDetailsD
 import { SendEnrollmentLinkDialog } from '@/components/admin/SendEnrollmentLinkDialog';
 import React, { useState, useEffect } from 'react';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import {
@@ -70,6 +71,7 @@ interface EnrollmentFilters {
 }
 
 export default function EnrollmentsPage() {
+  useHelp('enrollments-overview');
   const { t, direction, language } = useAdminLanguage();
   const isRtl = direction === 'rtl';
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);

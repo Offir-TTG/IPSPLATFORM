@@ -87,40 +87,44 @@ export function Attendance({ attendance }: AttendanceProps) {
             {attendance.length} {attendance.length === 1 ? t('user.dashboard.attendance.record', 'record') : t('user.dashboard.attendance.records', 'records')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* View Mode Toggle */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View Mode Toggle — labels hide on mobile, icons only */}
           <div className="flex items-center border rounded-lg p-1">
             <Button
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('list')}
               className="gap-2"
+              aria-label={t('user.dashboard.sessions.viewList', 'List')}
             >
               <List className="h-4 w-4" />
-              {t('user.dashboard.sessions.viewList', 'List')}
+              <span className="hidden sm:inline">{t('user.dashboard.sessions.viewList', 'List')}</span>
             </Button>
             <Button
               variant={viewMode === 'week' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('week')}
               className="gap-2"
+              aria-label={t('user.dashboard.sessions.viewWeek', 'Week')}
             >
               <Calendar className="h-4 w-4" />
-              {t('user.dashboard.sessions.viewWeek', 'Week')}
+              <span className="hidden sm:inline">{t('user.dashboard.sessions.viewWeek', 'Week')}</span>
             </Button>
             <Button
               variant={viewMode === 'month' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('month')}
               className="gap-2"
+              aria-label={t('user.dashboard.sessions.viewMonth', 'Month')}
             >
               <CalendarDays className="h-4 w-4" />
-              {t('user.dashboard.sessions.viewMonth', 'Month')}
+              <span className="hidden sm:inline">{t('user.dashboard.sessions.viewMonth', 'Month')}</span>
             </Button>
           </div>
           <Link href="/attendance">
             <Button variant="ghost" size="sm" className="gap-2">
-              {t('user.dashboard.attendance.viewAll', 'View All Attendance')}
+              <span className="hidden sm:inline">{t('user.dashboard.attendance.viewAll', 'View All Attendance')}</span>
+              <span className="sm:hidden">{t('user.dashboard.attendance.viewAllShort', 'View All')}</span>
               <span className="text-lg">→</span>
             </Button>
           </Link>

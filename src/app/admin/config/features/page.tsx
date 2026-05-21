@@ -2,6 +2,7 @@
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -28,6 +29,7 @@ interface FeatureFlag {
 }
 
 export default function FeaturesPage() {
+  useHelp('config-features');
   const { t, direction } = useAdminLanguage();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -158,10 +160,10 @@ export default function FeaturesPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold" suppressHydrationWarning>
+            <h1 className="text-2xl md:text-3xl font-bold" suppressHydrationWarning>
               {t('features.title', 'Feature Flags')}
             </h1>
-            <p className="text-muted-foreground mt-1" suppressHydrationWarning>
+            <p className="text-muted-foreground mt-1 text-sm md:text-base" suppressHydrationWarning>
               {t('features.subtitle', 'Enable or disable platform features')}
             </p>
           </div>

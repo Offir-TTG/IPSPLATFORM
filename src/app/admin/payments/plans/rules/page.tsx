@@ -97,22 +97,22 @@ export default function AutoDetectionRulesPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 p-4 md:p-0">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
             <Link href="/admin/payments/plans">
               <Button variant="ghost" className="mb-2">
                 <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
                 Back to Payment Plans
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold">Auto-Detection Rules</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-2xl md:text-3xl font-bold">Auto-Detection Rules</h1>
+            <p className="text-muted-foreground mt-1 text-sm md:text-base">
               Configure automatic payment plan detection rules
             </p>
           </div>
-          <Button onClick={() => setTestDialogOpen(true)}>
+          <Button onClick={() => setTestDialogOpen(true)} className="md:self-auto self-start">
             <TestTube className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
             Test Detection
           </Button>

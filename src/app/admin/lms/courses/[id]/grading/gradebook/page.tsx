@@ -12,6 +12,8 @@ import { useAdminLanguage } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
+import { useHelp } from '@/hooks/useHelp';
 import {
   Select,
   SelectContent,
@@ -51,6 +53,7 @@ interface GradebookData {
 }
 
 export default function GradebookPage() {
+  useHelp('gradebook');
   const router = useRouter();
   const params = useParams();
   const courseId = params.id as string;
@@ -215,24 +218,24 @@ export default function GradebookPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-6 space-y-6" dir={direction}>
+      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/lms/courses/${courseId}`)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <Calculator className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">
+            <Calculator className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">
                 {t('admin.grading.gradebook.title', 'Gradebook')}
               </h1>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm md:text-base">
                 {t('admin.grading.gradebook.subtitle', 'Manage student grades for this course')}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" disabled>
               <Download className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
               <span>{t('admin.grading.gradebook.export', 'Export')}</span>
@@ -264,86 +267,151 @@ export default function GradebookPage() {
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-muted">
-                      <th className="sticky left-0 z-20 bg-muted p-3 text-left font-semibold border-r min-w-[200px]">
-                        {t('admin.grading.gradebook.student', 'Student')}
-                      </th>
-                      {gradeItems
-                        .sort((a, b) => a.display_order - b.display_order)
-                        .map(item => (
-                          <th key={item.id} className="p-3 text-center font-semibold border-r min-w-[100px]">
-                            <div className="flex flex-col">
-                              <span className="text-xs truncate">{item.name}</span>
-                              <span className="text-xs text-muted-foreground">/{item.max_points}</span>
-                            </div>
+          <ResponsiveTable>
+            {/* Desktop: original table — markup unchanged, just wrapped. */}
+            <ResponsiveTable.Desktop>
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-muted">
+                          <th className="sticky left-0 z-20 bg-muted p-3 text-left font-semibold border-r min-w-[200px]">
+                            {t('admin.grading.gradebook.student', 'Student')}
                           </th>
-                        ))}
-                      <th className="sticky right-0 z-20 bg-muted p-3 text-center font-semibold min-w-[120px]">
-                        {t('admin.grading.gradebook.total', 'Total')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.map(student => {
-                      const total = calculateStudentTotal(student.id);
-                      return (
-                        <tr key={student.id} className="border-t hover:bg-muted/50">
-                          <td className="sticky left-0 z-10 bg-background p-3 border-r">
-                            <div>
-                              <p className="font-medium">{student.full_name}</p>
-                              <p className="text-xs text-muted-foreground">{student.email}</p>
-                            </div>
-                          </td>
                           {gradeItems
                             .sort((a, b) => a.display_order - b.display_order)
-                            .map(item => {
-                              const key = `${student.id}-${item.id}`;
-                              const grade = grades.get(key);
-                              const isEdited = editedCells.has(key);
-
-                              return (
-                                <td key={item.id} className="p-2 border-r">
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    max={item.max_points}
-                                    value={grade?.points_earned ?? ''}
-                                    onChange={(e) => handleGradeChange(student.id, item.id, e.target.value)}
-                                    className={`text-center ${isEdited ? 'border-yellow-500 bg-yellow-50' : ''}`}
-                                    placeholder="-"
-                                  />
-                                  {grade?.percentage !== null && grade?.percentage !== undefined && (
-                                    <p className="text-xs text-center text-muted-foreground mt-1">
-                                      {grade.percentage.toFixed(1)}%
-                                    </p>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          <td className="sticky right-0 z-10 bg-background p-3 text-center border-l">
-                            <div>
-                              <p className="font-semibold">
-                                {total.earned.toFixed(2)} / {total.possible.toFixed(2)}
-                              </p>
-                              <Badge variant={total.percentage >= 60 ? 'default' : 'destructive'}>
-                                {total.percentage.toFixed(1)}%
-                              </Badge>
-                            </div>
-                          </td>
+                            .map(item => (
+                              <th key={item.id} className="p-3 text-center font-semibold border-r min-w-[100px]">
+                                <div className="flex flex-col">
+                                  <span className="text-xs truncate">{item.name}</span>
+                                  <span className="text-xs text-muted-foreground">/{item.max_points}</span>
+                                </div>
+                              </th>
+                            ))}
+                          <th className="sticky right-0 z-20 bg-muted p-3 text-center font-semibold min-w-[120px]">
+                            {t('admin.grading.gradebook.total', 'Total')}
+                          </th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                      </thead>
+                      <tbody>
+                        {students.map(student => {
+                          const total = calculateStudentTotal(student.id);
+                          return (
+                            <tr key={student.id} className="border-t hover:bg-muted/50">
+                              <td className="sticky left-0 z-10 bg-background p-3 border-r">
+                                <div>
+                                  <p className="font-medium">{student.full_name}</p>
+                                  <p className="text-xs text-muted-foreground">{student.email}</p>
+                                </div>
+                              </td>
+                              {gradeItems
+                                .sort((a, b) => a.display_order - b.display_order)
+                                .map(item => {
+                                  const key = `${student.id}-${item.id}`;
+                                  const grade = grades.get(key);
+                                  const isEdited = editedCells.has(key);
+
+                                  return (
+                                    <td key={item.id} className="p-2 border-r">
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max={item.max_points}
+                                        value={grade?.points_earned ?? ''}
+                                        onChange={(e) => handleGradeChange(student.id, item.id, e.target.value)}
+                                        className={`text-center ${isEdited ? 'border-yellow-500 bg-yellow-50' : ''}`}
+                                        placeholder="-"
+                                      />
+                                      {grade?.percentage !== null && grade?.percentage !== undefined && (
+                                        <p className="text-xs text-center text-muted-foreground mt-1">
+                                          {grade.percentage.toFixed(1)}%
+                                        </p>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              <td className="sticky right-0 z-10 bg-background p-3 text-center border-l">
+                                <div>
+                                  <p className="font-semibold">
+                                    {total.earned.toFixed(2)} / {total.possible.toFixed(2)}
+                                  </p>
+                                  <Badge variant={total.percentage >= 60 ? 'default' : 'destructive'}>
+                                    {total.percentage.toFixed(1)}%
+                                  </Badge>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </ResponsiveTable.Desktop>
+
+            {/* Mobile: one card per student with grade rows + total footer.
+                Same handlers + edited-cell visual cue as desktop, just
+                stacked vertically so the grid never has to scroll. */}
+            <ResponsiveTable.Mobile className="space-y-3">
+              {students.map(student => {
+                const total = calculateStudentTotal(student.id);
+                const sortedItems = [...gradeItems].sort((a, b) => a.display_order - b.display_order);
+                return (
+                  <Card key={student.id}>
+                    <CardContent className="p-4 space-y-3">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{student.full_name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                      </div>
+                      <div className="space-y-2 border-t pt-3">
+                        {sortedItems.map(item => {
+                          const key = `${student.id}-${item.id}`;
+                          const grade = grades.get(key);
+                          const isEdited = editedCells.has(key);
+                          return (
+                            <div key={item.id} className="flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{item.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  /{item.max_points}
+                                  {grade?.percentage !== null && grade?.percentage !== undefined && (
+                                    <span className={isRtl ? 'mr-2' : 'ml-2'}>
+                                      ({grade.percentage.toFixed(1)}%)
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={item.max_points}
+                                value={grade?.points_earned ?? ''}
+                                onChange={(e) => handleGradeChange(student.id, item.id, e.target.value)}
+                                className={`w-24 text-center shrink-0 ${isEdited ? 'border-yellow-500 bg-yellow-50' : ''}`}
+                                placeholder="-"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between border-t pt-3">
+                        <p className="text-sm font-semibold">
+                          {total.earned.toFixed(2)} / {total.possible.toFixed(2)}
+                        </p>
+                        <Badge variant={total.percentage >= 60 ? 'default' : 'destructive'}>
+                          {total.percentage.toFixed(1)}%
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </ResponsiveTable.Mobile>
+          </ResponsiveTable>
         )}
       </div>
     </AdminLayout>

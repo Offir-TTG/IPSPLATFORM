@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -32,8 +33,10 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import type { GradingScale, ScaleType } from '@/types/grading';
+import { useHelp } from '@/hooks/useHelp';
 
 export default function GradingScalesPage() {
+  useHelp('grading-scales');
   const router = useRouter();
   const { t, direction } = useAdminLanguage();
   const { toast } = useToast();
@@ -212,21 +215,21 @@ export default function GradingScalesPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-6 space-y-6" dir={direction}>
+      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Award className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight" suppressHydrationWarning>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <Award className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate" suppressHydrationWarning>
                 {t('admin.grading.scales.title', 'Grading Scales')}
               </h1>
-              <p className="text-muted-foreground" suppressHydrationWarning>
+              <p className="text-muted-foreground text-sm md:text-base" suppressHydrationWarning>
                 {t('admin.grading.scales.subtitle', 'Manage grading scales and grade ranges for courses')}
               </p>
             </div>
           </div>
-          <Button onClick={handleOpenCreateDialog}>
+          <Button onClick={handleOpenCreateDialog} className="md:self-auto self-start">
             <Plus className="h-4 w-4 mr-2" />
             <span suppressHydrationWarning>{t('admin.grading.scales.create', 'Create Scale')}</span>
           </Button>
@@ -260,13 +263,13 @@ export default function GradingScalesPage() {
             {scales.map((scale) => (
               <Card key={scale.id} className="hover:shadow-md transition-shadow">
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between gap-3">
                     <div
-                      className="flex items-center gap-3 flex-1 cursor-pointer"
+                      className="flex flex-wrap items-center gap-2 md:gap-3 flex-1 min-w-0 cursor-pointer"
                       onClick={() => router.push(`/admin/grading/scales/${scale.id}`)}
                     >
-                      <CardTitle className="text-xl">{scale.name}</CardTitle>
-                      <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      <CardTitle className="text-lg md:text-xl">{scale.name}</CardTitle>
+                      <div className={`flex flex-wrap gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
                         {scale.is_default && (
                           <Badge variant="default" suppressHydrationWarning>
                             {t('admin.grading.scales.default', 'Default')}
@@ -283,13 +286,13 @@ export default function GradingScalesPage() {
                             <span suppressHydrationWarning>{t('admin.grading.scales.inactive', 'Inactive')}</span>
                           </Badge>
                         )}
-                        <Badge variant="secondary">
-                          {scale.scale_type}
+                        <Badge variant="secondary" suppressHydrationWarning>
+                          {t(`admin.grading.scales.scaleType.${scale.scale_type}`, scale.scale_type)}
                         </Badge>
                       </div>
-                      <ChevronRight className={`h-5 w-5 text-muted-foreground ${isRtl ? 'rotate-180' : ''}`} />
+                      <ChevronRight className={`h-5 w-5 text-muted-foreground ${isRtl ? 'rotate-180' : ''} hidden md:inline-block`} />
                     </div>
-                    <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                    <div className={`flex gap-2 shrink-0 ${isRtl ? 'flex-row-reverse' : ''}`}>
                       <Button
                         variant="outline"
                         size="sm"
@@ -320,8 +323,9 @@ export default function GradingScalesPage() {
                 <CardContent>
                   {scale.grade_ranges && scale.grade_ranges.length > 0 ? (
                     <div className="space-y-2">
-                      <p className="text-sm font-medium mb-3" suppressHydrationWarning>
-                        {t('admin.grading.scales.ranges', 'Grade Ranges')} ({scale.grade_ranges.length})
+                      <p className="text-sm font-medium mb-3 flex items-center gap-2" suppressHydrationWarning>
+                        <span>{t('admin.grading.scales.ranges', 'Grade Ranges')}</span>
+                        <Badge variant="secondary">{scale.grade_ranges.length}</Badge>
                       </p>
                       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                         {scale.grade_ranges
@@ -379,7 +383,7 @@ export default function GradingScalesPage() {
 
       {/* Create/Edit Scale Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent dir={direction} className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle suppressHydrationWarning>
               {editingScale
@@ -393,7 +397,7 @@ export default function GradingScalesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-2">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="name" suppressHydrationWarning>
@@ -473,7 +477,7 @@ export default function GradingScalesPage() {
                 onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
               />
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>

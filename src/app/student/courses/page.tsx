@@ -69,11 +69,11 @@ export default function StudentCoursesPage() {
       userRole={mockData.user.role}
       userName={mockData.user.name}
     >
-      <div className="space-y-8">
+      <div className="space-y-8 p-4 md:p-0">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold mb-2">My Courses</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold mb-2">My Courses</h1>
+          <p className="text-muted-foreground text-sm md:text-base">
             Manage and track your enrolled courses
           </p>
         </div>

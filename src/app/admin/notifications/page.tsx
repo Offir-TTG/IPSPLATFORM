@@ -222,13 +222,13 @@ export default function AdminNotificationsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl space-y-8" dir={direction}>
+      <div className="max-w-6xl space-y-8 p-4 md:p-0" dir={direction}>
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>
+          <h1 className="text-2xl md:text-3xl font-bold mb-2" suppressHydrationWarning>
             {t('admin.notifications.pageTitle', 'Notifications')}
           </h1>
-          <p className="text-muted-foreground" suppressHydrationWarning>
+          <p className="text-muted-foreground text-sm md:text-base" suppressHydrationWarning>
             {t('admin.notifications.pageDescription', 'Manage and send notifications to users')}
           </p>
         </div>
@@ -459,7 +459,7 @@ export default function AdminNotificationsPage() {
                   {t('admin.notifications.noMatchingFilters', 'No notifications match your filters')}
                 </div>
               ) : (
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table dir={direction}>
                     <TableHeader>
                       <TableRow className={isRtl ? 'text-right' : 'text-left'}>

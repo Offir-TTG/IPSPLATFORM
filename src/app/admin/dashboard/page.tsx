@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { LoadingState } from '@/components/admin/LoadingState';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { formatCurrency as formatCurrencyRaw } from '@/lib/currency/format';
 import {
   AlertCircle,
@@ -94,6 +95,7 @@ interface DashboardStats {
 }
 
 export default function AdminDashboardPage() {
+  useHelp('admin-overview');
   const { t, language } = useAdminLanguage();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);

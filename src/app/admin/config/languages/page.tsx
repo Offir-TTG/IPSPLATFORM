@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { CURRENCIES } from '@/lib/utils/currency';
 import {
   Plus,
@@ -48,6 +49,7 @@ interface CommonLanguage {
 }
 
 export default function LanguagesPage() {
+  useHelp('config-languages');
   const { t, direction } = useAdminLanguage();
   const isRtl = direction === 'rtl';
   const [languages, setLanguages] = useState<Language[]>([]);

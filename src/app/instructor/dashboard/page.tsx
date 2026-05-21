@@ -93,13 +93,13 @@ export default function InstructorDashboardPage() {
       userRole={mockData.user.role}
       userName={mockData.user.name}
     >
-      <div className="space-y-8">
+      <div className="space-y-8 p-4 md:p-0">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold mb-2">
             Welcome back, {mockData.user.name}!
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground text-sm md:text-base">
             Here's an overview of your teaching activity
           </p>
         </div>

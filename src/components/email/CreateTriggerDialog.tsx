@@ -312,10 +312,10 @@ export function CreateTriggerDialog({
         </DialogHeader>
 
         <Tabs defaultValue="basic" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="basic">{t('triggers.tab.basic', 'Basic')}</TabsTrigger>
-            <TabsTrigger value="timing">{t('triggers.tab.timing', 'Timing')}</TabsTrigger>
-            <TabsTrigger value="advanced">{t('triggers.tab.advanced', 'Advanced')}</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3 h-auto">
+            <TabsTrigger value="basic" className="text-xs sm:text-sm">{t('triggers.tab.basic', 'Basic')}</TabsTrigger>
+            <TabsTrigger value="timing" className="text-xs sm:text-sm">{t('triggers.tab.timing', 'Timing')}</TabsTrigger>
+            <TabsTrigger value="advanced" className="text-xs sm:text-sm">{t('triggers.tab.advanced', 'Advanced')}</TabsTrigger>
           </TabsList>
 
           {/* Basic Tab */}

@@ -159,7 +159,7 @@ export default function UsersPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-7xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-7xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div style={{
           display: 'flex',

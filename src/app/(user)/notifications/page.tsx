@@ -272,11 +272,11 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="min-h-screen pb-12">
+    <div className="min-h-screen pb-12 p-4 md:p-0">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
             <h1 style={{
               fontSize: 'var(--font-size-3xl)',
               fontFamily: 'var(--font-family-heading)',

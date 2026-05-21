@@ -170,8 +170,8 @@ export default function AttendanceReportsPage() {
   return (
     <div className="container mx-auto py-6 px-4" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+        <div className="flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
             size="sm"
@@ -180,11 +180,11 @@ export default function AttendanceReportsPage() {
             <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
             {t('common.back', 'Back')}
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold" suppressHydrationWarning>
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-bold truncate" suppressHydrationWarning>
               {t('admin.attendance.reports.title', 'Attendance Reports')}
             </h1>
-            <p className="text-muted-foreground" suppressHydrationWarning>
+            <p className="text-muted-foreground text-sm md:text-base truncate" suppressHydrationWarning>
               {course?.title}
             </p>
           </div>

@@ -180,8 +180,8 @@ export default function PaymentDetailsPage() {
             {t('user.payments.detail.backToPayments', 'Back to Payments')}
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold">{details.product.product_name}</h1>
-        <p className="text-muted-foreground capitalize">
+        <h1 className="text-2xl md:text-3xl font-bold">{details.product.product_name}</h1>
+        <p className="text-muted-foreground capitalize text-sm md:text-base">
           {details.product.product_type} • {details.payment_plan.plan_name}
         </p>
       </div>

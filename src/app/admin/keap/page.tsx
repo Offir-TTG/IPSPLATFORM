@@ -17,8 +17,10 @@ import {
   ArrowRight,
   Upload
 } from 'lucide-react';
+import { useHelp } from '@/hooks/useHelp';
 
 export default function KeapDashboardPage() {
+  useHelp('integrations-keap');
   const { t, direction } = useAdminLanguage();
   const isRtl = direction === 'rtl';
 
@@ -87,13 +89,13 @@ export default function KeapDashboardPage() {
 
   return (
     <AdminLayout>
-      <div className={`space-y-6 ${isRtl ? 'rtl' : 'ltr'}`}>
+      <div className={`space-y-6 p-4 md:p-0 ${isRtl ? 'rtl' : 'ltr'}`}>
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold">
+          <h1 className="text-2xl md:text-3xl font-bold">
             {t('admin.keap.dashboard.title', 'Keap Integration')}
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-sm md:text-base">
             {t('admin.keap.dashboard.description', 'Manage CRM sync and student segmentation')}
           </p>
         </div>

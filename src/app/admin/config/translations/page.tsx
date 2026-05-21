@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useAdminLanguage, useApp } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Search,
@@ -46,6 +47,7 @@ interface PaginationInfo {
 }
 
 export default function TranslationsPage() {
+  useHelp('config-translations');
   const { t, availableLanguages } = useAdminLanguage();
   const { clearTranslationCache } = useApp();
   const { toast } = useToast();

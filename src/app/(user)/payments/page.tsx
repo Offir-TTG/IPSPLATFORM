@@ -145,10 +145,10 @@ export default function PaymentsPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">{t('user.payments.title', 'My Payments')}</h1>
-        <p className="text-muted-foreground">{t('user.payments.subtitle', 'Manage your enrollments and payments')}</p>
+    <div className="container mx-auto py-6 md:py-8 px-4 md:px-0">
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold">{t('user.payments.title', 'My Payments')}</h1>
+        <p className="text-muted-foreground text-sm md:text-base">{t('user.payments.subtitle', 'Manage your enrollments and payments')}</p>
       </div>
 
       {/* Summary Cards */}

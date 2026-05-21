@@ -123,13 +123,13 @@ export function SessionsCalendar({ sessions, viewMode }: SessionsCalendarProps) 
 
       {/* Calendar Grid */}
       {viewMode === 'week' ? (
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {days.map((day, index) => {
             const daySessions = getSessionsForDay(day);
             const isCurrentDay = isToday(day);
 
             return (
-              <div key={index} className="min-h-[120px]">
+              <div key={index} className="min-h-[80px] sm:min-h-[120px]">
                 <div className={`text-center mb-2 ${isCurrentDay ? 'text-primary font-bold' : 'text-muted-foreground'}`}>
                   <div className="text-xs uppercase">{format(day, 'EEE', { locale })}</div>
                   <div className={`text-lg ${isCurrentDay ? 'bg-primary text-primary-foreground rounded-full w-8 h-8 mx-auto flex items-center justify-center' : ''}`}>

@@ -48,6 +48,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Toaster } from '@/components/ui/toaster';
 import { supabase } from '@/lib/supabase/client';
+import { HelpButton } from '@/components/admin/help/HelpButton';
+import { HelpDrawer } from '@/components/admin/help/HelpDrawer';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -397,6 +399,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         }}>{t('admin.title', 'Admin Panel')}</h1>
 
         <div className="flex items-center gap-2">
+          <HelpButton />
           <LanguageSwitcher context="admin" />
 
           {/* Mobile User Gear Menu */}
@@ -823,6 +826,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <HelpButton />
             <LanguageSwitcher context="admin" />
 
             {/* User Gear Menu */}
@@ -945,6 +949,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </div>
       </main>
       <Toaster />
+      <HelpDrawer />
     </div>
   );
 }

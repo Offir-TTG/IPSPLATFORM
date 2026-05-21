@@ -67,16 +67,16 @@ export default function AdminSettingsPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-8">
+      <div className="space-y-8 p-4 md:p-0">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">{t('admin.settings.title', 'Platform Settings')}</h1>
-            <p className="text-muted-foreground">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-bold mb-2">{t('admin.settings.title', 'Platform Settings')}</h1>
+            <p className="text-muted-foreground text-sm md:text-base">
               {t('admin.settings.subtitle', 'Customize your platform\'s appearance and branding')}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={handleReset}
               className="px-4 py-2 border rounded-md hover:bg-accent transition-colors"
@@ -94,8 +94,8 @@ export default function AdminSettingsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="border-b">
-          <nav className="flex gap-8">
+        <div className="border-b overflow-x-auto">
+          <nav className="flex gap-4 md:gap-8 min-w-max">
             <button
               onClick={() => setActiveTab('colors')}
               className={`pb-4 px-2 border-b-2 transition-colors ${

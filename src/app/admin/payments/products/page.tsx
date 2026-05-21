@@ -55,8 +55,10 @@ import {
   Check,
   X,
 } from 'lucide-react';
+import { useHelp } from '@/hooks/useHelp';
 
 export default function ProductsPage() {
+  useHelp('payments-products');
   const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
   const { toast } = useToast();
   const isRtl = direction === 'rtl';
@@ -1135,7 +1137,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
       )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 h-auto">
           <TabsTrigger value="basic"><span suppressHydrationWarning>{t('products.tabs.basic', 'Basic Info')}</span></TabsTrigger>
           <TabsTrigger value="content"><span suppressHydrationWarning>{t('products.tabs.content', 'Content')}</span></TabsTrigger>
           <TabsTrigger value="pricing"><span suppressHydrationWarning>{t('products.tabs.pricing', 'Pricing')}</span></TabsTrigger>
@@ -1281,7 +1283,7 @@ function ProductForm({ product, onSave, onCancel, t }: {
         {/* Pricing Tab */}
         <TabsContent value="pricing" className="space-y-4 mt-4">
           {/* Price and Currency - Always at top */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="price" suppressHydrationWarning>{t('products.price', 'Price')} *</Label>
               <Input

@@ -271,7 +271,7 @@ export default function EmailTemplatesPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div style={{
           display: 'flex',

@@ -953,8 +953,9 @@ export default function CourseAttendancePage() {
           /* Mobile & Single Lesson View - Card List */
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>
-                {t('admin.attendance.students', 'Students')} ({filteredStudents.length})
+              <CardTitle suppressHydrationWarning className="flex items-center gap-2">
+                <span>{t('admin.attendance.students', 'Students')}</span>
+                <Badge variant="secondary">{filteredStudents.length}</Badge>
               </CardTitle>
               <CardDescription suppressHydrationWarning>
                 {selectedLesson !== 'all'

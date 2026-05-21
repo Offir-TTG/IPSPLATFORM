@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
 import { Mail, Search, RefreshCw, Loader2, Eye, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { EmailQueueItem, EmailStatus, EmailPriority } from '@/types/email';
@@ -232,53 +233,98 @@ export default function EmailQueuePage() {
               </div>
             ) : (
               <>
-                <div className="overflow-x-auto" dir={direction}>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.recipient', 'Recipient')}</TableHead>
-                        <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.subject', 'Subject')}</TableHead>
-                        <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.status', 'Status')}</TableHead>
-                        <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.priority', 'Priority')}</TableHead>
-                        <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.created', 'Created')}</TableHead>
-                        <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.sent', 'Sent')}</TableHead>
-                        <TableHead className={isRtl ? 'text-left' : 'text-right'}>{t('common.actions', 'Actions')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {emails.map((email) => (
-                        <TableRow key={email.id}>
-                          <TableCell className={isRtl ? 'text-right' : 'text-left'}>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{email.to_name || email.to_email}</span>
-                              {email.to_name && (
-                                <span className="text-xs text-muted-foreground">{email.to_email}</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className={`max-w-xs truncate ${isRtl ? 'text-right' : 'text-left'}`}>{email.subject}</TableCell>
-                          <TableCell className={isRtl ? 'text-right' : 'text-left'}>{getStatusBadge(email.status)}</TableCell>
-                          <TableCell className={isRtl ? 'text-right' : 'text-left'}>{getPriorityBadge(email.priority)}</TableCell>
-                          <TableCell className={`text-sm text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                <ResponsiveTable>
+                  <ResponsiveTable.Desktop>
+                    <div className="overflow-x-auto" dir={direction}>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.recipient', 'Recipient')}</TableHead>
+                            <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.subject', 'Subject')}</TableHead>
+                            <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.status', 'Status')}</TableHead>
+                            <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.priority', 'Priority')}</TableHead>
+                            <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.created', 'Created')}</TableHead>
+                            <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.sent', 'Sent')}</TableHead>
+                            <TableHead className={isRtl ? 'text-left' : 'text-right'}>{t('common.actions', 'Actions')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {emails.map((email) => (
+                            <TableRow key={email.id}>
+                              <TableCell className={isRtl ? 'text-right' : 'text-left'}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{email.to_name || email.to_email}</span>
+                                  {email.to_name && (
+                                    <span className="text-xs text-muted-foreground">{email.to_email}</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className={`max-w-xs truncate ${isRtl ? 'text-right' : 'text-left'}`}>{email.subject}</TableCell>
+                              <TableCell className={isRtl ? 'text-right' : 'text-left'}>{getStatusBadge(email.status)}</TableCell>
+                              <TableCell className={isRtl ? 'text-right' : 'text-left'}>{getPriorityBadge(email.priority)}</TableCell>
+                              <TableCell className={`text-sm text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                                {formatDistanceToNow(new Date(email.created_at), { addSuffix: true, locale: isRtl ? he : undefined })}
+                              </TableCell>
+                              <TableCell className={`text-sm text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
+                                {email.sent_at ? formatDistanceToNow(new Date(email.sent_at), { addSuffix: true, locale: isRtl ? he : undefined }) : '-'}
+                              </TableCell>
+                              <TableCell className={isRtl ? 'text-left' : 'text-right'}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSelectedEmail(email)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </ResponsiveTable.Desktop>
+
+                  {/* Mobile: card per email queue item. Same handlers + badges. */}
+                  <ResponsiveTable.Mobile className="space-y-2" dir={direction}>
+                    {emails.map((email) => (
+                      <div key={email.id} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{email.to_name || email.to_email}</p>
+                            {email.to_name && (
+                              <p className="text-xs text-muted-foreground truncate">{email.to_email}</p>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedEmail(email)}
+                            className="shrink-0"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <p className="text-sm truncate">{email.subject}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {getStatusBadge(email.status)}
+                          {getPriorityBadge(email.priority)}
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-0.5 pt-1 border-t">
+                          <div>
+                            <span className="font-medium">{t('emails.queue.created', 'Created')}:</span>{' '}
                             {formatDistanceToNow(new Date(email.created_at), { addSuffix: true, locale: isRtl ? he : undefined })}
-                          </TableCell>
-                          <TableCell className={`text-sm text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                            {email.sent_at ? formatDistanceToNow(new Date(email.sent_at), { addSuffix: true, locale: isRtl ? he : undefined }) : '-'}
-                          </TableCell>
-                          <TableCell className={isRtl ? 'text-left' : 'text-right'}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setSelectedEmail(email)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                          </div>
+                          {email.sent_at && (
+                            <div>
+                              <span className="font-medium">{t('emails.queue.sent', 'Sent')}:</span>{' '}
+                              {formatDistanceToNow(new Date(email.sent_at), { addSuffix: true, locale: isRtl ? he : undefined })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </ResponsiveTable.Mobile>
+                </ResponsiveTable>
 
                 {/* Pagination */}
                 {totalPages > 1 && (

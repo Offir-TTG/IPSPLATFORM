@@ -119,7 +119,7 @@ export default function ProgramsPage() {
   }
 
   return (
-    <div className="min-h-screen pb-12">
+    <div className="min-h-screen pb-12 p-4 md:p-0">
       {/* Header */}
       <div className="mb-8">
         <h1 style={{

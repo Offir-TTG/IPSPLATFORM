@@ -241,26 +241,26 @@ export default function PDFTemplatePage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <Link href="/admin/payments">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
                 <span suppressHydrationWarning>{t('admin.payments.products.back', 'Back')}</span>
               </Button>
             </Link>
-            <div>
-              <h1 className="text-3xl font-bold" suppressHydrationWarning>
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold truncate" suppressHydrationWarning>
                 {t('admin.pdf.title', 'PDF Template Configuration')}
               </h1>
-              <p className="text-muted-foreground mt-1" suppressHydrationWarning>
+              <p className="text-muted-foreground mt-1 text-sm md:text-base" suppressHydrationWarning>
                 {t('admin.pdf.description', 'Customize the branding and information that appears on enrollment payment receipts')}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setShowPreviewDialog(true)} disabled={previewing}>
               {previewing ? (
                 <>
@@ -303,7 +303,7 @@ export default function PDFTemplatePage() {
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="organization" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-3 h-auto">
                 <TabsTrigger value="organization" suppressHydrationWarning>
                   {t('admin.pdf.tabs.organization', 'Organization Info')}
                 </TabsTrigger>

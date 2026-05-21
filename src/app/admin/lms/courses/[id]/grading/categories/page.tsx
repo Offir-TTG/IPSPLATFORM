@@ -13,6 +13,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -24,8 +25,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import type { GradeCategory } from '@/types/grading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useHelp } from '@/hooks/useHelp';
 
 export default function GradeCategoriesPage() {
+  useHelp('grading-categories');
   const router = useRouter();
   const params = useParams();
   const courseId = params.id as string;
@@ -251,22 +254,22 @@ export default function GradeCategoriesPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-6 space-y-6" dir={direction}>
+      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/lms/courses/${courseId}`)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <Award className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{t('admin.grading.categories.title', 'Grade Categories')}</h1>
-              <p className="text-muted-foreground">
+            <Award className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">{t('admin.grading.categories.title', 'Grade Categories')}</h1>
+              <p className="text-muted-foreground text-sm md:text-base">
                 {t('admin.grading.categories.subtitle', 'Manage weighted categories for this course')}
               </p>
             </div>
           </div>
-          <Button onClick={handleOpenCreateDialog}>
+          <Button onClick={handleOpenCreateDialog} className="md:self-auto self-start">
             <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
             <span>{t('admin.grading.categories.addCategory', 'Add Category')}</span>
           </Button>
@@ -274,14 +277,14 @@ export default function GradeCategoriesPage() {
 
         {/* Weight Summary */}
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
+          <CardContent className="p-4 md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">{t('admin.grading.categories.totalWeight', 'Total Weight')}</p>
-                <p className="text-3xl font-bold">
+                <p className="text-2xl md:text-3xl font-bold">
                   {totalWeight}%
                   {totalWeight < 100 && (
-                    <span className="text-lg text-muted-foreground ml-2">/ 100%</span>
+                    <span className="text-base md:text-lg text-muted-foreground ml-2">/ 100%</span>
                   )}
                 </p>
               </div>
@@ -327,16 +330,16 @@ export default function GradeCategoriesPage() {
               .sort((a, b) => a.display_order - b.display_order)
               .map((category) => (
                 <Card key={category.id}>
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 flex-1">
+                  <CardContent className="p-4 md:p-6">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
                         <div
-                          className="w-4 h-16 rounded"
+                          className="w-2 md:w-4 h-14 md:h-16 rounded shrink-0"
                           style={{ backgroundColor: category.color_code || '#3B82F6' }}
                         />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-lg font-semibold">{category.name}</h3>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <h3 className="text-base md:text-lg font-semibold">{category.name}</h3>
                             <Badge variant="secondary">{category.weight_percentage}%</Badge>
                             {category.drop_lowest > 0 && (
                               <Badge variant="outline">
@@ -349,7 +352,7 @@ export default function GradeCategoriesPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 shrink-0">
                         <Button variant="outline" size="sm" onClick={() => handleOpenEditDialog(category)}>
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -387,7 +390,7 @@ export default function GradeCategoriesPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent dir={direction} className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
               {editingCategory ? t('admin.grading.categories.dialog.edit', 'Edit Grade Category') : t('admin.grading.categories.dialog.add', 'Add Grade Category')}
@@ -399,7 +402,7 @@ export default function GradeCategoriesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-2">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="name">{t('admin.grading.categories.form.name', 'Category Name')} *</Label>
@@ -489,7 +492,7 @@ export default function GradeCategoriesPage() {
                 />
               </div>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={saving}>

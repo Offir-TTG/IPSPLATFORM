@@ -236,14 +236,14 @@ export default function OrganizationSettingsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl space-y-6">
+      <div className="max-w-6xl space-y-6 p-4 md:p-0">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold" suppressHydrationWarning>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-bold" suppressHydrationWarning>
               {t('organization.title', 'Organization Settings')}
             </h1>
-            <p className="text-muted-foreground mt-1" suppressHydrationWarning>
+            <p className="text-muted-foreground mt-1 text-sm md:text-base" suppressHydrationWarning>
               {t('organization.subtitle', 'Manage your organization settings and preferences')}
             </p>
           </div>

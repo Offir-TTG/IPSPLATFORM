@@ -510,12 +510,12 @@ export default function ProgramsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>
+      <div className="max-w-6xl p-4 md:p-8">
+        <div className="mb-6 md:mb-8">
+          <h1 className="text-2xl md:text-3xl font-bold mb-2" suppressHydrationWarning>
             {t('lms.programs.title', 'Programs')}
           </h1>
-          <p className="text-muted-foreground" suppressHydrationWarning>
+          <p className="text-muted-foreground text-sm md:text-base" suppressHydrationWarning>
             {t('lms.programs.subtitle', 'Manage your learning programs')}
           </p>
         </div>

@@ -658,7 +658,7 @@ export function PaymentPlanDetailsDialog({
           )}
 
           {/* Total Amount */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="text-sm font-medium text-muted-foreground">
                 {t('admin.enrollments.paymentPlanDetails.totalAmount', 'Total Amount')}
@@ -678,7 +678,7 @@ export function PaymentPlanDetailsDialog({
             <div className="space-y-4 border-t pt-4">
               <h4 className="font-medium">{t('admin.enrollments.paymentPlanDetails.installmentDetails', 'Installment Details')}</h4>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Deposit details (if applicable) */}
                 {previewedPlan.plan_type === 'deposit' && (
                   <>
@@ -767,7 +767,7 @@ export function PaymentPlanDetailsDialog({
             <div className="space-y-4 border-t pt-4">
               <h4 className="font-medium">{t('admin.enrollments.paymentPlanDetails.installmentDetails', 'Installment Details')}</h4>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {paymentPlan.deposit_type && (
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">
@@ -831,7 +831,7 @@ export function PaymentPlanDetailsDialog({
             <div className="space-y-4 border-t pt-4">
               <h4 className="font-medium">{t('admin.enrollments.paymentPlanDetails.subscriptionDetails', 'Subscription Details')}</h4>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {paymentPlan.subscription_interval && (
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">
@@ -855,7 +855,7 @@ export function PaymentPlanDetailsDialog({
 
           {/* Payment Status */}
           <div className="border-t pt-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium text-muted-foreground">
                   {t('admin.enrollments.paymentPlanDetails.paymentStatus', 'Payment Status')}
