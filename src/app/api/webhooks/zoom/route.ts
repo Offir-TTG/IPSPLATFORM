@@ -70,15 +70,27 @@ export async function POST(request: NextRequest) {
     }
 
     const integration = integrations?.[0] ?? null;
-    const secretToken =
+    const rawToken =
       integration?.settings?.webhook_secret_token ||
       integration?.credentials?.webhook_secret_token ||
       null;
+    // Trim defensively — copy/paste from the Zoom UI sometimes carries
+    // trailing whitespace that silently breaks the HMAC. Same for null bytes
+    // or zero-width characters that might come from the JSONB cast.
+    const secretToken = rawToken ? rawToken.trim() : null;
+
+    // Fingerprint = first 4 chars + last 4 chars + length. Lets us compare
+    // against what Zoom shows without leaking the secret in logs.
+    const fingerprint = secretToken
+      ? `${secretToken.slice(0, 4)}...${secretToken.slice(-4)} (len=${secretToken.length})`
+      : 'NONE';
 
     console.log(
       '[Zoom Webhook] integration found=', !!integration,
       'secretToken set=', !!secretToken,
-      'tokenLength=', secretToken?.length ?? 0
+      'fingerprint=', fingerprint,
+      'rawLength=', rawToken?.length ?? 0,
+      'trimmedLength=', secretToken?.length ?? 0
     );
 
     // ----------------------------------------------------------------
