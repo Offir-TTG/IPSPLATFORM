@@ -255,6 +255,19 @@ export default function IntegrationsPage() {
           type: 'password',
           placeholder: t('admin.integrations.zoom.sdkSecretPlaceholder', 'Your Zoom SDK Secret'),
           required: false
+        },
+        {
+          // Webhook signature verification — Zoom signs every webhook payload
+          // with HMAC-SHA256 using this token, and the platform's webhook
+          // handler at /api/webhooks/zoom verifies it before processing.
+          // Also required for Zoom's URL-validation challenge when adding
+          // an event subscription. Copy from Zoom Marketplace → your S2S
+          // app → Feature → Event Subscriptions → Secret Token.
+          key: 'webhook_secret_token',
+          label: t('admin.integrations.zoom.webhookSecretToken', 'Webhook Secret Token'),
+          type: 'password',
+          placeholder: t('admin.integrations.zoom.webhookSecretTokenPlaceholder', 'Copy from Zoom → Event Subscriptions'),
+          required: false
         }
       ],
       settings: [
