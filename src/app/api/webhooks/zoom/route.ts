@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { ZoomService } from '@/lib/zoom/zoomService';
 import crypto from 'crypto';
 
@@ -47,8 +47,10 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const payload = JSON.parse(body);
 
-    // Get Zoom integration settings for webhook verification
-    const supabase = await createClient();
+    // Webhooks arrive from Zoom with no auth cookies, so the user-scoped
+    // client gets blocked by RLS on `integrations`. Use the service-role
+    // admin client to read the row (and to insert webhook_events below).
+    const supabase = createAdminClient();
     const { data: integration } = await supabase
       .from('integrations')
       .select('settings, credentials')
