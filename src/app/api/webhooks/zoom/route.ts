@@ -212,8 +212,9 @@ async function handleRecordingCompleted(payload: any) {
     recordingCount: payload.object.recording_files?.length || 0
   });
 
-  // Get Zoom session to find tenant_id
-  const supabase = await createClient();
+  // Get Zoom session to find tenant_id. Webhook context = no user auth,
+  // so use the service-role client to bypass RLS.
+  const supabase = createAdminClient();
   const { data: zoomSession } = await supabase
     .from('zoom_sessions')
     .select('lesson_id')
