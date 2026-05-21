@@ -24,7 +24,8 @@ import {
   Shield,
   Settings,
   Plug,
-  Users
+  Users,
+  ExternalLink
 } from 'lucide-react';
 
 interface Integration {
@@ -1346,6 +1347,58 @@ export default function IntegrationsPage() {
                   paddingTop: '1.5rem',
                   borderTop: '1px solid hsl(var(--border))'
                 }}>
+                  {/* Keap-only: kick off OAuth. Keap is the only integration
+                      with rotating refresh tokens; when they go stale the
+                      admin needs a one-click way to re-authorize without
+                      hand-crafting the signin.infusionsoft.com URL. */}
+                  {config.key === 'keap' && (() => {
+                    const clientId = integration?.credentials?.client_id as string | undefined;
+                    const canAuthorize = Boolean(clientId);
+                    const handleAuthorize = () => {
+                      if (!clientId) return;
+                      const redirectUri = `${window.location.origin}/admin/config/integrations`;
+                      const params = new URLSearchParams({
+                        client_id: clientId,
+                        redirect_uri: redirectUri,
+                        response_type: 'code',
+                        scope: 'full',
+                      });
+                      window.location.href = `https://signin.infusionsoft.com/app/oauth/authorize?${params.toString()}`;
+                    };
+                    return (
+                      <button
+                        onClick={handleAuthorize}
+                        disabled={!canAuthorize}
+                        title={
+                          canAuthorize
+                            ? t('admin.integrations.keap.authorizeHint', 'Opens Keap to grant access; tokens are saved automatically when you return.')
+                            : t('admin.integrations.keap.authorizeDisabled', 'Enter Client ID first, then click Save.')
+                        }
+                        style={{
+                          padding: '0.5rem 1rem',
+                          borderRadius: 'calc(var(--radius) * 1.5)',
+                          border: '1px solid hsl(var(--border))',
+                          backgroundColor: 'hsl(var(--background))',
+                          cursor: canAuthorize ? 'pointer' : 'not-allowed',
+                          opacity: canAuthorize ? 1 : 0.5,
+                          fontSize: 'var(--font-size-sm)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.5rem',
+                          transition: 'background-color 0.2s',
+                          width: isMobile ? '100%' : 'auto'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (canAuthorize) e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
+                        }}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'hsl(var(--background))'}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        {t('admin.integrations.keap.authorize', 'Authorize with Keap')}
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={() => handleTest(config.key)}
                     disabled={!hasRequiredCredentials || testing === config.key}
