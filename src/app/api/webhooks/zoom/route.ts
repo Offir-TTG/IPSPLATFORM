@@ -47,40 +47,64 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const payload = JSON.parse(body);
 
-    // Webhooks arrive from Zoom with no auth cookies, so the user-scoped
-    // client gets blocked by RLS on `integrations`. Use the service-role
-    // admin client to read the row (and to insert webhook_events below).
+    console.log('[Zoom Webhook] Incoming POST. event=', payload?.event);
+
+    // Webhooks arrive from Zoom with no auth cookies → user-scoped client
+    // gets blocked by RLS. Use service-role to read the integration row
+    // and insert webhook_events below.
     const supabase = createAdminClient();
-    const { data: integration } = await supabase
+
+    // Use `.maybeSingle()` to avoid throws when 0 or >1 integration rows
+    // match. The platform is multi-tenant, so multiple tenants may have
+    // Zoom configured — but they all share the same Zoom S2S app's secret
+    // token, so any enabled row will do for URL validation + signature.
+    const { data: integrations, error: intErr } = await supabase
       .from('integrations')
       .select('settings, credentials')
       .eq('integration_key', 'zoom')
       .eq('is_enabled', true)
-      .single();
+      .limit(1);
 
-    const secretToken = integration?.settings?.webhook_secret_token || integration?.credentials?.webhook_secret_token;
+    if (intErr) {
+      console.error('[Zoom Webhook] integrations query failed:', intErr);
+    }
+
+    const integration = integrations?.[0] ?? null;
+    const secretToken =
+      integration?.settings?.webhook_secret_token ||
+      integration?.credentials?.webhook_secret_token ||
+      null;
+
+    console.log(
+      '[Zoom Webhook] integration found=', !!integration,
+      'secretToken set=', !!secretToken,
+      'tokenLength=', secretToken?.length ?? 0
+    );
 
     // ----------------------------------------------------------------
-    // URL validation challenge — MUST be handled BEFORE signature check.
-    // When you click "Validate the URL" in Zoom's Event Subscriptions
-    // UI, Zoom posts this event WITHOUT signature headers — it's the
-    // first request, proving you own the endpoint. Rejecting it for
-    // missing signature would deadlock the entire setup.
+    // URL validation challenge — handled BEFORE signature check, since
+    // the challenge request itself doesn't carry signature headers.
     // ----------------------------------------------------------------
     if (payload.event === 'endpoint.url_validation') {
       if (!secretToken) {
-        console.error('[Zoom Webhook] URL validation requested but no webhook_secret_token configured in the Zoom integration');
+        console.error('[Zoom Webhook] URL validation: no webhook_secret_token found. Either the integration row is missing, the integration is disabled, or the token field is empty.');
         return NextResponse.json(
           { error: 'Webhook Secret Token not configured in IPSPlatform' },
           { status: 500 }
         );
       }
-      const plainToken = payload.payload.plainToken;
+
+      const plainToken = payload?.payload?.plainToken;
+      if (!plainToken) {
+        console.error('[Zoom Webhook] URL validation payload missing plainToken:', JSON.stringify(payload));
+        return NextResponse.json({ error: 'Missing plainToken in payload' }, { status: 400 });
+      }
+
       const hash = crypto.createHmac('sha256', secretToken)
         .update(plainToken)
         .digest('hex');
 
-      console.log('[Zoom Webhook] Endpoint validation successful');
+      console.log('[Zoom Webhook] URL validation OK. plainTokenLength=', plainToken.length, 'hashLength=', hash.length);
       return NextResponse.json({
         plainToken,
         encryptedToken: hash,
