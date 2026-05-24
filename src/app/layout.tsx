@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Heebo } from 'next/font/google';
 import './globals.css';
 import { AppProvider } from '@/context/AppContext';
@@ -13,6 +13,17 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'פלטפורמת בית הספר להורות | Parenting School Platform',
   description: 'פלטפורמה מקוונת לחינוך הורי | Online parenting education platform',
+};
+
+// Without this, mobile browsers fall back to a ~980px virtual viewport and
+// render the whole site at desktop width, then scale to fit — that's the
+// "looks like desktop on phone + horizontal scroll" symptom. `device-width`
+// makes the viewport match the physical screen so Tailwind's `sm`/`md`/`lg`
+// breakpoints actually fire on phones.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({
