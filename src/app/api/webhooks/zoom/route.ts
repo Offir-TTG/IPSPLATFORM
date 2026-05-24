@@ -54,43 +54,50 @@ export async function POST(request: NextRequest) {
     // and insert webhook_events below.
     const supabase = createAdminClient();
 
-    // Use `.maybeSingle()` to avoid throws when 0 or >1 integration rows
-    // match. The platform is multi-tenant, so multiple tenants may have
-    // Zoom configured — but they all share the same Zoom S2S app's secret
-    // token, so any enabled row will do for URL validation + signature.
+    // Multi-tenant: each tenant has its own `integrations` row for zoom,
+    // each potentially with a different webhook_secret_token. The previous
+    // code did `.limit(1)` without an ORDER BY, which picked a random row —
+    // often NOT the one that the active admin saved their fresh token into.
+    // Fix: load ALL enabled zoom rows and gather every candidate token.
     const { data: integrations, error: intErr } = await supabase
       .from('integrations')
-      .select('settings, credentials')
+      .select('settings, credentials, tenant_id, updated_at')
       .eq('integration_key', 'zoom')
       .eq('is_enabled', true)
-      .limit(1);
+      .order('updated_at', { ascending: false });
 
     if (intErr) {
       console.error('[Zoom Webhook] integrations query failed:', intErr);
     }
 
-    const integration = integrations?.[0] ?? null;
-    const rawToken =
-      integration?.settings?.webhook_secret_token ||
-      integration?.credentials?.webhook_secret_token ||
-      null;
-    // Trim defensively — copy/paste from the Zoom UI sometimes carries
-    // trailing whitespace that silently breaks the HMAC. Same for null bytes
-    // or zero-width characters that might come from the JSONB cast.
-    const secretToken = rawToken ? rawToken.trim() : null;
+    // Collect every distinct non-empty token across all integration rows,
+    // trimmed defensively. Most-recently-updated first.
+    const candidateTokens: string[] = [];
+    for (const row of integrations ?? []) {
+      const raw =
+        row?.settings?.webhook_secret_token ||
+        row?.credentials?.webhook_secret_token ||
+        null;
+      const trimmed = raw ? raw.trim() : null;
+      if (trimmed && !candidateTokens.includes(trimmed)) {
+        candidateTokens.push(trimmed);
+      }
+    }
 
-    // Fingerprint = first 4 chars + last 4 chars + length. Lets us compare
-    // against what Zoom shows without leaking the secret in logs.
-    const fingerprint = secretToken
-      ? `${secretToken.slice(0, 4)}...${secretToken.slice(-4)} (len=${secretToken.length})`
-      : 'NONE';
+    // `secretToken` = the most-recently-updated tenant's token. Used for
+    // URL validation (we don't know which tenant Zoom is associated with
+    // at validation time, so we pick the freshest) and as a fallback when
+    // signature verification needs to try just one.
+    const secretToken = candidateTokens[0] ?? null;
+
+    const fingerprints = candidateTokens
+      .map(t => `${t.slice(0, 4)}...${t.slice(-4)}(len=${t.length})`)
+      .join(', ');
 
     console.log(
-      '[Zoom Webhook] integration found=', !!integration,
-      'secretToken set=', !!secretToken,
-      'fingerprint=', fingerprint,
-      'rawLength=', rawToken?.length ?? 0,
-      'trimmedLength=', secretToken?.length ?? 0
+      '[Zoom Webhook] integrations_count=', integrations?.length ?? 0,
+      'candidates=', candidateTokens.length,
+      'fingerprints=', fingerprints || 'NONE'
     );
 
     // ----------------------------------------------------------------
@@ -124,10 +131,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ----------------------------------------------------------------
-    // For all OTHER events: verify the HMAC signature if a token is set.
-    // Real Zoom event posts DO carry x-zm-signature + x-zm-request-timestamp.
+    // For all OTHER events: verify HMAC signature against ALL candidate
+    // tokens — accept if any tenant's stored secret produces a match.
+    // (Zoom doesn't tell us which tenant the event belongs to here.)
     // ----------------------------------------------------------------
-    if (secretToken) {
+    if (candidateTokens.length > 0) {
       const signature = request.headers.get('x-zm-signature');
       const timestamp = request.headers.get('x-zm-request-timestamp');
 
@@ -136,9 +144,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Missing signature headers' }, { status: 401 });
       }
 
-      const isValid = verifyZoomWebhookSignature(body, signature, timestamp, secretToken);
-      if (!isValid) {
-        console.error('Invalid Zoom webhook signature');
+      const matched = candidateTokens.some(t =>
+        verifyZoomWebhookSignature(body, signature, timestamp, t)
+      );
+      if (!matched) {
+        console.error('Invalid Zoom webhook signature against all', candidateTokens.length, 'candidate tokens');
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
     }
