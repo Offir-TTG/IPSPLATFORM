@@ -105,33 +105,33 @@ export function StatsCards({ stats }: StatsCardsProps) {
   ];
 
   return (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
       {cards.map((card, index) => {
         const Icon = card.icon;
         return (
           <Card
             key={card.title}
-            className={`p-3 sm:p-4 lg:p-6 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer group border-2 ${card.borderColor} animate-fade-up overflow-hidden`}
+            className={`p-5 sm:p-5 lg:p-6 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer group border-2 ${card.borderColor} animate-fade-up overflow-hidden`}
             style={{
               animationDelay: `${index * 100}ms`,
             }}
           >
-            <div className="flex items-start justify-between mb-2 sm:mb-4">
-              <div className={`inline-flex rounded-xl ${card.bg} p-2 sm:p-3 group-hover:scale-110 transition-transform duration-300`}>
-                <Icon className={`h-4 w-4 sm:h-6 sm:w-6 ${card.color}`} />
+            <div className="flex items-start justify-between mb-3 sm:mb-4">
+              <div className={`inline-flex rounded-xl ${card.bg} p-3 group-hover:scale-110 transition-transform duration-300`}>
+                <Icon className={`h-6 w-6 ${card.color}`} />
               </div>
             </div>
 
             <div className="min-w-0">
-              <p className="text-lg sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 group-hover:scale-105 transition-transform break-words">
+              <p className="text-2xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 group-hover:scale-105 transition-transform break-words">
                 {card.value}
               </p>
               {card.subtitle && (
-                <p className="text-[11px] sm:text-xs text-muted-foreground mb-1 break-words">
+                <p className="text-xs text-muted-foreground mb-1 break-words">
                   {card.subtitle}
                 </p>
               )}
-              <p className="text-xs sm:text-sm text-muted-foreground font-medium break-words">
+              <p className="text-sm text-muted-foreground font-medium break-words">
                 {card.title}
               </p>
             </div>

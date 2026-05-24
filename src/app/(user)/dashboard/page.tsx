@@ -56,7 +56,7 @@ export default function DashboardPage() {
           <Skeleton className="h-56 w-full rounded-2xl" />
 
           {/* Stats Skeleton */}
-          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-36 rounded-xl" />
             ))}
