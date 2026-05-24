@@ -92,7 +92,7 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
   ];
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-8 md:p-10 animate-fade-in">
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-5 sm:p-6 md:p-8 lg:p-10 animate-fade-in">
       {/* Decorative elements */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10" />
       <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/5 rounded-full blur-3xl -z-10" />
@@ -110,13 +110,13 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
         <div className="grid lg:grid-cols-2 gap-8 items-center">
           {/* Left: Welcome Message */}
           <div>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-4 leading-tight">
+            <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-bold text-foreground mb-3 sm:mb-4 leading-tight break-words">
               {t('user.dashboard.hero.welcome', 'Welcome back')},{' '}
               <span className="gradient-text inline-block animate-fade-in">
                 {userName}
               </span>
             </h1>
-            <p className="text-lg md:text-xl text-muted-foreground mb-6">
+            <p className="text-sm sm:text-base md:text-xl text-muted-foreground mb-4 sm:mb-6">
               {t('user.dashboard.hero.subtitle', "You're making great progress! Let's continue your learning journey today.")}
             </p>
 

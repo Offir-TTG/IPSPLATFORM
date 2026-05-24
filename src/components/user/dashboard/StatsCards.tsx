@@ -111,27 +111,27 @@ export function StatsCards({ stats }: StatsCardsProps) {
         return (
           <Card
             key={card.title}
-            className={`p-6 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer group border-2 ${card.borderColor} animate-fade-up`}
+            className={`p-3 sm:p-4 lg:p-6 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer group border-2 ${card.borderColor} animate-fade-up overflow-hidden`}
             style={{
               animationDelay: `${index * 100}ms`,
             }}
           >
-            <div className="flex items-start justify-between mb-4">
-              <div className={`inline-flex rounded-xl ${card.bg} p-3 group-hover:scale-110 transition-transform duration-300`}>
-                <Icon className={`h-6 w-6 ${card.color}`} />
+            <div className="flex items-start justify-between mb-2 sm:mb-4">
+              <div className={`inline-flex rounded-xl ${card.bg} p-2 sm:p-3 group-hover:scale-110 transition-transform duration-300`}>
+                <Icon className={`h-4 w-4 sm:h-6 sm:w-6 ${card.color}`} />
               </div>
             </div>
 
-            <div>
-              <p className="text-3xl font-bold text-foreground mb-1 group-hover:scale-105 transition-transform">
+            <div className="min-w-0">
+              <p className="text-lg sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 group-hover:scale-105 transition-transform break-words">
                 {card.value}
               </p>
               {card.subtitle && (
-                <p className="text-xs text-muted-foreground mb-1">
+                <p className="text-[11px] sm:text-xs text-muted-foreground mb-1 break-words">
                   {card.subtitle}
                 </p>
               )}
-              <p className="text-sm text-muted-foreground font-medium">
+              <p className="text-xs sm:text-sm text-muted-foreground font-medium break-words">
                 {card.title}
               </p>
             </div>

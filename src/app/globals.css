@@ -168,6 +168,15 @@
 
   html {
     font-size: var(--font-size-base);
+    /* Safety net against rogue absolute-positioned or wide elements
+       triggering a horizontal scroll on mobile. The proper fix is
+       always to constrain the offending child, but on a multi-page app
+       this guard prevents one mistake on one page from making the
+       whole portal scroll sideways on a phone. */
+    overflow-x: hidden;
+  }
+  body {
+    overflow-x: hidden;
   }
 
   /* RTL scrollbar positioning */
