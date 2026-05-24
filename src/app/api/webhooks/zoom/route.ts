@@ -72,15 +72,20 @@ export async function POST(request: NextRequest) {
 
     // Collect every distinct non-empty token across all integration rows,
     // trimmed defensively. Most-recently-updated first.
+    // IMPORTANT: read `credentials.webhook_secret_token` BEFORE
+    // `settings.webhook_secret_token` — the admin integration UI saves
+    // the new "Webhook Secret Token" field to `credentials`, but older
+    // versions of the platform may have left a stale value in `settings`.
+    // We want the value the admin most recently typed to win.
     const candidateTokens: string[] = [];
     for (const row of integrations ?? []) {
-      const raw =
-        row?.settings?.webhook_secret_token ||
-        row?.credentials?.webhook_secret_token ||
-        null;
-      const trimmed = raw ? raw.trim() : null;
-      if (trimmed && !candidateTokens.includes(trimmed)) {
-        candidateTokens.push(trimmed);
+      const fromCredentials = row?.credentials?.webhook_secret_token;
+      const fromSettings    = row?.settings?.webhook_secret_token;
+      for (const raw of [fromCredentials, fromSettings]) {
+        const trimmed = raw ? String(raw).trim() : null;
+        if (trimmed && !candidateTokens.includes(trimmed)) {
+          candidateTokens.push(trimmed);
+        }
       }
     }
 

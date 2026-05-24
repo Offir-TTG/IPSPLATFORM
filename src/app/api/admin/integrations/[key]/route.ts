@@ -94,8 +94,24 @@ export async function PUT(
     const body = await request.json();
     const { integration_name, is_enabled, credentials, settings } = body;
 
+    // Sanitize: webhook_secret_token must live in credentials, never in settings.
+    // An older version of the Zoom admin UI saved this field into `settings`,
+    // and the webhook handler then picked up the stale value from there
+    // instead of the freshly-rotated one in `credentials`, causing every
+    // signature check (and Zoom URL validation) to fail. Strip it from
+    // settings here so no future save can recreate that dual-location bug.
+    const sanitizedCredentials: Record<string, any> = { ...(credentials || {}) };
+    const sanitizedSettings: Record<string, any> = { ...(settings || {}) };
+    if (Object.prototype.hasOwnProperty.call(sanitizedSettings, 'webhook_secret_token')) {
+      const stray = sanitizedSettings.webhook_secret_token;
+      if (!sanitizedCredentials.webhook_secret_token && typeof stray === 'string' && stray.trim().length > 0) {
+        sanitizedCredentials.webhook_secret_token = stray.trim();
+      }
+      delete sanitizedSettings.webhook_secret_token;
+    }
+
     // Encrypt credentials before storing
-    const encryptedCredentials = encryptCredentials(credentials || {});
+    const encryptedCredentials = encryptCredentials(sanitizedCredentials);
 
     // Check if integration exists
     const { data: existing } = await supabase
@@ -115,7 +131,7 @@ export async function PUT(
           integration_name,
           is_enabled: is_enabled || false,
           credentials: encryptedCredentials,
-          settings: settings || {},
+          settings: sanitizedSettings,
           updated_at: new Date().toISOString()
         })
         .eq('integration_key', params.key)
@@ -130,7 +146,7 @@ export async function PUT(
           integration_name,
           is_enabled: is_enabled || false,
           credentials: encryptedCredentials,
-          settings: settings || {},
+          settings: sanitizedSettings,
           webhook_url: `/api/webhooks/${params.key}`
         })
         .select()
