@@ -1,8 +1,8 @@
 /**
  * Read + update cron_settings (UI-driven enable/disable + dry-run flip).
  *
- * GET  → returns array of { cron_name, enabled, dry_run, updated_at }
- * PATCH → body: { cron_name, enabled?, dry_run? } → updates the row
+ * GET  → returns array of { cron_name, enabled, dry_run, log_runs, updated_at }
+ * PATCH → body: { cron_name, enabled?, dry_run?, log_runs? } → updates the row
  *
  * Admin-only. Auth is enforced via the user's role on `users.role`.
  */
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   const sb = createAdminClient();
   const { data, error } = await sb
     .from('cron_settings')
-    .select('cron_name, enabled, dry_run, updated_at')
+    .select('cron_name, enabled, dry_run, log_runs, updated_at')
     .order('cron_name', { ascending: true });
   if (error) {
     return NextResponse.json(
@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: auth.msg }, { status: auth.status });
   }
 
-  let body: { cron_name?: string; enabled?: boolean; dry_run?: boolean };
+  let body: { cron_name?: string; enabled?: boolean; dry_run?: boolean; log_runs?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -80,12 +80,17 @@ export async function PATCH(req: NextRequest) {
   };
   if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
   if (typeof body.dry_run === 'boolean') patch.dry_run = body.dry_run;
+  if (typeof body.log_runs === 'boolean') patch.log_runs = body.log_runs;
 
   // Nothing to update beyond the audit columns — reject so we don't
   // silently write only a timestamp.
-  if (patch.enabled === undefined && patch.dry_run === undefined) {
+  if (
+    patch.enabled === undefined &&
+    patch.dry_run === undefined &&
+    patch.log_runs === undefined
+  ) {
     return NextResponse.json(
-      { success: false, error: 'Provide enabled or dry_run' },
+      { success: false, error: 'Provide enabled, dry_run, or log_runs' },
       { status: 400 },
     );
   }
@@ -95,7 +100,7 @@ export async function PATCH(req: NextRequest) {
     .from('cron_settings')
     .update(patch)
     .eq('cron_name', body.cron_name)
-    .select('cron_name, enabled, dry_run, updated_at')
+    .select('cron_name, enabled, dry_run, log_runs, updated_at')
     .single();
 
   if (error) {

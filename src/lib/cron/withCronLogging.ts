@@ -64,12 +64,13 @@ export async function runCron<T extends Record<string, unknown>>(
   // still runs. The DB is the only source of truth — no env override.
   let dbEnabled = true;
   let dryRun = false;
+  let logRuns = true;
   let settingsSource: 'db_row' | 'no_db_row' | 'db_read_error' = 'no_db_row';
   let settingsUpdatedAt: string | null = null;
   try {
     const { data: settings, error: settingsErr } = await supabase
       .from('cron_settings')
-      .select('enabled, dry_run, updated_at')
+      .select('enabled, dry_run, log_runs, updated_at')
       .eq('cron_name', cronName)
       .maybeSingle();
     if (settingsErr) {
@@ -79,6 +80,7 @@ export async function runCron<T extends Record<string, unknown>>(
       settingsSource = 'db_row';
       dbEnabled = settings.enabled ?? true;
       dryRun = settings.dry_run ?? false;
+      logRuns = (settings as any).log_runs ?? true;
       settingsUpdatedAt = (settings as any).updated_at ?? null;
     }
   } catch (e) {
@@ -99,25 +101,29 @@ export async function runCron<T extends Record<string, unknown>>(
       source: settingsSource,
       dbEnabled,
       dryRun,
+      logRuns,
       updatedAt: settingsUpdatedAt,
       supabaseHost,
     },
   );
 
-  // Disabled cron: log a 'skipped_disabled' row and bail. We still emit
-  // a cron_runs row so the admin sees the tick fired and was suppressed
-  // (vs the cron silently vanishing from the timeline).
+  // Disabled cron: still emit a 'skipped_disabled' row (when logging
+  // is enabled) so the admin sees the tick fired and was suppressed
+  // — vs the cron silently vanishing from the timeline. When
+  // log_runs=false, we just bail.
   if (!dbEnabled) {
-    try {
-      await supabase.from('cron_runs').insert({
-        cron_name: cronName,
-        status: 'skipped_disabled',
-        dry_run: dryRun,
-        finished_at: new Date().toISOString(),
-        duration_ms: 0,
-      });
-    } catch (e) {
-      console.warn(`[runCron] cron_runs insert (skipped_disabled) failed:`, e);
+    if (logRuns) {
+      try {
+        await supabase.from('cron_runs').insert({
+          cron_name: cronName,
+          status: 'skipped_disabled',
+          dry_run: dryRun,
+          finished_at: new Date().toISOString(),
+          duration_ms: 0,
+        });
+      } catch (e) {
+        console.warn(`[runCron] cron_runs insert (skipped_disabled) failed:`, e);
+      }
     }
     return NextResponse.json({
       success: true,
@@ -127,20 +133,23 @@ export async function runCron<T extends Record<string, unknown>>(
     });
   }
 
-  // Insert the running row first so a hang/timeout still leaves evidence
-  // it ran. `maybeSingle` so a transient DB hiccup logging the start
-  // doesn't 500 the cron itself — we degrade to logging-disabled.
+  // Insert the running row first so a hang/timeout still leaves
+  // evidence it ran. Skipped entirely when log_runs=false — chatty
+  // crons (drain-outbox, every minute) can opt out of cron_runs
+  // bloat without losing functionality.
   let runId: string | null = null;
-  try {
-    const { data } = await supabase
-      .from('cron_runs')
-      .insert({ cron_name: cronName, status: 'running', dry_run: dryRun })
-      .select('id')
-      .single();
-    runId = data?.id ?? null;
-  } catch (e) {
-    // Logging is best-effort. Cron still proceeds.
-    console.warn(`[runCron] cron_runs insert failed for ${cronName}:`, e);
+  if (logRuns) {
+    try {
+      const { data } = await supabase
+        .from('cron_runs')
+        .insert({ cron_name: cronName, status: 'running', dry_run: dryRun })
+        .select('id')
+        .single();
+      runId = data?.id ?? null;
+    } catch (e) {
+      // Logging is best-effort. Cron still proceeds.
+      console.warn(`[runCron] cron_runs insert failed for ${cronName}:`, e);
+    }
   }
 
   const t0 = Date.now();

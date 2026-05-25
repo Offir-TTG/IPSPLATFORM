@@ -13,9 +13,22 @@ import {
   RefreshCw,
   PowerOff,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
 import { useAdminLanguage } from '@/context/AppContext';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { formatDistanceToNow } from 'date-fns';
+import { he as heLocale } from 'date-fns/locale';
 
 /**
  * Cron monitor — surfaces the last N rows of public.cron_runs so an
@@ -49,6 +62,7 @@ type CronSetting = {
   cron_name: string;
   enabled: boolean;
   dry_run: boolean;
+  log_runs: boolean;
   updated_at: string;
 };
 
@@ -86,6 +100,10 @@ export default function AdminCronMonitorPage() {
   const [filterCron, setFilterCron] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
+  const isRtl = direction === 'rtl';
 
   const statusLabel = (s: CronStatus) => {
     switch (s) {
@@ -118,7 +136,7 @@ export default function AdminCronMonitorPage() {
 
   const toggleSetting = async (
     cronName: string,
-    field: 'enabled' | 'dry_run',
+    field: 'enabled' | 'dry_run' | 'log_runs',
     value: boolean,
   ) => {
     setSavingCron(cronName);
@@ -126,7 +144,7 @@ export default function AdminCronMonitorPage() {
     const prev = settings[cronName];
     setSettings((s) => ({
       ...s,
-      [cronName]: { ...(prev ?? { cron_name: cronName, enabled: true, dry_run: false, updated_at: '' }), [field]: value },
+      [cronName]: { ...(prev ?? { cron_name: cronName, enabled: true, dry_run: false, log_runs: true, updated_at: '' }), [field]: value },
     }));
     try {
       const res = await fetch('/api/admin/cron-settings', {
@@ -147,22 +165,36 @@ export default function AdminCronMonitorPage() {
   };
 
   const load = async () => {
-    let q = supabase
-      .from('cron_runs')
-      .select('*')
-      .order('started_at', { ascending: false })
-      .limit(100);
-    if (filterCron !== 'all') q = q.eq('cron_name', filterCron);
-    if (filterStatus !== 'all') q = q.eq('status', filterStatus);
-    const { data, error } = await q;
-    if (error) {
-      console.error('[Cron Monitor] fetch failed:', error);
+    try {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('per_page', String(pageSize));
+      if (filterCron !== 'all') params.set('cron_name', filterCron);
+      if (filterStatus !== 'all') params.set('status', filterStatus);
+      const res = await fetch(`/api/admin/cron-runs?${params.toString()}`, { cache: 'no-store' });
+      const j = await res.json();
+      if (j.success) {
+        setRows(j.data as CronRun[]);
+        setTotal(j.total ?? 0);
+      } else {
+        console.error('[Cron Monitor] fetch failed:', j.error);
+        setRows([]);
+        setTotal(0);
+      }
+    } catch (e) {
+      console.error('[Cron Monitor] fetch threw:', e);
       setRows([]);
-    } else {
-      setRows((data ?? []) as CronRun[]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  // Reset to page 1 whenever filters change so we don't end up on
+  // a page that no longer exists in the filtered set.
+  useEffect(() => {
+    setPage(1);
+  }, [filterCron, filterStatus]);
 
   useEffect(() => {
     load();
@@ -173,7 +205,7 @@ export default function AdminCronMonitorPage() {
     }, 10000);
     return () => clearInterval(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterCron, filterStatus]);
+  }, [filterCron, filterStatus, page]);
 
   // Latest tick per known cron so a stuck or failing one pops out before
   // the admin has to scan the row list.
@@ -229,6 +261,7 @@ export default function AdminCronMonitorPage() {
             const setting = settings[name];
             const isEnabled = setting?.enabled ?? true;
             const isDryRun = setting?.dry_run ?? false;
+            const isLogRuns = setting?.log_runs ?? true;
             const isSaving = savingCron === name;
             return (
               <div
@@ -296,6 +329,16 @@ export default function AdminCronMonitorPage() {
                       onCheckedChange={(v) => toggleSetting(name, 'dry_run', v)}
                     />
                   </label>
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-xs text-muted-foreground">
+                      {t('admin.crons.toggle.logRuns', 'Store run history')}
+                    </span>
+                    <Switch
+                      checked={isLogRuns}
+                      disabled={isSaving}
+                      onCheckedChange={(v) => toggleSetting(name, 'log_runs', v)}
+                    />
+                  </label>
                 </div>
               </div>
             );
@@ -331,112 +374,226 @@ export default function AdminCronMonitorPage() {
             <option value="skipped_dry_run">{t('admin.crons.status.dryRun', 'Dry-run')}</option>
             <option value="skipped_disabled">{t('admin.crons.status.disabled', 'Disabled')}</option>
           </select>
-          <span className="text-xs text-muted-foreground w-full sm:w-auto sm:ms-auto">
-            {t('admin.crons.runCount', '{{count}} runs').replace(
-              '{{count}}',
-              String(rows.length),
-            )}
-          </span>
         </div>
 
-        {/* Run table */}
-        <div className="bg-card border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 border-b">
-                <tr className="text-start">
-                  <th className="px-4 py-2 font-medium text-start">
-                    {t('admin.crons.col.when', 'When')}
-                  </th>
-                  <th className="px-4 py-2 font-medium text-start">
-                    {t('admin.crons.col.cron', 'Cron')}
-                  </th>
-                  <th className="px-4 py-2 font-medium text-start">
-                    {t('admin.crons.col.status', 'Status')}
-                  </th>
-                  <th className="px-4 py-2 font-medium text-start">
-                    {t('admin.crons.col.duration', 'Duration')}
-                  </th>
-                  <th className="px-4 py-2 font-medium text-start">
-                    {t('admin.crons.col.result', 'Result')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && rows.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                      {t('admin.crons.loading', 'Loading…')}
-                    </td>
-                  </tr>
+        {/* Run table — Card + ResponsiveTable like /admin/emails/queue.
+            Desktop: real <Table> with a single expandable summary row
+            per click. Mobile: stacked card per run with the same
+            expand-on-tap behaviour. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {t('admin.crons.runs', 'Runs')} ({total})
+            </CardTitle>
+            <CardDescription>
+              {t('admin.crons.runsHint', 'Showing {{n}} of {{total}}. Tap a row to see the full summary.')
+                .replace('{{n}}', String(rows.length))
+                .replace('{{total}}', String(total))}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading && rows.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground">
+                {t('admin.crons.loading', 'Loading…')}
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground">
+                {t(
+                  'admin.crons.empty',
+                  'No runs yet. Crons will log here on their next tick after the cron_runs migration is applied and the new code is deployed.',
                 )}
-                {!loading && rows.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                      {t(
-                        'admin.crons.empty',
-                        'No runs yet. Crons will log here on their next tick after the cron_runs migration is applied and the new code is deployed.',
-                      )}
-                    </td>
-                  </tr>
-                )}
-                {rows.map((r) => {
-                  const StatusIcon = STATUS_ICON[r.status];
-                  const isExpanded = expanded.has(r.id);
-                  const summaryText = r.error_message
-                    ? r.error_message
-                    : r.summary
-                      ? JSON.stringify(r.summary)
-                      : '—';
-                  return (
-                    <tr
-                      key={r.id}
-                      className="border-b last:border-0 hover:bg-muted/30 cursor-pointer"
-                      onClick={() => toggle(r.id)}
-                    >
-                      <td className="px-4 py-2 whitespace-nowrap text-xs text-muted-foreground">
-                        {new Date(r.started_at).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs">
-                        {r.cron_name}
-                        {r.dry_run && (
-                          <span className="ms-2 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-sky-100 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-                            {t('admin.crons.status.dryRun', 'Dry-run').toLowerCase()}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_TONE[r.status]}`}
-                        >
-                          <StatusIcon className="h-3 w-3" />
-                          {statusLabel(r.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-xs tabular-nums text-muted-foreground">
-                        {r.duration_ms != null ? `${r.duration_ms} ms` : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-xs">
+              </div>
+            ) : (
+              <ResponsiveTable>
+                <ResponsiveTable.Desktop>
+                  <div className="overflow-x-auto" dir={direction}>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                            {t('admin.crons.col.when', 'When')}
+                          </TableHead>
+                          <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                            {t('admin.crons.col.cron', 'Cron')}
+                          </TableHead>
+                          <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                            {t('admin.crons.col.status', 'Status')}
+                          </TableHead>
+                          <TableHead className={`tabular-nums ${isRtl ? 'text-right' : 'text-left'}`}>
+                            {t('admin.crons.col.duration', 'Duration')}
+                          </TableHead>
+                          <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                            {t('admin.crons.col.result', 'Result')}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rows.map((r) => {
+                          const StatusIcon = STATUS_ICON[r.status];
+                          const isExpanded = expanded.has(r.id);
+                          const summaryText = r.error_message
+                            ? r.error_message
+                            : r.summary
+                              ? JSON.stringify(r.summary, null, 2)
+                              : '—';
+                          return (
+                            <TableRow
+                              key={r.id}
+                              className="cursor-pointer"
+                              onClick={() => toggle(r.id)}
+                            >
+                              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                                <div title={new Date(r.started_at).toLocaleString()}>
+                                  {formatDistanceToNow(new Date(r.started_at), {
+                                    addSuffix: true,
+                                    locale: isRtl ? heLocale : undefined,
+                                  })}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="truncate">{r.cron_name}</span>
+                                  {r.dry_run && (
+                                    <Badge variant="secondary" className="text-[10px] py-0 px-1.5">
+                                      {t('admin.crons.status.dryRun', 'Dry-run').toLowerCase()}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="outline"
+                                  className={`gap-1 ${STATUS_TONE[r.status]} border-transparent`}
+                                >
+                                  <StatusIcon className="h-3 w-3" />
+                                  {statusLabel(r.status)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs tabular-nums text-muted-foreground">
+                                {r.duration_ms != null ? `${r.duration_ms} ms` : '—'}
+                              </TableCell>
+                              <TableCell className="max-w-0 w-full">
+                                {isExpanded ? (
+                                  <pre
+                                    className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded"
+                                    dir="ltr"
+                                  >
+                                    {summaryText}
+                                  </pre>
+                                ) : (
+                                  <span
+                                    className={`block truncate text-xs ${r.error_message ? 'text-destructive' : 'text-muted-foreground'}`}
+                                    dir="ltr"
+                                  >
+                                    {summaryText}
+                                  </span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </ResponsiveTable.Desktop>
+
+                {/* Mobile: card per run. Compact header (cron + status),
+                    relative time, duration chip, expandable summary. */}
+                <ResponsiveTable.Mobile className="space-y-2" dir={direction}>
+                  {rows.map((r) => {
+                    const StatusIcon = STATUS_ICON[r.status];
+                    const isExpanded = expanded.has(r.id);
+                    const summaryText = r.error_message
+                      ? r.error_message
+                      : r.summary
+                        ? JSON.stringify(r.summary, null, 2)
+                        : '—';
+                    return (
+                      <div
+                        key={r.id}
+                        className="rounded-lg border p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors"
+                        onClick={() => toggle(r.id)}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-sm font-medium truncate">
+                                {r.cron_name}
+                              </span>
+                              {r.dry_run && (
+                                <Badge variant="secondary" className="text-[10px] py-0 px-1.5">
+                                  {t('admin.crons.status.dryRun', 'Dry-run').toLowerCase()}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {formatDistanceToNow(new Date(r.started_at), {
+                                addSuffix: true,
+                                locale: isRtl ? heLocale : undefined,
+                              })}
+                              {r.duration_ms != null && (
+                                <span className="tabular-nums">{' · '}{r.duration_ms} ms</span>
+                              )}
+                            </div>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={`gap-1 shrink-0 ${STATUS_TONE[r.status]} border-transparent`}
+                          >
+                            <StatusIcon className="h-3 w-3" />
+                            {statusLabel(r.status)}
+                          </Badge>
+                        </div>
                         {isExpanded ? (
-                          <pre className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded w-full max-w-full sm:max-w-2xl" dir="ltr">
-                            {summaryText}
-                          </pre>
-                        ) : (
-                          <span
-                            className={`block truncate max-w-[14rem] sm:max-w-md ${r.error_message ? 'text-red-600' : 'text-muted-foreground'}`}
+                          <pre
+                            className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded max-h-64 overflow-auto"
                             dir="ltr"
                           >
                             {summaryText}
-                          </span>
+                          </pre>
+                        ) : (
+                          <p
+                            className={`text-xs truncate ${r.error_message ? 'text-destructive' : 'text-muted-foreground'}`}
+                            dir="ltr"
+                          >
+                            {summaryText}
+                          </p>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                      </div>
+                    );
+                  })}
+                </ResponsiveTable.Mobile>
+              </ResponsiveTable>
+            )}
+
+            {/* Pagination — mirrors /admin/emails/queue */}
+            {total > pageSize && (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4">
+                <div className="text-sm text-muted-foreground">
+                  {t('common.page', 'Page')} {page} {t('common.of', 'of')} {Math.max(1, Math.ceil(total / pageSize))}
+                </div>
+                <div className="flex gap-2 sm:justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1 || loading}
+                  >
+                    {t('common.previous', 'Previous')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(Math.ceil(total / pageSize), p + 1))}
+                    disabled={page >= Math.ceil(total / pageSize) || loading}
+                  >
+                    {t('common.next', 'Next')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </AdminLayout>
   );
