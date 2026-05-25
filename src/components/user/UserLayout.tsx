@@ -110,8 +110,17 @@ export function UserLayout({ children }: UserLayoutProps) {
           return;
         }
 
-        // Check if user should be in admin portal
-        if (userData.role === 'admin' || userData.role === 'super_admin') {
+        // Check if user should be in admin portal — unless they're
+        // explicitly previewing a student-facing page via `?preview=1`.
+        // The Preview button in the course editor uses this to let
+        // admins see exactly what a student sees without losing place.
+        const isPreviewing =
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('preview') === '1';
+        if (
+          (userData.role === 'admin' || userData.role === 'super_admin') &&
+          !isPreviewing
+        ) {
           router.push('/admin/dashboard');
           return;
         }

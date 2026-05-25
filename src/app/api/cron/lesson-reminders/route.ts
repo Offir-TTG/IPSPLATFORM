@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { processBatchTriggerEvents } from '@/lib/email/triggerEngine';
 import { filterEligibleRecipientIds } from '@/lib/users/communication-eligible';
+import { runCron } from '@/lib/cron/withCronLogging';
 
 /**
  * Cron job for lesson reminders
@@ -27,16 +28,16 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds for cron job
 
 export async function GET(request: NextRequest) {
-  try {
-    // Verify cron secret to prevent unauthorized access
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
+  // Verify cron secret to prevent unauthorized access
+  const authHeader = request.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
 
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    console.log('[Cron] Starting lesson reminder job...');
+  return runCron('lesson-reminders', async ({ dryRun }) => {
+    console.log('[Cron] Starting lesson reminder job...', { dryRun });
 
     const supabase = createAdminClient();
 
@@ -74,20 +75,30 @@ export async function GET(request: NextRequest) {
       .order('start_time', { ascending: true });
 
     if (lessonsError) {
-      console.error('[Cron] Error fetching lessons:', lessonsError);
-      return NextResponse.json({ error: 'Failed to fetch lessons' }, { status: 500 });
+      throw new Error(`Failed to fetch lessons: ${lessonsError.message}`);
     }
 
     if (!upcomingLessons || upcomingLessons.length === 0) {
       console.log('[Cron] No upcoming lessons found');
-      return NextResponse.json({
+      return {
         success: true,
         message: 'No upcoming lessons',
-        processed: 0
-      });
+        processed: 0,
+      };
     }
 
     console.log(`[Cron] Found ${upcomingLessons.length} upcoming lessons`);
+
+    if (dryRun) {
+      // Hard short-circuit: don't even iterate, since each iteration
+      // touches the trigger engine. Log how many lessons were in scope.
+      return {
+        success: true,
+        dry_run: true,
+        lessonsFound: upcomingLessons.length,
+        message: `CRON_DRY_RUN enabled; would scan ${upcomingLessons.length} lessons for reminders`,
+      };
+    }
 
     let totalProcessed = 0;
     let totalEmailsQueued = 0;
@@ -268,21 +279,10 @@ export async function GET(request: NextRequest) {
       lessonsFound: upcomingLessons.length,
       eventsProcessed: totalProcessed,
       emailsQueued: totalEmailsQueued,
-      completedAt: new Date().toISOString(),
     };
 
     console.log('[Cron] Job summary:', summary);
 
-    return NextResponse.json(summary);
-
-  } catch (error: any) {
-    console.error('[Cron] Fatal error in lesson reminder job:', error);
-    return NextResponse.json(
-      {
-        error: error.message || 'Internal server error',
-        success: false
-      },
-      { status: 500 }
-    );
-  }
+    return summary;
+  });
 }

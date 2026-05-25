@@ -69,6 +69,7 @@ import TokenInserter, { Token } from '@/components/ui/token-inserter';
 import { CourseMaterials } from '@/components/lms/CourseMaterials';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -77,6 +78,10 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  ZoomSettingsPanel,
+  ZOOM_SETTINGS_DEFAULTS,
+} from '@/components/admin/lms/ZoomSettingsPanel';
 import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
@@ -551,20 +556,42 @@ function SortableLesson({
                 )}
               </>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => onCreateZoomMeeting(lesson.id, 'daily')}
-                disabled={creatingZoomFor === lesson.id}
-              >
-                {creatingZoomFor === lesson.id ? (
-                  <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
-                ) : (
-                  <VideoOff className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-                )}
-                {t('lms.builder.add_daily', 'Add Daily.co')}
-              </Button>
+              // Previously this was a single hardcoded "Add Daily.co"
+              // button — no Zoom choice. So when admins created a
+              // lesson, picked Zoom in the dialog, the (broken) Zoom
+              // endpoint silently 404'd, and they then clicked the only
+              // visible meeting button → Daily room. Now we offer both
+              // so the row matches the dialog's choice.
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => onCreateZoomMeeting(lesson.id, 'zoom')}
+                  disabled={creatingZoomFor === lesson.id}
+                >
+                  {creatingZoomFor === lesson.id ? (
+                    <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
+                  ) : (
+                    <Video className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+                  )}
+                  {t('lms.builder.add_zoom', 'Add Zoom')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => onCreateZoomMeeting(lesson.id, 'daily')}
+                  disabled={creatingZoomFor === lesson.id}
+                >
+                  {creatingZoomFor === lesson.id ? (
+                    <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
+                  ) : (
+                    <VideoOff className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
+                  )}
+                  {t('lms.builder.add_daily', 'Add Daily.co')}
+                </Button>
+              </>
             )}
 
             {/* Edit Content Button */}
@@ -785,11 +812,15 @@ export default function CourseBuilderPage() {
     is_published: true,
     // Video meeting settings
     create_meeting: false,
-    meeting_platform: 'daily' as 'zoom' | 'daily', // Platform selection
+    meeting_platform: 'zoom' as 'zoom' | 'daily', // Platform selection — default Zoom (matches bulk form + the rest of the UI which falls back to Zoom). Defaulting to Daily produced a footgun where admins toggled integration on, didn't notice the dropdown was Daily, and got a Daily room when they expected Zoom.
     create_zoom: false, // Keep for backward compatibility
     zoom_topic: '', // Custom Zoom meeting topic
     zoom_agenda: '',
     daily_room_name: '', // Custom Daily.co room name
+    // Full Zoom settings — was only on the bulk form before. Single
+    // lesson creation now sends these too so admins don't lose
+    // security / recording config when creating one lesson at a time.
+    ...ZOOM_SETTINGS_DEFAULTS,
   });
 
   const [bulkModuleForm, setBulkModuleForm] = useState({
@@ -1472,6 +1503,26 @@ export default function CourseBuilderPage() {
       const lessonDateForTitle = lessonForm.start_time ? new Date(lessonForm.start_time) : null;
       const resolvedTitle = replaceTokens(lessonForm.title, lessonNumberForTitle, lessonDateForTitle);
 
+      // Forward the Zoom config so ZoomService can read it from the
+      // lesson row when creating the meeting below. Only sent when the
+      // admin opted into a Zoom meeting; for Daily or no-meeting flows
+      // these stay at their defaults and don't affect anything.
+      const zoomConfig = lessonForm.create_meeting && lessonForm.meeting_platform === 'zoom'
+        ? {
+            zoom_passcode: lessonForm.zoom_passcode || null,
+            zoom_waiting_room: lessonForm.zoom_waiting_room,
+            zoom_join_before_host: lessonForm.zoom_join_before_host,
+            zoom_mute_upon_entry: lessonForm.zoom_mute_upon_entry,
+            zoom_require_authentication: lessonForm.zoom_require_authentication,
+            zoom_host_video: lessonForm.zoom_host_video,
+            zoom_participant_video: lessonForm.zoom_participant_video,
+            zoom_audio: lessonForm.zoom_audio,
+            zoom_auto_recording: lessonForm.zoom_auto_recording,
+            zoom_record_speaker_view: lessonForm.zoom_record_speaker_view,
+            zoom_recording_disclaimer: lessonForm.zoom_recording_disclaimer,
+          }
+        : {};
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -1487,6 +1538,7 @@ export default function CourseBuilderPage() {
           start_time: startTimeUTC,
           timezone: lessonForm.timezone,
           order: isEditing ? editingLesson.order : (selectedModule.lessons?.length || 0),
+          ...zoomConfig,
         }),
       });
 
@@ -1527,19 +1579,32 @@ export default function CourseBuilderPage() {
               const lessonNumber = (selectedModule.lessons?.length || 0) + 1;
               const zoomTopicWithTokens = replaceTokens(lessonForm.zoom_topic, lessonNumber, lessonDate);
 
-              // Create Zoom meeting. Sends UTC ISO + timezone separately —
-              // matching the UPDATE path and the canonical write rule
-              // (every fetch with start_time sends UTC).
-              const zoomResponse = await fetch('/api/lms/zoom/meetings', {
+              // Create Zoom meeting via the per-lesson endpoint. Sends
+              // the same `topic / agenda / start_time / duration /
+              // timezone / password / settings` payload the bulk-smart
+              // endpoint uses so single + bulk produce identical Zoom
+              // meetings (recording mode, waiting room, passcode, etc).
+              const zoomResponse = await fetch(`/api/admin/lessons/${lessonData.id}/zoom/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  lesson_id: lessonData.id,
                   topic: zoomTopicWithTokens,
-                  agenda: lessonForm.zoom_agenda || null,
+                  agenda: lessonForm.zoom_agenda || undefined,
                   start_time: startTimeUTC,
                   duration: parseInt(lessonForm.duration_minutes),
                   timezone: lessonForm.timezone || tenantTimezone,
+                  password: lessonForm.zoom_passcode || undefined,
+                  settings: {
+                    host_video: lessonForm.zoom_host_video,
+                    participant_video: lessonForm.zoom_participant_video,
+                    join_before_host: lessonForm.zoom_join_before_host,
+                    mute_upon_entry: lessonForm.zoom_mute_upon_entry,
+                    waiting_room: lessonForm.zoom_waiting_room,
+                    auto_recording: lessonForm.zoom_auto_recording,
+                    audio: lessonForm.zoom_audio,
+                    recording_play_on_active_speaker: lessonForm.zoom_record_speaker_view,
+                    meeting_authentication: lessonForm.zoom_require_authentication,
+                  },
                 }),
               });
 
@@ -1632,11 +1697,13 @@ export default function CourseBuilderPage() {
           timezone: tenantTimezone,
           is_published: true,
           create_meeting: false,
-          meeting_platform: 'daily',
+          // See lessonForm initial state — default is Zoom, not Daily.
+          meeting_platform: 'zoom',
           create_zoom: false,
           zoom_topic: '',
           zoom_agenda: '',
           daily_room_name: '',
+          ...ZOOM_SETTINGS_DEFAULTS,
         });
 
         const successMsg = isEditing
@@ -1752,11 +1819,12 @@ export default function CourseBuilderPage() {
       timezone: lesson.timezone || tenantTimezone,
       is_published: lesson.is_published,
       create_meeting: false, // Don't show meeting creation option in edit mode
-      meeting_platform: 'daily',
+      meeting_platform: 'zoom',
       create_zoom: false,
       zoom_topic: '',
       zoom_agenda: '',
       daily_room_name: '',
+      ...ZOOM_SETTINGS_DEFAULTS,
     });
 
     // Open the dialog
@@ -2330,7 +2398,21 @@ export default function CourseBuilderPage() {
                 <Link2 className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                 <span className="hidden sm:inline">{t('lms.course_detail.instructor_access_title', 'Instructor Access')}</span>
               </Button>
-              <Button variant="outline" size="sm" className="flex-1 md:flex-none">
+              {/* Preview — opens the student-facing course page in a
+                  new tab so the admin can see exactly what an enrolled
+                  user sees, without losing place in the editor.
+                  Previously had no onClick handler at all (the button
+                  rendered but did nothing on click). */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 md:flex-none"
+                // `?preview=1` tells UserLayout to skip its
+                // admin→/admin/dashboard redirect so the admin can view
+                // the student page directly.
+                onClick={() => window.open(`/courses/${params.id}?preview=1`, '_blank', 'noopener,noreferrer')}
+                title={t('lms.builder.preview_hint', 'Open the student view in a new tab')}
+              >
                 <Eye className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
                 <span className="hidden sm:inline">{t('lms.builder.preview', 'Preview')}</span>
               </Button>
@@ -2530,11 +2612,13 @@ export default function CourseBuilderPage() {
                                   timezone: tenantTimezone,
                                   is_published: true,
                                   create_meeting: false,
-                                  meeting_platform: 'daily',
+                                  // Default Zoom — see lessonForm initial state.
+                                  meeting_platform: 'zoom',
                                   create_zoom: false,
                                   zoom_topic: '',
                                   zoom_agenda: '',
                                   daily_room_name: '',
+                                  ...ZOOM_SETTINGS_DEFAULTS,
                                 });
                                 setShowLessonDialog(true);
                               }}
@@ -2815,6 +2899,7 @@ export default function CourseBuilderPage() {
               }
             </DialogDescription>
           </DialogHeader>
+          <DialogBody>
           <div className="space-y-6 py-4">
             <div className="space-y-2">
               <Label className={`${isRtl ? 'text-right block' : ''} font-medium`}>
@@ -2876,6 +2961,7 @@ export default function CourseBuilderPage() {
               </div>
             </div>
           </div>
+          </DialogBody>
           <DialogFooter className={`gap-3 flex-col-reverse sm:flex-row ${isRtl ? 'sm:flex-row-reverse' : ''}`}>
             <Button variant="outline" onClick={() => setShowModuleDialog(false)} className="w-full sm:w-auto">
               {t('common.cancel', 'Cancel')}
@@ -2902,7 +2988,10 @@ export default function CourseBuilderPage() {
           setShowLessonDialog(open);
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir={direction}>
+        {/* Drop `max-h-[90vh] overflow-y-auto` — DialogContent already
+            sets max-h + overflow. Header/footer stay frozen via
+            shrink-0 on those slots; DialogBody scrolls the middle. */}
+        <DialogContent className="max-w-2xl" dir={direction}>
           <DialogHeader>
             <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
               {editingLesson
@@ -2917,6 +3006,7 @@ export default function CourseBuilderPage() {
               }
             </DialogDescription>
           </DialogHeader>
+          <DialogBody>
           {/* In-dialog error banner — renders validation and API errors so
               the user sees them inline instead of behind the dialog. */}
           {lessonDialogError && (
@@ -3093,8 +3183,11 @@ export default function CourseBuilderPage() {
                       className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
                       dir={direction}
                     >
-                      <option value="daily">{t('lms.lesson.platform_daily', 'Daily.co')}</option>
+                      {/* Zoom first — matches the default and the rest of the UI's
+                          fallback assumption. Daily.co stays selectable for schools
+                          that prefer it. */}
                       <option value="zoom">{t('lms.lesson.platform_zoom', 'Zoom')}</option>
+                      <option value="daily">{t('lms.lesson.platform_daily', 'Daily.co')}</option>
                     </select>
                   </div>
 
@@ -3171,6 +3264,18 @@ export default function CourseBuilderPage() {
                           dir={direction}
                         />
                       </div>
+
+                      {/* Full Zoom settings (security / video+audio /
+                          recording) — was previously only on the bulk
+                          dialog. Now single-lesson Zoom creation
+                          honours the same configuration. */}
+                      <ZoomSettingsPanel
+                        settings={lessonForm}
+                        onChange={(patch) => setLessonForm({ ...lessonForm, ...patch })}
+                        t={t}
+                        isRtl={isRtl}
+                        direction={direction}
+                      />
                     </div>
                   )}
                 </>
@@ -3212,6 +3317,7 @@ export default function CourseBuilderPage() {
               </div>
             )}
           </div>
+          </DialogBody>
           <DialogFooter className={`flex gap-3 flex-col-reverse sm:flex-row ${isRtl ? 'sm:flex-row-reverse' : ''}`}>
             <Button variant="outline" onClick={() => setShowLessonDialog(false)} className="w-full sm:w-auto">
               {t('common.cancel', 'Cancel')}
@@ -3237,6 +3343,7 @@ export default function CourseBuilderPage() {
               {t('lms.builder.dialog_bulk_description', 'Create multiple modules at once to quickly structure your course')}
             </DialogDescription>
           </DialogHeader>
+          <DialogBody>
           <div className="space-y-6 py-4">
             <div className="space-y-2">
               <Label className={`${isRtl ? 'text-right block' : ''} font-medium`}>
@@ -3324,6 +3431,7 @@ export default function CourseBuilderPage() {
               </div>
             </div>
           </div>
+          </DialogBody>
           <DialogFooter className={`gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
             <Button variant="outline" onClick={() => setShowBulkModuleDialog(false)}>
               {t('common.cancel', 'Cancel')}
@@ -3337,7 +3445,7 @@ export default function CourseBuilderPage() {
 
       {/* Bulk Lesson Dialog - Smart Scheduling */}
       <Dialog open={showBulkLessonDialog} onOpenChange={setShowBulkLessonDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir={direction}>
+        <DialogContent className="max-w-2xl" dir={direction}>
           <DialogHeader>
             <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
               {t('lms.lesson.bulk_create_title', 'Create Series of Lessons for {module}').replace('{module}', selectedModule?.title || '')}
@@ -3347,6 +3455,7 @@ export default function CourseBuilderPage() {
             </DialogDescription>
           </DialogHeader>
 
+          <DialogBody>
           <div className="space-y-6 py-4">
             {/* Series Information */}
             <div className="space-y-4">
@@ -3910,6 +4019,7 @@ export default function CourseBuilderPage() {
               </p>
             </div>
           </div>
+          </DialogBody>
 
           <DialogFooter className={`gap-3 flex-col-reverse sm:flex-row ${isRtl ? 'sm:flex-row-reverse' : ''}`}>
             <Button variant="outline" onClick={() => setShowBulkLessonDialog(false)} className="w-full sm:w-auto">
@@ -3946,7 +4056,7 @@ export default function CourseBuilderPage() {
 
       {/* Lesson Content Editor Dialog */}
       <Dialog open={showLessonContentDialog} onOpenChange={setShowLessonContentDialog}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-5xl max-h-[90vh] overflow-y-auto" dir={direction}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-5xl" dir={direction}>
           <DialogHeader>
             <DialogTitle className={isRtl ? 'text-right' : ''}>
               {t('lms.topics.edit_content', 'Edit Content')}: {selectedLessonForContent?.lessonTitle}
@@ -3956,16 +4066,18 @@ export default function CourseBuilderPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {selectedLessonForContent && (
-            <LessonTopicsBuilder
-              lessonId={selectedLessonForContent.lessonId}
-              lessonTitle={selectedLessonForContent.lessonTitle}
-              t={t}
-              isRtl={isRtl}
-              direction={direction}
-              onClose={() => setShowLessonContentDialog(false)}
-            />
-          )}
+          <DialogBody>
+            {selectedLessonForContent && (
+              <LessonTopicsBuilder
+                lessonId={selectedLessonForContent.lessonId}
+                lessonTitle={selectedLessonForContent.lessonTitle}
+                t={t}
+                isRtl={isRtl}
+                direction={direction}
+                onClose={() => setShowLessonContentDialog(false)}
+              />
+            )}
+          </DialogBody>
         </DialogContent>
       </Dialog>
 
@@ -4006,6 +4118,7 @@ export default function CourseBuilderPage() {
             </DialogDescription>
           </DialogHeader>
 
+          <DialogBody>
           {loadingBridge ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -4110,6 +4223,7 @@ export default function CourseBuilderPage() {
               </Button>
             </div>
           )}
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBridgeDialog(false)}>

@@ -48,9 +48,32 @@ export async function POST(
       return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
     }
 
+    // Optional Zoom settings override — same shape the bulk-smart
+    // endpoint sends. Previously this endpoint always called
+    // `createMeetingForLesson(lessonId)` with no overrides, so the
+    // Zoom meeting was created with service defaults — the single
+    // dialog's recording / waiting-room / passcode / etc. choices
+    // were silently ignored. Now we forward whatever the caller
+    // provides to the service so single + bulk reach Zoom identically.
+    const body = await request.json().catch(() => ({}));
+    const overrides = (body && typeof body === 'object')
+      ? {
+          ...(body.topic ? { topic: body.topic } : {}),
+          ...(body.agenda ? { agenda: body.agenda } : {}),
+          ...(body.start_time ? { start_time: body.start_time } : {}),
+          ...(body.duration ? { duration: body.duration } : {}),
+          ...(body.timezone ? { timezone: body.timezone } : {}),
+          ...(body.password ? { password: body.password } : {}),
+          ...(body.settings ? { settings: body.settings } : {}),
+        }
+      : {};
+
     // Create Zoom meeting using service
     const zoomService = new ZoomService(lesson.tenant_id);
-    const result = await zoomService.createMeetingForLesson(lessonId);
+    const result = await zoomService.createMeetingForLesson(
+      lessonId,
+      Object.keys(overrides).length > 0 ? overrides : undefined,
+    );
 
     if (!result.success) {
       return NextResponse.json(

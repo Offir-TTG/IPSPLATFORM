@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { detectPaymentPlan, generatePaymentSchedules } from './paymentEngine';
 import { getProduct } from './productService';
 import { Product, PaymentPlan, PaymentSchedule } from '@/types/payments';
@@ -759,7 +759,10 @@ export async function recordManualPayment(
   transaction_reference?: string,
   notes?: string
 ): Promise<void> {
-  const supabase = await createClient();
+  // Service-role client (bypasses RLS). Admin gate + tenant isolation
+  // are enforced at the API route layer; we still filter by tenant_id
+  // explicitly on each query below as defense-in-depth.
+  const supabase = createAdminClient();
 
   // Get schedule
   const { data: schedule } = await supabase
@@ -788,7 +791,7 @@ export async function recordManualPayment(
       currency: schedule.currency,
       payment_method,
       transaction_id: transaction_reference || `manual_${Date.now()}`,
-      status: 'completed',
+      status: 'paid',
       metadata: {
         recorded_by: admin_id,
         notes,
@@ -825,4 +828,164 @@ export async function recordManualPayment(
       deposit_paid: schedule.payment_type === 'deposit' ? true : enrollment.deposit_paid,
     })
     .eq('id', schedule.enrollment_id);
+}
+
+/**
+ * Record a *standalone* (off-schedule) manual payment.
+ *
+ * Unlike `recordManualPayment`, this isn't tied to any `payment_schedules`
+ * row — used for one-off payments that don't fit the installment plan:
+ *   • Customer over-paid an installment (apply credit later)
+ *   • Application / late fee
+ *   • Pre-payment before any enrollment exists
+ *
+ * If `enrollment_id` is provided, the payment rolls up into that
+ *   enrollment's `paid_amount` and `payment_status` is recomputed.
+ * If `enrollment_id` is null, the payment is logged against the user
+ *   only — visible in the customer's lifetime spend but not tied to any
+ *   specific enrollment.
+ *
+ * No `payment_schedules` rows are touched in either case.
+ */
+export async function recordStandalonePayment(
+  tenant_id: string,
+  admin_id: string,
+  payload: {
+    user_id: string;
+    enrollment_id?: string | null;
+    amount: number;
+    currency?: string;
+    payment_method: string;
+    transaction_reference?: string;
+    notes?: string;
+    payment_date?: string; // ISO; defaults to now
+  },
+): Promise<{ payment_id: string }> {
+  if (!payload.user_id) throw new Error('user_id required');
+  if (!(payload.amount > 0)) throw new Error('amount must be > 0');
+  if (!payload.payment_method) throw new Error('payment_method required');
+
+  // Service-role client (bypasses RLS). The admin gate + tenant isolation
+  // are enforced at the API route layer (verifyTenantAdmin) and via the
+  // explicit tenant_id filter on every query below — RLS would only
+  // re-do the same check at a layer that doesn't know who the caller is.
+  const supabase = createAdminClient();
+
+  // Verify user belongs to this tenant — prevents an admin from one
+  // tenant logging a payment against another tenant's user.
+  const { data: userRow, error: userErr } = await supabase
+    .from('users')
+    .select('id, tenant_id')
+    .eq('id', payload.user_id)
+    .single();
+  if (userErr || !userRow) throw new Error('User not found');
+  if (userRow.tenant_id !== tenant_id) throw new Error('User belongs to a different tenant');
+
+  // If linked to an enrollment, verify it belongs to this user + tenant.
+  // We need the current paid_amount / total_amount to recompute the
+  // payment_status after the insert.
+  let enrollment:
+    | {
+        id: string;
+        paid_amount: number;
+        total_amount: number;
+        payment_status: string | null;
+      }
+    | null = null;
+  if (payload.enrollment_id) {
+    const { data: enr, error: enrErr } = await supabase
+      .from('enrollments')
+      .select('id, user_id, tenant_id, paid_amount, total_amount, payment_status')
+      .eq('id', payload.enrollment_id)
+      .single();
+    if (enrErr || !enr) throw new Error('Enrollment not found');
+    if (enr.tenant_id !== tenant_id) throw new Error('Enrollment belongs to a different tenant');
+    if (enr.user_id !== payload.user_id)
+      throw new Error('Enrollment does not belong to the selected user');
+    enrollment = {
+      id: enr.id,
+      paid_amount: parseFloat(String(enr.paid_amount ?? 0)),
+      total_amount: parseFloat(String(enr.total_amount ?? 0)),
+      payment_status: enr.payment_status,
+    };
+  }
+
+  // Insert the payment. payment_type is 'one_time' since there's no
+  // schedule semantically classifying it as a deposit/installment.
+  const { data: payment, error: paymentError } = await supabase
+    .from('payments')
+    .insert({
+      tenant_id,
+      user_id: payload.user_id,
+      enrollment_id: payload.enrollment_id ?? null,
+      amount: payload.amount,
+      currency: payload.currency || 'USD',
+      payment_method: payload.payment_method,
+      transaction_id: payload.transaction_reference || `manual_${Date.now()}`,
+      status: 'paid',
+      payment_type: 'one_time',
+      metadata: {
+        recorded_by: admin_id,
+        notes: payload.notes,
+        payment_type: 'manual_standalone',
+        payment_date: payload.payment_date ?? new Date().toISOString(),
+      },
+    })
+    .select('id')
+    .single();
+
+  if (paymentError || !payment) {
+    throw new Error(`Failed to create payment record: ${paymentError?.message ?? 'unknown'}`);
+  }
+
+  // If linked to an enrollment:
+  //   1. Mirror the payment as a payment_schedules row so it appears in
+  //      the schedules list with a distinctive payment_type='manual'
+  //      tag and is filterable like any other schedule.
+  //   2. Recompute paid_amount + payment_status on the enrollment.
+  //   We don't touch deposit_paid because a standalone manual payment
+  //   isn't a deposit by definition.
+  if (enrollment) {
+    // Assign the next payment_number for this enrollment to satisfy
+    // UNIQUE(enrollment_id, payment_number). MAX() is fine here — manual
+    // entries are infrequent, no race-condition risk in practice.
+    const { data: existing } = await supabase
+      .from('payment_schedules')
+      .select('payment_number')
+      .eq('enrollment_id', enrollment.id)
+      .order('payment_number', { ascending: false })
+      .limit(1);
+    const nextPaymentNumber =
+      existing && existing.length > 0
+        ? (existing[0].payment_number as number) + 1
+        : 1;
+
+    const nowIso = new Date().toISOString();
+    await supabase.from('payment_schedules').insert({
+      tenant_id,
+      enrollment_id: enrollment.id,
+      payment_plan_id: null, // manual entries don't belong to a plan
+      payment_number: nextPaymentNumber,
+      payment_type: 'manual',
+      amount: payload.amount,
+      currency: payload.currency || 'USD',
+      original_due_date: payload.payment_date ?? nowIso,
+      scheduled_date: payload.payment_date ?? nowIso,
+      paid_date: payload.payment_date ?? nowIso,
+      status: 'paid',
+      payment_id: payment.id,
+    });
+
+    const newPaid = enrollment.paid_amount + payload.amount;
+    const isFullyPaid = newPaid >= enrollment.total_amount && enrollment.total_amount > 0;
+    await supabase
+      .from('enrollments')
+      .update({
+        paid_amount: newPaid,
+        payment_status: isFullyPaid ? 'paid' : 'partial',
+      })
+      .eq('id', enrollment.id);
+  }
+
+  return { payment_id: payment.id };
 }

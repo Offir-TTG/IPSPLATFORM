@@ -1,0 +1,40 @@
+/* Google Maps Places Autocomplete dropdown (.pac-container) styling.
+ *
+ * The dropdown is appended to document.body and inherits the page's
+ * `dir="rtl"`, which mirrors suggestion text and breaks address parsing.
+ * Forcing LTR matches the wizard's fix and keeps suggestions readable
+ * regardless of the surrounding UI direction.
+ *
+ * z-index 9999 is needed because the dropdown otherwise sits beneath
+ * Radix Dialog/Sheet overlays (z-50).
+ */
+
+.pac-container {
+  font-family: inherit;
+  z-index: 9999;
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.pac-item {
+  padding: 8px 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.pac-item-query {
+  font-size: 14px;
+  padding-right: 4px;
+  direction: ltr !important;
+}
+
+.pac-matched {
+  font-weight: 600;
+}
+
+.pac-icon {
+  margin-top: 4px;
+  margin-right: 8px;
+}

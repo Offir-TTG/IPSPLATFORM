@@ -20,7 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Mail, TrendingUp, XCircle, Loader2 } from 'lucide-react';
+import { Mail, TrendingUp, XCircle, Loader2, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 
 interface EmailAnalyticsSummary {
@@ -93,9 +95,17 @@ export default function EmailAnalyticsPage() {
   return (
     <AdminLayout>
       <div className="max-w-7xl p-4 md:p-6 space-y-6" dir={direction}>
-        {/* Header */}
+        {/* Header — back link sits inline with the title block,
+            matching the platform convention (payments/schedules etc.) */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
+          <div className="flex items-center gap-3 flex-wrap min-w-0">
+            <Link href="/admin/emails">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className={`h-4 w-4 ${direction === 'rtl' ? 'ml-2 rotate-180' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
+              </Button>
+            </Link>
+            <div className="min-w-0">
             <h1 suppressHydrationWarning style={{
               fontSize: isMobile ? 'var(--font-size-2xl)' : 'var(--font-size-3xl)',
               fontFamily: 'var(--font-family-heading)',
@@ -110,6 +120,7 @@ export default function EmailAnalyticsPage() {
             }}>
               {t('emails.analytics.description', 'Track email performance and engagement metrics')}
             </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

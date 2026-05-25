@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
+  Activity,
   Edit,
   Mail,
   MoreVertical,
@@ -19,6 +20,7 @@ import {
   UserX,
   KeyRound,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,6 +72,7 @@ export function UserTable({
 }: UserTableProps) {
   const { t, direction } = useAdminLanguage();
   const isRtl = direction === 'rtl';
+  const router = useRouter();
 
   const getRoleBadgeColor = (role: string) => {
     switch (role.toLowerCase()) {
@@ -258,6 +261,16 @@ export function UserTable({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align={isRtl ? 'start' : 'end'}>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/admin/users/${user.user_id}`);
+                        }}
+                      >
+                        <Activity className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
+                        {t('admin.users.menu.viewActivity', 'View activity')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={(e) => {
                           e.stopPropagation();

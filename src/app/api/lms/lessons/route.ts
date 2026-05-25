@@ -98,7 +98,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create lesson
+    // Build lesson payload. Zoom config columns are forwarded verbatim
+    // when present so the single-lesson dialog can capture security /
+    // video+audio / recording settings the same way the bulk dialog
+    // already does. lessonService.createLesson spreads this into the
+    // INSERT, and ZoomService.createMeetingForLesson reads the same
+    // columns back when the admin requests a Zoom meeting.
+    const ZOOM_FIELDS = [
+      'zoom_passcode',
+      'zoom_waiting_room',
+      'zoom_join_before_host',
+      'zoom_mute_upon_entry',
+      'zoom_require_authentication',
+      'zoom_host_video',
+      'zoom_participant_video',
+      'zoom_audio',
+      'zoom_auto_recording',
+      'zoom_record_speaker_view',
+      'zoom_recording_disclaimer',
+    ] as const;
+    const zoomPatch: Record<string, unknown> = {};
+    for (const k of ZOOM_FIELDS) {
+      if (body[k] !== undefined) zoomPatch[k] = body[k];
+    }
+
     const result = await lessonService.createLesson({
       course_id: body.course_id,
       module_id: body.module_id,
@@ -111,7 +134,9 @@ export async function POST(request: NextRequest) {
       materials: body.materials || [],
       is_published: body.is_published ?? false,
       status: body.status || 'scheduled',
-    });
+      ...(body.timezone ? { timezone: body.timezone } : {}),
+      ...zoomPatch,
+    } as any);
 
     if (!result.success) {
       return NextResponse.json(

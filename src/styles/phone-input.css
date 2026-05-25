@@ -1,0 +1,43 @@
+/* Shared styling for react-phone-number-input. Originally inline in
+ * the enrollment wizard via styled-jsx; extracted here so the admin
+ * user-edit drawer (and any future caller) renders the input with the
+ * same look without depending on the wizard being mounted.
+ *
+ * Apply by giving the <PhoneInput> a className of "phone-input-wizard".
+ */
+
+.phone-input-wizard {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-primary);
+  background-color: hsl(var(--background));
+  color: hsl(var(--text-body));
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  /* Force LTR layout so the country prefix is always on the left of
+   * the digits — phone numbers are LTR data even inside an RTL UI. */
+  direction: ltr;
+}
+
+.phone-input-wizard .PhoneInputInput {
+  padding: 0;
+  border: none;
+  outline: none;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-primary);
+  background-color: transparent;
+  color: hsl(var(--text-body));
+}
+
+.phone-input-wizard .PhoneInputInput:focus {
+  outline: none;
+}
+
+.phone-input-wizard .PhoneInputCountry {
+  padding-right: 0.5rem;
+}
+

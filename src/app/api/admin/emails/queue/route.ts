@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { EmailStatus, EmailPriority } from '@/types/email';
+import { renderQueueSubject } from '@/lib/email/renderQueueSubject';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.
@@ -76,8 +77,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch email queue' }, { status: 500 });
     }
 
+    // Render the subject column on the fly so the list shows the
+    // recipient-facing subject even for rows enqueued before we
+    // started writing the rendered text back at queue time. Cheap:
+    // simple `{{var}}` substitution per row, no DB hits, no Handlebars
+    // unless the subject actually contains placeholders. Tenant name
+    // is fetched once and reused as `organizationName` for all rows.
+    let organizationName = 'Learning Platform';
+    if ((emails?.length ?? 0) > 0) {
+      const { data: tenantRow } = await supabase
+        .from('tenants')
+        .select('name')
+        .eq('id', tenantId)
+        .single();
+      if (tenantRow?.name) organizationName = tenantRow.name;
+    }
+    const renderedEmails = (emails ?? []).map((e) => {
+      const tvars = (e.template_variables ?? {}) as Record<string, any>;
+      const vars: Record<string, any> = {
+        organizationName,
+        userName: e.to_name || e.to_email || 'there',
+        language: e.language_code || 'en',
+        ...tvars,
+      };
+      return {
+        ...e,
+        subject: renderQueueSubject(e.subject || '', vars),
+      };
+    });
+
     return NextResponse.json({
-      emails: emails || [],
+      emails: renderedEmails,
       total: count || 0,
       page,
       per_page: perPage,

@@ -33,6 +33,7 @@ import {
   Award,
   Building2,
   Bell,
+  Activity,
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react';
@@ -259,6 +260,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     'integrations': Plug,
     'navigation': Navigation,
     'emails': Mail,
+    'crons': Activity,
     'payments': CreditCard,
     'audit': Shield,
     'notifications': Bell,
@@ -287,6 +289,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     'integrations': 'admin.nav.integrations',
     'navigation': 'admin.nav.navigation',
     'emails': 'admin.nav.emails',
+    'crons': 'admin.nav.crons',
     'payments': 'admin.nav.payments',
     'audit': 'admin.nav.audit',
     'notifications': 'admin.nav.notifications',
@@ -332,6 +335,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.integrations', icon: Plug, href: '/admin/config/integrations' },
         { key: 'admin.nav.navigation', icon: Navigation, href: '/admin/config/navigation' },
         { key: 'admin.nav.emails', icon: Mail, href: '/admin/emails' },
+        { key: 'admin.nav.crons', icon: Activity, href: '/admin/crons' },
       ],
     },
     {

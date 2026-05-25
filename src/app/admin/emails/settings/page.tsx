@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-import { Save, Plus, X } from 'lucide-react';
+import { Save, Plus, X, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 interface CategoryConfig {
@@ -286,8 +286,15 @@ export default function EmailSettingsPage() {
   return (
     <AdminLayout>
       <div className="max-w-4xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div>
+        {/* Header — back link inline with title block */}
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <Link href="/admin/emails">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className={`h-4 w-4 ${direction === 'rtl' ? 'ml-2 rotate-180' : 'mr-2'}`} />
+              <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
+            </Button>
+          </Link>
+          <div className="min-w-0">
           <h1 suppressHydrationWarning style={{
             fontSize: isMobile ? 'var(--font-size-2xl)' : 'var(--font-size-3xl)',
             fontFamily: 'var(--font-family-heading)',
@@ -302,6 +309,7 @@ export default function EmailSettingsPage() {
           }}>
             {t('emails.settings.description', 'Configure email template categories and badge colors')}
           </p>
+          </div>
         </div>
 
         {/* Email Branding ─ drives the master email layout */}

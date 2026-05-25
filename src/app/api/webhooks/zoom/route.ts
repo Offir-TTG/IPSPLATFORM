@@ -309,51 +309,81 @@ async function handleRecordingCompleted(payload: any) {
   try {
     const { processTriggerEvent } = await import('@/lib/email/triggerEngine');
 
-    // Get full lesson details
-    const { data: fullLesson } = await supabase
+    // Get full lesson details.
+    //
+    // CRITICAL: `lessons` has NO `program_id` column and NO `programs`
+    // relation — listing them in the select caused PostgREST to return
+    // `data: null` + an error. Since the surrounding code never
+    // checked the error and just read `data`, `fullLesson` was always
+    // null, the entire `if (fullLesson) { ... }` recipient-resolution
+    // block was skipped, and ZERO `recording.ready` emails were ever
+    // queued (recording-completed webhook fired, but no email went
+    // out). Use only the columns/relations that actually exist.
+    const { data: fullLesson, error: fullLessonError } = await supabase
       .from('lessons')
       .select(`
         id,
         title,
         course_id,
-        program_id,
         start_time,
         courses (
-          id,
-          title
-        ),
-        programs (
           id,
           title
         )
       `)
       .eq('id', zoomSession.lesson_id)
       .single();
+    if (fullLessonError) {
+      console.error('[Zoom] Failed to load lesson for trigger:', fullLessonError);
+    }
 
-    // Get enrolled students for this lesson
+    // Get enrolled students for this lesson.
+    //
+    // `enrollments` has NO `course_id` / `program_id` columns — the
+    // relationship goes through `products`:
+    //   enrollments.product_id → products(.course_id | .program_id)
+    // Older code tried `enrollments.eq('course_id', …)` and got zero
+    // rows back, which is why no recording-ready emails ever fired
+    // even when the recording itself saved fine to the user portal.
+    let enrollments: any[] | null = null;
     if (fullLesson) {
-      // Get students based on course or program
-      const enrollmentQuery = supabase
-        .from('enrollments')
-        .select(`
-          user_id,
-          users (
-            email,
-            first_name,
-            last_name,
-            preferred_language
-          )
-        `)
-        .eq('tenant_id', lesson.tenant_id)
-        .eq('status', 'active');
+      // Step 1: products that contain this lesson's course OR program.
+      const productQuery = supabase
+        .from('products')
+        .select('id')
+        .eq('tenant_id', lesson.tenant_id);
 
+      // `lessons` only has `course_id`. `program_id` lived in an older
+      // schema and was removed; the previous branch on `fullLesson.program_id`
+      // dead code given the lesson-table reality.
       if (fullLesson.course_id) {
-        enrollmentQuery.eq('course_id', fullLesson.course_id);
-      } else if (fullLesson.program_id) {
-        enrollmentQuery.eq('program_id', fullLesson.program_id);
+        productQuery.eq('course_id', fullLesson.course_id);
+      } else {
+        // Nothing to scope to — bail.
+        return;
       }
 
-      const { data: enrollments } = await enrollmentQuery;
+      const { data: products } = await productQuery;
+      const productIds = (products ?? []).map((p) => p.id);
+
+      // Step 2: active enrollments on those products.
+      if (productIds.length > 0) {
+        const { data: rows } = await supabase
+          .from('enrollments')
+          .select(`
+            user_id,
+            users (
+              email,
+              first_name,
+              last_name,
+              preferred_language
+            )
+          `)
+          .eq('tenant_id', lesson.tenant_id)
+          .eq('status', 'active')
+          .in('product_id', productIds);
+        enrollments = rows;
+      }
 
       // Trigger event for each enrolled student
       if (enrollments && enrollments.length > 0) {
@@ -366,9 +396,7 @@ async function handleRecordingCompleted(payload: any) {
                 lessonId: fullLesson.id,
                 lessonTitle: fullLesson.title,
                 courseId: fullLesson.course_id,
-                programId: fullLesson.program_id,
                 courseName: (fullLesson.courses as any)?.title || '',
-                programName: (fullLesson.programs as any)?.title || '',
                 meetingId: payload.object.id,
                 meetingTopic: payload.object.topic,
                 recordingFiles: payload.object.recording_files,

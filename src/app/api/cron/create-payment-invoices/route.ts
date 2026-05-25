@@ -10,20 +10,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createUpcomingInvoices } from '@/lib/payments/invoiceService';
 import { PAYMENT_CONFIG } from '@/lib/payments/config';
+import { runCron } from '@/lib/cron/withCronLogging';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
-  try {
-    // Verify cron secret for security
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[CRON - Invoice Creation] Unauthorized access attempt');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  // Verify cron secret for security
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.error('[CRON - Invoice Creation] Unauthorized access attempt');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    console.log('[CRON - Invoice Creation] Starting invoice generation...');
+  return runCron('create-payment-invoices', async ({ dryRun }) => {
+    console.log('[CRON - Invoice Creation] Starting invoice generation...', { dryRun });
+
+    if (dryRun) {
+      // No safe read-only probe for upcoming invoices (creating a Stripe
+      // invoice is itself the side-effect). Skip entirely and log.
+      return {
+        success: true,
+        dry_run: true,
+        created: 0,
+        failed: 0,
+        message: 'CRON_DRY_RUN enabled; skipped invoice creation',
+      };
+    }
 
     // Create invoices for payments due in next 30 days
     const results = await createUpcomingInvoices(PAYMENT_CONFIG.invoiceCreationWindow);
@@ -34,22 +47,12 @@ export async function GET(request: NextRequest) {
       totalErrors: results.errors.length,
     });
 
-    return NextResponse.json({
+    return {
       success: true,
       created: results.created,
       failed: results.failed,
       errors: results.errors,
       message: `Created ${results.created} invoices, ${results.failed} failed`,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('[CRON - Invoice Creation] Unexpected error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
+    };
+  });
 }

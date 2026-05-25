@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendEmail } from '@/lib/email/send';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
+import { runCron } from '@/lib/cron/withCronLogging';
 import Handlebars from 'handlebars';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
@@ -40,15 +41,15 @@ Handlebars.registerHelper('formatTime', function(date: string | Date, language: 
 });
 
 export async function GET(request: NextRequest) {
-  try {
-    // Verify cron secret
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${CRON_SECRET}`) {
-      console.error('[Email Queue Cron] Unauthorized access attempt');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  // Verify cron secret
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${CRON_SECRET}`) {
+    console.error('[Email Queue Cron] Unauthorized access attempt');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    console.log('[Email Queue Cron] Starting email queue processing...');
+  return runCron('process-email-queue', async ({ dryRun }) => {
+    console.log('[Email Queue Cron] Starting email queue processing...', { dryRun });
 
     const supabase = createAdminClient();
     const now = new Date();
@@ -64,20 +65,28 @@ export async function GET(request: NextRequest) {
       .limit(BATCH_SIZE);
 
     if (fetchError) {
-      console.error('[Email Queue Cron] Error fetching emails:', fetchError);
-      return NextResponse.json({ error: 'Failed to fetch emails' }, { status: 500 });
+      throw new Error(`Failed to fetch emails: ${fetchError.message}`);
     }
 
     if (!pendingEmails || pendingEmails.length === 0) {
       console.log('[Email Queue Cron] No pending emails to process');
-      return NextResponse.json({
+      return {
         success: true,
         message: 'No pending emails',
-        processed: 0
-      });
+        processed: 0,
+      };
     }
 
     console.log(`[Email Queue Cron] Found ${pendingEmails.length} pending emails to process`);
+
+    if (dryRun) {
+      return {
+        success: true,
+        dry_run: true,
+        would_send: pendingEmails.length,
+        message: `CRON_DRY_RUN enabled; would send ${pendingEmails.length} emails`,
+      };
+    }
 
     let successCount = 0;
     let failCount = 0;
@@ -192,21 +201,10 @@ export async function GET(request: NextRequest) {
       found: pendingEmails.length,
       sent: successCount,
       failed: failCount,
-      completedAt: new Date().toISOString(),
     };
 
     console.log('[Email Queue Cron] Summary:', summary);
 
-    return NextResponse.json(summary);
-
-  } catch (error: any) {
-    console.error('[Email Queue Cron] Fatal error:', error);
-    return NextResponse.json(
-      {
-        error: error.message || 'Internal server error',
-        success: false
-      },
-      { status: 500 }
-    );
-  }
+    return summary;
+  });
 }

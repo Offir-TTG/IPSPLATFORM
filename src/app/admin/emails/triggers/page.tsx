@@ -8,7 +8,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Plus, Power, PowerOff, Pencil, Trash2, TestTube, X, Check } from 'lucide-react';
+import { Loader2, Plus, Power, PowerOff, Pencil, Trash2, TestTube, X, Check, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import { EmailTrigger } from '@/types/email';
 import { CreateTriggerDialog } from '@/components/email/CreateTriggerDialog';
 import { TestTriggerDialog } from '@/components/email/TestTriggerDialog';
@@ -305,9 +306,16 @@ export default function TriggersPage() {
   return (
     <AdminLayout>
       <div className="max-w-7xl p-4 md:p-6 space-y-6" dir={direction}>
-        {/* Header */}
+        {/* Header — back link inline with title block */}
         <div className={`flex ${isMobile ? 'flex-col gap-4' : 'flex-row items-center justify-between'}`}>
-          <div>
+          <div className="flex items-center gap-3 flex-wrap min-w-0">
+            <Link href="/admin/emails">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className={`h-4 w-4 ${direction === 'rtl' ? 'ml-2 rotate-180' : 'mr-2'}`} />
+                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
+              </Button>
+            </Link>
+            <div className="min-w-0">
             <h1 suppressHydrationWarning style={{
               fontSize: isMobile ? 'var(--font-size-2xl)' : 'var(--font-size-3xl)',
               fontFamily: 'var(--font-family-heading)',
@@ -322,6 +330,7 @@ export default function TriggersPage() {
             }}>
               {t('emails.triggers.description', 'Automatically send emails when events occur')}
             </p>
+            </div>
           </div>
           <Button onClick={() => setCreateDialogOpen(true)}>
             <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />

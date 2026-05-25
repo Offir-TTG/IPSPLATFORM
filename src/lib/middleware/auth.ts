@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 
-type UserRole = 'admin' | 'instructor' | 'student';
+// `super_admin` was missing from this union — `users.role` does carry
+// that value (see UserLayout.tsx's redirect check). Without it,
+// withAuth's role-match fails for super-admin users and returns 403
+// "Insufficient permissions" even on routes that should let them in.
+type UserRole = 'admin' | 'super_admin' | 'instructor' | 'student';
 
 interface AuthUser {
   id: string;

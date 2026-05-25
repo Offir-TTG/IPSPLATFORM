@@ -116,24 +116,26 @@ export function StatsCards({ stats }: StatsCardsProps) {
               animationDelay: `${index * 100}ms`,
             }}
           >
-            <div className="flex items-start justify-between mb-3 sm:mb-4">
-              <div className={`inline-flex rounded-xl ${card.bg} p-3 group-hover:scale-110 transition-transform duration-300`}>
+            {/* Mobile: icon + content side-by-side so the card fills horizontally
+                instead of clumping to the start edge. md+: original stacked layout. */}
+            <div className="flex md:block items-center gap-4 md:gap-0 mb-3 sm:mb-4">
+              <div className={`inline-flex shrink-0 rounded-xl ${card.bg} p-3 group-hover:scale-110 transition-transform duration-300 md:mb-3 lg:mb-4`}>
                 <Icon className={`h-6 w-6 ${card.color}`} />
               </div>
-            </div>
 
-            <div className="min-w-0">
-              <p className="text-2xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 group-hover:scale-105 transition-transform break-words">
-                {card.value}
-              </p>
-              {card.subtitle && (
-                <p className="text-xs text-muted-foreground mb-1 break-words">
-                  {card.subtitle}
+              <div className="min-w-0 flex-1">
+                <p className="text-2xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 group-hover:scale-105 transition-transform break-words">
+                  {card.value}
                 </p>
-              )}
-              <p className="text-sm text-muted-foreground font-medium break-words">
-                {card.title}
-              </p>
+                {card.subtitle && (
+                  <p className="text-xs text-muted-foreground mb-1 break-words">
+                    {card.subtitle}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground font-medium break-words">
+                  {card.title}
+                </p>
+              </div>
             </div>
 
             {/* Mini sparkline visualization */}

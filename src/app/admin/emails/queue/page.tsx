@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -24,8 +25,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ResponsiveTable } from '@/components/ui/responsive-table';
-import { Mail, Search, RefreshCw, Loader2, Eye, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Mail, Search, RefreshCw, Loader2, Eye, AlertCircle, CheckCircle, Clock, XCircle, ArrowLeft, Ban } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import Link from 'next/link';
+import React, { useEffect, useState } from 'react';
 import type { EmailQueueItem, EmailStatus, EmailPriority } from '@/types/email';
 import { formatDistanceToNow } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -44,7 +57,137 @@ export default function EmailQueuePage() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [selectedEmail, setSelectedEmail] = useState<EmailQueueItem | null>(null);
+  // Rendered preview fetched server-side via the templateEngine
+  // (same Handlebars helpers as the send pipeline). Stored separately
+  // from `selectedEmail` because `email_queue.body_html` is the raw
+  // template with `{{placeholders}}` — useless for "what does the
+  // recipient see".
+  const [renderedPreview, setRenderedPreview] = useState<{ subject: string; bodyHtml: string; bodyText: string; variables?: Record<string, any>; error?: string | null } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [cancelling, setCancelling] = useState<EmailQueueItem | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+
+  // Whenever the preview modal opens, hit the render endpoint so the
+  // iframe shows the recipient-facing copy with variables filled in.
+  useEffect(() => {
+    if (!selectedEmail) {
+      setRenderedPreview(null);
+      return;
+    }
+    let cancelled = false;
+    setPreviewLoading(true);
+    setRenderedPreview(null);
+    fetch(`/api/admin/emails/queue/${selectedEmail.id}/preview`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((data) => {
+        if (cancelled) return;
+        setRenderedPreview({
+          subject: data.subject || '',
+          bodyHtml: data.bodyHtml || '',
+          bodyText: data.bodyText || '',
+          variables: data.variables || {},
+          error: data.error,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Fall back to whatever is on the row so the modal still
+        // shows something even if rendering failed.
+        setRenderedPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEmail]);
+  // Multi-select: id set of pending rows the admin has ticked. Only
+  // pending rows are selectable — other statuses can't be cancelled
+  // so showing them as selectable would be misleading.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const pageSize = 20;
+
+  // Drop selection whenever the underlying list changes (page change,
+  // filter, refresh) — keeping stale ids around would let the bulk
+  // call act on rows the admin can no longer see.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [emails]);
+
+  const pendingIdsOnPage = emails.filter((e) => e.status === 'pending').map((e) => e.id);
+  const allPendingSelected =
+    pendingIdsOnPage.length > 0 && pendingIdsOnPage.every((id) => selectedIds.has(id));
+
+  const toggleRow = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllPending = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of pendingIdsOnPage) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkCancel = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await fetch('/api/admin/emails/queue/bulk-cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast.error(data?.error || t('emails.queue.bulkCancelFailed', 'Failed to cancel selected emails'));
+        return;
+      }
+      toast.success(
+        t('emails.queue.bulkCancelled', '{{count}} emails cancelled')
+          .replace('{{count}}', String(data?.cancelled ?? 0)),
+      );
+      setSelectedIds(new Set());
+      setBulkConfirmOpen(false);
+      fetchEmails();
+    } catch {
+      toast.error(t('emails.queue.bulkCancelFailed', 'Failed to cancel selected emails'));
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleCancelEmail = async () => {
+    if (!cancelling) return;
+    setCancelLoading(true);
+    try {
+      const res = await fetch(`/api/admin/emails/queue/${cancelling.id}/cancel`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast.error(data?.error || t('emails.queue.cancelFailed', 'Failed to cancel email'));
+        return;
+      }
+      toast.success(t('emails.queue.cancelled', 'Email cancelled'));
+      setCancelling(null);
+      fetchEmails();
+    } catch {
+      toast.error(t('emails.queue.cancelFailed', 'Failed to cancel email'));
+    } finally {
+      setCancelLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -120,13 +263,34 @@ export default function EmailQueuePage() {
     );
   };
 
+  // Translate the handful of `error_message` strings WE write to
+  // email_queue (cancellation reasons). External SMTP errors pass
+  // through verbatim since we can't predict their content.
+  const translateErrorMessage = (msg: string): string => {
+    const map: Record<string, string> = {
+      'Cancelled by admin': t('emails.queue.errorMessage.cancelledByAdmin', 'Cancelled by admin'),
+      'Cancelled by admin (bulk)': t('emails.queue.errorMessage.cancelledByAdminBulk', 'Cancelled by admin (bulk)'),
+      'Schedule paused': t('emails.queue.errorMessage.schedulePaused', 'Schedule paused'),
+      'Schedule stopped': t('emails.queue.errorMessage.scheduleStopped', 'Schedule stopped'),
+      'Schedule deleted': t('emails.queue.errorMessage.scheduleDeleted', 'Schedule deleted'),
+    };
+    return map[msg] ?? msg;
+  };
+
   const totalPages = Math.ceil(totalCount / pageSize);
 
   return (
     <AdminLayout>
       <div className="max-w-7xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div>
+        {/* Header — back link inline with title block */}
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <Link href="/admin/emails">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className={`h-4 w-4 ${direction === 'rtl' ? 'ml-2 rotate-180' : 'mr-2'}`} />
+              <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
+            </Button>
+          </Link>
+          <div className="min-w-0">
           <h1 suppressHydrationWarning style={{
             fontSize: isMobile ? 'var(--font-size-2xl)' : 'var(--font-size-3xl)',
             fontFamily: 'var(--font-family-heading)',
@@ -141,6 +305,7 @@ export default function EmailQueuePage() {
           }}>
             {t('emails.queue.description', 'View and manage pending and sent emails')}
           </p>
+          </div>
         </div>
 
         {/* Filters */}
@@ -233,12 +398,51 @@ export default function EmailQueuePage() {
               </div>
             ) : (
               <>
+                {/* Bulk action bar — visible whenever any rows are
+                    selected. The select-all checkbox only toggles
+                    pending rows on the current page; non-pending rows
+                    can't be cancelled so they're never selectable. */}
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center justify-between gap-3 mb-3 p-3 rounded-md border bg-muted/40">
+                    <span className="text-sm font-medium">
+                      {t('emails.queue.selectedCount', '{{count}} selected')
+                        .replace('{{count}}', String(selectedIds.size))}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedIds(new Set())}
+                      >
+                        {t('common.clear', 'Clear')}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setBulkConfirmOpen(true)}
+                      >
+                        <Ban className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                        {t('emails.queue.bulkCancel', 'Cancel selected')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <ResponsiveTable>
                   <ResponsiveTable.Desktop>
                     <div className="overflow-x-auto" dir={direction}>
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead className="w-10">
+                              {pendingIdsOnPage.length > 0 && (
+                                <Checkbox
+                                  checked={allPendingSelected}
+                                  onCheckedChange={(v) => toggleAllPending(!!v)}
+                                  aria-label={t('emails.queue.selectAllPending', 'Select all pending')}
+                                />
+                              )}
+                            </TableHead>
                             <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.recipient', 'Recipient')}</TableHead>
                             <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.subject', 'Subject')}</TableHead>
                             <TableHead className={isRtl ? 'text-right' : 'text-left'}>{t('emails.queue.status', 'Status')}</TableHead>
@@ -251,6 +455,15 @@ export default function EmailQueuePage() {
                         <TableBody>
                           {emails.map((email) => (
                             <TableRow key={email.id}>
+                              <TableCell className="w-10">
+                                {email.status === 'pending' && (
+                                  <Checkbox
+                                    checked={selectedIds.has(email.id)}
+                                    onCheckedChange={(v) => toggleRow(email.id, !!v)}
+                                    aria-label={t('emails.queue.selectRow', 'Select')}
+                                  />
+                                )}
+                              </TableCell>
                               <TableCell className={isRtl ? 'text-right' : 'text-left'}>
                                 <div className="flex flex-col">
                                   <span className="font-medium">{email.to_name || email.to_email}</span>
@@ -269,13 +482,26 @@ export default function EmailQueuePage() {
                                 {email.sent_at ? formatDistanceToNow(new Date(email.sent_at), { addSuffix: true, locale: isRtl ? he : undefined }) : '-'}
                               </TableCell>
                               <TableCell className={isRtl ? 'text-left' : 'text-right'}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setSelectedEmail(email)}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSelectedEmail(email)}
+                                    title={t('emails.queue.preview', 'Preview')}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {email.status === 'pending' && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setCancelling(email)}
+                                      title={t('emails.queue.cancelEmail', 'Cancel send')}
+                                    >
+                                      <Ban className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -289,20 +515,40 @@ export default function EmailQueuePage() {
                     {emails.map((email) => (
                       <div key={email.id} className="rounded-lg border p-3 space-y-2">
                         <div className="flex items-start justify-between gap-2">
+                          {email.status === 'pending' && (
+                            <Checkbox
+                              className="mt-1 shrink-0"
+                              checked={selectedIds.has(email.id)}
+                              onCheckedChange={(v) => toggleRow(email.id, !!v)}
+                              aria-label={t('emails.queue.selectRow', 'Select')}
+                            />
+                          )}
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium truncate">{email.to_name || email.to_email}</p>
                             {email.to_name && (
                               <p className="text-xs text-muted-foreground truncate">{email.to_email}</p>
                             )}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedEmail(email)}
-                            className="shrink-0"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedEmail(email)}
+                              title={t('emails.queue.preview', 'Preview')}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {email.status === 'pending' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setCancelling(email)}
+                                title={t('emails.queue.cancelEmail', 'Cancel send')}
+                              >
+                                <Ban className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm truncate">{email.subject}</p>
                         <div className="flex flex-wrap gap-2">
@@ -364,7 +610,9 @@ export default function EmailQueuePage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle>{selectedEmail.subject}</CardTitle>
+                    <CardTitle dir="auto">
+                      {renderedPreview?.subject || selectedEmail.subject}
+                    </CardTitle>
                     <CardDescription className="mt-2">
                       <div className="space-y-1">
                         <div><strong>{t('emails.queue.to', 'To')}:</strong> {selectedEmail.to_email}</div>
@@ -393,28 +641,185 @@ export default function EmailQueuePage() {
                         <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-destructive">{t('emails.queue.error', 'Error')}</p>
-                          <p className="text-sm text-muted-foreground mt-1">{selectedEmail.error_message}</p>
+                          <p className="text-sm text-muted-foreground mt-1" dir="auto">{translateErrorMessage(selectedEmail.error_message)}</p>
                         </div>
                       </div>
                     </div>
                   )}
 
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">{t('emails.queue.language', 'Language')}:</span>{' '}
+                      <span className="font-medium">
+                        {selectedEmail.language_code
+                          ? t(
+                              `emails.schedules.language.${selectedEmail.language_code}`,
+                              selectedEmail.language_code === 'he' ? 'Hebrew' : 'English',
+                            )
+                          : '—'}
+                      </span>
+                    </div>
+                    {selectedEmail.trigger_type && (
+                      <div>
+                        <span className="text-muted-foreground">{t('emails.queue.trigger', 'Trigger')}:</span>{' '}
+                        <span className="font-medium">
+                          {t(`emails.queue.triggerType.${selectedEmail.trigger_type}`, selectedEmail.trigger_type)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {renderedPreview?.error && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs">
+                      <p className="font-medium text-destructive">
+                        {t('emails.queue.previewError', 'Preview render failed')}
+                      </p>
+                      <p className="text-muted-foreground mt-1 font-mono break-all">{renderedPreview.error}</p>
+                    </div>
+                  )}
+
+                  {renderedPreview?.variables && Object.keys(renderedPreview.variables).length > 0 && (
+                    <details className="rounded-md border bg-muted/30 text-xs">
+                      <summary className="cursor-pointer px-3 py-2 font-medium">
+                        {t('emails.queue.variablesAvailable', 'Variables used to render')} ({Object.keys(renderedPreview.variables).length})
+                      </summary>
+                      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 px-3 pb-3">
+                        {Object.entries(renderedPreview.variables).map(([k, v]) => (
+                          <React.Fragment key={k}>
+                            <dt className="font-mono text-muted-foreground">{k}</dt>
+                            <dd className="break-words" dir="auto">
+                              {v === null || v === undefined || v === '' ? '—' : String(v)}
+                            </dd>
+                          </React.Fragment>
+                        ))}
+                      </dl>
+                    </details>
+                  )}
+
                   <div>
                     <h4 className="font-medium mb-2">{t('emails.queue.html_preview', 'Email Preview')}</h4>
-                    <div className="border rounded-lg p-4 bg-background max-h-96 overflow-y-auto">
-                      <iframe
-                        srcDoc={selectedEmail.body_html}
-                        className="w-full min-h-[300px]"
-                        title="Email Preview"
-                        sandbox="allow-same-origin"
-                      />
-                    </div>
+                    {previewLoading ? (
+                      <div className="border rounded-lg p-8 bg-muted/20 flex items-center justify-center">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : renderedPreview?.bodyHtml && renderedPreview.bodyHtml.trim() !== '' ? (
+                      // Rendered preview: subject + body with all
+                      // {{placeholders}} filled in via the same
+                      // Handlebars engine the send pipeline uses.
+                      <div className="space-y-2">
+                        {renderedPreview.subject && (
+                          <div className="text-sm border rounded-md px-3 py-2 bg-muted/30" dir="auto">
+                            <span className="text-muted-foreground">{t('emails.queue.subject', 'Subject')}:</span>{' '}
+                            <span className="font-medium">{renderedPreview.subject}</span>
+                          </div>
+                        )}
+                        <div className="border rounded-lg bg-background max-h-[480px] overflow-y-auto">
+                          <iframe
+                            srcDoc={renderedPreview.bodyHtml}
+                            className="w-full min-h-[400px] border-0"
+                            title="Email Preview"
+                            sandbox="allow-same-origin"
+                          />
+                        </div>
+                      </div>
+                    ) : renderedPreview?.bodyText && renderedPreview.bodyText.trim() !== '' ? (
+                      <pre className="border rounded-lg p-4 bg-muted/30 max-h-[480px] overflow-auto text-sm whitespace-pre-wrap" dir="auto">
+                        {renderedPreview.bodyText}
+                      </pre>
+                    ) : selectedEmail.body_html && selectedEmail.body_html.trim() !== '' ? (
+                      // Renderer returned nothing — fall back to the
+                      // raw stored body (placeholders intact). Better
+                      // than a blank screen if the render failed.
+                      <div className="border rounded-lg bg-background max-h-[480px] overflow-y-auto">
+                        <iframe
+                          srcDoc={selectedEmail.body_html}
+                          className="w-full min-h-[400px] border-0"
+                          title="Email Preview"
+                          sandbox="allow-same-origin"
+                        />
+                      </div>
+                    ) : selectedEmail.body_text && selectedEmail.body_text.trim() !== '' ? (
+                      <pre className="border rounded-lg p-4 bg-muted/30 max-h-[480px] overflow-auto text-sm whitespace-pre-wrap" dir="auto">
+                        {selectedEmail.body_text}
+                      </pre>
+                    ) : (
+                      // Body wasn't rendered at queue time — show the
+                      // raw template_variables so the admin can see
+                      // what would have been passed to the template.
+                      <div className="border rounded-lg p-4 bg-muted/30 space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          {t(
+                            'emails.queue.noBody',
+                            'No rendered body was stored for this email. Variables below were captured at enqueue time.',
+                          )}
+                        </p>
+                        {selectedEmail.template_variables &&
+                        Object.keys(selectedEmail.template_variables as Record<string, any>).length > 0 ? (
+                          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                            {Object.entries(selectedEmail.template_variables as Record<string, any>).map(([k, v]) => (
+                              <React.Fragment key={k}>
+                                <dt className="font-mono text-muted-foreground">{k}</dt>
+                                <dd className="break-words" dir="auto">
+                                  {v === null || v === undefined || v === '' ? '—' : String(v)}
+                                </dd>
+                              </React.Fragment>
+                            ))}
+                          </dl>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">
+                            {t('emails.queue.noVariables', 'No template variables captured.')}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
             </Card>
           </div>
         )}
+
+        <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('emails.queue.bulkCancel', 'Cancel selected')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(
+                  'emails.queue.bulkCancelConfirm',
+                  'Cancel {{count}} pending emails? They will not be sent. This cannot be undone.',
+                ).replace('{{count}}', String(selectedIds.size))}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel', 'Cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleBulkCancel} disabled={bulkLoading} className="bg-destructive hover:bg-destructive/90">
+                {bulkLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                {t('emails.queue.bulkCancel', 'Cancel selected')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={!!cancelling} onOpenChange={(open) => !open && setCancelling(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('emails.queue.cancelEmail', 'Cancel send')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(
+                  'emails.queue.cancelConfirm',
+                  'This email is still pending. Cancelling marks it as cancelled so it will not be sent. This cannot be undone.',
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel', 'Cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleCancelEmail} disabled={cancelLoading} className="bg-destructive hover:bg-destructive/90">
+                {cancelLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                {t('emails.queue.cancelEmail', 'Cancel send')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AdminLayout>
   );

@@ -275,7 +275,16 @@ export default function CourseDetailPage() {
   async function loadCourse() {
     try {
       setLoading(true);
-      const response = await fetch(`/api/user/courses/${courseId}`, {
+      // Forward `?preview=1` so the API knows this is an admin preview
+      // and bypasses the enrollment check (admins aren't enrolled in
+      // their own courses; without this they'd 403 every time).
+      const isPreview =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('preview') === '1';
+      const apiUrl = isPreview
+        ? `/api/user/courses/${courseId}?preview=1`
+        : `/api/user/courses/${courseId}`;
+      const response = await fetch(apiUrl, {
         credentials: 'include',
       });
 

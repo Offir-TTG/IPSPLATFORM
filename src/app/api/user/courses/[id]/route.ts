@@ -5,6 +5,11 @@ import { withAuth } from '@/lib/middleware/auth';
 export const dynamic = 'force-dynamic';
 
 // GET /api/user/courses/[id] - Get course details with modules, lessons, and progress
+// `withAuth` defaults `allowedRoles = ['admin']` — wrong for this
+// route, which serves any authenticated user looking at their own
+// course. Explicit list of every legitimate caller so students get
+// through, plus admin/super_admin for the Preview button's
+// `?preview=1` bypass below.
 export const GET = withAuth(
   async (_request: NextRequest, user: any, context: { params: Promise<{ id: string }> }) => {
     try {
@@ -12,83 +17,106 @@ export const GET = withAuth(
       const params = await context.params;
       const courseId = params.id;
 
-      console.log('Fetching course details for user:', user.id, 'course:', courseId);
-
-      // Get ALL user enrollments
-      const { data: allEnrollments, error: allEnrollmentsError } = await supabase
-        .from('enrollments')
-        .select(`
-          id,
-          status,
-          enrolled_at,
-          completed_at,
-          expires_at,
-          product_id,
-          products!inner (
-            id,
-            type,
-            course_id,
-            program_id
-          )
-        `)
-        .eq('user_id', user.id)
-        .in('status', ['active', 'completed']);
-
-      if (allEnrollmentsError || !allEnrollments || allEnrollments.length === 0) {
-        console.log('No enrollments found for user');
-        return NextResponse.json(
-          { success: false, error: 'You do not have access to this course' },
-          { status: 403 }
-        );
-      }
-
-      console.log('Found enrollments:', allEnrollments.length);
-
-      // Check for direct course enrollment
-      let activeEnrollment = null;
-      for (const enr of allEnrollments) {
-        const product = Array.isArray(enr.products) ? enr.products[0] : enr.products;
-        if (product && product.type === 'course' && product.course_id === courseId) {
-          activeEnrollment = enr;
-          console.log('Found direct course enrollment:', enr.id);
-          break;
+      // Admin-preview bypass — when an admin opens the course editor's
+      // Preview button (which appends `?preview=1`), let them view the
+      // student page without an enrollment. They obviously aren't
+      // enrolled in their own course, so we'd otherwise 403 every time.
+      // Progress / attendance / etc. simply come back empty in this
+      // mode since there's no enrollment_id to scope them by.
+      const url = new URL(_request.url);
+      const isPreviewParam = url.searchParams.get('preview') === '1';
+      let isAdminPreview = false;
+      if (isPreviewParam) {
+        const { data: callerRow } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (callerRow?.role === 'admin' || callerRow?.role === 'super_admin') {
+          isAdminPreview = true;
         }
       }
 
-      // If no direct enrollment, check program enrollments
-      if (!activeEnrollment) {
-        console.log('No direct enrollment, checking program enrollments');
+      console.log('Fetching course details for user:', user.id, 'course:', courseId, { isAdminPreview });
 
+      let activeEnrollment: any = null;
+
+      if (!isAdminPreview) {
+        // Get ALL user enrollments
+        const { data: allEnrollments, error: allEnrollmentsError } = await supabase
+          .from('enrollments')
+          .select(`
+            id,
+            status,
+            enrolled_at,
+            completed_at,
+            expires_at,
+            product_id,
+            products!inner (
+              id,
+              type,
+              course_id,
+              program_id
+            )
+          `)
+          .eq('user_id', user.id)
+          .in('status', ['active', 'completed']);
+
+        if (allEnrollmentsError || !allEnrollments || allEnrollments.length === 0) {
+          console.log('No enrollments found for user');
+          return NextResponse.json(
+            { success: false, error: 'You do not have access to this course' },
+            { status: 403 }
+          );
+        }
+
+        console.log('Found enrollments:', allEnrollments.length);
+
+        // Check for direct course enrollment
         for (const enr of allEnrollments) {
           const product = Array.isArray(enr.products) ? enr.products[0] : enr.products;
+          if (product && product.type === 'course' && product.course_id === courseId) {
+            activeEnrollment = enr;
+            console.log('Found direct course enrollment:', enr.id);
+            break;
+          }
+        }
 
-          if (product && product.type === 'program' && product.program_id) {
-            // Check if this program includes the course
-            const { data: programCourseLink } = await supabase
-              .from('program_courses')
-              .select('course_id')
-              .eq('program_id', product.program_id)
-              .eq('course_id', courseId)
-              .maybeSingle();
+        // If no direct enrollment, check program enrollments
+        if (!activeEnrollment) {
+          console.log('No direct enrollment, checking program enrollments');
 
-            if (programCourseLink) {
-              activeEnrollment = enr;
-              console.log('Found program enrollment with access:', enr.id);
-              break;
+          for (const enr of allEnrollments) {
+            const product = Array.isArray(enr.products) ? enr.products[0] : enr.products;
+
+            if (product && product.type === 'program' && product.program_id) {
+              // Check if this program includes the course
+              const { data: programCourseLink } = await supabase
+                .from('program_courses')
+                .select('course_id')
+                .eq('program_id', product.program_id)
+                .eq('course_id', courseId)
+                .maybeSingle();
+
+              if (programCourseLink) {
+                activeEnrollment = enr;
+                console.log('Found program enrollment with access:', enr.id);
+                break;
+              }
             }
           }
         }
+
+        if (!activeEnrollment) {
+          console.log('No enrollment found with access to course');
+          return NextResponse.json(
+            { success: false, error: 'You do not have access to this course' },
+            { status: 403 }
+          );
+        }
       }
 
-      if (!activeEnrollment) {
-        console.log('No enrollment found with access to course');
-        return NextResponse.json(
-          { success: false, error: 'You do not have access to this course' },
-          { status: 403 }
-        );
-      }
-
-      const enrollmentId = activeEnrollment.id;
+      const enrollmentId: string | null = activeEnrollment?.id ?? null;
 
       // Get tenant ID for payment access check
       const { data: tenantUser } = await supabase
@@ -104,10 +132,14 @@ export const GET = withAuth(
         );
       }
 
-      // Check payment-based course access
-      const { requireCourseAccess } = await import('@/lib/payments/accessControl');
-      const accessDenied = await requireCourseAccess(user.id, courseId, tenantUser.tenant_id);
-      if (accessDenied) return accessDenied;
+      // Check payment-based course access. Skip in admin-preview mode —
+      // admins haven't paid for their own course, so this would 402
+      // every time and block the editor's Preview button.
+      if (!isAdminPreview) {
+        const { requireCourseAccess } = await import('@/lib/payments/accessControl');
+        const accessDenied = await requireCourseAccess(user.id, courseId, tenantUser.tenant_id);
+        if (accessDenied) return accessDenied;
+      }
 
       // Fetch course details
       const { data: course, error: courseError } = await supabase
@@ -241,13 +273,17 @@ export const GET = withAuth(
             }) || []
         })) || [];
 
-      // Fetch user progress for this enrollment
-      // Use admin client to bypass RLS and avoid tenant config parameter issues
-      const { data: allProgressData } = await adminClient
-        .from('user_progress')
-        .select('lesson_id, status, progress_percentage, completed_at, last_accessed_at')
-        .eq('user_id', user.id)
-        .eq('enrollment_id', enrollmentId);
+      // Fetch user progress for this enrollment. Skip entirely in
+      // admin-preview mode (no enrollment_id to scope by) — progress
+      // is per-student, so an admin viewing the course sees no
+      // completed lessons (which is correct for a preview).
+      const { data: allProgressData } = enrollmentId
+        ? await adminClient
+            .from('user_progress')
+            .select('lesson_id, status, progress_percentage, completed_at, last_accessed_at')
+            .eq('user_id', user.id)
+            .eq('enrollment_id', enrollmentId)
+        : { data: [] as any[] };
 
       // Get all lesson IDs for THIS course only
       const courseLessonIds = processedModules.flatMap(module =>
@@ -299,12 +335,36 @@ export const GET = withAuth(
         .order('category', { ascending: true })
         .order('title', { ascending: true });
 
-      // Count enrolled students for this course
-      const { count: enrolledStudents } = await supabase
-        .from('enrollments')
-        .select('id', { count: 'exact', head: true })
-        .eq('product_id', activeEnrollment.product_id)
-        .in('status', ['active', 'completed']);
+      // Count enrolled students for this course. In admin-preview
+      // mode there's no `activeEnrollment` to read product_id from —
+      // fall back to looking up products by course_id and counting
+      // enrollments across all of them.
+      let enrolledStudents = 0;
+      if (activeEnrollment?.product_id) {
+        const { count } = await supabase
+          .from('enrollments')
+          .select('id', { count: 'exact', head: true })
+          .eq('product_id', activeEnrollment.product_id)
+          .in('status', ['active', 'completed']);
+        enrolledStudents = count ?? 0;
+      } else {
+        // Admin preview: count students across every product tied to
+        // this course so the displayed number still makes sense.
+        const { data: courseProducts } = await supabase
+          .from('products')
+          .select('id')
+          .eq('course_id', courseId)
+          .eq('type', 'course');
+        const productIds = (courseProducts ?? []).map((p) => p.id);
+        if (productIds.length > 0) {
+          const { count } = await supabase
+            .from('enrollments')
+            .select('id', { count: 'exact', head: true })
+            .in('product_id', productIds)
+            .in('status', ['active', 'completed']);
+          enrolledStudents = count ?? 0;
+        }
+      }
 
       // Calculate total topics and study time
       const totalTopics = processedModules.reduce(
@@ -403,5 +463,8 @@ export const GET = withAuth(
       );
     }
   },
-  ['student', 'instructor']
+  // 'admin' / 'super_admin' added so the course-editor Preview button
+  // (which calls this endpoint with `?preview=1` and bypasses the
+  // enrollment check in the handler) actually gets past withAuth.
+  ['student', 'instructor', 'admin', 'super_admin']
 );

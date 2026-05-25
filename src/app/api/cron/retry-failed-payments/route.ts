@@ -11,23 +11,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { createScheduledInvoice } from '@/lib/payments/invoiceService';
 import { PAYMENT_CONFIG } from '@/lib/payments/config';
+import { runCron } from '@/lib/cron/withCronLogging';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
-  try {
-    // Verify cron secret for security
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[CRON - Payment Retry] Unauthorized access attempt');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  // Verify cron secret for security
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.error('[CRON - Payment Retry] Unauthorized access attempt');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
+  return runCron('retry-failed-payments', async ({ dryRun }) => {
     const supabase = createAdminClient();
     const now = new Date().toISOString();
 
-    console.log('[CRON - Payment Retry] Checking for payments to retry...');
+    console.log('[CRON - Payment Retry] Checking for payments to retry...', { dryRun });
 
     // Find schedules ready for retry
     const { data: retrySchedules, error: queryError } = await supabase
@@ -39,25 +40,29 @@ export async function GET(request: NextRequest) {
       .lt('retry_count', PAYMENT_CONFIG.maxRetries);
 
     if (queryError) {
-      console.error('[CRON - Payment Retry] Query error:', queryError);
-      return NextResponse.json(
-        { error: 'Database query failed', details: queryError.message },
-        { status: 500 }
-      );
+      throw new Error(`Database query failed: ${queryError.message}`);
     }
 
     if (!retrySchedules || retrySchedules.length === 0) {
       console.log('[CRON - Payment Retry] No payments to retry');
-      return NextResponse.json({
+      return {
         success: true,
         retried: 0,
         failed: 0,
         message: 'No payments to retry',
-        timestamp: new Date().toISOString(),
-      });
+      };
     }
 
     console.log(`[CRON - Payment Retry] Found ${retrySchedules.length} payments to retry`);
+
+    if (dryRun) {
+      return {
+        success: true,
+        dry_run: true,
+        would_retry: retrySchedules.length,
+        message: `CRON_DRY_RUN enabled; would retry ${retrySchedules.length} schedules`,
+      };
+    }
 
     let retried = 0;
     const errors: string[] = [];
@@ -89,22 +94,12 @@ export async function GET(request: NextRequest) {
       totalSchedules: retrySchedules.length,
     });
 
-    return NextResponse.json({
+    return {
       success: true,
       retried,
       failed: errors.length,
       errors,
       message: `Retried ${retried} payments, ${errors.length} failed`,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('[CRON - Payment Retry] Unexpected error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
+    };
+  });
 }

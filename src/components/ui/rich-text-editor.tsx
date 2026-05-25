@@ -32,6 +32,9 @@ export function RichTextEditor({
   const editor = useEditor({
     extensions: [StarterKit],
     content: value || '',
+    // Tiptap v3 requires this opt-in to avoid SSR hydration warnings —
+    // the editor renders only on the client.
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: `prose prose-sm max-w-none focus:outline-none min-h-[150px] px-3 py-2 ${className}`,

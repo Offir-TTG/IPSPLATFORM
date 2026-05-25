@@ -68,22 +68,38 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
     return styles[eventType as keyof typeof styles] || styles.READ;
   };
 
+  /**
+   * Strip embedded UUIDs from a string. Audit payloads often embed
+   * `lesson 6be8e601-...` style references that mean nothing to an
+   * admin reading the row — the UUID is technical plumbing. Removing
+   * leaves cleaner sentences ("Student completed lesson"). Same regex
+   * used in the row's Resource column.
+   */
+  const stripUuids = (s: string): string => {
+    if (!s) return s;
+    return s
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  };
+
   const formatDate = (dateString: string) => {
-    // Parse the date - ensure proper timezone handling
+    // Use the user's browser locale so the date/time numerals match the
+    // rest of the platform (previously hardcoded he-IL produced numerals
+    // in a different font from the surrounding table text).
     const date = new Date(dateString);
 
-    // Use Hebrew locale for proper RTL formatting
-    const dateStr = date.toLocaleDateString('he-IL', {
+    const dateStr = date.toLocaleDateString(undefined, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
-    }); // 26/01/2026
+    });
 
-    const timeStr = date.toLocaleTimeString('he-IL', {
+    const timeStr = date.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,  // 24-hour format for Hebrew
-    }); // 15:41
+      hour12: false,
+    });
 
     return { dateStr, timeStr };
   };
@@ -141,25 +157,34 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
       return t(action, action);
     }
 
-    // Handle dotted actions like "profile.updated" or "lesson.created"
+    // Action column shows the VERB only — the resource is already
+    // rendered in the dedicated Resource column to the right, so
+    // synthesizing "Updated Lesson progress" here led to the resource
+    // appearing twice (once in Hebrew under Action, once in English
+    // under Resource).
+    //
+    // For dotted actions like "lesson_progress.updated", the second
+    // half is the verb.
     if (action.includes('.')) {
-      const [resourcePart, actionPart] = action.split('.');
-
-      // Try to translate action and resource separately
-      const actionKey = `audit.action.${actionPart}`;
-      const resourceKey = `audit.resource.${resourcePart}`;
-
-      const actionTranslated = t(actionKey, actionPart.charAt(0).toUpperCase() + actionPart.slice(1));
-      const resourceTranslated = t(resourceKey, resourcePart.charAt(0).toUpperCase() + resourcePart.slice(1));
-
-      return `${actionTranslated} ${resourceTranslated}`;
+      const [, actionPart] = action.split('.');
+      return t(
+        `audit.action.${actionPart}`,
+        actionPart.charAt(0).toUpperCase() + actionPart.slice(1),
+      );
     }
 
-    // Normalize action names for better readability
+    // Free-text action: prefer the structured event_type if present so
+    // we still get a translated verb. Fall back to title-casing the raw
+    // action.
+    if (event?.event_type) {
+      return t(
+        `audit.eventType.${event.event_type}`,
+        event.event_type.charAt(0) + event.event_type.slice(1).toLowerCase(),
+      );
+    }
+
+    // Last-resort fallback: title-case the raw action.
     return action
-      .replace(/^Updated\s+/i, 'Updated ')
-      .replace(/^Created\s+/i, 'Created ')
-      .replace(/^Deleted\s+/i, 'Deleted ')
       .replace(/_/g, ' ')
       .split(' ')
       .map((word, index) =>
@@ -244,8 +269,8 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   };
 
   const renderValueDiff = (oldVal: any, newVal: any, field: string) => {
-    const oldStr = formatValue(oldVal);
-    const newStr = formatValue(newVal);
+    const oldStr = stripUuids(formatValue(oldVal));
+    const newStr = stripUuids(formatValue(newVal));
 
     // If values are the same, don't show diff
     if (oldStr === newStr) {
@@ -466,11 +491,15 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                   }}
                   onClick={() => toggleExpand(event.id)}
                 >
-                  {/* Time */}
+                  {/* Time — primary font (was mono, which rendered the
+                      numerals in SF Mono and looked out of place next to
+                      the Heebo body text). `tabular-nums` keeps the
+                      column edges aligned without the mono switch. */}
                   <td style={{ padding: '0.625rem 0.75rem', verticalAlign: 'middle', minWidth: '180px' }}>
                     <div style={{
-                      fontFamily: 'var(--font-family-mono)',
+                      fontFamily: 'var(--font-family-primary)',
                       fontSize: 'var(--font-size-xs)',
+                      fontVariantNumeric: 'tabular-nums',
                       whiteSpace: 'nowrap'
                     }}>
                       <div style={{
@@ -538,19 +567,29 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                     }}>
                       {formatResourceType(event.resource_type)}
                     </div>
-                    {event.resource_name && (
-                      <div style={{
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'hsl(var(--text-muted))',
-                        fontFamily: 'var(--font-family-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: '150px'
-                      }}>
-                        {event.resource_name}
-                      </div>
-                    )}
+                    {event.resource_name && (() => {
+                      // Strip embedded UUIDs from auto-generated names like
+                      // "Lesson 6be8...3-413665219376 Progress" — they add
+                      // visual noise without information value.
+                      const cleaned = event.resource_name
+                        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                      if (!cleaned) return null;
+                      return (
+                        <div style={{
+                          fontSize: 'var(--font-size-xs)',
+                          color: 'hsl(var(--text-muted))',
+                          fontFamily: 'var(--font-family-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '150px'
+                        }}>
+                          {cleaned}
+                        </div>
+                      );
+                    })()}
                   </td>
 
                   {/* Type Badge */}
@@ -616,6 +655,69 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                       backgroundColor: 'hsl(var(--muted) / 0.2)',
                       borderBottom: index < events.length - 1 ? '1px solid hsl(var(--border))' : 'none'
                     }}>
+                      {/* Drill-down shows ONLY what changed — never the
+                          raw `description` field (which is sometimes a
+                          JSON blob like
+                          `{"resourceType":"profile","fields":["timezone"],...}`
+                          and sometimes contains UUIDs like "Student
+                          completed lesson 6be8..."). Both are useless
+                          to a non-technical admin.
+
+                          UPDATE renders the before/after diff block
+                          below; CREATE/DELETE renders the payload as
+                          plain "label: value" lines. All other event
+                          types (LOGIN, READ, etc.) have nothing
+                          structured to show beyond the action +
+                          resource already on the row, so the panel
+                          stays empty for them. */}
+
+                      {/* CREATE / DELETE — render the row's payload */}
+                      {(event.event_type === 'CREATE' || event.event_type === 'DELETE') && (() => {
+                        const source = event.event_type === 'CREATE'
+                          ? (event.new_values ?? event.metadata?.changes)
+                          : (event.old_values ?? event.metadata?.changes);
+                        if (!source || typeof source !== 'object') return null;
+                        // Skip plumbing fields that aren't business-meaningful.
+                        const SKIP = new Set([
+                          'id', 'tenant_id', 'user_id', 'created_at', 'updated_at',
+                          'deleted_at', 'created_by', 'updated_by',
+                        ]);
+                        const entries = Object.entries(source).filter(
+                          ([k, v]) =>
+                            !SKIP.has(k) &&
+                            v !== null &&
+                            v !== undefined &&
+                            !(typeof v === 'string' && v === ''),
+                        );
+                        if (entries.length === 0) return null;
+                        return (
+                          <div className="mb-4">
+                            <div style={{
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)',
+                              color: 'hsl(var(--text-muted))',
+                              fontFamily: 'var(--font-family-primary)',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                              marginBottom: '0.5rem'
+                            }}>
+                              {event.event_type === 'CREATE'
+                                ? t('admin.audit.details.created', 'What was created')
+                                : t('admin.audit.details.deleted', 'What was deleted')}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {entries.map(([k, v]) => (
+                                <FactRow
+                                  key={k}
+                                  label={formatFieldName(k)}
+                                  value={stripUuids(formatValue(v))}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Exact Changes */}
                       {event.event_type === 'UPDATE' && (() => {
                         // Check for changes in either format:
@@ -712,6 +814,34 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Compact label/value pair for the audit-row drill-down. Used for IDs,
+ * IP addresses, session info, and stray metadata entries that don't
+ * warrant the full before/after diff treatment.
+ */
+function FactRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 'var(--font-size-xs)',
+        color: 'hsl(var(--text-muted))',
+        fontFamily: 'var(--font-family-primary)',
+        marginBottom: '0.125rem'
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 'var(--font-size-sm)',
+        fontFamily: 'var(--font-family-primary)',
+        color: 'hsl(var(--text-body))',
+        wordBreak: 'break-all'
+      }}>
+        {value}
       </div>
     </div>
   );

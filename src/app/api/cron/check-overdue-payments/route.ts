@@ -10,20 +10,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { PAYMENT_CONFIG } from '@/lib/payments/config';
+import { runCron } from '@/lib/cron/withCronLogging';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
-  try {
-    // Verify cron secret for security
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[CRON - Overdue Check] Unauthorized access attempt');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  // Verify cron secret for security
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.error('[CRON - Overdue Check] Unauthorized access attempt');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    console.log('[CRON - Overdue Check] Starting overdue payment check...');
+  return runCron('check-overdue-payments', async ({ dryRun }) => {
+    console.log('[CRON - Overdue Check] Starting overdue payment check...', { dryRun });
 
     const supabase = createAdminClient();
     const GRACE_PERIOD_DAYS = PAYMENT_CONFIG.gracePeriodDays;
@@ -43,20 +44,16 @@ export async function GET(request: NextRequest) {
       .or(`original_due_date.lt.${gracePeriodDate.toISOString()},scheduled_date.lt.${gracePeriodDate.toISOString()}`);
 
     if (scheduleError) {
-      console.error('[CRON - Overdue Check] Error querying schedules:', scheduleError);
-      return NextResponse.json(
-        { error: 'Query failed', details: scheduleError.message },
-        { status: 500 }
-      );
+      throw new Error(`Query failed: ${scheduleError.message}`);
     }
 
     if (!overdueSchedules || overdueSchedules.length === 0) {
       console.log('[CRON - Overdue Check] No overdue payments found');
-      return NextResponse.json({
+      return {
+        success: true,
         suspended: 0,
         message: 'No overdue payments',
-        timestamp: new Date().toISOString(),
-      });
+      };
     }
 
     console.log(`[CRON - Overdue Check] Found ${overdueSchedules.length} overdue schedules`);
@@ -65,6 +62,16 @@ export async function GET(request: NextRequest) {
     const enrollmentIds = [...new Set(overdueSchedules.map(s => s.enrollment_id))];
 
     console.log(`[CRON - Overdue Check] Suspending ${enrollmentIds.length} enrollments`);
+
+    if (dryRun) {
+      return {
+        success: true,
+        dry_run: true,
+        would_suspend: enrollmentIds.length,
+        total_overdue: overdueSchedules.length,
+        message: `CRON_DRY_RUN enabled; would suspend ${enrollmentIds.length} enrollments`,
+      };
+    }
 
     // Suspend enrollments that are not already suspended
     const { data: suspendedEnrollments, error: suspendError } = await supabase
@@ -79,11 +86,7 @@ export async function GET(request: NextRequest) {
       .select('id, user_id, tenant_id');
 
     if (suspendError) {
-      console.error('[CRON - Overdue Check] Failed to suspend enrollments:', suspendError);
-      return NextResponse.json(
-        { error: 'Suspension failed', details: suspendError.message },
-        { status: 500 }
-      );
+      throw new Error(`Suspension failed: ${suspendError.message}`);
     }
 
     const suspendedCount = suspendedEnrollments?.length || 0;
@@ -153,22 +156,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return {
       success: true,
       suspended: suspendedCount,
       total_overdue: overdueSchedules.length,
       message: `Suspended ${suspendedCount} enrollments with overdue payments`,
-      timestamp: new Date().toISOString(),
-    });
-
-  } catch (error) {
-    console.error('[CRON - Overdue Check] Unexpected error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
+    };
+  });
 }

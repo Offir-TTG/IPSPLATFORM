@@ -138,7 +138,7 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
           </div>
 
           {/* Right: Quick Actions */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {quickActions.map((action, index) => {
               const Icon = action.icon;
               const isNotificationCard = action.icon === Bell;

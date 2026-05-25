@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const enrollmentId = searchParams.get('enrollment_id');
     const status = searchParams.get('status');
+    const paymentType = searchParams.get('paymentType');
     const overdue = searchParams.get('overdue');
     const upcoming = searchParams.get('upcoming');
     const daysAhead = parseInt(searchParams.get('days_ahead') || '30');
@@ -76,6 +77,12 @@ export async function GET(request: NextRequest) {
 
       if (maxAmount) {
         countQuery = countQuery.lte('amount', parseFloat(maxAmount));
+      }
+
+      // payment_type filter (e.g. isolate `manual` entries from
+      // installment/deposit/etc). Applied to both count + data queries.
+      if (paymentType) {
+        countQuery = countQuery.eq('payment_type', paymentType);
       }
 
       // CRITICAL: Need to filter by productId at database level, not post-enrichment
@@ -145,6 +152,10 @@ export async function GET(request: NextRequest) {
 
       if (maxAmount) {
         query = query.lte('amount', parseFloat(maxAmount));
+      }
+
+      if (paymentType) {
+        query = query.eq('payment_type', paymentType);
       }
 
       query = query
