@@ -18,7 +18,13 @@ import Handlebars from 'handlebars';
 
 let registered = false;
 
-function registerHelpers() {
+// Public, explicitly-callable registration so consumers don't rely
+// on side-effect import behaviour. Next.js' webpack will tree-shake
+// a bare `import '...handlebarsHelpers'` when the importer doesn't
+// reference any exported symbol, which is exactly the bug that
+// resurrected "Missing helper: eq" in production. Call this from
+// every Handlebars-compiling route at module top.
+export function ensureHandlebarsHelpers(): void {
   if (registered) return;
   registered = true;
 
@@ -72,4 +78,6 @@ function registerHelpers() {
   });
 }
 
-registerHelpers();
+// Module-load side-effect as a defence-in-depth: in builds that
+// don't tree-shake the side-effect import, this still runs.
+ensureHandlebarsHelpers();

@@ -12,10 +12,13 @@ import { sendEmail } from '@/lib/email/send';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import { runCron } from '@/lib/cron/withCronLogging';
 import Handlebars from 'handlebars';
+import { ensureHandlebarsHelpers } from '@/lib/email/handlebarsHelpers';
+
 // Registers eq/or/and/gt/lt/formatCurrency/formatDate/formatTime
-// helpers on the shared Handlebars singleton. Without this, compiling
-// the notification.generic template throws "Missing helper: eq".
-import '@/lib/email/handlebarsHelpers';
+// helpers on the shared Handlebars singleton. Called explicitly
+// (not a bare side-effect import) so webpack can't tree-shake it —
+// that's exactly the bug that brought back "Missing helper: eq".
+ensureHandlebarsHelpers();
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.

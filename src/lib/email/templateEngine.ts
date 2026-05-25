@@ -5,9 +5,10 @@
 
 import Handlebars from 'handlebars';
 import type { EmailTemplateVariable } from '@/types/email';
-// Registers eq/or/and/gt/lt/formatCurrency/formatDate/formatTime on
-// the shared Handlebars singleton. Side-effect import — keep it.
-import '@/lib/email/handlebarsHelpers';
+import { ensureHandlebarsHelpers } from '@/lib/email/handlebarsHelpers';
+
+// Explicit call (not a bare side-effect import) so webpack keeps it.
+ensureHandlebarsHelpers();
 
 export interface RenderTemplateOptions {
   template: string;
