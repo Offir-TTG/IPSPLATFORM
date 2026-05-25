@@ -78,7 +78,7 @@ const KNOWN_CRONS = [
 ];
 
 export default function AdminCronMonitorPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
   const [rows, setRows] = useState<CronRun[]>([]);
   const [settings, setSettings] = useState<Record<string, CronSetting>>({});
   const [savingCron, setSavingCron] = useState<string | null>(null);
@@ -193,7 +193,7 @@ export default function AdminCronMonitorPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 p-4 md:p-0">
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-3">
@@ -303,14 +303,14 @@ export default function AdminCronMonitorPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <label className="text-sm font-medium">
+        <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+          <label className="text-sm font-medium shrink-0">
             {t('admin.crons.filter', 'Filter')}:
           </label>
           <select
             value={filterCron}
             onChange={(e) => setFilterCron(e.target.value)}
-            className="px-3 py-1.5 border rounded-md text-sm bg-background"
+            className="px-3 py-1.5 border rounded-md text-sm bg-background min-w-0 flex-1 sm:flex-initial"
           >
             <option value="all">{t('admin.crons.allCrons', 'All crons')}</option>
             {KNOWN_CRONS.map((c) => (
@@ -322,7 +322,7 @@ export default function AdminCronMonitorPage() {
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-1.5 border rounded-md text-sm bg-background"
+            className="px-3 py-1.5 border rounded-md text-sm bg-background min-w-0 flex-1 sm:flex-initial"
           >
             <option value="all">{t('admin.crons.allStatuses', 'All statuses')}</option>
             <option value="success">{t('admin.crons.status.success', 'Success')}</option>
@@ -331,7 +331,7 @@ export default function AdminCronMonitorPage() {
             <option value="skipped_dry_run">{t('admin.crons.status.dryRun', 'Dry-run')}</option>
             <option value="skipped_disabled">{t('admin.crons.status.disabled', 'Disabled')}</option>
           </select>
-          <span className="text-xs text-muted-foreground ms-auto">
+          <span className="text-xs text-muted-foreground w-full sm:w-auto sm:ms-auto">
             {t('admin.crons.runCount', '{{count}} runs').replace(
               '{{count}}',
               String(rows.length),
@@ -418,12 +418,13 @@ export default function AdminCronMonitorPage() {
                       </td>
                       <td className="px-4 py-2 text-xs">
                         {isExpanded ? (
-                          <pre className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded max-w-2xl">
+                          <pre className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded w-full max-w-full sm:max-w-2xl" dir="ltr">
                             {summaryText}
                           </pre>
                         ) : (
                           <span
-                            className={`block truncate max-w-md ${r.error_message ? 'text-red-600' : 'text-muted-foreground'}`}
+                            className={`block truncate max-w-[14rem] sm:max-w-md ${r.error_message ? 'text-red-600' : 'text-muted-foreground'}`}
+                            dir="ltr"
                           >
                             {summaryText}
                           </span>
