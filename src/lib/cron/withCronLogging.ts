@@ -64,19 +64,32 @@ export async function runCron<T extends Record<string, unknown>>(
   // still runs. The DB is the only source of truth — no env override.
   let dbEnabled = true;
   let dryRun = false;
+  let settingsSource: 'db_row' | 'no_db_row' | 'db_read_error' = 'no_db_row';
   try {
-    const { data: settings } = await supabase
+    const { data: settings, error: settingsErr } = await supabase
       .from('cron_settings')
       .select('enabled, dry_run')
       .eq('cron_name', cronName)
       .maybeSingle();
-    if (settings) {
+    if (settingsErr) {
+      settingsSource = 'db_read_error';
+      console.warn(`[runCron] ${cronName} settings read returned error:`, settingsErr);
+    } else if (settings) {
+      settingsSource = 'db_row';
       dbEnabled = settings.enabled ?? true;
       dryRun = settings.dry_run ?? false;
     }
   } catch (e) {
-    console.warn(`[runCron] cron_settings read failed for ${cronName}:`, e);
+    settingsSource = 'db_read_error';
+    console.warn(`[runCron] cron_settings read threw for ${cronName}:`, e);
   }
+  // Loud diagnostic so the source of the dry-run decision is in the
+  // logs every tick. Cheap (one line) and answers "why is this
+  // dryRun=true?" without needing to redeploy with extra logging.
+  console.log(
+    `[runCron] ${cronName} settings:`,
+    { source: settingsSource, dbEnabled, dryRun },
+  );
 
   // Disabled cron: log a 'skipped_disabled' row and bail. We still emit
   // a cron_runs row so the admin sees the tick fired and was suppressed
