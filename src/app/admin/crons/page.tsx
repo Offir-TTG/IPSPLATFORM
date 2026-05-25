@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/table';
 import { formatDistanceToNow } from 'date-fns';
 import { he as heLocale } from 'date-fns/locale';
+import { SummaryChips, SummaryGrid } from '@/components/admin/crons/SummaryRenderer';
 
 /**
  * Cron monitor — surfaces the last N rows of public.cron_runs so an
@@ -102,7 +103,7 @@ export default function AdminCronMonitorPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 20;
+  const pageSize = 10;
   const isRtl = direction === 'rtl';
 
   const statusLabel = (s: CronStatus) => {
@@ -431,11 +432,6 @@ export default function AdminCronMonitorPage() {
                         {rows.map((r) => {
                           const StatusIcon = STATUS_ICON[r.status];
                           const isExpanded = expanded.has(r.id);
-                          const summaryText = r.error_message
-                            ? r.error_message
-                            : r.summary
-                              ? JSON.stringify(r.summary, null, 2)
-                              : '—';
                           return (
                             <TableRow
                               key={r.id}
@@ -474,19 +470,15 @@ export default function AdminCronMonitorPage() {
                               </TableCell>
                               <TableCell className="max-w-0 w-full">
                                 {isExpanded ? (
-                                  <pre
-                                    className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded"
-                                    dir="ltr"
-                                  >
-                                    {summaryText}
-                                  </pre>
+                                  <SummaryGrid
+                                    summary={r.summary as Record<string, unknown> | null}
+                                    errorMessage={r.error_message}
+                                  />
                                 ) : (
-                                  <span
-                                    className={`block truncate text-xs ${r.error_message ? 'text-destructive' : 'text-muted-foreground'}`}
-                                    dir="ltr"
-                                  >
-                                    {summaryText}
-                                  </span>
+                                  <SummaryChips
+                                    summary={r.summary as Record<string, unknown> | null}
+                                    errorMessage={r.error_message}
+                                  />
                                 )}
                               </TableCell>
                             </TableRow>
@@ -503,11 +495,6 @@ export default function AdminCronMonitorPage() {
                   {rows.map((r) => {
                     const StatusIcon = STATUS_ICON[r.status];
                     const isExpanded = expanded.has(r.id);
-                    const summaryText = r.error_message
-                      ? r.error_message
-                      : r.summary
-                        ? JSON.stringify(r.summary, null, 2)
-                        : '—';
                     return (
                       <div
                         key={r.id}
@@ -545,19 +532,15 @@ export default function AdminCronMonitorPage() {
                           </Badge>
                         </div>
                         {isExpanded ? (
-                          <pre
-                            className="whitespace-pre-wrap break-all font-mono text-[11px] bg-muted/50 p-2 rounded max-h-64 overflow-auto"
-                            dir="ltr"
-                          >
-                            {summaryText}
-                          </pre>
+                          <SummaryGrid
+                            summary={r.summary as Record<string, unknown> | null}
+                            errorMessage={r.error_message}
+                          />
                         ) : (
-                          <p
-                            className={`text-xs truncate ${r.error_message ? 'text-destructive' : 'text-muted-foreground'}`}
-                            dir="ltr"
-                          >
-                            {summaryText}
-                          </p>
+                          <SummaryChips
+                            summary={r.summary as Record<string, unknown> | null}
+                            errorMessage={r.error_message}
+                          />
                         )}
                       </div>
                     );

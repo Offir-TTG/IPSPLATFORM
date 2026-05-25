@@ -79,14 +79,19 @@ export async function POST(
       return NextResponse.json({ error: 'Template has no template_key' }, { status: 400 });
     }
 
-    // Resolve tenant display name once so every email shows the right
-    // organizationName in the rendered body/footer.
+    // Resolve tenant display name AND brand colours once so every
+    // email renders with the right organizationName + button gradient.
+    // Without primaryColor / secondaryColor the notification.generic
+    // template's CTA renders white-on-white (invalid linear-gradient
+    // → transparent background, default white text).
     const { data: tenantRow } = await admin
       .from('tenants')
-      .select('name')
+      .select('name, primary_color, email_primary_color, email_button_color')
       .eq('id', schedule.tenant_id)
       .single();
     const organizationName = tenantRow?.name || 'Learning Platform';
+    const primaryColor = tenantRow?.email_primary_color || tenantRow?.primary_color || '#667eea';
+    const secondaryColor = tenantRow?.email_button_color || '#764ba2';
 
     // The schedule's compose fields live in template_variables. Strip
     // out empty values so we don't overwrite tenant defaults, then
@@ -112,6 +117,8 @@ export async function POST(
         ...baseVars,
         userName,
         organizationName,
+        primaryColor,
+        secondaryColor,
         category: baseVars.category || 'announcement',
         priority: composePriority,
         first_name: r.first_name || '',

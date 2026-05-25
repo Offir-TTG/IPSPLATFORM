@@ -107,24 +107,12 @@ export async function runCron<T extends Record<string, unknown>>(
     },
   );
 
-  // Disabled cron: still emit a 'skipped_disabled' row (when logging
-  // is enabled) so the admin sees the tick fired and was suppressed
-  // — vs the cron silently vanishing from the timeline. When
-  // log_runs=false, we just bail.
+  // Disabled cron: bail silently, no cron_runs row. The admin
+  // deliberately turned this off; spamming `skipped_disabled` rows
+  // every tick is noise that defeats the point of the toggle. The
+  // tick still happens at the infra (Vercel) level — only the body
+  // is suppressed.
   if (!dbEnabled) {
-    if (logRuns) {
-      try {
-        await supabase.from('cron_runs').insert({
-          cron_name: cronName,
-          status: 'skipped_disabled',
-          dry_run: dryRun,
-          finished_at: new Date().toISOString(),
-          duration_ms: 0,
-        });
-      } catch (e) {
-        console.warn(`[runCron] cron_runs insert (skipped_disabled) failed:`, e);
-      }
-    }
     return NextResponse.json({
       success: true,
       skipped: true,

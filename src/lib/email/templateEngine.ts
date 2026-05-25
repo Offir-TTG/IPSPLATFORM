@@ -5,55 +5,9 @@
 
 import Handlebars from 'handlebars';
 import type { EmailTemplateVariable } from '@/types/email';
-
-// Register common Handlebars helpers
-Handlebars.registerHelper('formatCurrency', function(amount: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: currency || 'USD',
-  }).format(amount);
-});
-
-Handlebars.registerHelper('formatDate', function(date: string | Date, locale: string) {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return new Intl.DateTimeFormat(locale || 'en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(d);
-});
-
-Handlebars.registerHelper('formatTime', function(date: string | Date, locale: string) {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return new Intl.DateTimeFormat(locale || 'en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(d);
-});
-
-Handlebars.registerHelper('eq', function(a: any, b: any) {
-  return a === b;
-});
-
-Handlebars.registerHelper('gt', function(a: number, b: number) {
-  return a > b;
-});
-
-Handlebars.registerHelper('lt', function(a: number, b: number) {
-  return a < b;
-});
-
-Handlebars.registerHelper('or', function(...args: any[]) {
-  // Remove the last argument (Handlebars options)
-  const values = args.slice(0, -1);
-  return values.some(v => !!v);
-});
-
-Handlebars.registerHelper('and', function(...args: any[]) {
-  // Remove the last argument (Handlebars options)
-  const values = args.slice(0, -1);
-  return values.every(v => !!v);
-});
+// Registers eq/or/and/gt/lt/formatCurrency/formatDate/formatTime on
+// the shared Handlebars singleton. Side-effect import — keep it.
+import '@/lib/email/handlebarsHelpers';
 
 export interface RenderTemplateOptions {
   template: string;

@@ -101,14 +101,18 @@ export async function GET(request: NextRequest) {
             continue;
           }
 
-          // Pull tenant name so the generic-notification template
-          // renders the right organizationName for every recipient.
+          // Pull tenant name + brand colours so the template renders
+          // the right organizationName AND the CTA button isn't
+          // white-on-white (the template's gradient needs both colours
+          // present or the background goes transparent).
           const { data: tenantRow } = await supabase
             .from('tenants')
-            .select('name')
+            .select('name, primary_color, email_primary_color, email_button_color')
             .eq('id', schedule.tenant_id)
             .single();
           const organizationName = tenantRow?.name || 'Learning Platform';
+          const primaryColor = tenantRow?.email_primary_color || tenantRow?.primary_color || '#667eea';
+          const secondaryColor = tenantRow?.email_button_color || '#764ba2';
 
           // Drop empty schedule-wide vars so blanks don't shadow
           // tenant defaults, then top-up the required generic-template
@@ -127,6 +131,8 @@ export async function GET(request: NextRequest) {
               ...baseVars,
               userName,
               organizationName,
+              primaryColor,
+              secondaryColor,
               category: baseVars.category || 'announcement',
               priority: composePriority,
               first_name: r.first_name || '',

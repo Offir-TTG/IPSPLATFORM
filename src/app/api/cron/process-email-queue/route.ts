@@ -12,6 +12,10 @@ import { sendEmail } from '@/lib/email/send';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import { runCron } from '@/lib/cron/withCronLogging';
 import Handlebars from 'handlebars';
+// Registers eq/or/and/gt/lt/formatCurrency/formatDate/formatTime
+// helpers on the shared Handlebars singleton. Without this, compiling
+// the notification.generic template throws "Missing helper: eq".
+import '@/lib/email/handlebarsHelpers';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.
@@ -20,25 +24,10 @@ export const dynamic = 'force-dynamic';
 const CRON_SECRET = process.env.CRON_SECRET || 'K8mX2vN9pL5wQ3yT7hJ6fR4aZ1cD0gH3';
 const BATCH_SIZE = 10; // Process 10 emails per run
 
-// Register Handlebars helpers for email templates
-Handlebars.registerHelper('formatDate', function(date: string | Date, language: string) {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const locale = language === 'he' ? 'he-IL' : 'en-US';
-  return new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(d);
-});
-
-Handlebars.registerHelper('formatTime', function(date: string | Date, language: string) {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const locale = language === 'he' ? 'he-IL' : 'en-US';
-  return new Intl.DateTimeFormat(locale, {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(d);
-});
+// All Handlebars helpers (formatDate, formatTime, eq, or, and, gt,
+// lt, formatCurrency) are registered by the side-effect import of
+// `handlebarsHelpers` above. Don't re-register here — that would
+// silently override with helpers that differ in locale handling.
 
 export async function GET(request: NextRequest) {
   // Verify cron secret

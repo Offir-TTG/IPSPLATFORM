@@ -44,6 +44,20 @@ export async function GET(req: NextRequest) {
   const to = from + perPage - 1;
 
   const admin = createAdminClient();
+
+  // Hide runs from currently-disabled crons. Deactivating a cron in
+  // /admin/crons should make it disappear from the runs panel —
+  // historical skipped_disabled rows from before the toggle are
+  // noise, not signal. (We can't `eq('enabled', true)` join because
+  // cron_runs has no FK to cron_settings; pull the disabled names
+  // first and use NOT IN.)
+  const { data: settingsRows } = await admin
+    .from('cron_settings')
+    .select('cron_name, enabled');
+  const disabledCronNames = (settingsRows ?? [])
+    .filter((r) => r.enabled === false)
+    .map((r) => r.cron_name);
+
   let q = admin
     .from('cron_runs')
     .select('*', { count: 'exact' })
@@ -51,6 +65,15 @@ export async function GET(req: NextRequest) {
     .range(from, to);
   if (cronName && cronName !== 'all') q = q.eq('cron_name', cronName);
   if (status && status !== 'all') q = q.eq('status', status);
+  if (disabledCronNames.length > 0) {
+    // Caveat: if the admin EXPLICITLY filtered to a disabled cron via
+    // the dropdown (cron_name=...), the NOT IN below would zero out
+    // the result silently. Skip the exclusion in that case so the
+    // filter still works for diagnostics.
+    if (!cronName || cronName === 'all' || !disabledCronNames.includes(cronName)) {
+      q = q.not('cron_name', 'in', `(${disabledCronNames.map((n) => `"${n}"`).join(',')})`);
+    }
+  }
 
   const { data, error, count } = await q;
   if (error) {
