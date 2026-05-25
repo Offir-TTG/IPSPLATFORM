@@ -65,9 +65,6 @@ export async function GET(request: NextRequest) {
         courses (
           id,
           title
-        ),
-        tenants (
-          timezone
         )
       `)
       .gte('start_time', now.toISOString())
@@ -76,6 +73,27 @@ export async function GET(request: NextRequest) {
 
     if (lessonsError) {
       throw new Error(`Failed to fetch lessons: ${lessonsError.message}`);
+    }
+
+    // Resolve tenant timezones in a single batched query instead of
+    // embedding `tenants(timezone)` via PostgREST. The embed required
+    // a declared FK between `lessons.tenant_id` and `tenants.id` in
+    // PostgREST's schema cache — which it didn't have in production
+    // ("Could not find a relationship between 'lessons' and
+    // 'tenants'"), failing the whole cron tick. Pulling the timezone
+    // separately is one extra query but works on any schema.
+    const tenantIds = Array.from(
+      new Set((upcomingLessons ?? []).map((l: any) => l.tenant_id).filter(Boolean)),
+    );
+    const tenantTimezoneById = new Map<string, string | null>();
+    if (tenantIds.length > 0) {
+      const { data: tenantRows } = await supabase
+        .from('tenants')
+        .select('id, timezone')
+        .in('id', tenantIds);
+      for (const row of (tenantRows ?? []) as Array<{ id: string; timezone: string | null }>) {
+        tenantTimezoneById.set(row.id, row.timezone);
+      }
     }
 
     if (!upcomingLessons || upcomingLessons.length === 0) {
@@ -96,7 +114,7 @@ export async function GET(request: NextRequest) {
         success: true,
         dry_run: true,
         lessonsFound: upcomingLessons.length,
-        message: `CRON_DRY_RUN enabled; would scan ${upcomingLessons.length} lessons for reminders`,
+        message: `Dry-run enabled; would scan ${upcomingLessons.length} lessons for reminders`,
       };
     }
 
@@ -216,7 +234,11 @@ export async function GET(request: NextRequest) {
               // `{{lessonTime}}` and `{{lessonDate}}` in the recipient's
               // resolved timezone (see `src/lib/email/triggerEngine.ts`).
               lessonTimezone: (lesson as any).timezone || null,
-              tenantTimezone: (lesson.tenants as any)?.timezone || null,
+              // Sourced from the batched tenants lookup above (the
+              // `tenants(timezone)` embed in the lessons select was
+              // removed because PostgREST's schema cache lacked the
+              // declared FK and the whole cron tick errored out).
+              tenantTimezone: tenantTimezoneById.get(lesson.tenant_id) ?? null,
               courseId: lesson.course_id,
               courseName: (lesson.courses as any)?.title || '',
               zoomMeetingId: lesson.zoom_meeting_id,

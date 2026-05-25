@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
         dry_run: true,
         created: 0,
         failed: 0,
-        message: 'CRON_DRY_RUN enabled; skipped invoice creation',
+        message: 'Dry-run enabled; skipped invoice creation',
       };
     }
 

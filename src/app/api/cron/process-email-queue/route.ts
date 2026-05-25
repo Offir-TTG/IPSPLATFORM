@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
         success: true,
         dry_run: true,
         would_send: pendingEmails.length,
-        message: `CRON_DRY_RUN enabled; would send ${pendingEmails.length} emails`,
+        message: `Dry-run enabled; would send ${pendingEmails.length} emails`,
       };
     }
 

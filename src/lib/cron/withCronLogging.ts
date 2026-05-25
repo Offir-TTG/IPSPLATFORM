@@ -5,10 +5,15 @@
  *   1. Each tick gets a row in `cron_runs` with status, duration, summary
  *      jsonb (or error message) — so a runaway is visible *immediately*
  *      instead of only after the email blast lands in inboxes.
- *   2. `CRON_DRY_RUN=true` in Vercel env globally disables the *write*
- *      paths in every cron without code edits. The handler still runs
- *      (read paths execute, summary is logged) so ops can verify the
- *      shape of what *would* have happened before re-arming.
+ *   2. `cron_settings.dry_run` (toggleable from /admin/crons) globally
+ *      disables the *write* paths for that cron without code edits.
+ *      Read paths still execute and the summary is logged so admins
+ *      can verify the shape of what *would* have happened before
+ *      re-arming.
+ *
+ * Dry-run / enabled state is read from the DB (`cron_settings`) every
+ * tick so the admin UI is the single source of truth. No env-var
+ * override exists — flipping the toggle in /admin/crons is final.
  *
  * Usage:
  *   export async function GET(req: NextRequest) {
@@ -34,8 +39,8 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 
 export type CronContext = {
-  /** True when CRON_DRY_RUN=true. Handlers must short-circuit any
-   *  write/email/external-POST path on dry-run. */
+  /** True when `cron_settings.dry_run` is on for this cron. Handlers
+   *  must short-circuit any write/email/external-POST path on dry-run. */
   dryRun: boolean;
 };
 
@@ -47,21 +52,18 @@ export type CronEnvelope<T> = T & {
   };
 };
 
-export function isCronDryRun(): boolean {
-  return process.env.CRON_DRY_RUN === 'true';
-}
-
 export async function runCron<T extends Record<string, unknown>>(
   cronName: string,
   handler: (ctx: CronContext) => Promise<T>,
 ): Promise<NextResponse> {
   const supabase = createAdminClient();
 
-  // Per-cron settings from DB (UI-toggleable; no redeploy). Best-effort:
-  // if the table doesn't exist yet or the read fails, default to
-  // enabled=true / dry_run=false so the cron still runs.
+  // Per-cron settings from DB (toggleable from /admin/crons; no
+  // redeploy). Best-effort: if the table doesn't exist yet or the
+  // read fails, default to enabled=true / dry_run=false so the cron
+  // still runs. The DB is the only source of truth — no env override.
   let dbEnabled = true;
-  let dbDryRun = false;
+  let dryRun = false;
   try {
     const { data: settings } = await supabase
       .from('cron_settings')
@@ -70,15 +72,11 @@ export async function runCron<T extends Record<string, unknown>>(
       .maybeSingle();
     if (settings) {
       dbEnabled = settings.enabled ?? true;
-      dbDryRun = settings.dry_run ?? false;
+      dryRun = settings.dry_run ?? false;
     }
   } catch (e) {
     console.warn(`[runCron] cron_settings read failed for ${cronName}:`, e);
   }
-
-  // Env var is the global emergency brake; per-cron flag is ORed in.
-  // Either set → tick runs in dry-run mode.
-  const dryRun = isCronDryRun() || dbDryRun;
 
   // Disabled cron: log a 'skipped_disabled' row and bail. We still emit
   // a cron_runs row so the admin sees the tick fired and was suppressed

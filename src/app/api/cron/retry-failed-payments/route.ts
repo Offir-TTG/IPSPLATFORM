@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
         success: true,
         dry_run: true,
         would_retry: retrySchedules.length,
-        message: `CRON_DRY_RUN enabled; would retry ${retrySchedules.length} schedules`,
+        message: `Dry-run enabled; would retry ${retrySchedules.length} schedules`,
       };
     }
 

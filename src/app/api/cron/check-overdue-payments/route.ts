@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         dry_run: true,
         would_suspend: enrollmentIds.length,
         total_overdue: overdueSchedules.length,
-        message: `CRON_DRY_RUN enabled; would suspend ${enrollmentIds.length} enrollments`,
+        message: `Dry-run enabled; would suspend ${enrollmentIds.length} enrollments`,
       };
     }
 
