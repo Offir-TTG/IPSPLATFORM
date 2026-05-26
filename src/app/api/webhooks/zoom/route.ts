@@ -289,6 +289,18 @@ async function handleRecordingCompleted(payload: any) {
     return;
   }
 
+  // Resolve the user-portal base URL for building email links. Admin
+  // sets this from /admin/emails/settings; falls back to the deploy
+  // env var so existing tenants keep working until they configure
+  // their own URL.
+  const { data: tenantPortal } = await supabase
+    .from('tenants')
+    .select('portal_url')
+    .eq('id', lesson.tenant_id)
+    .single();
+  const portalBase =
+    (tenantPortal?.portal_url || process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+
   // Process recording using zoom service
   const zoomService = new ZoomService(lesson.tenant_id);
   const result = await zoomService.processRecordingWebhook(payload);
@@ -326,6 +338,7 @@ async function handleRecordingCompleted(payload: any) {
         title,
         course_id,
         start_time,
+        recording_url,
         courses (
           id,
           title
@@ -448,6 +461,14 @@ async function handleRecordingCompleted(payload: any) {
                 meetingTopic: payload.object.topic,
                 recordingFiles: payload.object.recording_files,
                 recordingCount: payload.object.recording_files?.length || 0,
+                // The template's "Watch recording" button uses
+                // {{recordingUrl}}. We deliberately point at the
+                // user portal (gated by login) instead of the raw
+                // Zoom play URL, so recipients can't freely share
+                // the direct cloud link. `portalBase` is admin-
+                // controlled per tenant (/admin/emails/settings →
+                // User portal URL), with env-var fallback.
+                recordingUrl: `${portalBase}/courses/${fullLesson.course_id}`,
                 userId: enrollment.user_id,
                 email: (enrollment.users as any).email,
                 userName: (enrollment.users as any).first_name,

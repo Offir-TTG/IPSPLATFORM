@@ -96,6 +96,11 @@ export default function EmailSettingsPage() {
     email_sender_name: '',
     email_reply_to: '',
     email_header_style: 'text' as 'logo' | 'text' | 'none',
+    // Absolute base URL of the user portal. Used by emails that
+    // need to deep-link back (e.g. the recording.available "Watch
+    // recording" button). When empty, code falls back to the
+    // NEXT_PUBLIC_APP_URL env var.
+    portal_url: '',
   });
   // Site-wide branding fallback — surfaced to the admin so they know the
   // email_* fields are *optional overrides*; leaving them empty just
@@ -132,6 +137,7 @@ export default function EmailSettingsPage() {
           email_sender_name: json.data.email_sender_name || '',
           email_reply_to: json.data.email_reply_to || '',
           email_header_style: (json.data.email_header_style as 'logo' | 'text' | 'none') || 'text',
+          portal_url: json.data.portal_url || '',
         });
         setSiteDefaults({
           logo_url: json.data.logo_url || null,
@@ -158,6 +164,7 @@ export default function EmailSettingsPage() {
           email_sender_name: branding.email_sender_name || null,
           email_reply_to: branding.email_reply_to || null,
           email_header_style: branding.email_header_style,
+          portal_url: branding.portal_url.trim() || null,
         }),
       });
       const json = await res.json();
@@ -502,6 +509,27 @@ export default function EmailSettingsPage() {
                   placeholder="support@example.com"
                 />
               </div>
+            </div>
+
+            {/* Portal base URL. Used by emails that link back to the
+                user portal (e.g. "Watch recording" on recording.available).
+                Keeps recipients gated by login and lets the admin flip
+                the domain between staging/production without redeploys. */}
+            <div className="space-y-2">
+              <Label>{t('emails.settings.branding.portal_url', 'User portal URL')}</Label>
+              <Input
+                type="url"
+                value={branding.portal_url}
+                onChange={(e) => setBranding({ ...branding, portal_url: e.target.value })}
+                placeholder="https://app.example.com"
+                dir="ltr"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'emails.settings.branding.portal_url_hint',
+                  'Absolute URL of your user portal. Used to build email button links (e.g. "Watch recording"). Leave empty to inherit from the deployment env.',
+                )}
+              </p>
             </div>
 
             <div className="flex justify-end">

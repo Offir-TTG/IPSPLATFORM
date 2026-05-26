@@ -115,6 +115,10 @@ export async function PATCH(request: NextRequest) {
       'email_sender_name',
       'email_reply_to',
       'email_header_style',
+      // Absolute base URL of the user portal. Used by webhooks /
+      // triggers when constructing email links so the admin can
+      // flip from staging to production without a redeploy.
+      'portal_url',
     ];
 
     const filteredUpdate: any = {};
