@@ -12,7 +12,20 @@ import {
   AlertCircle,
   RefreshCw,
   PowerOff,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
 import { useAdminLanguage } from '@/context/AppContext';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -105,6 +118,59 @@ export default function AdminCronMonitorPage() {
   const [total, setTotal] = useState(0);
   const pageSize = 10;
   const isRtl = direction === 'rtl';
+
+  // Purge-dialog state. `anchorDate` (YYYY-MM-DD, defaults to today)
+  // and `daysBack` (defaults to 30) together compute the cutoff —
+  // delete every cron_runs row older than `anchor - daysBack`.
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgeAnchor, setPurgeAnchor] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [purgeDays, setPurgeDays] = useState<number>(30);
+  const [purgeBusy, setPurgeBusy] = useState(false);
+
+  // Cutoff = local-midnight(anchor) - daysBack. Anything strictly
+  // older than this gets deleted. Displayed back to the admin so
+  // there's no ambiguity about what they're about to nuke.
+  const purgeCutoff = (() => {
+    if (!purgeAnchor || !Number.isFinite(purgeDays) || purgeDays < 0) return null;
+    const [y, m, d] = purgeAnchor.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    const anchor = new Date(y, m - 1, d, 0, 0, 0, 0);
+    return new Date(anchor.getTime() - purgeDays * 24 * 60 * 60 * 1000);
+  })();
+
+  const handlePurge = async () => {
+    if (!purgeCutoff) {
+      toast.error(t('admin.crons.purge.invalidInput', 'Pick a date and a positive number of days.'));
+      return;
+    }
+    setPurgeBusy(true);
+    try {
+      const res = await fetch('/api/admin/cron-runs/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ before: purgeCutoff.toISOString() }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) {
+        toast.error(j.error || t('admin.crons.purge.failed', 'Failed to delete runs'));
+        return;
+      }
+      toast.success(
+        t('admin.crons.purge.done', 'Deleted {{count}} run rows.')
+          .replace('{{count}}', String(j.deleted ?? 0)),
+      );
+      setPurgeOpen(false);
+      // Pull a fresh page so the table reflects the new state.
+      load();
+    } catch (e: any) {
+      toast.error(e?.message || t('admin.crons.purge.failed', 'Failed to delete runs'));
+    } finally {
+      setPurgeBusy(false);
+    }
+  };
 
   const statusLabel = (s: CronStatus) => {
     switch (s) {
@@ -240,16 +306,28 @@ export default function AdminCronMonitorPage() {
               )}
             </p>
           </div>
-          <button
-            onClick={() => {
-              setLoading(true);
-              load();
-            }}
-            className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm w-fit"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            {t('admin.crons.refresh', 'Refresh')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPurgeOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors text-sm"
+              title={t('admin.crons.purge.title', 'Delete old runs')}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden sm:inline">
+                {t('admin.crons.purge.title', 'Delete old runs')}
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setLoading(true);
+                load();
+              }}
+              className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm w-fit"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              {t('admin.crons.refresh', 'Refresh')}
+            </button>
+          </div>
         </div>
 
         {/* Per-cron latest tick + toggles */}
@@ -578,6 +656,94 @@ export default function AdminCronMonitorPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Purge dialog — admin enters an anchor date + N days back,
+          and we delete every cron_runs row older than the cutoff.
+          The computed cutoff is shown back to them so there's no
+          ambiguity about what's being deleted. */}
+      <Dialog open={purgeOpen} onOpenChange={(o) => !purgeBusy && setPurgeOpen(o)}>
+        <DialogContent className="sm:max-w-[480px]" dir={direction}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              {t('admin.crons.purge.title', 'Delete old runs')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'admin.crons.purge.description',
+                'Delete cron_runs rows older than the cutoff. This cannot be undone.',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="purge-anchor">
+                {t('admin.crons.purge.anchorLabel', 'Anchor date')}
+              </Label>
+              <Input
+                id="purge-anchor"
+                type="date"
+                value={purgeAnchor}
+                onChange={(e) => setPurgeAnchor(e.target.value)}
+                dir="ltr"
+                disabled={purgeBusy}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="purge-days">
+                {t('admin.crons.purge.daysLabel', 'Days back')}
+              </Label>
+              <Input
+                id="purge-days"
+                type="number"
+                min={1}
+                step={1}
+                value={purgeDays}
+                onChange={(e) => setPurgeDays(parseInt(e.target.value, 10) || 0)}
+                dir="ltr"
+                disabled={purgeBusy}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'admin.crons.purge.daysHint',
+                  'Everything older than this many days before the anchor date will be deleted.',
+                )}
+              </p>
+            </div>
+
+            {purgeCutoff && (
+              <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                <div className="text-muted-foreground text-xs mb-1">
+                  {t('admin.crons.purge.cutoffLabel', 'Will delete runs before')}
+                </div>
+                <div className="font-mono">{purgeCutoff.toLocaleString()}</div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setPurgeOpen(false)}
+              disabled={purgeBusy}
+              className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm"
+            >
+              {t('common.cancel', 'Cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={handlePurge}
+              disabled={purgeBusy || !purgeCutoff || purgeDays < 1}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {purgeBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Trash2 className="h-4 w-4" />
+              {t('admin.crons.purge.confirm', 'Delete')}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
