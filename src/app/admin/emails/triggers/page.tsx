@@ -341,7 +341,7 @@ export default function TriggersPage() {
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
-            <CardHeader className={`flex ${isRtl ? 'flex-row-reverse' : 'flex-row'} items-center justify-between space-y-0 pb-2`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium" suppressHydrationWarning>
                 {t('emails.triggers.stats.total', 'Total Triggers')}
               </CardTitle>
@@ -352,7 +352,7 @@ export default function TriggersPage() {
           </Card>
 
           <Card>
-            <CardHeader className={`flex ${isRtl ? 'flex-row-reverse' : 'flex-row'} items-center justify-between space-y-0 pb-2`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium" suppressHydrationWarning>
                 {t('emails.triggers.stats.active', 'Active Triggers')}
               </CardTitle>
@@ -365,7 +365,7 @@ export default function TriggersPage() {
           </Card>
 
           <Card>
-            <CardHeader className={`flex ${isRtl ? 'flex-row-reverse' : 'flex-row'} items-center justify-between space-y-0 pb-2`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium" suppressHydrationWarning>
                 {t('emails.triggers.stats.inactive', 'Inactive Triggers')}
               </CardTitle>
@@ -396,29 +396,42 @@ export default function TriggersPage() {
             triggers.map((trigger) => (
               <Card key={trigger.id}>
                 <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <CardTitle className="text-xl">{trigger.trigger_name}</CardTitle>
+                  {/* flex-col on mobile so the action buttons drop
+                      below the title block, otherwise the row gets
+                      cramped. dir is inherited from the page wrapper. */}
+                  <div className="flex flex-col sm:flex-row items-start sm:justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <CardTitle className="text-lg sm:text-xl break-words" dir="auto">
+                          {trigger.trigger_name}
+                        </CardTitle>
                         {getPriorityBadge(trigger.priority)}
                         <Badge variant={trigger.is_active ? 'default' : 'secondary'} suppressHydrationWarning>
                           {trigger.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
                         </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          • {getTranslatedTemplateName(trigger)}
-                        </span>
                       </div>
-                      <CardDescription>
-                        {getEventTypeLabel(trigger.trigger_event)} • {getTimingDescription(trigger)}
+                      {/* Template name + event metadata as separate
+                          lines so the LTR template_key strings don't
+                          collide with the Hebrew separator dots. */}
+                      <p className="text-sm text-muted-foreground" dir="auto">
+                        {getTranslatedTemplateName(trigger)}
+                      </p>
+                      <CardDescription dir="auto">
+                        <span dir="ltr" className="font-mono text-[11px]">
+                          {getEventTypeLabel(trigger.trigger_event)}
+                        </span>
+                        <span className="mx-2">·</span>
+                        {getTimingDescription(trigger)}
                       </CardDescription>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 shrink-0">
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => testTrigger(trigger)}
-                        title="Test Trigger"
+                        title={t('emails.triggers.test', 'Test trigger')}
+                        aria-label={t('emails.triggers.test', 'Test trigger')}
                       >
                         <TestTube className="h-4 w-4" />
                       </Button>
@@ -427,7 +440,16 @@ export default function TriggersPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => toggleTrigger(trigger)}
-                        title={trigger.is_active ? 'Deactivate' : 'Activate'}
+                        title={
+                          trigger.is_active
+                            ? t('emails.triggers.deactivate', 'Deactivate')
+                            : t('emails.triggers.activate', 'Activate')
+                        }
+                        aria-label={
+                          trigger.is_active
+                            ? t('emails.triggers.deactivate', 'Deactivate')
+                            : t('emails.triggers.activate', 'Activate')
+                        }
                       >
                         {trigger.is_active ? (
                           <PowerOff className="h-4 w-4 text-orange-500" />
@@ -443,7 +465,8 @@ export default function TriggersPage() {
                           setEditingTrigger(trigger);
                           setCreateDialogOpen(true);
                         }}
-                        title="Edit"
+                        title={t('common.edit', 'Edit')}
+                        aria-label={t('common.edit', 'Edit')}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -455,7 +478,8 @@ export default function TriggersPage() {
                           setDeletingTrigger(trigger);
                           setShowDeleteDialog(true);
                         }}
-                        title="Delete"
+                        title={t('common.delete', 'Delete')}
+                        aria-label={t('common.delete', 'Delete')}
                       >
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
@@ -467,11 +491,11 @@ export default function TriggersPage() {
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-2">
                       {trigger.recipient_field && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium" suppressHydrationWarning>
                             {t('emails.triggers.recipientField', 'Recipient Field')}:
                           </span>
-                          <span className="text-sm text-muted-foreground font-mono">
+                          <span className="text-sm text-muted-foreground font-mono" dir="ltr">
                             {trigger.recipient_field}
                           </span>
                         </div>
@@ -482,9 +506,12 @@ export default function TriggersPage() {
                           <p className="text-sm font-medium mb-1" suppressHydrationWarning>
                             {t('emails.triggers.conditions', 'Conditions')}
                           </p>
-                          <p className="text-sm text-muted-foreground font-mono bg-muted p-2 rounded">
+                          <pre
+                            className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded whitespace-pre-wrap break-all"
+                            dir="ltr"
+                          >
                             {JSON.stringify(trigger.conditions, null, 2)}
-                          </p>
+                          </pre>
                         </div>
                       )}
                     </div>

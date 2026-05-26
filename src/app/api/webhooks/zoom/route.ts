@@ -336,6 +336,15 @@ async function handleRecordingCompleted(payload: any) {
     if (fullLessonError) {
       console.error('[Zoom] Failed to load lesson for trigger:', fullLessonError);
     }
+    if (!fullLesson) {
+      console.error('[Zoom] recording.ready: fullLesson is null — skipping recipient resolution');
+      return;
+    }
+    console.log('[Zoom] recording.ready: lesson loaded', {
+      lessonId: fullLesson.id,
+      courseId: (fullLesson as any).course_id,
+      title: (fullLesson as any).title,
+    });
 
     // Get enrolled students for this lesson.
     //
@@ -360,11 +369,16 @@ async function handleRecordingCompleted(payload: any) {
         productQuery.eq('course_id', fullLesson.course_id);
       } else {
         // Nothing to scope to — bail.
+        console.warn('[Zoom] recording.ready: lesson has no course_id — bailing');
         return;
       }
 
-      const { data: products } = await productQuery;
+      const { data: products, error: productErr } = await productQuery;
+      if (productErr) {
+        console.error('[Zoom] recording.ready: products query failed:', productErr);
+      }
       const productIds = (products ?? []).map((p) => p.id);
+      console.log('[Zoom] recording.ready: products mapped to this course:', productIds.length);
 
       // Step 2: active enrollments on those products.
       if (productIds.length > 0) {
@@ -384,12 +398,14 @@ async function handleRecordingCompleted(payload: any) {
           .in('product_id', productIds);
         enrollments = rows;
       }
+      console.log('[Zoom] recording.ready: active enrollments on those products:', enrollments?.length ?? 0);
 
       // Trigger event for each enrolled student
       if (enrollments && enrollments.length > 0) {
+        let triggeredOk = 0;
         for (const enrollment of enrollments) {
           if (enrollment.users) {
-            await processTriggerEvent({
+            const triggerResult: any = await processTriggerEvent({
               eventType: 'recording.ready',
               tenantId: lesson.tenant_id,
               eventData: {
@@ -412,9 +428,20 @@ async function handleRecordingCompleted(payload: any) {
                 hostId: payload.object.host_id,
               },
             });
+            // The trigger engine returns a shape like
+            // { success, matched_triggers, processed, queued } or
+            // similar; we don't bind a strict type because old/new
+            // engine versions differ. Log it raw so we can see what
+            // came back per recipient.
+            console.log('[Zoom] recording.ready: trigger result for', (enrollment.users as any).email, '→', triggerResult);
+            if (triggerResult && (triggerResult.success !== false)) {
+              triggeredOk += 1;
+            }
           }
         }
-        console.log(`[Zoom] Triggered recording.ready for ${enrollments.length} students`);
+        console.log(
+          `[Zoom] Triggered recording.ready for ${enrollments.length} students (${triggeredOk} OK)`,
+        );
       }
     }
   } catch (triggerError) {
