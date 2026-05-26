@@ -381,22 +381,53 @@ async function handleRecordingCompleted(payload: any) {
       console.log('[Zoom] recording.ready: products mapped to this course:', productIds.length);
 
       // Step 2: active enrollments on those products.
+      //
+      // CRITICAL: do NOT embed `users (...)` here. Some environments
+      // don't have the `enrollments.user_id → users.id` FK in
+      // PostgREST's schema cache, and when the embed can't resolve
+      // it silently returns ZERO rows — even though the underlying
+      // SELECT in psql shows 14 active enrollments. Same class of
+      // bug we hit with lessons → tenants(timezone). Fetch the
+      // enrollments first, then bulk-fetch users by id.
       if (productIds.length > 0) {
-        const { data: rows } = await supabase
+        const { data: rows, error: enrollErr } = await supabase
           .from('enrollments')
-          .select(`
-            user_id,
-            users (
-              email,
-              first_name,
-              last_name,
-              preferred_language
-            )
-          `)
+          .select('user_id')
           .eq('tenant_id', lesson.tenant_id)
           .eq('status', 'active')
           .in('product_id', productIds);
-        enrollments = rows;
+        if (enrollErr) {
+          console.error('[Zoom] recording.ready: enrollments query failed:', enrollErr);
+        }
+
+        const userIds = Array.from(
+          new Set((rows ?? []).map((r) => r.user_id).filter(Boolean)),
+        );
+        const usersById = new Map<string, { email: string; first_name: string | null; last_name: string | null; preferred_language: string | null }>();
+        if (userIds.length > 0) {
+          const { data: userRows, error: userErr } = await supabase
+            .from('users')
+            .select('id, email, first_name, last_name, preferred_language')
+            .in('id', userIds);
+          if (userErr) {
+            console.error('[Zoom] recording.ready: users lookup failed:', userErr);
+          }
+          for (const u of userRows ?? []) {
+            usersById.set(u.id, {
+              email: u.email,
+              first_name: u.first_name,
+              last_name: u.last_name,
+              preferred_language: u.preferred_language,
+            });
+          }
+        }
+
+        // Recompose the embed-shaped rows so the loop below stays
+        // identical to what it was before.
+        enrollments = (rows ?? []).map((r) => ({
+          user_id: r.user_id,
+          users: r.user_id ? usersById.get(r.user_id) ?? null : null,
+        }));
       }
       console.log('[Zoom] recording.ready: active enrollments on those products:', enrollments?.length ?? 0);
 
