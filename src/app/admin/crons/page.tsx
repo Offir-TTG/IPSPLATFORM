@@ -130,19 +130,26 @@ export default function AdminCronMonitorPage() {
   const [purgeDays, setPurgeDays] = useState<number>(30);
   const [purgeBusy, setPurgeBusy] = useState(false);
 
-  // Cutoff = local-midnight(anchor) - daysBack. Anything strictly
-  // older than this gets deleted. Displayed back to the admin so
-  // there's no ambiguity about what they're about to nuke.
-  const purgeCutoff = (() => {
-    if (!purgeAnchor || !Number.isFinite(purgeDays) || purgeDays < 0) return null;
+  // Compute the [from, to) window the API will delete.
+  //   to   = day after anchor at 00:00 → exclusive upper bound so
+  //          the entire anchor day is included
+  //   from = to − daysBack days at 00:00 → inclusive lower bound
+  // Example: anchor=2026-05-25 (yesterday), days=30
+  //   → to   = 2026-05-26 00:00
+  //   → from = 2026-04-26 00:00
+  //   → deletes the 30 days ending yesterday, INCLUDING yesterday.
+  const purgeWindow = (() => {
+    if (!purgeAnchor || !Number.isFinite(purgeDays) || purgeDays < 1) return null;
     const [y, m, d] = purgeAnchor.split('-').map(Number);
     if (!y || !m || !d) return null;
     const anchor = new Date(y, m - 1, d, 0, 0, 0, 0);
-    return new Date(anchor.getTime() - purgeDays * 24 * 60 * 60 * 1000);
+    const toDate = new Date(anchor.getTime() + 24 * 60 * 60 * 1000);
+    const fromDate = new Date(toDate.getTime() - purgeDays * 24 * 60 * 60 * 1000);
+    return { from: fromDate, to: toDate };
   })();
 
   const handlePurge = async () => {
-    if (!purgeCutoff) {
+    if (!purgeWindow) {
       toast.error(t('admin.crons.purge.invalidInput', 'Pick a date and a positive number of days.'));
       return;
     }
@@ -151,7 +158,10 @@ export default function AdminCronMonitorPage() {
       const res = await fetch('/api/admin/cron-runs/purge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ before: purgeCutoff.toISOString() }),
+        body: JSON.stringify({
+          from: purgeWindow.from.toISOString(),
+          to: purgeWindow.to.toISOString(),
+        }),
       });
       const j = await res.json();
       if (!res.ok || !j.success) {
@@ -296,21 +306,24 @@ export default function AdminCronMonitorPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-3">
-              <Activity className="h-7 w-7 text-primary" />
-              {t('admin.crons.title', 'Cron monitor')}
+              <Activity className="h-6 w-6 md:h-7 md:w-7 text-primary shrink-0" />
+              <span className="truncate">{t('admin.crons.title', 'Cron monitor')}</span>
             </h1>
             <p className="text-muted-foreground text-sm md:text-base">
               {t(
                 'admin.crons.subtitle',
-                'Last 100 cron runs. Auto-refreshes every 10s. Failed or stuck crons appear first in the per-cron health row.',
+                'Auto-refreshes every 10s. Failed or stuck crons surface first in the per-cron health row.',
               )}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Header actions — wrap to a second line on narrow screens
+              if both labels can't fit. Icon-only fallback on phones. */}
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setPurgeOpen(true)}
               className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors text-sm"
               title={t('admin.crons.purge.title', 'Delete old runs')}
+              aria-label={t('admin.crons.purge.title', 'Delete old runs')}
             >
               <Trash2 className="h-4 w-4" />
               <span className="hidden sm:inline">
@@ -322,10 +335,13 @@ export default function AdminCronMonitorPage() {
                 setLoading(true);
                 load();
               }}
-              className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm w-fit"
+              className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm"
+              aria-label={t('admin.crons.refresh', 'Refresh')}
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              {t('admin.crons.refresh', 'Refresh')}
+              <span className="hidden sm:inline">
+                {t('admin.crons.refresh', 'Refresh')}
+              </span>
             </button>
           </div>
         </div>
@@ -355,10 +371,10 @@ export default function AdminCronMonitorPage() {
                   className="w-full text-start hover:opacity-90"
                   title={t('admin.crons.filterByCron', 'Filter run table by this cron')}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-sm font-semibold">{name}</span>
+                  <div className="flex items-center justify-between gap-2 mb-2 min-w-0">
+                    <span className="font-mono text-sm font-semibold truncate min-w-0">{name}</span>
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${toneClass}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${toneClass}`}
                     >
                       <StatusIcon className="h-3 w-3" />
                       {latest
@@ -368,7 +384,7 @@ export default function AdminCronMonitorPage() {
                   </div>
                   {latest && (
                     <div className="text-xs text-muted-foreground space-y-0.5">
-                      <div>
+                      <div className="break-words" dir="ltr">
                         {new Date(latest.started_at).toLocaleString()}
                         {latest.duration_ms != null && (
                           <span> · {latest.duration_ms} ms</span>
@@ -492,6 +508,9 @@ export default function AdminCronMonitorPage() {
                           <TableHead className={isRtl ? 'text-right' : 'text-left'}>
                             {t('admin.crons.col.when', 'When')}
                           </TableHead>
+                          <TableHead className={`whitespace-nowrap ${isRtl ? 'text-right' : 'text-left'}`}>
+                            {t('admin.crons.col.date', 'Date')}
+                          </TableHead>
                           <TableHead className={isRtl ? 'text-right' : 'text-left'}>
                             {t('admin.crons.col.cron', 'Cron')}
                           </TableHead>
@@ -523,6 +542,16 @@ export default function AdminCronMonitorPage() {
                                     locale: isRtl ? heLocale : undefined,
                                   })}
                                 </div>
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" dir="ltr">
+                                {new Date(r.started_at).toLocaleString(isRtl ? 'he-IL' : 'en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                })}
                               </TableCell>
                               <TableCell className="font-mono text-xs">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -600,6 +629,16 @@ export default function AdminCronMonitorPage() {
                                 <span className="tabular-nums">{' · '}{r.duration_ms} ms</span>
                               )}
                             </div>
+                            <div className="text-[11px] text-muted-foreground/80 tabular-nums" dir="ltr">
+                              {new Date(r.started_at).toLocaleString(isRtl ? 'he-IL' : 'en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                              })}
+                            </div>
                           </div>
                           <Badge
                             variant="outline"
@@ -637,6 +676,7 @@ export default function AdminCronMonitorPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="flex-1 sm:flex-initial"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1 || loading}
                   >
@@ -645,6 +685,7 @@ export default function AdminCronMonitorPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="flex-1 sm:flex-initial"
                     onClick={() => setPage((p) => Math.min(Math.ceil(total / pageSize), p + 1))}
                     disabled={page >= Math.ceil(total / pageSize) || loading}
                   >
@@ -712,30 +753,36 @@ export default function AdminCronMonitorPage() {
               </p>
             </div>
 
-            {purgeCutoff && (
-              <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                <div className="text-muted-foreground text-xs mb-1">
-                  {t('admin.crons.purge.cutoffLabel', 'Will delete runs before')}
+            {purgeWindow && (
+              <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+                <div className="text-muted-foreground text-xs">
+                  {t('admin.crons.purge.windowLabel', 'Will delete runs in this window')}
                 </div>
-                <div className="font-mono">{purgeCutoff.toLocaleString()}</div>
+                <div className="font-mono text-xs" dir="ltr">
+                  {purgeWindow.from.toLocaleString()}
+                </div>
+                <div className="text-muted-foreground text-[10px]">↓</div>
+                <div className="font-mono text-xs" dir="ltr">
+                  {new Date(purgeWindow.to.getTime() - 1).toLocaleString()}
+                </div>
               </div>
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
             <button
               type="button"
               onClick={() => setPurgeOpen(false)}
               disabled={purgeBusy}
-              className="inline-flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 border rounded-md hover:bg-accent transition-colors text-sm w-full sm:w-auto"
             >
               {t('common.cancel', 'Cancel')}
             </button>
             <button
               type="button"
               onClick={handlePurge}
-              disabled={purgeBusy || !purgeCutoff || purgeDays < 1}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={purgeBusy || !purgeWindow || purgeDays < 1}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
             >
               {purgeBusy && <Loader2 className="h-4 w-4 animate-spin" />}
               <Trash2 className="h-4 w-4" />

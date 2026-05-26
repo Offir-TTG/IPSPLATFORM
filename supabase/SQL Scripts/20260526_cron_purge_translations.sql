@@ -14,6 +14,7 @@ BEGIN
       'admin.crons.purge.daysLabel',
       'admin.crons.purge.daysHint',
       'admin.crons.purge.cutoffLabel',
+      'admin.crons.purge.windowLabel',
       'admin.crons.purge.confirm',
       'admin.crons.purge.done',
       'admin.crons.purge.failed',
@@ -44,6 +45,11 @@ BEGIN
 
     ('en', 'admin.crons.purge.cutoffLabel',   'Will delete runs before',                      'admin', NULL, 'admin'),
     ('he', 'admin.crons.purge.cutoffLabel',   'יימחקו ריצות מלפני',                              'admin', NULL, 'admin'),
+
+    -- Replaces cutoffLabel: the dialog now shows a window (from → to)
+    -- instead of a single cutoff, because the delete is a date range.
+    ('en', 'admin.crons.purge.windowLabel',   'Will delete runs in this window',              'admin', NULL, 'admin'),
+    ('he', 'admin.crons.purge.windowLabel',   'יימחקו ריצות בטווח הבא',                          'admin', NULL, 'admin'),
 
     ('en', 'admin.crons.purge.confirm',       'Delete',                                       'admin', NULL, 'admin'),
     ('he', 'admin.crons.purge.confirm',       'מחק',                                            'admin', NULL, 'admin'),

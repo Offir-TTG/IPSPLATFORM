@@ -1,14 +1,16 @@
 /**
- * Manual purge of `cron_runs`.
+ * Manual purge of `cron_runs` — deletes a date window.
  *
  * POST /api/admin/cron-runs/purge
- * Body: { before: ISO timestamp }
+ * Body: { from: ISO timestamp, to: ISO timestamp }
  *
- * Deletes every `cron_runs` row whose `started_at < before`. The
- * caller is expected to compute `before` from an anchor date + days
- * back (cron monitor dialog does this). Admin-only, service-role.
+ * Deletes every `cron_runs` row with started_at >= from AND
+ * started_at < to. The dialog on /admin/crons computes the window
+ * as [anchor − N days at 00:00, anchor + 1 day at 00:00) so when
+ * the admin says "yesterday, 30 days back" they get exactly the
+ * last 30 days INCLUDING yesterday wiped.
  *
- * Returns { success: true, deleted: number }.
+ * Admin-only, service-role. Returns { success: true, deleted: n }.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -32,41 +34,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
   }
 
-  let body: { before?: string };
+  let body: { from?: string; to?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ success: false, error: 'Invalid JSON' }, { status: 400 });
   }
 
-  if (!body.before || typeof body.before !== 'string') {
-    return NextResponse.json({ success: false, error: '`before` (ISO timestamp) required' }, { status: 400 });
-  }
-
-  const beforeDate = new Date(body.before);
-  if (isNaN(beforeDate.getTime())) {
-    return NextResponse.json({ success: false, error: 'Invalid `before` timestamp' }, { status: 400 });
-  }
-
-  // Sanity bound: refuse a wide-open delete (anchor=now, depth=0
-  // would wipe everything). Force the cutoff to be at least 1 hour
-  // in the past so the admin can't accidentally torch live history.
-  const minPastMs = 60 * 60 * 1000;
-  if (beforeDate.getTime() > Date.now() - minPastMs) {
+  if (!body.from || !body.to || typeof body.from !== 'string' || typeof body.to !== 'string') {
     return NextResponse.json(
-      { success: false, error: 'Cutoff must be at least 1 hour in the past' },
+      { success: false, error: '`from` and `to` (ISO timestamps) required' },
+      { status: 400 },
+    );
+  }
+
+  const fromDate = new Date(body.from);
+  const toDate = new Date(body.to);
+  if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+    return NextResponse.json({ success: false, error: 'Invalid timestamps' }, { status: 400 });
+  }
+  if (fromDate.getTime() >= toDate.getTime()) {
+    return NextResponse.json(
+      { success: false, error: '`from` must be earlier than `to`' },
       { status: 400 },
     );
   }
 
   const admin = createAdminClient();
-  // .select() forces PostgREST to return the deleted rows so we can
-  // count them; using { count: 'exact' } on a delete is the simplest
-  // way to get a row count back.
   const { error, count } = await admin
     .from('cron_runs')
     .delete({ count: 'exact' })
-    .lt('started_at', beforeDate.toISOString());
+    .gte('started_at', fromDate.toISOString())
+    .lt('started_at', toDate.toISOString());
 
   if (error) {
     console.error('[cron-runs purge] failed:', error);
