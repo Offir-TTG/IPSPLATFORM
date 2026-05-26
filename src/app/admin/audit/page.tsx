@@ -4,31 +4,26 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { AuditEventsTable } from '@/components/audit/AuditEventsTable';
+import { UserAuditTable } from '@/components/admin/users/activity/UserAuditTable';
+import { TabPagination } from '@/components/admin/users/activity/TabPagination';
 import { AuditFilters, FilterState } from '@/components/audit/AuditFilters';
 import { useAdminLanguage } from '@/context/AppContext';
-import {
-  Shield,
-  AlertTriangle,
-  CheckCircle,
-  Eye,
-  Download,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Shield, Loader2 } from 'lucide-react';
 import type { AuditEvent } from '@/lib/audit/types';
 
+const PAGE_SIZE = 20;
+
 export default function AdminAuditPage() {
-  const { t } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState<FilterState>({});
   const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(0);
-  const [limit] = useState(20);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  // 1-indexed to match TabPagination. The API uses offset/limit so we
+  // convert at fetch time.
+  const [page, setPage] = useState(1);
 
   const [stats, setStats] = useState({
     totalEvents: 0,
@@ -47,10 +42,9 @@ export default function AdminAuditPage() {
       setLoading(true);
       setError('');
 
-      // Build query params
       const params = new URLSearchParams({
-        limit: limit.toString(),
-        offset: (page * limit).toString(),
+        limit: PAGE_SIZE.toString(),
+        offset: ((page - 1) * PAGE_SIZE).toString(),
       });
 
       if (filters.dateFrom) params.append('date_from', filters.dateFrom);
@@ -81,12 +75,11 @@ export default function AdminAuditPage() {
 
   const loadStats = async () => {
     try {
-      // Get stats from the last 24 hours
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
 
       const [totalRes, highRiskRes, failedRes, todayRes] = await Promise.all([
-        fetch('/api/audit/events?limit=1'), // Just to get total count
+        fetch('/api/audit/events?limit=1'),
         fetch(`/api/audit/events?risk_levels=high,critical&limit=1`),
         fetch(`/api/audit/events?status=failure&limit=1`),
         fetch(`/api/audit/events?date_from=${yesterday.toISOString()}&limit=1`),
@@ -112,132 +105,46 @@ export default function AdminAuditPage() {
 
   const handleFilterChange = (newFilters: FilterState) => {
     setFilters(newFilters);
-    setPage(0); // Reset to first page when filters change
+    setPage(1);
   };
-
-  const handleExport = async () => {
-    try {
-      // TODO: Implement export functionality
-      alert('Export functionality coming soon');
-    } catch (err) {
-      console.error('Export error:', err);
-    }
-  };
-
-  const totalPages = Math.ceil(totalCount / limit);
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl space-y-6">
-        {/* Header */}
+      <div className="max-w-6xl space-y-6" dir={direction}>
+        {/* Header — matches the user activity page heading style:
+            primary-tinted icon, h1 + muted subtitle. */}
         <div>
-          <h1 style={{
-            fontSize: 'var(--font-size-3xl)',
-            fontFamily: 'var(--font-family-heading)',
-            fontWeight: 'var(--font-weight-bold)',
-            color: 'hsl(var(--text-heading))',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem'
-          }}>
-            <Shield className="h-8 w-8" style={{ color: 'hsl(var(--primary))' }} />
+          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-3">
+            <Shield className="h-7 w-7 text-primary" />
             {t('admin.audit.title', 'Audit Trail')}
           </h1>
-          <p style={{
-            color: 'hsl(var(--text-muted))',
-            marginTop: '0.5rem',
-            fontSize: 'var(--font-size-sm)',
-            fontFamily: 'var(--font-family-primary)'
-          }}>
+          <p className="text-sm text-muted-foreground mt-2">
             {t('admin.audit.subtitle', 'Monitor all system activities and compliance events')}
           </p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div style={{
-            backgroundColor: 'hsl(var(--card))',
-            padding: '1rem',
-            borderRadius: 'calc(var(--radius) * 2)',
-            border: '1px solid hsl(var(--border))'
-          }}>
-            <div style={{
-              fontSize: 'var(--font-size-2xl)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))',
-              fontFamily: 'var(--font-family-heading)'
-            }}>{stats.totalEvents.toLocaleString()}</div>
-            <div style={{
-              fontSize: 'var(--font-size-sm)',
-              color: 'hsl(var(--text-muted))',
-              fontFamily: 'var(--font-family-primary)'
-            }}>
-              {t('admin.audit.stats.total', 'Total Events')}
-            </div>
-          </div>
-
-          <div style={{
-            backgroundColor: 'hsl(var(--card))',
-            padding: '1rem',
-            borderRadius: 'calc(var(--radius) * 2)',
-            border: '1px solid hsl(var(--border))'
-          }}>
-            <div style={{
-              fontSize: 'var(--font-size-2xl)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--destructive))',
-              fontFamily: 'var(--font-family-heading)'
-            }}>{stats.highRiskEvents.toLocaleString()}</div>
-            <div style={{
-              fontSize: 'var(--font-size-sm)',
-              color: 'hsl(var(--text-muted))',
-              fontFamily: 'var(--font-family-primary)'
-            }}>
-              {t('admin.audit.stats.highRisk', 'High Risk')}
-            </div>
-          </div>
-
-          <div style={{
-            backgroundColor: 'hsl(var(--card))',
-            padding: '1rem',
-            borderRadius: 'calc(var(--radius) * 2)',
-            border: '1px solid hsl(var(--border))'
-          }}>
-            <div style={{
-              fontSize: 'var(--font-size-2xl)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--destructive))',
-              fontFamily: 'var(--font-family-heading)'
-            }}>{stats.failedEvents.toLocaleString()}</div>
-            <div style={{
-              fontSize: 'var(--font-size-sm)',
-              color: 'hsl(var(--text-muted))',
-              fontFamily: 'var(--font-family-primary)'
-            }}>
-              {t('admin.audit.stats.failed', 'Failed Actions')}
-            </div>
-          </div>
-
-          <div style={{
-            backgroundColor: 'hsl(var(--card))',
-            padding: '1rem',
-            borderRadius: 'calc(var(--radius) * 2)',
-            border: '1px solid hsl(var(--border))'
-          }}>
-            <div style={{
-              fontSize: 'var(--font-size-2xl)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--primary))',
-              fontFamily: 'var(--font-family-heading)'
-            }}>{stats.todayEvents.toLocaleString()}</div>
-            <div style={{
-              fontSize: 'var(--font-size-sm)',
-              color: 'hsl(var(--text-muted))',
-              fontFamily: 'var(--font-family-primary)'
-            }}>
-              {t('admin.audit.stats.today', 'Last 24 Hours')}
-            </div>
-          </div>
+        {/* Stats Cards — Shadcn Card layout, same visual rhythm as the
+            count chips on each user activity tab. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard
+            value={stats.totalEvents}
+            label={t('admin.audit.stats.total', 'Total Events')}
+          />
+          <StatCard
+            value={stats.highRiskEvents}
+            label={t('admin.audit.stats.highRisk', 'High Risk')}
+            tone="destructive"
+          />
+          <StatCard
+            value={stats.failedEvents}
+            label={t('admin.audit.stats.failed', 'Failed Actions')}
+            tone="destructive"
+          />
+          <StatCard
+            value={stats.todayEvents}
+            label={t('admin.audit.stats.today', 'Last 24 Hours')}
+            tone="primary"
+          />
         </div>
 
         {/* Filters */}
@@ -245,105 +152,88 @@ export default function AdminAuditPage() {
 
         {/* Error */}
         {error && (
-          <div style={{
-            backgroundColor: 'hsl(var(--destructive) / 0.1)',
-            border: '1px solid hsl(var(--destructive))',
-            color: 'hsl(var(--destructive))',
-            padding: '0.75rem 1rem',
-            borderRadius: 'calc(var(--radius) * 1.5)',
-            fontSize: 'var(--font-size-sm)',
-            fontFamily: 'var(--font-family-primary)'
-          }}>
-            <p>{error}</p>
-          </div>
+          <Card>
+            <CardContent className="py-4 text-center text-destructive">
+              {error}
+            </CardContent>
+          </Card>
         )}
 
-        {/* Events Table */}
-        {loading ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '16rem',
-            backgroundColor: 'hsl(var(--card))',
-            borderRadius: 'calc(var(--radius) * 2)',
-            border: '1px solid hsl(var(--border))'
-          }}>
-            <RefreshCw className="h-8 w-8 animate-spin" style={{ color: 'hsl(var(--primary))' }} />
+        {/* Events Table — wrapped in the same Card+Header pattern as
+            UserActivityTab so the audit page matches the rest of the
+            admin shell visually. */}
+        {loading && events.length === 0 ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        ) : events.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              {t('admin.audit.table.noEvents', 'No audit events found')}
+            </CardContent>
+          </Card>
         ) : (
           <>
-            <AuditEventsTable events={events} isAdmin={true} t={t} />
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+                  <span>{t('admin.audit.title', 'Audit Trail')}</span>
+                  <span className="text-sm text-muted-foreground font-normal tabular-nums">
+                    {t('admin.users.activity.activity.count', '{{count}} events').replace(
+                      '{{count}}',
+                      String(totalCount),
+                    )}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 sm:p-6 sm:pt-0">
+                <UserAuditTable events={events} />
+              </CardContent>
+            </Card>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '1rem',
-                backgroundColor: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: 'calc(var(--radius) * 2)'
-              }}>
-                <div style={{
-                  fontSize: 'var(--font-size-sm)',
-                  color: 'hsl(var(--text-muted))',
-                  fontFamily: 'var(--font-family-primary)'
-                }}>
-                  {t('common.page', 'Page')} {page + 1} {t('common.of', 'of')} {totalPages}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPage(Math.max(0, page - 1))}
-                    disabled={page === 0 || loading}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      backgroundColor: 'hsl(var(--secondary))',
-                      color: 'hsl(var(--secondary-foreground))',
-                      borderRadius: 'var(--radius)',
-                      cursor: page === 0 || loading ? 'not-allowed' : 'pointer',
-                      opacity: page === 0 || loading ? 0.5 : 1,
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      border: 'none'
-                    }}
-                    className="hover:opacity-90 transition-opacity"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    {t('common.previous', 'Previous')}
-                  </button>
-                  <button
-                    onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-                    disabled={page >= totalPages - 1 || loading}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      backgroundColor: 'hsl(var(--primary))',
-                      color: 'hsl(var(--primary-foreground))',
-                      borderRadius: 'var(--radius)',
-                      cursor: page >= totalPages - 1 || loading ? 'not-allowed' : 'pointer',
-                      opacity: page >= totalPages - 1 || loading ? 0.5 : 1,
-                      fontSize: 'var(--font-size-sm)',
-                      fontFamily: 'var(--font-family-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      border: 'none'
-                    }}
-                    className="hover:opacity-90 transition-opacity"
-                  >
-                    {t('common.next', 'Next')}
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )}
+            <TabPagination
+              page={page}
+              total={totalCount}
+              pageSize={PAGE_SIZE}
+              onChange={setPage}
+              loading={loading}
+            />
           </>
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+/**
+ * Stat tile matching the look of the count chips on the user activity
+ * tabs — Shadcn Card, large tabular number on top, muted label below.
+ * `tone` swaps the number color to primary or destructive when the
+ * metric is a positive/risk signal.
+ */
+function StatCard({
+  value,
+  label,
+  tone = 'default',
+}: {
+  value: number;
+  label: string;
+  tone?: 'default' | 'primary' | 'destructive';
+}) {
+  const valueClass =
+    tone === 'destructive'
+      ? 'text-destructive'
+      : tone === 'primary'
+        ? 'text-primary'
+        : 'text-foreground';
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className={`text-2xl font-bold tabular-nums ${valueClass}`}>
+          {value.toLocaleString()}
+        </div>
+        <div className="text-sm text-muted-foreground mt-1">{label}</div>
+      </CardContent>
+    </Card>
   );
 }

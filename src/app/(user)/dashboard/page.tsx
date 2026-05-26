@@ -141,6 +141,7 @@ export default function DashboardPage() {
           <SessionsAndAttendanceTabs
             sessions={data.upcoming_sessions}
             attendance={data.recent_attendance}
+            grades={data.recent_grades ?? []}
           />
         </div>
       </div>

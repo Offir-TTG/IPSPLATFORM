@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdminLanguage } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { GradingTabsNav } from '@/components/admin/grading/GradingTabsNav';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -245,7 +246,7 @@ export default function GradeCategoriesPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="container mx-auto p-6">
+        <div className="max-w-6xl p-4 md:p-6">
           <p>{t('common.loading', 'Loading...')}</p>
         </div>
       </AdminLayout>
@@ -254,7 +255,7 @@ export default function GradeCategoriesPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -274,6 +275,8 @@ export default function GradeCategoriesPage() {
             <span>{t('admin.grading.categories.addCategory', 'Add Category')}</span>
           </Button>
         </div>
+
+        <GradingTabsNav courseId={courseId} active="categories" />
 
         {/* Weight Summary */}
         <Card>

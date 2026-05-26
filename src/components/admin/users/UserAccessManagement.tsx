@@ -5,6 +5,15 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, BookOpen, Eye, Plus, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -58,9 +67,6 @@ interface ProgramEnrollment {
   course_count: number;
 }
 
-// Direct course enrollments — when a student bought / was enrolled in a
-// single course rather than a whole program. Distinct from
-// ProgramEnrollment because there's no program wrapper to roll up.
 interface CourseEnrollment {
   enrollment_id: string;
   course_id: string;
@@ -95,17 +101,15 @@ interface Course {
 
 interface UserAccessManagementProps {
   userId: string;
-  /**
-   * When true, hides the back-button header (used when embedded inside the
-   * per-user tabbed page, which renders its own header).
-   */
   embedded?: boolean;
 }
 
 export function UserAccessManagement({ userId, embedded = false }: UserAccessManagementProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { t } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
+  const isRtl = direction === 'rtl';
+  const dateLocale = isRtl ? 'he-IL' : undefined;
 
   const [user, setUser] = useState<User | null>(null);
   const [programEnrollments, setProgramEnrollments] = useState<ProgramEnrollment[]>([]);
@@ -131,9 +135,6 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
 
   const loadUserData = async () => {
     try {
-      // There is no GET /api/admin/users/[id] — pull the profile fields we
-      // need (id, first/last name, email, role) from /summary, which is
-      // always available to admins.
       const res = await fetch(`/api/admin/users/${userId}/summary`);
       if (!res.ok) throw new Error('Failed to load user');
       const data = await res.json();
@@ -329,8 +330,11 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
     vc => vc.source === 'program' && !hiddenOverrides.some(o => o.course_id === vc.course_id)
   );
 
+  const headerCell = isRtl ? 'text-right' : 'text-left';
+  const headerCellEnd = isRtl ? 'text-left' : 'text-right';
+
   return (
-    <div className={embedded ? 'space-y-6' : 'p-6 space-y-6'}>
+    <div className={embedded ? 'space-y-4' : 'p-6 space-y-4'} dir={direction}>
       {!embedded && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -363,289 +367,473 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
         </AlertDescription>
       </Alert>
 
+      {/* Program enrollments */}
       <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.users.activity.access.programs.title', 'Program enrollments')}</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+            <span>{t('admin.users.activity.access.programs.title', 'Program enrollments')}</span>
+            <span className="text-sm text-muted-foreground font-normal tabular-nums">
+              {t('admin.users.activity.access.programs.count', '{{count}} programs').replace('{{count}}', String(programEnrollments.length))}
+            </span>
+          </CardTitle>
           <CardDescription>
             {t('admin.users.activity.access.programs.description', 'Programs this user is enrolled in (provides default course access)')}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
           {programEnrollments.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>{t('admin.users.activity.access.programs.empty', 'Not enrolled in any programs')}</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {programEnrollments.map((enrollment) => (
-                <div
-                  key={enrollment.enrollment_id}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium">{enrollment.program_name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {t('admin.users.activity.access.programs.coursesCount', { count: enrollment.course_count })}
+            <ResponsiveTable>
+              <ResponsiveTable.Desktop>
+                <div className="overflow-x-auto" dir={direction}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.programs.col.program', 'Program')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.programs.col.courses', 'Courses')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.programs.col.enrolled', 'Enrolled')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.programs.col.status', 'Status')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {programEnrollments.map((e) => (
+                        <TableRow key={e.enrollment_id}>
+                          <TableCell className="font-medium" dir="auto">{e.program_name}</TableCell>
+                          <TableCell className="tabular-nums">{e.course_count}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(e.enrolled_at).toLocaleDateString(dateLocale)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="text-[10px]">
+                              {t(`admin.users.activity.values.enrollmentStatus.${e.enrollment_status}`, e.enrollment_status)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </ResponsiveTable.Desktop>
+
+              <ResponsiveTable.Mobile className="space-y-2 p-3" dir={direction}>
+                {programEnrollments.map((e) => (
+                  <div key={e.enrollment_id} className="rounded-lg border p-3 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium break-words" dir="auto">{e.program_name}</p>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">
+                        {t(`admin.users.activity.values.enrollmentStatus.${e.enrollment_status}`, e.enrollment_status)}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t('admin.users.activity.access.programs.coursesCount', { count: e.course_count })}
                       {' · '}
-                      {t('admin.users.activity.access.programs.enrolledOn', 'Enrolled')}: {new Date(enrollment.enrolled_at).toLocaleDateString()}
+                      {new Date(e.enrolled_at).toLocaleDateString(dateLocale)}
                     </p>
                   </div>
-                  <Badge>
-                    {t(`admin.users.activity.values.enrollmentStatus.${enrollment.enrollment_status}`, enrollment.enrollment_status)}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                ))}
+              </ResponsiveTable.Mobile>
+            </ResponsiveTable>
           )}
         </CardContent>
       </Card>
 
-      {/* Direct course enrollments — distinct from program enrollments
-          above. A student can be enrolled in a single course without
-          being part of any program; previously those didn't surface
-          anywhere on this tab, only in "Final visible courses" at the
-          bottom (if at all). */}
+      {/* Direct course enrollments */}
       <Card>
-        <CardHeader>
-          <CardTitle>
-            {t('admin.users.activity.access.courses.title', 'Course enrollments')}
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+            <span>{t('admin.users.activity.access.courses.title', 'Course enrollments')}</span>
+            <span className="text-sm text-muted-foreground font-normal tabular-nums">
+              {t('admin.users.activity.access.courses.count', '{{count}} courses').replace('{{count}}', String(courseEnrollments.length))}
+            </span>
           </CardTitle>
           <CardDescription>
-            {t(
-              'admin.users.activity.access.courses.description',
-              'Courses this user is enrolled in directly (outside of any program)'
-            )}
+            {t('admin.users.activity.access.courses.description', 'Courses this user is enrolled in directly (outside of any program)')}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
           {courseEnrollments.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
-              <p>
-                {t(
-                  'admin.users.activity.access.courses.empty',
-                  'No direct course enrollments'
-                )}
-              </p>
+              <p>{t('admin.users.activity.access.courses.empty', 'No direct course enrollments')}</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {courseEnrollments.map((enrollment) => (
-                <div
-                  key={enrollment.enrollment_id}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium">{enrollment.course_name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {t(
-                        'admin.users.activity.access.courses.enrolledOn',
-                        'Enrolled'
-                      )}
-                      : {new Date(enrollment.enrolled_at).toLocaleDateString()}
+            <ResponsiveTable>
+              <ResponsiveTable.Desktop>
+                <div className="overflow-x-auto" dir={direction}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.courses.col.course', 'Course')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.courses.col.enrolled', 'Enrolled')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.courses.col.status', 'Status')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {courseEnrollments.map((e) => (
+                        <TableRow key={e.enrollment_id}>
+                          <TableCell className="font-medium" dir="auto">{e.course_name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(e.enrolled_at).toLocaleDateString(dateLocale)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="text-[10px]">
+                              {t(`admin.users.activity.values.enrollmentStatus.${e.enrollment_status}`, e.enrollment_status)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </ResponsiveTable.Desktop>
+
+              <ResponsiveTable.Mobile className="space-y-2 p-3" dir={direction}>
+                {courseEnrollments.map((e) => (
+                  <div key={e.enrollment_id} className="rounded-lg border p-3 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium break-words" dir="auto">{e.course_name}</p>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">
+                        {t(`admin.users.activity.values.enrollmentStatus.${e.enrollment_status}`, e.enrollment_status)}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(e.enrolled_at).toLocaleDateString(dateLocale)}
                     </p>
                   </div>
-                  <Badge>
-                    {t(
-                      `admin.users.activity.values.enrollmentStatus.${enrollment.enrollment_status}`,
-                      enrollment.enrollment_status
-                    )}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                ))}
+              </ResponsiveTable.Mobile>
+            </ResponsiveTable>
           )}
         </CardContent>
       </Card>
 
+      {/* Granted courses */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>{t('admin.users.activity.access.granted.title', 'Granted courses')}</CardTitle>
-              <CardDescription>
-                {t('admin.users.activity.access.granted.description', 'Courses granted outside of program enrollments')}
-              </CardDescription>
-            </div>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+            <span className="flex items-center gap-3 flex-wrap">
+              <span>{t('admin.users.activity.access.granted.title', 'Granted courses')}</span>
+              <span className="text-sm text-muted-foreground font-normal tabular-nums">
+                {t('admin.users.activity.access.granted.count', '{{count}} granted').replace('{{count}}', String(grantedOverrides.length))}
+              </span>
+            </span>
             <Button
+              size="sm"
               onClick={() => setShowGrantDialog(true)}
               disabled={availableForGrant.length === 0}
             >
               <Plus className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
               {t('admin.users.activity.access.granted.action', 'Grant access')}
             </Button>
-          </div>
+          </CardTitle>
+          <CardDescription>
+            {t('admin.users.activity.access.granted.description', 'Courses granted outside of program enrollments')}
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
           {grantedOverrides.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>{t('admin.users.activity.access.granted.empty', 'No granted courses')}</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {grantedOverrides.map((override) => (
-                <div
-                  key={override.id}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <p className="font-medium">{override.course_title}</p>
-                    <p className="text-sm text-muted-foreground">{override.reason}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('admin.users.activity.access.granted.grantedOn', 'Granted')}: {new Date(override.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setOverrideToRemove(override);
-                      setShowRemoveOverrideDialog(true);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+            <ResponsiveTable>
+              <ResponsiveTable.Desktop>
+                <div className="overflow-x-auto" dir={direction}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.granted.col.course', 'Course')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.granted.col.reason', 'Reason')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.granted.col.granted', 'Granted')}</TableHead>
+                        <TableHead className={headerCellEnd}>{t('common.actions', 'Actions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {grantedOverrides.map((o) => (
+                        <TableRow key={o.id}>
+                          <TableCell className="font-medium" dir="auto">{o.course_title}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground" dir="auto">{o.reason || '—'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(o.created_at).toLocaleDateString(dateLocale)}
+                          </TableCell>
+                          <TableCell className={headerCellEnd}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setOverrideToRemove(o);
+                                setShowRemoveOverrideDialog(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
-              ))}
-            </div>
+              </ResponsiveTable.Desktop>
+
+              <ResponsiveTable.Mobile className="space-y-2 p-3" dir={direction}>
+                {grantedOverrides.map((o) => (
+                  <div key={o.id} className="rounded-lg border p-3 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium break-words" dir="auto">{o.course_title}</p>
+                        {o.reason && (
+                          <p className="text-sm text-muted-foreground break-words" dir="auto">{o.reason}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(o.created_at).toLocaleDateString(dateLocale)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => {
+                          setOverrideToRemove(o);
+                          setShowRemoveOverrideDialog(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </ResponsiveTable.Mobile>
+            </ResponsiveTable>
           )}
         </CardContent>
       </Card>
 
+      {/* Hidden courses */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>{t('admin.users.activity.access.hidden.title', 'Hidden courses')}</CardTitle>
-              <CardDescription>
-                {t('admin.users.activity.access.hidden.description', "Courses hidden from this student's program(s)")}
-              </CardDescription>
-            </div>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+            <span className="flex items-center gap-3 flex-wrap">
+              <span>{t('admin.users.activity.access.hidden.title', 'Hidden courses')}</span>
+              <span className="text-sm text-muted-foreground font-normal tabular-nums">
+                {t('admin.users.activity.access.hidden.count', '{{count}} hidden').replace('{{count}}', String(hiddenOverrides.length))}
+              </span>
+            </span>
             <Button
+              size="sm"
               onClick={() => setShowHideDialog(true)}
               disabled={availableForHide.length === 0}
             >
               <Plus className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
               {t('admin.users.activity.access.hidden.action', 'Hide course')}
             </Button>
-          </div>
+          </CardTitle>
+          <CardDescription>
+            {t('admin.users.activity.access.hidden.description', "Courses hidden from this student's program(s)")}
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
           {hiddenOverrides.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>{t('admin.users.activity.access.hidden.empty', 'No hidden courses')}</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {hiddenOverrides.map((override) => (
-                <div
-                  key={override.id}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <p className="font-medium">{override.course_title}</p>
-                    <p className="text-sm text-muted-foreground">{override.reason}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('admin.users.activity.access.hidden.hiddenOn', 'Hidden')}: {new Date(override.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setOverrideToRemove(override);
-                      setShowRemoveOverrideDialog(true);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+            <ResponsiveTable>
+              <ResponsiveTable.Desktop>
+                <div className="overflow-x-auto" dir={direction}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.hidden.col.course', 'Course')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.hidden.col.reason', 'Reason')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.hidden.col.hidden', 'Hidden')}</TableHead>
+                        <TableHead className={headerCellEnd}>{t('common.actions', 'Actions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {hiddenOverrides.map((o) => (
+                        <TableRow key={o.id}>
+                          <TableCell className="font-medium" dir="auto">{o.course_title}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground" dir="auto">{o.reason || '—'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(o.created_at).toLocaleDateString(dateLocale)}
+                          </TableCell>
+                          <TableCell className={headerCellEnd}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setOverrideToRemove(o);
+                                setShowRemoveOverrideDialog(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
-              ))}
-            </div>
+              </ResponsiveTable.Desktop>
+
+              <ResponsiveTable.Mobile className="space-y-2 p-3" dir={direction}>
+                {hiddenOverrides.map((o) => (
+                  <div key={o.id} className="rounded-lg border p-3 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium break-words" dir="auto">{o.course_title}</p>
+                        {o.reason && (
+                          <p className="text-sm text-muted-foreground break-words" dir="auto">{o.reason}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(o.created_at).toLocaleDateString(dateLocale)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => {
+                          setOverrideToRemove(o);
+                          setShowRemoveOverrideDialog(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </ResponsiveTable.Mobile>
+            </ResponsiveTable>
           )}
         </CardContent>
       </Card>
 
+      {/* Final visible courses */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Eye className="h-5 w-5" />
-            <div>
-              <CardTitle>{t('admin.users.activity.access.visible.title', 'Final visible courses')}</CardTitle>
-              <CardDescription>
-                {t('admin.users.activity.access.visible.description', 'Courses this student can actually see (after applying all rules)')}
-              </CardDescription>
-            </div>
-          </div>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+            <span className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              <span>{t('admin.users.activity.access.visible.title', 'Final visible courses')}</span>
+            </span>
+            <span className="text-sm text-muted-foreground font-normal tabular-nums">
+              {t('admin.users.activity.access.visible.count', '{{count}} visible').replace('{{count}}', String(visibleCourses.length))}
+            </span>
+          </CardTitle>
+          <CardDescription>
+            {t('admin.users.activity.access.visible.description', 'Courses this student can actually see (after applying all rules)')}
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
           {visibleCourses.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>{t('admin.users.activity.access.visible.empty', 'No visible courses')}</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {visibleCourses.map((course) => {
-                // Three source buckets after the API's refinement:
-                //   'program'           → student is enrolled in a program that includes this course
-                //   'course_enrollment' → student is enrolled directly in this course
-                //   'manual_grant' (or other) → admin explicitly granted access
-                const src = course.source as 'program' | 'course_enrollment' | 'manual_grant' | string;
-                let subtitle: string;
-                let badgeLabel: string;
-                let badgeVariant: 'default' | 'secondary' | 'outline';
-                if (src === 'program') {
-                  subtitle = course.program_name
-                    ? t('admin.users.activity.access.visible.fromProgram', { program: course.program_name })
-                    : t('admin.users.activity.access.visible.fromProgramNoName', 'From a program');
-                  badgeLabel = t('admin.users.activity.access.visible.sourceProgram', 'Program');
-                  badgeVariant = 'default';
-                } else if (src === 'course_enrollment') {
-                  subtitle = t(
-                    'admin.users.activity.access.visible.fromCourseEnrollment',
-                    'Direct course enrollment',
-                  );
-                  badgeLabel = t(
-                    'admin.users.activity.access.visible.sourceCourseEnrollment',
-                    'Course',
-                  );
-                  badgeVariant = 'secondary';
-                } else {
-                  subtitle = t(
-                    'admin.users.activity.access.visible.grantedDirectly',
-                    'Granted directly',
-                  );
-                  badgeLabel = t(
-                    'admin.users.activity.access.visible.sourceManualGrant',
-                    'Manual grant',
-                  );
-                  badgeVariant = 'outline';
-                }
-                return (
-                  <div
-                    key={`${course.course_id}-${src}`}
-                    className="flex items-center justify-between p-4 border rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium">{course.course_title}</p>
-                      <p className="text-sm text-muted-foreground">{subtitle}</p>
+            <ResponsiveTable>
+              <ResponsiveTable.Desktop>
+                <div className="overflow-x-auto" dir={direction}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.visible.col.course', 'Course')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.visible.col.source', 'Source')}</TableHead>
+                        <TableHead className={headerCell}>{t('admin.users.activity.access.visible.col.required', 'Required')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleCourses.map((course) => {
+                        const src = course.source as 'program' | 'course_enrollment' | 'manual_grant' | string;
+                        let subtitle: string;
+                        let badgeLabel: string;
+                        let badgeVariant: 'default' | 'secondary' | 'outline';
+                        if (src === 'program') {
+                          subtitle = course.program_name
+                            ? t('admin.users.activity.access.visible.fromProgram', { program: course.program_name })
+                            : t('admin.users.activity.access.visible.fromProgramNoName', 'From a program');
+                          badgeLabel = t('admin.users.activity.access.visible.sourceProgram', 'Program');
+                          badgeVariant = 'default';
+                        } else if (src === 'course_enrollment') {
+                          subtitle = t('admin.users.activity.access.visible.fromCourseEnrollment', 'Direct course enrollment');
+                          badgeLabel = t('admin.users.activity.access.visible.sourceCourseEnrollment', 'Course');
+                          badgeVariant = 'secondary';
+                        } else {
+                          subtitle = t('admin.users.activity.access.visible.grantedDirectly', 'Granted directly');
+                          badgeLabel = t('admin.users.activity.access.visible.sourceManualGrant', 'Manual grant');
+                          badgeVariant = 'outline';
+                        }
+                        return (
+                          <TableRow key={`${course.course_id}-${src}`}>
+                            <TableCell className="font-medium" dir="auto">{course.course_title}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <Badge variant={badgeVariant} className="text-[10px] w-fit">{badgeLabel}</Badge>
+                                <span className="text-xs text-muted-foreground" dir="auto">{subtitle}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {course.is_required ? (
+                                <Badge variant="outline" className="text-[10px]">
+                                  {t('admin.users.activity.access.visible.requiredBadge', 'Required')}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </ResponsiveTable.Desktop>
+
+              <ResponsiveTable.Mobile className="space-y-2 p-3" dir={direction}>
+                {visibleCourses.map((course) => {
+                  const src = course.source as 'program' | 'course_enrollment' | 'manual_grant' | string;
+                  let subtitle: string;
+                  let badgeLabel: string;
+                  let badgeVariant: 'default' | 'secondary' | 'outline';
+                  if (src === 'program') {
+                    subtitle = course.program_name
+                      ? t('admin.users.activity.access.visible.fromProgram', { program: course.program_name })
+                      : t('admin.users.activity.access.visible.fromProgramNoName', 'From a program');
+                    badgeLabel = t('admin.users.activity.access.visible.sourceProgram', 'Program');
+                    badgeVariant = 'default';
+                  } else if (src === 'course_enrollment') {
+                    subtitle = t('admin.users.activity.access.visible.fromCourseEnrollment', 'Direct course enrollment');
+                    badgeLabel = t('admin.users.activity.access.visible.sourceCourseEnrollment', 'Course');
+                    badgeVariant = 'secondary';
+                  } else {
+                    subtitle = t('admin.users.activity.access.visible.grantedDirectly', 'Granted directly');
+                    badgeLabel = t('admin.users.activity.access.visible.sourceManualGrant', 'Manual grant');
+                    badgeVariant = 'outline';
+                  }
+                  return (
+                    <div key={`${course.course_id}-${src}`} className="rounded-lg border p-3 space-y-1">
+                      <p className="font-medium break-words" dir="auto">{course.course_title}</p>
+                      <p className="text-xs text-muted-foreground break-words" dir="auto">{subtitle}</p>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <Badge variant={badgeVariant} className="text-[10px]">{badgeLabel}</Badge>
+                        {course.is_required && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {t('admin.users.activity.access.visible.requiredBadge', 'Required')}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-                      {course.is_required && (
-                        <Badge variant="outline">
-                          {t('admin.users.activity.access.visible.requiredBadge', 'Required')}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </ResponsiveTable.Mobile>
+            </ResponsiveTable>
           )}
         </CardContent>
       </Card>

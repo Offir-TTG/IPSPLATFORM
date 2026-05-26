@@ -1,10 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
 import { Loader2 } from 'lucide-react';
 import { useAdminLanguage } from '@/context/AppContext';
+import { TabPagination } from './TabPagination';
 
 interface Enrollment {
   id: string;
@@ -17,11 +27,15 @@ interface Enrollment {
   product: { id: string; title: string; type: string } | null;
 }
 
+// Always `en-US` — Hebrew currency formatting splits "$" from the
+// digits with RTL marks ("50 ‏$0") which is unreadable.
 function money(n: number | null | undefined) {
   if (n === null || n === undefined) return '—';
   return new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD',
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(Number(n));
 }
 
@@ -32,31 +46,41 @@ function statusVariant(s: string): 'default' | 'secondary' | 'destructive' | 'ou
   return 'outline';
 }
 
+const PAGE_SIZE = 20;
+
 export function UserEnrollmentsTab({ userId }: { userId: string }) {
-  const { t } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
+  const isRtl = direction === 'rtl';
+  const dateLocale = isRtl ? 'he-IL' : undefined;
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/admin/users/${userId}/enrollments`)
-      .then(r => { if (!r.ok) throw new Error('failed'); return r.json(); })
-      .then((d) => { if (!cancelled) setEnrollments(d.enrollments ?? []); })
+    const qs = new URLSearchParams({ page: String(page), per_page: String(PAGE_SIZE) });
+    fetch(`/api/admin/users/${userId}/enrollments?${qs}`, { cache: 'no-store' })
+      .then((r) => { if (!r.ok) throw new Error('failed'); return r.json(); })
+      .then((d) => {
+        if (cancelled) return;
+        setEnrollments(d.enrollments ?? []);
+        setTotal(d.total ?? 0);
+      })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, page]);
 
-  if (loading) {
+  if (loading && enrollments.length === 0) {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
-
   if (error) {
     return (
       <Card>
@@ -66,7 +90,6 @@ export function UserEnrollmentsTab({ userId }: { userId: string }) {
       </Card>
     );
   }
-
   if (enrollments.length === 0) {
     return (
       <Card>
@@ -77,39 +100,111 @@ export function UserEnrollmentsTab({ userId }: { userId: string }) {
     );
   }
 
+  const renderStatus = (e: Enrollment) => (
+    <div className="flex items-center gap-1 flex-wrap">
+      <Badge variant={statusVariant(e.status)} className="text-[10px]">
+        {t(`admin.users.activity.values.enrollmentStatus.${e.status}`, e.status)}
+      </Badge>
+      <Badge variant={statusVariant(e.payment_status)} className="text-[10px]">
+        {t(`admin.users.activity.values.paymentStatus.${e.payment_status}`, e.payment_status)}
+      </Badge>
+    </div>
+  );
+
+  const renderAmount = (e: Enrollment) => (
+    <span className="tabular-nums whitespace-nowrap text-sm">
+      {money(e.paid_amount)} / {money(e.total_amount)}
+    </span>
+  );
+
   return (
-    <div className="space-y-3">
-      {enrollments.map((e) => (
-        <Card key={e.id}>
-          <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-foreground break-words">
-                  {e.product?.title ?? '—'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t('admin.users.activity.enrollments.enrolledAt', 'Enrolled')}: {new Date(e.created_at).toLocaleDateString()}
-                  {e.product?.type && ` · ${t(`admin.users.activity.values.productType.${e.product.type}`, e.product.type)}`}
-                </p>
+    <div className="space-y-4" dir={direction}>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
+            <span>{t('admin.users.activity.enrollments.title', 'Enrollments')}</span>
+            <span className="text-sm text-muted-foreground font-normal tabular-nums">
+              {t('admin.users.activity.enrollments.count', '{{count}} enrollments').replace('{{count}}', String(total))}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
+          <ResponsiveTable>
+            <ResponsiveTable.Desktop>
+              <div className="overflow-x-auto" dir={direction}>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                        {t('admin.users.activity.enrollments.col.product', 'Product')}
+                      </TableHead>
+                      <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                        {t('admin.users.activity.enrollments.col.enrolled', 'Enrolled')}
+                      </TableHead>
+                      <TableHead className={isRtl ? 'text-right' : 'text-left'}>
+                        {t('admin.users.activity.enrollments.col.status', 'Status')}
+                      </TableHead>
+                      <TableHead className={isRtl ? 'text-left' : 'text-right'}>
+                        {t('admin.users.activity.enrollments.col.amount', 'Amount')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {enrollments.map((e) => (
+                      <TableRow key={e.id}>
+                        <TableCell className="max-w-xs">
+                          <p className="font-medium truncate" dir="auto" title={e.product?.title ?? '—'}>
+                            {e.product?.title ?? '—'}
+                          </p>
+                          {e.product?.type && (
+                            <p className="text-xs text-muted-foreground">
+                              {t(`admin.users.activity.values.productType.${e.product.type}`, e.product.type)}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(e.created_at).toLocaleDateString(dateLocale)}
+                        </TableCell>
+                        <TableCell>{renderStatus(e)}</TableCell>
+                        <TableCell className={isRtl ? 'text-left' : 'text-right'}>
+                          {renderAmount(e)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={statusVariant(e.status)}>
-                  {t(`admin.users.activity.values.enrollmentStatus.${e.status}`, e.status)}
-                </Badge>
-                <Badge variant={statusVariant(e.payment_status)}>
-                  {t(`admin.users.activity.values.paymentStatus.${e.payment_status}`, e.payment_status)}
-                </Badge>
-                <div className="text-sm text-right">
-                  <p className="font-medium">{money(e.paid_amount)} / {money(e.total_amount)}</p>
+            </ResponsiveTable.Desktop>
+
+            <ResponsiveTable.Mobile className="space-y-2 p-3" dir={direction}>
+              {enrollments.map((e) => (
+                <div key={e.id} className="rounded-lg border p-3 space-y-2">
+                  <p className="font-medium truncate" dir="auto" title={e.product?.title ?? '—'}>
+                    {e.product?.title ?? '—'}
+                  </p>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    {renderStatus(e)}
+                    {renderAmount(e)}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    {t('admin.users.activity.enrollments.paidAmount', 'Paid')} / {t('admin.users.activity.enrollments.totalAmount', 'Total')}
+                    {t('admin.users.activity.enrollments.enrolledAt', 'Enrolled')}:{' '}
+                    {new Date(e.created_at).toLocaleDateString(dateLocale)}
+                    {e.product?.type && ` · ${t(`admin.users.activity.values.productType.${e.product.type}`, e.product.type)}`}
                   </p>
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+              ))}
+            </ResponsiveTable.Mobile>
+          </ResponsiveTable>
+        </CardContent>
+      </Card>
+
+      <TabPagination
+        page={page}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onChange={setPage}
+        loading={loading}
+      />
     </div>
   );
 }

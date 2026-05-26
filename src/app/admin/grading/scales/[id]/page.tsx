@@ -286,7 +286,7 @@ export default function GradeRangesPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="container mx-auto p-6">
+        <div className="max-w-6xl p-4 md:p-6">
           <p>{t('common.loading', 'Loading...')}</p>
         </div>
       </AdminLayout>
@@ -296,7 +296,7 @@ export default function GradeRangesPage() {
   if (!scale) {
     return (
       <AdminLayout>
-        <div className="container mx-auto p-6">
+        <div className="max-w-6xl p-4 md:p-6">
           <p suppressHydrationWarning>{t('admin.grading.ranges.notFound.scale', 'Scale not found')}</p>
         </div>
       </AdminLayout>
@@ -305,7 +305,7 @@ export default function GradeRangesPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 min-w-0">

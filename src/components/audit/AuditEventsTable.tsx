@@ -10,6 +10,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import type { AuditEvent } from '@/lib/audit/types';
+import { useAdminLanguage } from '@/context/AppContext';
 import '@/styles/audit-table.css';
 
 interface AuditEventsTableProps {
@@ -21,6 +22,11 @@ interface AuditEventsTableProps {
 
 export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_, fallback) => fallback }: AuditEventsTableProps) {
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  // Pick the date locale based on the admin UI direction so month
+  // names render in Hebrew when the rest of the page is RTL
+  // (previously these always showed "May" even in Hebrew mode).
+  const { direction } = useAdminLanguage();
+  const dateLocale = direction === 'rtl' ? 'he-IL' : undefined;
 
   const getRiskIcon = (riskLevel: string) => {
     switch (riskLevel) {
@@ -84,18 +90,18 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
   };
 
   const formatDate = (dateString: string) => {
-    // Use the user's browser locale so the date/time numerals match the
-    // rest of the platform (previously hardcoded he-IL produced numerals
-    // in a different font from the surrounding table text).
+    // Locale matches the admin UI direction — RTL admin gets he-IL
+    // dates (Hebrew month abbreviations, day-month order). 2-digit
+    // numerals keep the Hebrew/English visual alignment consistent.
     const date = new Date(dateString);
 
-    const dateStr = date.toLocaleDateString(undefined, {
+    const dateStr = date.toLocaleDateString(dateLocale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
     });
 
-    const timeStr = date.toLocaleTimeString(undefined, {
+    const timeStr = date.toLocaleTimeString(dateLocale, {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,

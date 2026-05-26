@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertCircle, ShieldCheck, AlertTriangle, XCircle, Tag } from 'lucide-react';
-import { AuditEventsTable } from '@/components/audit/AuditEventsTable';
+import { UserAuditTable } from './UserAuditTable';
 import type { AuditEvent } from '@/lib/audit/types';
 import { useAdminLanguage } from '@/context/AppContext';
 
@@ -269,7 +269,7 @@ export function UserOverviewTab({ userId, summary, onSwitchToActivity, onSwitchT
                 {t('admin.users.activity.activity.empty', 'No activity recorded for this user yet.')}
               </p>
             ) : (
-              <AuditEventsTable events={recent} isAdmin t={t} />
+              <UserAuditTable events={recent} />
             )}
           </CardContent>
         </Card>

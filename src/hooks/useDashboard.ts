@@ -93,11 +93,31 @@ export interface RecentActivity {
   timestamp: string;
 }
 
+export interface RecentGrade {
+  id: string;
+  grade_item_id: string | null;
+  grade_item_name: string;
+  course_id: string | null;
+  course_name: string;
+  points_earned: number | null;
+  max_points: number | null;
+  percentage: number | null;
+  letter_grade: string | null;
+  letter_color: string | null;
+  status: string | null;
+  is_excused: boolean;
+  graded_at: string | null;
+  due_date: string | null;
+  category_name: string | null;
+  category_color: string | null;
+}
+
 export interface DashboardData {
   enrollments: Enrollment[];
   upcoming_sessions: UpcomingSession[];
   pending_assignments: PendingAssignment[];
   recent_attendance: AttendanceRecord[];
+  recent_grades?: RecentGrade[];
   stats: DashboardStats;
   recent_activity: RecentActivity[];
   weekly_activity?: WeeklyActivityData[];

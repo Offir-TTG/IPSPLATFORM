@@ -3,9 +3,10 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/admin/users/[id]/enrollments
-// Returns the user's enrollments with the joined product (program/course)
-// title and the payment rollup we already store on the enrollment row.
+// GET /api/admin/users/[id]/enrollments?page=1&per_page=20
+// Returns the user's enrollments paginated with the joined product
+// (program/course) title and the payment rollup we already store on
+// the enrollment row.
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -28,11 +29,18 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const perPage = Math.min(100, Math.max(1, parseInt(searchParams.get('per_page') || '20', 10)));
+    const from = (page - 1) * perPage;
+    const to = from + perPage - 1;
+
     const adminClient = createAdminClient();
 
-    const { data, error } = await adminClient
+    const { data, error, count } = await adminClient
       .from('enrollments')
-      .select(`
+      .select(
+        `
         id,
         status,
         payment_status,
@@ -41,24 +49,26 @@ export async function GET(
         enrollment_type,
         created_at,
         product:products ( id, title, type )
-      `)
+      `,
+        { count: 'exact' },
+      )
       .eq('user_id', params.id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (error) {
       console.error('enrollments query failed:', error);
-      return NextResponse.json(
-        { error: 'Failed to load enrollments' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to load enrollments' }, { status: 500 });
     }
 
-    return NextResponse.json({ enrollments: data ?? [] });
+    return NextResponse.json({
+      enrollments: data ?? [],
+      total: count ?? 0,
+      page,
+      per_page: perPage,
+    });
   } catch (error) {
     console.error(`Error in GET /api/admin/users/${params.id}/enrollments:`, error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -65,7 +65,15 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid grade item IDs' }, { status: 400 });
     }
 
-    // Prepare grades for upsert
+    // NOTE: do NOT write letter_grade here. The student portal and the
+    // admin Grades tab both read student_grades.letter_grade straight
+    // from the DB. A previous version of this endpoint computed and
+    // wrote the letter on every save — but for courses without a
+    // grading_scale_id (or with no matching range), it produced NULL
+    // and overwrote whatever value had been backfilled. To populate
+    // letters, run supabase/SQL Scripts/20260526_backfill_letter_grades.sql
+    // (or whichever process originally populated them); save shouldn't
+    // touch the column.
     const gradesToUpsert = grades.map(grade => ({
       ...(grade.id && { id: grade.id }),
       tenant_id: userData.tenant_id,
@@ -83,7 +91,7 @@ export async function POST(
     const { data: upsertedGrades, error: upsertError } = await supabase
       .from('student_grades')
       .upsert(gradesToUpsert, {
-        onConflict: 'tenant_id,grade_item_id,student_id',
+        onConflict: 'grade_item_id,student_id',
         ignoreDuplicates: false,
       })
       .select();

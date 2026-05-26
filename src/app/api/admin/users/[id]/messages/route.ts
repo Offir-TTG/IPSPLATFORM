@@ -3,10 +3,10 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/admin/users/[id]/messages
-// Returns conversations the user is currently in, with a snippet of the
-// most recent message and the user's unread_count. Read-only — admin
-// cannot send DMs from this view.
+// GET /api/admin/users/[id]/messages?page=1&per_page=20
+// Paginated conversations the user is currently in, with a snippet
+// of the most recent message and the user's unread_count. Read-only
+// — admin cannot send DMs from this view.
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -29,12 +29,18 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const perPage = Math.min(100, Math.max(1, parseInt(searchParams.get('per_page') || '20', 10)));
+    const from = (page - 1) * perPage;
+    const to = from + perPage - 1;
+
     const adminClient = createAdminClient();
 
-    // Fetch the user's participant rows + the joined conversation metadata.
-    const { data: parts, error } = await adminClient
+    const { data: parts, error, count } = await adminClient
       .from('conversation_participants')
-      .select(`
+      .select(
+        `
         id,
         unread_count,
         last_read_at,
@@ -43,34 +49,32 @@ export async function GET(
         conversation:conversations (
           id, name, last_message_at, program_id, course_id, is_active
         )
-      `)
+      `,
+        { count: 'exact' },
+      )
       .eq('user_id', params.id)
       .is('left_at', null)
       .order('joined_at', { ascending: false })
-      .limit(100);
+      .range(from, to);
 
     if (error) {
       console.error('conversation_participants query failed:', error);
-      return NextResponse.json(
-        { error: 'Failed to load messages' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to load messages' }, { status: 500 });
     }
 
     const conversationIds = (parts ?? [])
       .map((p: any) => p.conversation?.id)
       .filter(Boolean);
 
-    // Fetch the most recent message per conversation in one round-trip,
-    // then dedupe client-side (PostgREST has no DISTINCT ON convenience).
-    let lastMsgByConvId = new Map<string, { content: string; created_at: string }>();
+    // Most recent message per conversation in one round-trip.
+    const lastMsgByConvId = new Map<string, { content: string; created_at: string }>();
     if (conversationIds.length > 0) {
       const { data: msgs } = await adminClient
         .from('messages')
         .select('conversation_id, content, created_at')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
-        .limit(conversationIds.length * 10); // generous over-fetch
+        .limit(conversationIds.length * 10);
 
       for (const m of msgs ?? []) {
         if (!lastMsgByConvId.has((m as any).conversation_id)) {
@@ -94,12 +98,14 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({ conversations });
+    return NextResponse.json({
+      conversations,
+      total: count ?? 0,
+      page,
+      per_page: perPage,
+    });
   } catch (error) {
     console.error(`Error in GET /api/admin/users/${params.id}/messages:`, error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

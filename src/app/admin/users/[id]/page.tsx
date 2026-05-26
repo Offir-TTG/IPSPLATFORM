@@ -22,11 +22,12 @@ import { UserPaymentsTab } from '@/components/admin/users/activity/UserPaymentsT
 import { UserAttendanceTab } from '@/components/admin/users/activity/UserAttendanceTab';
 import { UserGradesTab } from '@/components/admin/users/activity/UserGradesTab';
 import { UserNotificationsTab } from '@/components/admin/users/activity/UserNotificationsTab';
+import { UserEmailsTab } from '@/components/admin/users/activity/UserEmailsTab';
 import { UserMessagesTab } from '@/components/admin/users/activity/UserMessagesTab';
 
 const VALID_TABS = [
   'overview', 'activity', 'enrollments', 'payments',
-  'attendance', 'grades', 'notifications', 'messages', 'access',
+  'attendance', 'grades', 'notifications', 'emails', 'messages', 'access',
 ] as const;
 type TabKey = typeof VALID_TABS[number];
 
@@ -44,16 +45,16 @@ function formatMoney(amount: number) {
 // year; use 24-hour time to skip the "PM" suffix; no comma separator.
 // Match the platform's existing timestamp style (no custom "Xh ago"
 // strings — those read in fallback fonts and look out of place).
-function formatLastActivity(iso: string | null, neverLabel: string) {
+function formatLastActivity(iso: string | null, neverLabel: string, locale?: string) {
   if (!iso) return neverLabel;
   const d = new Date(iso);
   const sameYear = d.getFullYear() === new Date().getFullYear();
-  const datePart = d.toLocaleDateString(undefined, {
+  const datePart = d.toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     ...(sameYear ? {} : { year: 'numeric' }),
   });
-  const timePart = d.toLocaleTimeString(undefined, {
+  const timePart = d.toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -82,7 +83,8 @@ export default function UserActivityPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = params.id as string;
-  const { t } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
+  const dateLocale = direction === 'rtl' ? 'he-IL' : undefined;
 
   const [summary, setSummary] = useState<UserSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -292,7 +294,7 @@ export default function UserActivityPage() {
           />
           <SummaryChip
             label={t('admin.users.activity.summary.lastActivity', 'Last activity')}
-            value={formatLastActivity(summary.last_activity_at, neverLabel)}
+            value={formatLastActivity(summary.last_activity_at, neverLabel, dateLocale)}
             onClick={() => handleTabChange('activity')}
           />
         </div>
@@ -310,6 +312,7 @@ export default function UserActivityPage() {
               <TabsTrigger value="attendance">{t('admin.users.activity.tabs.attendance', 'Attendance')}</TabsTrigger>
               <TabsTrigger value="grades">{t('admin.users.activity.tabs.grades', 'Grades')}</TabsTrigger>
               <TabsTrigger value="notifications">{t('admin.users.activity.tabs.notifications', 'Notifications')}</TabsTrigger>
+              <TabsTrigger value="emails">{t('admin.users.activity.tabs.emails', 'Emails')}</TabsTrigger>
               <TabsTrigger value="messages">{t('admin.users.activity.tabs.messages', 'Messages')}</TabsTrigger>
               <TabsTrigger value="access">{t('admin.users.activity.tabs.access', 'Access')}</TabsTrigger>
             </TabsList>
@@ -340,6 +343,9 @@ export default function UserActivityPage() {
           </TabsContent>
           <TabsContent value="notifications" className="mt-6">
             <UserNotificationsTab userId={userId} />
+          </TabsContent>
+          <TabsContent value="emails" className="mt-6">
+            <UserEmailsTab userId={userId} />
           </TabsContent>
           <TabsContent value="messages" className="mt-6">
             <UserMessagesTab userId={userId} />

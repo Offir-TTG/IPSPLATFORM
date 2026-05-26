@@ -3,21 +3,27 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UpcomingSessions } from './UpcomingSessions';
 import { Attendance } from './Attendance';
-import { Calendar, CalendarCheck } from 'lucide-react';
+import { Grades } from './Grades';
+import { Calendar, CalendarCheck, Award } from 'lucide-react';
 import { useUserLanguage } from '@/context/AppContext';
-import type { UpcomingSession, AttendanceRecord } from '@/hooks/useDashboard';
+import type { UpcomingSession, AttendanceRecord, RecentGrade } from '@/hooks/useDashboard';
 
 interface SessionsAndAttendanceTabsProps {
   sessions: UpcomingSession[];
   attendance: AttendanceRecord[];
+  grades: RecentGrade[];
 }
 
-export function SessionsAndAttendanceTabs({ sessions, attendance }: SessionsAndAttendanceTabsProps) {
+export function SessionsAndAttendanceTabs({
+  sessions,
+  attendance,
+  grades,
+}: SessionsAndAttendanceTabsProps) {
   const { t } = useUserLanguage();
 
   return (
     <Tabs defaultValue="sessions" className="w-full">
-      <TabsList className="grid w-full grid-cols-2">
+      <TabsList className="grid w-full grid-cols-3">
         <TabsTrigger value="sessions" className="gap-2">
           <Calendar className="h-4 w-4" />
           {t('user.dashboard.sessions.title', 'Upcoming Sessions')}
@@ -25,6 +31,10 @@ export function SessionsAndAttendanceTabs({ sessions, attendance }: SessionsAndA
         <TabsTrigger value="attendance" className="gap-2">
           <CalendarCheck className="h-4 w-4" />
           {t('user.dashboard.attendance.title', 'Attendance')}
+        </TabsTrigger>
+        <TabsTrigger value="grades" className="gap-2">
+          <Award className="h-4 w-4" />
+          {t('user.dashboard.grades.title', 'Grades')}
         </TabsTrigger>
       </TabsList>
 
@@ -34,6 +44,10 @@ export function SessionsAndAttendanceTabs({ sessions, attendance }: SessionsAndA
 
       <TabsContent value="attendance" className="mt-6">
         <Attendance attendance={attendance} />
+      </TabsContent>
+
+      <TabsContent value="grades" className="mt-6">
+        <Grades grades={grades} />
       </TabsContent>
     </Tabs>
   );

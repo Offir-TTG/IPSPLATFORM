@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useHelp } from '@/hooks/useHelp';
+import { GradingTabsNav } from '@/components/admin/grading/GradingTabsNav';
 
 export default function GradeItemsPage() {
   useHelp('grading-items');
@@ -273,7 +274,7 @@ export default function GradeItemsPage() {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="container mx-auto p-6">
+        <div className="max-w-6xl p-4 md:p-6">
           <p>{t('common.loading', 'Loading...')}</p>
         </div>
       </AdminLayout>
@@ -282,7 +283,7 @@ export default function GradeItemsPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -302,6 +303,8 @@ export default function GradeItemsPage() {
             <span>{t('admin.grading.items.addItem', 'Add Item')}</span>
           </Button>
         </div>
+
+        <GradingTabsNav courseId={courseId} active="items" />
 
         {/* Items List */}
         {items.length === 0 ? (
@@ -347,7 +350,9 @@ export default function GradeItemsPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-center gap-2 mb-2">
                                 <h3 className="text-base md:text-lg font-semibold">{item.name}</h3>
-                                <Badge variant="outline">{item.max_points} pts</Badge>
+                                <Badge variant="outline">
+                                  {t('admin.grading.items.pointsBadge', '{{points}} pts').replace('{{points}}', String(item.max_points))}
+                                </Badge>
                                 {item.is_extra_credit && (
                                   <Badge variant="default">{t('admin.grading.items.extraCredit', 'Extra Credit')}</Badge>
                                 )}
@@ -440,14 +445,16 @@ export default function GradeItemsPage() {
             <div className="space-y-2">
               <Label htmlFor="category">{t('admin.grading.items.form.category', 'Category')}</Label>
               <Select
-                value={formData.category_id}
-                onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+                value={formData.category_id || '__none__'}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, category_id: value === '__none__' ? '' : value })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder={t('admin.grading.items.form.selectCategory', 'Select a category (optional)')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">{t('admin.grading.items.form.noCategory', 'No category')}</SelectItem>
+                  <SelectItem value="__none__">{t('admin.grading.items.form.noCategory', 'No category')}</SelectItem>
                   {categories.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
                       {category.name} ({category.weight_percentage}%)
@@ -505,7 +512,7 @@ export default function GradeItemsPage() {
 
             {/* Checkboxes */}
             <div className="space-y-3">
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2.5">
                 <Checkbox
                   id="is_published"
                   checked={formData.is_published}
@@ -516,7 +523,7 @@ export default function GradeItemsPage() {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2.5">
                 <Checkbox
                   id="is_extra_credit"
                   checked={formData.is_extra_credit}
@@ -527,7 +534,7 @@ export default function GradeItemsPage() {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2.5">
                 <Checkbox
                   id="allow_late_submission"
                   checked={formData.allow_late_submission}

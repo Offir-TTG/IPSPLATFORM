@@ -45,7 +45,8 @@ interface CourseSummary {
   overall_grade: number;
   total_points_earned: number;
   total_points_possible: number;
-  letter_grade?: string;
+  letter_grade?: string | null;
+  letter_color?: string | null;
 }
 
 export default function StudentGradesPage() {
@@ -122,13 +123,8 @@ export default function StudentGradesPage() {
     }
   }
 
-  function getLetterGradeColor(percentage: number): string {
-    if (percentage >= 90) return 'text-green-600';
-    if (percentage >= 80) return 'text-blue-600';
-    if (percentage >= 70) return 'text-yellow-600';
-    if (percentage >= 60) return 'text-orange-600';
-    return 'text-red-600';
-  }
+  // Letter color now travels with the API response (from the matched
+  // grade_ranges row's color_code). No hardcoded percentage thresholds.
 
   function getCategoryGrade(categoryId: string): { earned: number; possible: number; percentage: number } {
     const category = categories.find(c => c.id === categoryId);
@@ -190,7 +186,10 @@ export default function StudentGradesPage() {
               <Award className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${getLetterGradeColor(summary.overall_grade)}`}>
+              <div
+                className="text-2xl font-bold"
+                style={summary.letter_color ? { color: summary.letter_color } : undefined}
+              >
                 {summary.letter_grade || '0'}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -270,7 +269,7 @@ export default function StudentGradesPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className={`text-xl font-bold ${getLetterGradeColor(percentage)}`}>
+                      <div className="text-xl font-bold tabular-nums">
                         {percentage.toFixed(1)}%
                       </div>
                       <p className="text-sm text-muted-foreground">
@@ -340,7 +339,7 @@ export default function StudentGradesPage() {
                       </Badge>
                     ) : grade.points_earned !== null ? (
                       <div className="text-right">
-                        <div className={`text-2xl font-bold ${getLetterGradeColor(percentage)}`}>
+                        <div className="text-2xl font-bold tabular-nums">
                           {grade.points_earned}/{grade.max_points}
                         </div>
                         <div className="flex items-center gap-2 mt-1">

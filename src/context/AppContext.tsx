@@ -658,9 +658,14 @@ export function AppProvider({ children }: { children: React.ReactNode}) {
     const translations = actualContext === 'admin' ? adminTranslations : userTranslations;
     let translation = translations[key] || fallback || key;
 
-    // Replace parameters in translation (e.g., {count} with actual value)
+    // Replace parameters in translation. Supports both `{var}` and
+    // `{{var}}` placeholder styles — many existing DB rows use the
+    // double-brace form, which previously only got the inner `{var}`
+    // substituted (e.g. `{{rate}}` → `{33.3}` with stray braces). Match
+    // double-brace first so the outer braces are consumed together.
     if (actualParams) {
       Object.keys(actualParams).forEach(paramKey => {
+        translation = translation.replace(new RegExp(`\\{\\{${paramKey}\\}\\}`, 'g'), String(actualParams[paramKey]));
         translation = translation.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(actualParams[paramKey]));
       });
     }

@@ -215,7 +215,7 @@ export default function GradingScalesPage() {
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-4 md:p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -263,36 +263,20 @@ export default function GradingScalesPage() {
             {scales.map((scale) => (
               <Card key={scale.id} className="hover:shadow-md transition-shadow">
                 <CardHeader>
+                  {/* Two-row layout: title + actions on top, badges
+                      underneath. Stacks cleanly on mobile so the
+                      badges don't fight with Edit/Delete for space. */}
                   <div className="flex items-start justify-between gap-3">
                     <div
-                      className="flex flex-wrap items-center gap-2 md:gap-3 flex-1 min-w-0 cursor-pointer"
+                      className="flex-1 min-w-0 cursor-pointer"
                       onClick={() => router.push(`/admin/grading/scales/${scale.id}`)}
                     >
-                      <CardTitle className="text-lg md:text-xl">{scale.name}</CardTitle>
-                      <div className={`flex flex-wrap gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                        {scale.is_default && (
-                          <Badge variant="default" suppressHydrationWarning>
-                            {t('admin.grading.scales.default', 'Default')}
-                          </Badge>
-                        )}
-                        {scale.is_active ? (
-                          <Badge variant="outline" className="text-green-600 border-green-600">
-                            <CheckCircle className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
-                            <span suppressHydrationWarning>{t('admin.grading.scales.active', 'Active')}</span>
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-gray-600 border-gray-600">
-                            <XCircle className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
-                            <span suppressHydrationWarning>{t('admin.grading.scales.inactive', 'Inactive')}</span>
-                          </Badge>
-                        )}
-                        <Badge variant="secondary" suppressHydrationWarning>
-                          {t(`admin.grading.scales.scaleType.${scale.scale_type}`, scale.scale_type)}
-                        </Badge>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CardTitle className="text-base md:text-xl truncate">{scale.name}</CardTitle>
+                        <ChevronRight className={`h-5 w-5 text-muted-foreground shrink-0 ${isRtl ? 'rotate-180' : ''} hidden md:inline-block`} />
                       </div>
-                      <ChevronRight className={`h-5 w-5 text-muted-foreground ${isRtl ? 'rotate-180' : ''} hidden md:inline-block`} />
                     </div>
-                    <div className={`flex gap-2 shrink-0 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                    <div className="flex gap-2 shrink-0">
                       <Button
                         variant="outline"
                         size="sm"
@@ -316,8 +300,31 @@ export default function GradingScalesPage() {
                       </Button>
                     </div>
                   </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {scale.is_default && (
+                      <Badge variant="default" suppressHydrationWarning>
+                        {t('admin.grading.scales.default', 'Default')}
+                      </Badge>
+                    )}
+                    {scale.is_active ? (
+                      <Badge variant="outline" className="text-green-600 border-green-600">
+                        <CheckCircle className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
+                        <span suppressHydrationWarning>{t('admin.grading.scales.active', 'Active')}</span>
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-gray-600 border-gray-600">
+                        <XCircle className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
+                        <span suppressHydrationWarning>{t('admin.grading.scales.inactive', 'Inactive')}</span>
+                      </Badge>
+                    )}
+                    <Badge variant="secondary" suppressHydrationWarning>
+                      {t(`admin.grading.scales.scaleType.${scale.scale_type}`, scale.scale_type)}
+                    </Badge>
+                  </div>
                   {scale.description && (
-                    <p className={`text-sm text-muted-foreground mt-2 ${isRtl ? 'text-right' : ''}`}>{scale.description}</p>
+                    <p className="text-sm text-muted-foreground mt-2 break-words" dir="auto">
+                      {scale.description}
+                    </p>
                   )}
                 </CardHeader>
                 <CardContent>
@@ -327,26 +334,29 @@ export default function GradingScalesPage() {
                         <span>{t('admin.grading.scales.ranges', 'Grade Ranges')}</span>
                         <Badge variant="secondary">{scale.grade_ranges.length}</Badge>
                       </p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                         {scale.grade_ranges
                           .sort((a, b) => a.display_order - b.display_order)
                           .map((range) => (
                             <div
                               key={range.id}
-                              className="flex flex-col p-3 border rounded-lg"
+                              className="flex flex-col p-2 sm:p-3 border rounded-lg min-w-0"
                               style={{ borderColor: range.color_code || 'hsl(var(--border))' }}
+                              dir="ltr"
                             >
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-bold text-lg">{range.grade_label}</span>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="font-bold text-base sm:text-lg">{range.grade_label}</span>
                                 {range.gpa_value !== null && (
-                                  <span className="text-xs text-muted-foreground">{range.gpa_value.toFixed(2)}</span>
+                                  <span className="text-xs text-muted-foreground tabular-nums">
+                                    {range.gpa_value.toFixed(2)}
+                                  </span>
                                 )}
                               </div>
-                              <span className="text-xs text-muted-foreground">
-                                {range.min_percentage.toFixed(2)}%-{range.max_percentage.toFixed(2)}%
+                              <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                                {Math.round(range.min_percentage)}–{Math.round(range.max_percentage)}%
                               </span>
                               {!range.is_passing && (
-                                <Badge variant="destructive" className="mt-1 text-xs" suppressHydrationWarning>
+                                <Badge variant="destructive" className="mt-1 text-[10px]" suppressHydrationWarning>
                                   {t('admin.grading.scales.failing', 'Failing')}
                                 </Badge>
                               )}

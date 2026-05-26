@@ -24,10 +24,12 @@ export const GET = withAuth(
 
       const tenantId = userData.tenant_id;
 
-      // Get course info and verify it exists
+      // Get course info and verify it exists. Pull the course's own
+      // grading_scale_id so we can map the overall percentage to a
+      // letter via grade_ranges (no hardcoded 90/80/70/60).
       const { data: course, error: courseError } = await supabase
         .from('courses')
-        .select('title, description')
+        .select('title, description, grading_scale_id')
         .eq('id', courseId)
         .eq('tenant_id', tenantId)
         .single();
@@ -75,14 +77,39 @@ export const GET = withAuth(
         ? (totalPointsEarned / totalPointsPossible) * 100
         : 0;
 
-      // Determine letter grade (only if there are graded assignments)
-      let letterGrade = null;
+      // Letter + color from the course's scale, with a tenant default
+      // fallback when the course has no scale assigned. All values
+      // come from grade_ranges — no hardcoded thresholds.
+      let letterGrade: string | null = null;
+      let letterColor: string | null = null;
+
       if (totalPointsPossible > 0) {
-        if (overallGrade >= 90) letterGrade = 'A';
-        else if (overallGrade >= 80) letterGrade = 'B';
-        else if (overallGrade >= 70) letterGrade = 'C';
-        else if (overallGrade >= 60) letterGrade = 'D';
-        else letterGrade = 'F';
+        let scaleId: string | null = course.grading_scale_id ?? null;
+        if (!scaleId) {
+          const { data: defaultScaleRow } = await supabase
+            .from('grading_scales')
+            .select('id')
+            .eq('tenant_id', tenantId)
+            .eq('is_active', true)
+            .order('is_default', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          scaleId = defaultScaleRow?.id ?? null;
+        }
+
+        if (scaleId) {
+          const { data: rangeRows } = await supabase
+            .from('grade_ranges')
+            .select('min_percentage, max_percentage, grade_label, color_code')
+            .eq('grading_scale_id', scaleId);
+          const hit = (rangeRows ?? []).find((r: any) =>
+            overallGrade >= Number(r.min_percentage) && overallGrade <= Number(r.max_percentage),
+          );
+          if (hit) {
+            letterGrade = (hit as any).grade_label ?? null;
+            letterColor = (hit as any).color_code ?? null;
+          }
+        }
       }
 
       return NextResponse.json({
@@ -94,6 +121,7 @@ export const GET = withAuth(
           total_points_earned: totalPointsEarned,
           total_points_possible: totalPointsPossible,
           letter_grade: letterGrade,
+          letter_color: letterColor,
         },
       });
     } catch (error) {
