@@ -79,15 +79,9 @@ export function UpcomingSessions({ sessions }: UpcomingSessionsProps) {
             </div>
           </div>
           <h3 className="text-lg font-semibold mb-2">{t('user.dashboard.sessions.noSessions', 'No upcoming sessions')}</h3>
-          <p className="text-sm text-muted-foreground mb-4">
+          <p className="text-sm text-muted-foreground">
             {t('user.dashboard.sessions.checkLater', 'Check back later for scheduled live sessions')}
           </p>
-          <Button variant="outline" asChild>
-            <Link href="/calendar">
-              <Calendar className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-              {t('user.dashboard.sessions.viewCalendar', 'View Calendar')}
-            </Link>
-          </Button>
         </Card>
       </div>
     );

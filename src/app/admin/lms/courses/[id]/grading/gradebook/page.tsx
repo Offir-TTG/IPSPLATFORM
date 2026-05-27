@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -105,6 +105,10 @@ export default function GradebookPage() {
   // Import dialog state.
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  // Hidden file input that the custom "Choose file" button triggers.
+  // Replaces the native control whose "Choose file" / "No file chosen"
+  // labels are owned by the browser locale and can't be translated.
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<{
     change_count: number;
     error_count: number;
@@ -807,18 +811,48 @@ export default function GradebookPage() {
 
             <div className="space-y-4">
               <div>
-                <Input
+                {/* Native file input is offscreen — we render our own
+                    translated label + button + filename next to it. */}
+                <input
+                  ref={importFileInputRef}
                   type="file"
                   accept=".csv,text/csv"
+                  className="sr-only"
                   onChange={(e) => {
                     setImportFile(e.target.files?.[0] ?? null);
                     setImportPreview(null);
                   }}
                   disabled={importBusy}
                 />
-                {importFile && (
-                  <p className="text-xs text-muted-foreground mt-1">{importFile.name}</p>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => importFileInputRef.current?.click()}
+                    disabled={importBusy}
+                  >
+                    {t('admin.grading.gradebook.import.chooseFile', 'Choose file')}
+                  </Button>
+                  <span className="text-xs text-muted-foreground truncate max-w-[260px]" dir="auto">
+                    {importFile
+                      ? importFile.name
+                      : t('admin.grading.gradebook.import.noFileChosen', 'No file chosen')}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {t(
+                    'admin.grading.gradebook.import.templateHint',
+                    "First time? Download the template — it's pre-filled with the right columns and one row per enrolled student.",
+                  )}{' '}
+                  <a
+                    href={`/api/admin/lms/courses/${courseId}/grading/gradebook/export?template=1`}
+                    className="text-primary underline-offset-2 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Download className="h-3 w-3" />
+                    {t('admin.grading.gradebook.import.downloadTemplate', 'Download template')}
+                  </a>
+                </p>
               </div>
 
               {importPreview && (

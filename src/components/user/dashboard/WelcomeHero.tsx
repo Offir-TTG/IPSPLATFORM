@@ -1,6 +1,6 @@
 'use client';
 
-import { Sparkles, GraduationCap, Video, Bell, TrendingUp, User, Sun, Sunset, Moon } from 'lucide-react';
+import { Sparkles, GraduationCap, Video, Bell, TrendingUp, User, Sun, Sunset, Moon, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
@@ -89,6 +89,12 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
       href: '/profile',
       color: 'text-green-600 bg-green-50 dark:bg-green-950/30',
     },
+    {
+      icon: CreditCard,
+      label: t('user.dashboard.hero.actions.billing', 'Billing'),
+      href: '/billing',
+      color: 'text-rose-600 bg-rose-50 dark:bg-rose-950/30',
+    },
   ];
 
   return (
@@ -138,7 +144,7 @@ export function WelcomeHero({ userName, stats }: WelcomeHeroProps) {
           </div>
 
           {/* Right: Quick Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {quickActions.map((action, index) => {
               const Icon = action.icon;
               const isNotificationCard = action.icon === Bell;

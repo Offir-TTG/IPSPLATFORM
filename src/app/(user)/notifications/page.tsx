@@ -4,7 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  UnderlineTabsList,
+  UnderlineTabsTrigger,
+  TabCountBadge,
+} from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -49,7 +55,7 @@ const PRIORITY_ICONS: Record<NotificationPriority, any> = {
 // Category labels will be dynamically translated using t() function
 
 export default function NotificationsPage() {
-  const { t } = useUserLanguage();
+  const { t, direction } = useUserLanguage();
   const [activeTab, setActiveTab] = useState('all');
   const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -406,22 +412,32 @@ export default function NotificationsPage() {
 
       {/* Notifications List */}
       <Card>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="border-b px-6 pt-6">
-            <TabsList>
-              <TabsTrigger value="all" suppressHydrationWarning>
-                {t('user.notifications.tabs.all', 'All')} ({total})
-              </TabsTrigger>
-              <TabsTrigger value="unread" suppressHydrationWarning>
-                {t('user.notifications.tabs.unread', 'Unread')} ({unreadCount})
-              </TabsTrigger>
-              <TabsTrigger value="read" suppressHydrationWarning>
-                {t('user.notifications.tabs.read', 'Read')} ({total - unreadCount})
-              </TabsTrigger>
-              <TabsTrigger value="deleted" suppressHydrationWarning>
-                {t('user.notifications.tabs.deleted', 'Deleted')} ({deletedCount})
-              </TabsTrigger>
-            </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full" dir={direction}>
+          {/* Card content uses px-6, so we bleed `-mx-6 px-6` for an
+              underline rail that reaches the card edges. overflow-x-auto
+              keeps the 4 labels + count chips on one line on the
+              narrowest phone, scrolling only if they overflow. */}
+          <div className="px-6 pt-6">
+            <div className="-mx-6 px-6 overflow-x-auto">
+              <UnderlineTabsList className="gap-6">
+                <UnderlineTabsTrigger value="all">
+                  <span suppressHydrationWarning>{t('user.notifications.tabs.all', 'All')}</span>
+                  <TabCountBadge n={total} />
+                </UnderlineTabsTrigger>
+                <UnderlineTabsTrigger value="unread">
+                  <span suppressHydrationWarning>{t('user.notifications.tabs.unread', 'Unread')}</span>
+                  <TabCountBadge n={unreadCount} tone="alert" />
+                </UnderlineTabsTrigger>
+                <UnderlineTabsTrigger value="read">
+                  <span suppressHydrationWarning>{t('user.notifications.tabs.read', 'Read')}</span>
+                  <TabCountBadge n={total - unreadCount} />
+                </UnderlineTabsTrigger>
+                <UnderlineTabsTrigger value="deleted">
+                  <span suppressHydrationWarning>{t('user.notifications.tabs.deleted', 'Deleted')}</span>
+                  <TabCountBadge n={deletedCount} />
+                </UnderlineTabsTrigger>
+              </UnderlineTabsList>
+            </div>
           </div>
 
           <TabsContent value={activeTab} className="p-6 space-y-3">

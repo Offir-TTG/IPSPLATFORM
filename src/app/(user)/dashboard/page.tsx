@@ -125,9 +125,6 @@ export default function DashboardPage() {
         {/* Stats Cards */}
         <StatsCards stats={enhancedStats} />
 
-        {/* Payment Summary */}
-        <PaymentSummary />
-
         {/* Progress and Courses Grid */}
         <div className="grid gap-6 lg:grid-cols-3">
           <ProgressOverview stats={enhancedStats} />
@@ -144,6 +141,11 @@ export default function DashboardPage() {
             grades={data.recent_grades ?? []}
           />
         </div>
+
+        {/* Payment Summary — moved to the end so the page leads with
+            learning (progress + courses + sessions) and finances stay
+            as a reference section below. */}
+        <PaymentSummary />
       </div>
     </div>
   );

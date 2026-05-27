@@ -6,7 +6,12 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  UnderlineTabsList,
+  UnderlineTabsTrigger,
+  TabCountBadge,
+} from '@/components/ui/tabs';
 import {
   BookOpen,
   Calendar,
@@ -148,7 +153,7 @@ function getDefaultImage(courseName: string | null): string {
 }
 
 export default function CoursesPage() {
-  const { t } = useUserLanguage();
+  const { t, direction } = useUserLanguage();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<CourseStatus>('all');
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
@@ -382,13 +387,32 @@ export default function CoursesPage() {
 
       {/* Tabs Filter and View Toggle */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CourseStatus)}>
-          <TabsList className="grid w-full max-w-md grid-cols-4">
-            <TabsTrigger value="all">{t('user.courses.tabs.all', 'All')}</TabsTrigger>
-            <TabsTrigger value="in_progress">{t('user.courses.tabs.inProgress', 'In Progress')}</TabsTrigger>
-            <TabsTrigger value="completed">{t('user.courses.tabs.completed', 'Completed')}</TabsTrigger>
-            <TabsTrigger value="not_started">{t('user.courses.tabs.notStarted', 'Not Started')}</TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CourseStatus)} className="min-w-0 flex-1" dir={direction}>
+          {/* Page itself has no horizontal padding (parent layout
+              handles it), so no negative-margin bleed is needed. The
+              overflow-x-auto + flex-nowrap pairing keeps the 4 tabs +
+              count chips on one line on the narrowest phone, with a
+              scrollbar appearing only if labels overflow. */}
+          <div className="overflow-x-auto">
+            <UnderlineTabsList className="gap-6">
+              <UnderlineTabsTrigger value="all">
+                <span>{t('user.courses.tabs.all', 'All')}</span>
+                <TabCountBadge n={stats.total} />
+              </UnderlineTabsTrigger>
+              <UnderlineTabsTrigger value="in_progress">
+                <span>{t('user.courses.tabs.inProgress', 'In Progress')}</span>
+                <TabCountBadge n={stats.in_progress} />
+              </UnderlineTabsTrigger>
+              <UnderlineTabsTrigger value="completed">
+                <span>{t('user.courses.tabs.completed', 'Completed')}</span>
+                <TabCountBadge n={stats.completed} />
+              </UnderlineTabsTrigger>
+              <UnderlineTabsTrigger value="not_started">
+                <span>{t('user.courses.tabs.notStarted', 'Not Started')}</span>
+                <TabCountBadge n={stats.not_started} />
+              </UnderlineTabsTrigger>
+            </UnderlineTabsList>
+          </div>
         </Tabs>
 
         {/* View Toggle */}

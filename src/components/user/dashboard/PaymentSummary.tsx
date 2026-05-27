@@ -91,7 +91,16 @@ export function PaymentSummary() {
   // Calculate totals
   const totalPaid = enrollments.reduce((sum, e) => sum + e.paid_amount, 0);
   const totalRefunded = enrollments.reduce((sum, e) => sum + (e.refunded_amount || 0), 0);
-  const totalOwed = enrollments.reduce((sum, e) => sum + (e.total_amount - e.paid_amount), 0);
+  // Per-enrollment outstanding mirrors the Pending row logic below:
+  //   net paid  = paid_amount - refunded_amount  (refunds raise what's owed)
+  //   owed      = max(0, total - net paid)        (no negative contributions)
+  // Without the max(), an over-paid or fully-refunded enrollment would
+  // contribute a negative number and the headline tile could go below
+  // zero — which is what the admin reported.
+  const totalOwed = enrollments.reduce((sum, e) => {
+    const netPaid = e.paid_amount - (e.refunded_amount || 0);
+    return sum + Math.max(0, e.total_amount - netPaid);
+  }, 0);
   const totalAmount = enrollments.reduce((sum, e) => sum + e.total_amount, 0);
   const netPaid = totalPaid - totalRefunded;
   const currency = enrollments[0]?.currency || 'ILS';
@@ -299,7 +308,7 @@ export function PaymentSummary() {
 
       {/* View All Link */}
       <div className="pt-4 border-t">
-        <Link href="/profile?tab=billing">
+        <Link href="/billing">
           <Button variant="outline" className="w-full group">
             <span suppressHydrationWarning>
               {t('user.dashboard.payment.viewAllPayments', 'View All Payments & Invoices')}

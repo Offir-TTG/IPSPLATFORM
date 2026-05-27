@@ -6,7 +6,13 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  UnderlineTabsList,
+  UnderlineTabsTrigger,
+  TabCountBadge,
+} from '@/components/ui/tabs';
 import { CreditCard, Calendar, DollarSign, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useUserLanguage } from '@/context/AppContext';
@@ -35,7 +41,7 @@ interface PaymentSchedule {
 }
 
 export default function PaymentsPage() {
-  const { t } = useUserLanguage();
+  const { t, direction } = useUserLanguage();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [upcomingPayments, setUpcomingPayments] = useState<PaymentSchedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,11 +206,23 @@ export default function PaymentsPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="enrollments" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="enrollments">{t('user.payments.myEnrollments', 'My Enrollments')}</TabsTrigger>
-          <TabsTrigger value="upcoming">{t('user.payments.upcomingPayments', 'Upcoming Payments')}</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="enrollments" className="space-y-4" dir={direction}>
+        {/* Mobile-safe bleed wrapper. Container is `px-4 md:px-0` so we
+            mirror `-mx-4 md:-mx-0` (md+ has no parent padding to bleed
+            into). flex-nowrap on the list keeps tabs on one line and
+            triggers horizontal scroll only when truly overflowing. */}
+        <div className="-mx-4 md:mx-0 px-4 md:px-0 overflow-x-auto">
+          <UnderlineTabsList className="gap-6">
+            <UnderlineTabsTrigger value="enrollments">
+              <span>{t('user.payments.myEnrollments', 'My Enrollments')}</span>
+              <TabCountBadge n={enrollments.length} />
+            </UnderlineTabsTrigger>
+            <UnderlineTabsTrigger value="upcoming">
+              <span>{t('user.payments.upcomingPayments', 'Upcoming Payments')}</span>
+              <TabCountBadge n={upcomingPayments.length} />
+            </UnderlineTabsTrigger>
+          </UnderlineTabsList>
+        </div>
 
         <TabsContent value="enrollments" className="space-y-4">
           {enrollments.length === 0 ? (

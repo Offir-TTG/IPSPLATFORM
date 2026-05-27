@@ -40,10 +40,16 @@ export async function GET(
     // limited to those students. The gradebook page uses this to honor
     // its active filters (search/category/grade range) and any explicit
     // row selection. Empty/unset = whole course.
-    const studentIdsParam = new URL(request.url).searchParams.get('student_ids');
+    const url = new URL(request.url);
+    const studentIdsParam = url.searchParams.get('student_ids');
     const restrictToStudentIds = studentIdsParam
       ? new Set(studentIdsParam.split(',').map((s) => s.trim()).filter(Boolean))
       : null;
+    // ?template=1 — skip existing grades and emit a blank-cell CSV
+    // shaped for re-import. The header row, student rows, and column
+    // names match the importer exactly so the round-trip works
+    // without any manual editing of column names.
+    const isTemplate = url.searchParams.get('template') === '1';
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -97,11 +103,14 @@ export async function GET(
     }>;
 
     // All grades for this course (joined so we can match by student + item).
-    const { data: grades } = await supabase
-      .from('student_grades')
-      .select('student_id, grade_item_id, points_earned, is_excused, grade_item:grade_items!inner(course_id)')
-      .eq('tenant_id', userData.tenant_id)
-      .eq('grade_item.course_id', courseId);
+    // Skipped entirely for ?template=1 — the template needs to be empty.
+    const { data: grades } = isTemplate
+      ? { data: [] as any[] }
+      : await supabase
+          .from('student_grades')
+          .select('student_id, grade_item_id, points_earned, is_excused, grade_item:grade_items!inner(course_id)')
+          .eq('tenant_id', userData.tenant_id)
+          .eq('grade_item.course_id', courseId);
 
     // Map: studentId -> itemId -> points_earned (excused rows become 'EXCUSED').
     const byStudent = new Map<string, Map<string, string>>();
@@ -116,15 +125,17 @@ export async function GET(
       byStudent.set(g.student_id, inner);
     });
 
-    // Build CSV.
+    // Build CSV. Totals columns are omitted on the template — they're
+    // read-only on a real export (the importer ignores them) and on
+    // an empty template they'd just show the same max-points sum for
+    // every student, which feels like seeded data and confuses the
+    // admin.
     const headers = [
       'Student ID',
       'Email',
       'Full Name',
       ...gradeItems.map((i) => `${i.name} (/${i.max_points})`),
-      'Total Earned',
-      'Total Possible',
-      'Percentage',
+      ...(isTemplate ? [] : ['Total Earned', 'Total Possible', 'Percentage']),
     ];
 
     const rows = students.map((s) => {
@@ -140,11 +151,10 @@ export async function GET(
         if (raw !== '') {
           earned += Number(raw);
           possible += Number(item.max_points);
-        } else {
-          // Ungraded still counts toward possible? No — keep "earned/possible"
-          // consistent with what the page shows in the totals column (which
-          // does add every item's max_points). To match, include max_points
-          // for every item:
+        } else if (!isTemplate) {
+          // Real export: every item contributes to the possible total
+          // even if ungraded, matching what the gradebook UI shows.
+          // For a template these totals don't exist (see headers).
           possible += Number(item.max_points);
         }
         return raw;
@@ -155,9 +165,9 @@ export async function GET(
         s.email,
         s.full_name,
         ...itemCols,
-        earned.toFixed(2),
-        possible.toFixed(2),
-        pct.toFixed(2),
+        ...(isTemplate
+          ? []
+          : [earned.toFixed(2), possible.toFixed(2), pct.toFixed(2)]),
       ];
     });
 
@@ -176,8 +186,9 @@ export async function GET(
     const utf8Title = course.title.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 60) || 'course';
     const asciiTitle = utf8Title.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'course';
     const date = new Date().toISOString().slice(0, 10);
-    const asciiName = `gradebook-${asciiTitle}-${date}.csv`;
-    const utf8Name = `gradebook-${utf8Title}-${date}.csv`;
+    const prefix = isTemplate ? 'gradebook-template' : 'gradebook';
+    const asciiName = `${prefix}-${asciiTitle}-${date}.csv`;
+    const utf8Name = `${prefix}-${utf8Title}-${date}.csv`;
     const contentDisposition =
       `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(utf8Name)}`;
 

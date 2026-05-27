@@ -372,7 +372,7 @@ export function UserLayout({ children }: UserLayoutProps) {
 
                     <DropdownMenuItem asChild>
                       <Link
-                        href="/profile?tab=billing"
+                        href="/billing"
                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-accent cursor-pointer group"
                       >
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">

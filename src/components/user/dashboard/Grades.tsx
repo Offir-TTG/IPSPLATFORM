@@ -53,6 +53,19 @@ export function Grades({ grades }: GradesProps) {
               : t('user.dashboard.grades.records', 'graded items')}
           </p>
         </div>
+        {/* View all → /grades, matches the Attendance tab pattern.
+            Two-tier label so the link doesn't crowd narrow phones. */}
+        <Link href="/grades">
+          <Button variant="ghost" size="sm" className="gap-2">
+            <span className="hidden sm:inline">
+              {t('user.dashboard.grades.viewAllLong', 'View all grades')}
+            </span>
+            <span className="sm:hidden">
+              {t('user.dashboard.grades.viewAllShort', 'View All')}
+            </span>
+            <span className="text-lg">→</span>
+          </Button>
+        </Link>
       </div>
 
       <div className="grid gap-3">
@@ -172,17 +185,6 @@ export function Grades({ grades }: GradesProps) {
           );
         })}
       </div>
-
-      {grades.length > 5 && (
-        <div className="flex justify-end">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/learning">
-              {t('user.dashboard.grades.viewAll', 'View all grades')}
-              <span className="text-lg ms-1">→</span>
-            </Link>
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

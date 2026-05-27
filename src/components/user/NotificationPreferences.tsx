@@ -239,7 +239,7 @@ export function NotificationPreferences({ regionalSlot }: NotificationPreference
             <TabsTrigger value="regional" className="flex items-center gap-2">
               <Globe className="h-4 w-4" />
               <span className="hidden sm:inline">
-                {t('user.profile.preferences.regional_settings', 'הגדרות אזוריות')}
+                {t('user.profile.preferences.regional_settings', 'Regional Settings')}
               </span>
             </TabsTrigger>
           )}

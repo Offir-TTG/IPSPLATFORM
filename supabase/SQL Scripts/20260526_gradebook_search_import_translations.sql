@@ -22,6 +22,10 @@ BEGIN
       'admin.grading.gradebook.import.changes',
       'admin.grading.gradebook.import.changeCount',
       'admin.grading.gradebook.import.errorCount',
+      'admin.grading.gradebook.import.chooseFile',
+      'admin.grading.gradebook.import.noFileChosen',
+      'admin.grading.gradebook.import.downloadTemplate',
+      'admin.grading.gradebook.import.templateHint',
       'common.clear'
     );
 
@@ -76,6 +80,25 @@ BEGIN
 
     ('en', 'admin.grading.gradebook.import.errorCount', '{{n}} issues',                       'admin', NULL, 'admin'),
     ('he', 'admin.grading.gradebook.import.errorCount', '{{n}} בעיות',                         'admin', NULL, 'admin'),
+
+    -- Replace the browser's native file-input labels (which are
+    -- locale-controlled and can't be localized via our i18n).
+    ('en', 'admin.grading.gradebook.import.chooseFile',  'Choose file',                        'admin', NULL, 'admin'),
+    ('he', 'admin.grading.gradebook.import.chooseFile',  'בחר קובץ',                            'admin', NULL, 'admin'),
+
+    ('en', 'admin.grading.gradebook.import.noFileChosen','No file chosen',                     'admin', NULL, 'admin'),
+    ('he', 'admin.grading.gradebook.import.noFileChosen','לא נבחר קובץ',                        'admin', NULL, 'admin'),
+
+    -- Template download (blank CSV with correct columns + one row per enrolled student)
+    ('en', 'admin.grading.gradebook.import.downloadTemplate', 'Download template',             'admin', NULL, 'admin'),
+    ('he', 'admin.grading.gradebook.import.downloadTemplate', 'הורד תבנית',                     'admin', NULL, 'admin'),
+
+    ('en', 'admin.grading.gradebook.import.templateHint',
+      'First time? Download the template — it''s pre-filled with the right columns and one row per enrolled student.',
+      'admin', NULL, 'admin'),
+    ('he', 'admin.grading.gradebook.import.templateHint',
+      'פעם ראשונה? הורד את התבנית — היא כוללת את העמודות הנכונות ושורה לכל סטודנט רשום.',
+      'admin', NULL, 'admin'),
 
     ('en', 'common.clear',                              'Clear',                               'both',  NULL, 'both'),
     ('he', 'common.clear',                              'נקה',                                  'both',  NULL, 'both');

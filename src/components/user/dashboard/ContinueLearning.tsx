@@ -71,9 +71,11 @@ export function ContinueLearning() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <Card className="p-4 md:p-6">
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </Card>
     );
   }
 
@@ -153,8 +155,12 @@ export function ContinueLearning() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    // Fixed height on lg+ so the card doesn't grow taller as more
+    // courses load — keeps the dashboard grid visually stable. The
+    // inner course list scrolls within the card. On mobile we let it
+    // size naturally because the page scrolls anyway.
+    <Card className="p-4 md:p-6 flex flex-col gap-4 lg:h-[620px]">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-xl font-bold">{t('user.dashboard.continue.title', 'Continue Learning')}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">{t('user.dashboard.continue.subtitle', 'Pick up where you left off')}</p>
@@ -188,9 +194,11 @@ export function ContinueLearning() {
         </div>
       </div>
 
-      {/* Card View */}
+      {/* Card View — flex-1 + overflow-y-auto so the list scrolls
+          inside the fixed-height Card on lg+ instead of pushing the
+          page layout. */}
       {viewMode === 'card' && (
-        <div className="grid gap-3">
+        <div className="grid gap-3 flex-1 overflow-y-auto lg:min-h-0">
           {courses.slice(0, showAll ? courses.length : ITEMS_PER_PAGE).map((course, index) => {
             // For program-only enrollments without courses, link to programs page
             const learningLink = course.course_id
@@ -318,7 +326,7 @@ export function ContinueLearning() {
 
       {/* List View */}
       {viewMode === 'list' && (
-        <div className="space-y-2">
+        <div className="space-y-2 flex-1 overflow-y-auto lg:min-h-0">
           {courses.slice(0, showAll ? courses.length : ITEMS_PER_PAGE).map((course, index) => {
             // For program-only enrollments without courses, link to programs page
             const learningLink = course.course_id
@@ -417,9 +425,10 @@ export function ContinueLearning() {
         </div>
       )}
 
-      {/* Show More/Less Button */}
+      {/* Show More/Less Button — sits below the scroll area, pinned
+          to the bottom of the fixed-height card. */}
       {courses.length > ITEMS_PER_PAGE && (
-        <div className="text-center mt-4">
+        <div className="text-center shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -432,6 +441,6 @@ export function ContinueLearning() {
           </Button>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
