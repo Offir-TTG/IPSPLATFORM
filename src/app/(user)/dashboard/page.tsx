@@ -125,7 +125,10 @@ export default function DashboardPage() {
         {/* Stats Cards */}
         <StatsCards stats={enhancedStats} />
 
-        {/* Progress and Courses Grid */}
+        {/* Progress and Courses Grid — default `items-stretch` so both
+            cards always share the same height. ContinueLearning is the
+            taller one in practice (course list grows with enrollment),
+            so it sets the row height and ProgressOverview matches. */}
         <div className="grid gap-6 lg:grid-cols-3">
           <ProgressOverview stats={enhancedStats} />
           <div className="lg:col-span-2">

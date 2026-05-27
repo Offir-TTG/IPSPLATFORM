@@ -155,11 +155,12 @@ export function ContinueLearning() {
   };
 
   return (
-    // Fixed height on lg+ so the card doesn't grow taller as more
-    // courses load — keeps the dashboard grid visually stable. The
-    // inner course list scrolls within the card. On mobile we let it
-    // size naturally because the page scrolls anyway.
-    <Card className="p-4 md:p-6 flex flex-col gap-4 lg:h-[620px]">
+    // `lg:min-h-[520px]` = a floor matching ProgressOverview's natural
+    // height so the card looks balanced when there are only a couple
+    // of courses, but the card is free to grow taller when the course
+    // list expands. CSS grid's default `items: stretch` propagates
+    // that height back to ProgressOverview, keeping them in sync.
+    <Card className="p-4 flex flex-col gap-3 lg:min-h-[520px]">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-xl font-bold">{t('user.dashboard.continue.title', 'Continue Learning')}</h2>
@@ -194,11 +195,8 @@ export function ContinueLearning() {
         </div>
       </div>
 
-      {/* Card View — flex-1 + overflow-y-auto so the list scrolls
-          inside the fixed-height Card on lg+ instead of pushing the
-          page layout. */}
       {viewMode === 'card' && (
-        <div className="grid gap-3 flex-1 overflow-y-auto lg:min-h-0">
+        <div className="grid gap-3">
           {courses.slice(0, showAll ? courses.length : ITEMS_PER_PAGE).map((course, index) => {
             // For program-only enrollments without courses, link to programs page
             const learningLink = course.course_id
@@ -326,7 +324,7 @@ export function ContinueLearning() {
 
       {/* List View */}
       {viewMode === 'list' && (
-        <div className="space-y-2 flex-1 overflow-y-auto lg:min-h-0">
+        <div className="space-y-2">
           {courses.slice(0, showAll ? courses.length : ITEMS_PER_PAGE).map((course, index) => {
             // For program-only enrollments without courses, link to programs page
             const learningLink = course.course_id
