@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { useAdminLanguage } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { GradingTabsNav } from '@/components/admin/grading/GradingTabsNav';
+import { CourseGradingScalePicker } from '@/components/admin/grading/CourseGradingScalePicker';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { ResponsiveTable } from '@/components/ui/responsive-table';
@@ -86,6 +87,21 @@ export default function GradebookPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedCells, setEditedCells] = useState<Set<string>>(new Set());
+  // Active grading scale ranges so we can render a letter next to
+  // each student's total — the admin sees what the student sees. Set
+  // by loadGradebookData; refreshed when the picker save fires.
+  const [scaleRanges, setScaleRanges] = useState<
+    Array<{ label: string; min: number; max: number; color: string | null }>
+  >([]);
+  // Track WHICH scale resolved + its id (for the "no ranges defined"
+  // warning so admins can jump straight to configuring it). scale_type
+  // is needed to special-case `numeric` scales — those have no ranges,
+  // the rounded percentage IS the label.
+  const [scaleMeta, setScaleMeta] = useState<{
+    id: string | null;
+    name: string | null;
+    type: 'letter' | 'numeric' | 'passfail' | 'custom' | null;
+  }>({ id: null, name: null, type: null });
 
   // Search/filter/pagination state. Resetting `page` to 1 whenever the
   // filtered population changes keeps the user on a valid page.
@@ -130,20 +146,29 @@ export default function GradebookPage() {
     try {
       setLoading(true);
 
-      const studentsRes = await fetch(`/api/admin/lms/courses/${courseId}/students`);
+      const [studentsRes, itemsRes, gradesRes, scaleRes] = await Promise.all([
+        fetch(`/api/admin/lms/courses/${courseId}/students`),
+        fetch(`/api/admin/lms/courses/${courseId}/grading/items`),
+        fetch(`/api/admin/lms/courses/${courseId}/grading/grades`),
+        fetch(`/api/admin/lms/courses/${courseId}/grading/scale`),
+      ]);
       if (!studentsRes.ok) throw new Error('Failed to load students');
-      const studentsData = await studentsRes.json();
-
-      const itemsRes = await fetch(`/api/admin/lms/courses/${courseId}/grading/items`);
       if (!itemsRes.ok) throw new Error('Failed to load grade items');
-      const itemsData = await itemsRes.json();
-
-      const gradesRes = await fetch(`/api/admin/lms/courses/${courseId}/grading/grades`);
       if (!gradesRes.ok) throw new Error('Failed to load grades');
+
+      const studentsData = await studentsRes.json();
+      const itemsData = await itemsRes.json();
       const gradesData = await gradesRes.json();
+      const scaleData = scaleRes.ok ? await scaleRes.json() : { ranges: [] };
 
       setStudents(studentsData.data || []);
       setGradeItems(itemsData.data || []);
+      setScaleRanges(scaleData.ranges ?? []);
+      setScaleMeta({
+        id: scaleData.scale_id ?? null,
+        name: scaleData.scale_name ?? null,
+        type: scaleData.scale_type ?? null,
+      });
 
       const gradesMap = new Map<string, StudentGrade>();
       (gradesData.data || []).forEach((grade: StudentGrade) => {
@@ -236,6 +261,17 @@ export default function GradebookPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Resolve a percentage to a { label, color } pair using the active
+  // scale's ranges. The label always comes from the matched range's
+  // grade_label — whatever the admin configured (A/B/F, Pass/Fail,
+  // 1-5, custom strings). Returns null when no range covers the value
+  // (so the UI can fall back to showing just the %).
+  function resolveLetter(pct: number): { label: string; color: string | null } | null {
+    if (!scaleRanges || scaleRanges.length === 0) return null;
+    const hit = scaleRanges.find((r) => pct >= r.min && pct <= r.max);
+    return hit ? { label: hit.label, color: hit.color } : null;
   }
 
   function calculateStudentTotal(studentId: string): {
@@ -430,6 +466,46 @@ export default function GradebookPage() {
             </Button>
           </div>
         </div>
+
+        {/* Per-course grading scale — selects which letter buckets
+            (A-F / Pass-Fail / 0-100 / etc.) student grades resolve
+            against. NULL = use the tenant's default scale. The
+            onChange callback refetches gradebook data so the letter
+            badge on each student's total updates immediately. */}
+        <CourseGradingScalePicker courseId={courseId} onChange={loadGradebookData} />
+
+        {/* Warning when the picked scale has no ranges configured —
+            without ranges, no letters can be resolved and the
+            student-side /grades page shows only a percentage.
+            Applies to every scale type (numeric included — admins
+            still need to define labels like 1/2/3/4/5). */}
+        {scaleMeta.id && scaleRanges.length === 0 && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-amber-900 dark:text-amber-200">
+                {t(
+                  'admin.grading.scale.noRangesTitle',
+                  'This scale has no ranges defined',
+                )}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                {t(
+                  'admin.grading.scale.noRangesHelp',
+                  '"{{name}}" has no buckets — students will see only a percentage, no letter. Configure ranges to map percentages to labels (e.g. Pass: 60–100, Fail: 0–59).',
+                ).replace('{{name}}', scaleMeta.name ?? '')}
+              </p>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 mt-1 text-amber-700 dark:text-amber-300"
+                onClick={() => router.push(`/admin/grading/scales/${scaleMeta.id}`)}
+              >
+                {t('admin.grading.scale.configureRanges', 'Configure ranges →')}
+              </Button>
+            </div>
+          </div>
+        )}
 
         <GradingTabsNav courseId={courseId} active="gradebook" />
 
@@ -682,17 +758,44 @@ export default function GradebookPage() {
                                   );
                                 })}
                                 <td className="sticky right-0 z-10 bg-background p-3 text-center border-l">
+                                  {(() => {
+                                    const letter = resolveLetter(total.percentage);
+                                    return (
                                   <div className="flex flex-col items-center gap-1">
                                     <p className="font-semibold text-sm tabular-nums">
                                       {total.earned.toFixed(1)} / {total.possible.toFixed(1)}
                                     </p>
-                                    <Badge
-                                      variant={total.percentage >= 60 ? 'default' : 'destructive'}
-                                      className="text-xs tabular-nums"
-                                    >
-                                      {total.percentage.toFixed(1)}%
-                                    </Badge>
+                                    <div className="flex items-center gap-1.5">
+                                      <Badge
+                                        variant={total.percentage >= 60 ? 'default' : 'destructive'}
+                                        className="text-xs tabular-nums"
+                                      >
+                                        {total.percentage.toFixed(1)}%
+                                      </Badge>
+                                      {/* Letter from the active scale — shows
+                                          what the student sees on their /grades
+                                          page. Falls back to nothing if no
+                                          scale is configured. */}
+                                      {letter && (
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs font-bold"
+                                          style={
+                                            letter.color
+                                              ? {
+                                                  borderColor: letter.color,
+                                                  color: letter.color,
+                                                }
+                                              : undefined
+                                          }
+                                        >
+                                          {letter.label}
+                                        </Badge>
+                                      )}
+                                    </div>
                                   </div>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
                             );
@@ -761,12 +864,32 @@ export default function GradebookPage() {
                           <p className="text-sm font-semibold tabular-nums">
                             {total.earned.toFixed(1)} / {total.possible.toFixed(1)}
                           </p>
-                          <Badge
-                            variant={total.percentage >= 60 ? 'default' : 'destructive'}
-                            className="tabular-nums"
-                          >
-                            {total.percentage.toFixed(1)}%
-                          </Badge>
+                          {(() => {
+                            const letter = resolveLetter(total.percentage);
+                            return (
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              variant={total.percentage >= 60 ? 'default' : 'destructive'}
+                              className="tabular-nums"
+                            >
+                              {total.percentage.toFixed(1)}%
+                            </Badge>
+                            {letter && (
+                              <Badge
+                                variant="outline"
+                                className="font-bold"
+                                style={
+                                  letter.color
+                                    ? { borderColor: letter.color, color: letter.color }
+                                    : undefined
+                                }
+                              >
+                                {letter.label}
+                              </Badge>
+                            )}
+                          </div>
+                            );
+                          })()}
                         </div>
                       </CardContent>
                     </Card>

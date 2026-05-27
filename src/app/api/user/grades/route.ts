@@ -112,15 +112,6 @@ export const GET = withAuth(async (_request: NextRequest, user: any) => {
     function resolveRange(pct: number, scaleId: string | null): Range | null {
       return matchRange(pct, scaleId) ?? matchRange(pct, tenantDefaultScaleId);
     }
-    function colorForStoredLetter(label: string | null, scaleId: string | null): string | null {
-      if (!label) return null;
-      const tryScale = (id: string | null): string | null => {
-        if (!id) return null;
-        const rows = rangesByScale.get(id);
-        return rows?.find((row) => row.label === label)?.color ?? null;
-      };
-      return tryScale(scaleId) ?? tryScale(tenantDefaultScaleId);
-    }
 
     const grades = (rawGrades ?? []).map((g: any) => {
       const item = Array.isArray(g.grade_item) ? g.grade_item[0] : g.grade_item;
@@ -133,14 +124,22 @@ export const GET = withAuth(async (_request: NextRequest, user: any) => {
       const pct = g.percentage != null ? Number(g.percentage) : null;
       const courseScaleId = course?.grading_scale_id ?? null;
 
-      let letter: string | null = g.letter_grade ?? null;
+      // Letter resolution: try the LIVE scale first (so scale
+      // changes propagate). If that fails (no matching range,
+      // missing scale, or unconfigured ranges), fall back to the
+      // stored letter on the row so existing data doesn't disappear.
+      // Excused rows never get a letter.
+      let letter: string | null = null;
       let color: string | null = null;
-      if (letter) {
-        color = colorForStoredLetter(letter, courseScaleId);
-      } else if (pct !== null) {
+      if (pct !== null && !g.is_excused) {
         const range = resolveRange(pct, courseScaleId);
-        letter = range?.label ?? null;
-        color = range?.color ?? null;
+        if (range) {
+          letter = range.label;
+          color = range.color;
+        } else if (g.letter_grade) {
+          letter = g.letter_grade;
+          color = null;
+        }
       }
 
       return {

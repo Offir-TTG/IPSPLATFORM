@@ -97,7 +97,7 @@ export function Grades({ grades }: GradesProps) {
                   row has no letter (e.g. excused or not graded). */}
               <div className="flex-shrink-0">
                 <div
-                  className={`w-14 h-14 rounded-xl flex items-center justify-center border ${
+                  className={`w-14 h-14 rounded-xl flex items-center justify-center border px-1 text-center ${
                     g.letter_grade
                       ? ''
                       : 'bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border-primary/10'
@@ -111,11 +111,30 @@ export function Grades({ grades }: GradesProps) {
                         }
                       : undefined
                   }
-                  dir="ltr"
+                  dir="auto"
                 >
                   {g.letter_grade ? (
-                    <span className="text-2xl font-bold leading-none tabular-nums">
+                    // Auto-scale font for multi-character labels like
+                    // "Pass"/"Fail"/"עבר"/"נכשל" — single chars (A/B/F)
+                    // still get the big presentation; longer strings
+                    // step down so they fit the 56×56 box.
+                    <span
+                      className={`font-bold leading-tight ${
+                        g.letter_grade.length === 1
+                          ? 'text-2xl tabular-nums'
+                          : g.letter_grade.length <= 3
+                            ? 'text-base'
+                            : 'text-xs'
+                      }`}
+                    >
                       {g.letter_grade}
+                    </span>
+                  ) : pct !== null ? (
+                    // Fallback when the scale doesn't cover this %
+                    // (gap in ranges, no scale set, etc.) — show the
+                    // rounded percentage so the badge stays useful.
+                    <span className="text-base font-bold leading-tight tabular-nums text-muted-foreground">
+                      {Math.round(pct)}%
                     </span>
                   ) : (
                     <Award className="h-6 w-6 text-muted-foreground" />

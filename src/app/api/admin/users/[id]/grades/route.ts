@@ -52,7 +52,7 @@ export async function GET(
         feedback,
         grade_item:grade_items (
           id, name, max_points,
-          course:courses ( id, title )
+          course:courses ( id, title, grading_scale_id )
         ),
         grader:users!student_grades_graded_by_fkey ( id, first_name, last_name )
       `,
@@ -67,60 +67,90 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to load grades' }, { status: 500 });
     }
 
-    // Letter-grade + color fallback. When student_grades.letter_grade
-    // is NULL (the write path doesn't populate it yet), compute it on
-    // the fly using the student's tenant default grading_scale and its
-    // grade_ranges. The matched range's color_code is shipped as
-    // `letter_color` so both admin and student UIs can paint the
-    // badge with the same configured color.
-    type Range = { min_percentage: number; max_percentage: number; grade_label: string; color_code: string | null };
-    let ranges: Range[] = [];
+    // Per-course scale resolution — matches what /api/user/grades and
+    // the dashboard do, so the admin tab and the student view always
+    // show the same letter. Always re-resolves from the LIVE scale
+    // (ignores stored student_grades.letter_grade) so scale changes
+    // propagate instantly without needing to clear the cached letter.
+    type Range = { min: number; max: number; label: string; color: string | null };
+
+    // Collect every course scale that appears in this page of grades,
+    // plus the tenant's default scale as a fallback.
+    const scaleIds = new Set<string>();
+    (data ?? []).forEach((row: any) => {
+      const item = Array.isArray(row.grade_item) ? row.grade_item[0] : row.grade_item;
+      const course = item?.course
+        ? Array.isArray(item.course) ? item.course[0] : item.course
+        : null;
+      if (course?.grading_scale_id) scaleIds.add(course.grading_scale_id);
+    });
+
     const { data: studentRow } = await adminClient
       .from('users')
       .select('tenant_id')
       .eq('id', params.id)
       .maybeSingle();
 
+    let tenantDefaultScaleId: string | null = null;
     if (studentRow?.tenant_id) {
-      // Prefer the tenant's default scale; if none flagged default,
-      // fall back to any active scale so the column still renders.
-      const { data: scaleRow } = await adminClient
+      const { data: defaultScaleRow } = await adminClient
         .from('grading_scales')
-        .select('id, is_default')
+        .select('id')
         .eq('tenant_id', studentRow.tenant_id)
         .eq('is_active', true)
         .order('is_default', { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      if (scaleRow?.id) {
-        const { data: rangeRows } = await adminClient
-          .from('grade_ranges')
-          .select('min_percentage, max_percentage, grade_label, color_code')
-          .eq('grading_scale_id', scaleRow.id);
-        ranges = (rangeRows as Range[]) ?? [];
+      if (defaultScaleRow?.id) {
+        tenantDefaultScaleId = defaultScaleRow.id;
+        scaleIds.add(defaultScaleRow.id);
       }
     }
 
-    const matchRange = (pct: number | null): Range | null => {
-      if (pct === null || pct === undefined || ranges.length === 0) return null;
-      return ranges.find(r => pct >= Number(r.min_percentage) && pct <= Number(r.max_percentage)) ?? null;
+    const rangesByScale = new Map<string, Range[]>();
+    if (scaleIds.size > 0) {
+      const { data: rangeRows } = await adminClient
+        .from('grade_ranges')
+        .select('grading_scale_id, min_percentage, max_percentage, grade_label, color_code')
+        .in('grading_scale_id', Array.from(scaleIds));
+      (rangeRows ?? []).forEach((r: any) => {
+        const arr = rangesByScale.get(r.grading_scale_id) ?? [];
+        arr.push({
+          min: Number(r.min_percentage),
+          max: Number(r.max_percentage),
+          label: r.grade_label,
+          color: r.color_code ?? null,
+        });
+        rangesByScale.set(r.grading_scale_id, arr);
+      });
+    }
+
+    const matchRange = (pct: number | null, scaleId: string | null): Range | null => {
+      if (pct === null || pct === undefined || !scaleId) return null;
+      const rs = rangesByScale.get(scaleId);
+      if (!rs) return null;
+      return rs.find((r) => pct >= r.min && pct <= r.max) ?? null;
     };
+    const resolveRange = (pct: number | null, scaleId: string | null): Range | null =>
+      matchRange(pct, scaleId) ?? matchRange(pct, tenantDefaultScaleId);
 
     const grades = (data ?? []).map((row: any) => {
-      if (row.is_excused) {
+      if (row.is_excused || row.percentage == null) {
         return { ...row, letter_grade: null, letter_color: null };
       }
-      if (row.letter_grade) {
-        // Already-stored letter — try to match its color from the scale's ranges.
-        const hit = ranges.find(r => r.grade_label === row.letter_grade);
-        return { ...row, letter_color: hit?.color_code ?? null };
-      }
-      const hit = matchRange(row.percentage);
+      const item = Array.isArray(row.grade_item) ? row.grade_item[0] : row.grade_item;
+      const course = item?.course
+        ? Array.isArray(item.course) ? item.course[0] : item.course
+        : null;
+      const courseScaleId = course?.grading_scale_id ?? null;
+      // Try the live scale first; if no range matches (e.g. the
+      // scale isn't configured yet), fall back to the stored letter
+      // so existing data doesn't vanish.
+      const hit = resolveRange(Number(row.percentage), courseScaleId);
       return {
         ...row,
-        letter_grade: hit?.grade_label ?? null,
-        letter_color: hit?.color_code ?? null,
+        letter_grade: hit?.label ?? row.letter_grade ?? null,
+        letter_color: hit?.color ?? null,
       };
     });
 

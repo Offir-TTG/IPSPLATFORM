@@ -218,11 +218,19 @@ export function UserAuditTable({ events }: UserAuditTableProps) {
                       </TableCell>
                       <TableCell className="text-xs">
                         <div className="whitespace-nowrap">{formatResource(ev.resource_type)}</div>
-                        {cleanedResource && (
-                          <div className="text-muted-foreground truncate max-w-[150px]" dir="auto">
-                            {cleanedResource}
-                          </div>
-                        )}
+                        {cleanedResource &&
+                          // Skip the secondary resource_name line when
+                          // it's just the title-cased English version
+                          // of resource_type (e.g. type="lesson_progress"
+                          // + name="Lesson Progress"). That made the
+                          // cell read as a Hebrew/English duplicate in
+                          // RTL mode.
+                          cleanedResource.toLowerCase().replace(/\s+/g, '_') !==
+                            (ev.resource_type ?? '').toLowerCase() && (
+                            <div className="text-muted-foreground truncate max-w-[150px]" dir="auto">
+                              {cleanedResource}
+                            </div>
+                          )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={eventTypeBadgeVariant(ev.event_type)} className="text-[10px]">

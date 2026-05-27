@@ -77,8 +77,8 @@ export default function GradingScalesPage() {
     } catch (error) {
       console.error('Error loading grading scales:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to load grading scales',
+        title: t('common.error', 'Error'),
+        description: t('admin.grading.scales.toast.loadFailed', 'Failed to load grading scales'),
         variant: 'destructive',
       });
     } finally {
@@ -113,8 +113,8 @@ export default function GradingScalesPage() {
   async function handleSaveScale() {
     if (!formData.name.trim()) {
       toast({
-        title: 'Error',
-        description: 'Please enter a name for the grading scale',
+        title: t('common.error', 'Error'),
+        description: t('admin.grading.scales.toast.nameRequired', 'Please enter a name for the grading scale'),
         variant: 'destructive',
       });
       return;
@@ -137,8 +137,8 @@ export default function GradingScalesPage() {
         }
 
         toast({
-          title: 'Success',
-          description: 'Grading scale updated successfully',
+          title: t('common.success', 'Success'),
+          description: t('admin.grading.scales.toast.updated', 'Grading scale updated successfully'),
         });
       } else {
         // Create new scale
@@ -154,8 +154,8 @@ export default function GradingScalesPage() {
         }
 
         toast({
-          title: 'Success',
-          description: 'Grading scale created successfully',
+          title: t('common.success', 'Success'),
+          description: t('admin.grading.scales.toast.created', 'Grading scale created successfully'),
         });
       }
 
@@ -164,8 +164,15 @@ export default function GradingScalesPage() {
     } catch (error: any) {
       console.error('Error saving grading scale:', error);
       toast({
-        title: 'Error',
-        description: error.message || `Failed to ${editingScale ? 'update' : 'create'} grading scale`,
+        title: t('common.error', 'Error'),
+        description:
+          error.message ||
+          t(
+            editingScale
+              ? 'admin.grading.scales.toast.updateFailed'
+              : 'admin.grading.scales.toast.createFailed',
+            editingScale ? 'Failed to update grading scale' : 'Failed to create grading scale',
+          ),
         variant: 'destructive',
       });
     } finally {
@@ -194,8 +201,8 @@ export default function GradingScalesPage() {
       }
 
       toast({
-        title: 'Success',
-        description: 'Grading scale deleted successfully',
+        title: t('common.success', 'Success'),
+        description: t('admin.grading.scales.toast.deleted', 'Grading scale deleted successfully'),
       });
 
       setDeleteDialogOpen(false);
@@ -204,8 +211,8 @@ export default function GradingScalesPage() {
     } catch (error: any) {
       console.error('Error deleting grading scale:', error);
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to delete grading scale',
+        title: t('common.error', 'Error'),
+        description: error.message || t('admin.grading.scales.toast.deleteFailed', 'Failed to delete grading scale'),
         variant: 'destructive',
       });
     } finally {

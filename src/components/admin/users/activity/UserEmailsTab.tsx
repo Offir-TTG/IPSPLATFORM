@@ -58,6 +58,22 @@ const PAGE_SIZE = 20;
 
 export function UserEmailsTab({ userId }: { userId: string }) {
   const { t, direction } = useAdminLanguage();
+
+  // Translate the known-string error_messages WE write to email_queue
+  // (cancellation reasons, schedule actions). Same mapping as the
+  // global /admin/emails/queue page so RTL admins see Hebrew here too.
+  // External SMTP errors pass through verbatim — we can't predict them.
+  const translateErrorMessage = (msg: string | null): string => {
+    if (!msg) return '';
+    const map: Record<string, string> = {
+      'Cancelled by admin': t('emails.queue.errorMessage.cancelledByAdmin', 'Cancelled by admin'),
+      'Cancelled by admin (bulk)': t('emails.queue.errorMessage.cancelledByAdminBulk', 'Cancelled by admin (bulk)'),
+      'Schedule paused': t('emails.queue.errorMessage.schedulePaused', 'Schedule paused'),
+      'Schedule stopped': t('emails.queue.errorMessage.scheduleStopped', 'Schedule stopped'),
+      'Schedule deleted': t('emails.queue.errorMessage.scheduleDeleted', 'Schedule deleted'),
+    };
+    return map[msg] ?? msg;
+  };
   const isRtl = direction === 'rtl';
   const [emails, setEmails] = useState<EmailRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -188,8 +204,12 @@ export function UserEmailsTab({ userId }: { userId: string }) {
                             {e.subject || '—'}
                           </p>
                           {e.error_message && (
-                            <p className="text-xs text-destructive mt-1 truncate" dir="ltr" title={e.error_message}>
-                              {e.error_message}
+                            <p
+                              className="text-xs text-destructive mt-1 truncate"
+                              dir="auto"
+                              title={translateErrorMessage(e.error_message)}
+                            >
+                              {translateErrorMessage(e.error_message)}
                             </p>
                           )}
                         </TableCell>
@@ -239,8 +259,8 @@ export function UserEmailsTab({ userId }: { userId: string }) {
                         })}
                       </p>
                       {e.error_message && (
-                        <p className="text-xs text-destructive mt-1 break-words" dir="ltr">
-                          {e.error_message}
+                        <p className="text-xs text-destructive mt-1 break-words" dir="auto">
+                          {translateErrorMessage(e.error_message)}
                         </p>
                       )}
                     </div>

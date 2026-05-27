@@ -89,15 +89,14 @@ export const GET = withAuth(
         .order('graded_at', { ascending: false, nullsFirst: false })
         .limit(10);
 
-      // Collect grading scales referenced by rows that have a
-      // percentage but no stored letter. Each course may point at its
-      // own scale; if a course has none (or its scale produced no
-      // match), we also fall back to the tenant's default scale — same
-      // behavior as the admin endpoint, so admin + student see the
-      // same letter for the same row.
+      // Collect grading scales referenced by ANY row with a non-null
+      // percentage — we now always re-resolve letters from the live
+      // scale rather than trusting the stored letter_grade value,
+      // so scale changes propagate immediately without needing to
+      // clear the cached letter. The DB column is left alone (admins
+      // can still see what was originally written there if needed).
       const scaleIdsNeedingLookup = new Set<string>();
       (rawGrades ?? []).forEach((g: any) => {
-        if (g.letter_grade) return;
         if (g.percentage == null) return;
         const item = Array.isArray(g.grade_item) ? g.grade_item[0] : g.grade_item;
         const course = item?.course
@@ -158,22 +157,10 @@ export const GET = withAuth(
 
       function resolveRange(pct: number, scaleId: string | null): Range | null {
         // Prefer the course's own scale; fall back to the tenant
-        // default. Both letter + color travel together.
+        // default. The label always comes from the matched range's
+        // grade_label — scale_type is just a category for the admin
+        // UI, it does NOT override the configured labels.
         return matchRange(pct, scaleId) ?? matchRange(pct, tenantDefaultScaleId);
-      }
-
-      function colorForStoredLetter(label: string | null, scaleId: string | null): string | null {
-        // When letter_grade was already written into student_grades,
-        // we still want to surface the matching color so the UI can
-        // paint the badge. Look it up by label, preferring the course
-        // scale, then tenant default.
-        if (!label) return null;
-        const tryScale = (id: string | null): string | null => {
-          if (!id) return null;
-          const r = rangesByScale.get(id);
-          return r?.find((row) => row.label === label)?.color ?? null;
-        };
-        return tryScale(scaleId) ?? tryScale(tenantDefaultScaleId);
       }
 
       dashboardData.recent_grades = (rawGrades ?? []).map((g: any) => {
@@ -187,16 +174,22 @@ export const GET = withAuth(
         const pct = g.percentage != null ? Number(g.percentage) : null;
         const courseScaleId = course?.grading_scale_id ?? null;
 
-        // Letter + color come from the same lookup so the badge in the
-        // dashboard tile can match what the admin tab shows.
-        let letter: string | null = g.letter_grade ?? null;
+        // Letter resolution: try the LIVE scale first (so changes
+        // propagate). If that fails (no matching range, missing
+        // scale, or unconfigured ranges), fall back to whatever
+        // letter was previously stored on the row so existing data
+        // doesn't disappear. Excused rows never get a letter.
+        let letter: string | null = null;
         let color: string | null = null;
-        if (letter) {
-          color = colorForStoredLetter(letter, courseScaleId);
-        } else if (pct !== null && !g.is_excused) {
+        if (pct !== null && !g.is_excused) {
           const hit = resolveRange(pct, courseScaleId);
-          letter = hit?.label ?? null;
-          color = hit?.color ?? null;
+          if (hit) {
+            letter = hit.label;
+            color = hit.color;
+          } else if (g.letter_grade) {
+            letter = g.letter_grade;
+            color = null;
+          }
         }
 
         return {

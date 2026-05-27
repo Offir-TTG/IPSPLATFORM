@@ -510,16 +510,65 @@ export default function GradesPage() {
                       : CheckCircle2;
 
                   const inner = (
-                    <div className="flex items-center justify-between gap-3 p-4">
-                      {/* Title + meta */}
-                      <div className="min-w-0 flex-1 space-y-0.5">
+                    // Matches the dashboard Grades tab row exactly:
+                    // [colored letter box] [title + meta] [status badge]
+                    // — letter box sits at the start so it mirrors to
+                    // the right edge in RTL, same as the dashboard.
+                    <div className="flex items-center gap-3 p-4">
+                      {/* Letter box — colored using the scale's
+                          configured color_code (shipped as
+                          letter_color). Falls back to the primary
+                          gradient when the row has no letter. */}
+                      <div className="flex-shrink-0">
+                        <div
+                          className={`w-14 h-14 rounded-xl flex items-center justify-center border px-1 text-center ${
+                            g.letter_grade
+                              ? ''
+                              : 'bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border-primary/10'
+                          }`}
+                          style={
+                            g.letter_grade && g.letter_color
+                              ? {
+                                  backgroundColor: `${g.letter_color}1A`,
+                                  borderColor: `${g.letter_color}66`,
+                                  color: g.letter_color,
+                                }
+                              : undefined
+                          }
+                          dir="auto"
+                        >
+                          {g.letter_grade ? (
+                            <span
+                              className={`font-bold leading-tight ${
+                                g.letter_grade.length === 1
+                                  ? 'text-2xl tabular-nums'
+                                  : g.letter_grade.length <= 3
+                                    ? 'text-base'
+                                    : 'text-xs'
+                              }`}
+                            >
+                              {g.letter_grade}
+                            </span>
+                          ) : pct !== null ? (
+                            <span className="text-base font-bold leading-tight tabular-nums">
+                              {Math.round(pct)}%
+                            </span>
+                          ) : (
+                            <Award className="h-6 w-6 text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Middle: title + one folded meta line (course,
+                          category, points, graded date). */}
+                      <div className="flex-1 min-w-0">
                         <h3
                           className="font-semibold text-sm text-foreground line-clamp-1"
                           dir="auto"
                         >
                           {g.grade_item_name}
                         </h3>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap mt-0.5">
                           <span className="line-clamp-1" dir="auto">
                             {g.course_name}
                           </span>
@@ -538,6 +587,11 @@ export default function GradesPage() {
                               · {Number(g.points_earned)} / {Number(g.max_points)}
                             </span>
                           )}
+                          {pct !== null && g.letter_grade && (
+                            <span className="tabular-nums shrink-0" dir="ltr">
+                              · {Math.round(pct)}%
+                            </span>
+                          )}
                           {graded && (
                             <span className="shrink-0" dir="auto">
                               · {format(graded, 'MMM d', { locale })}
@@ -546,21 +600,9 @@ export default function GradesPage() {
                         </div>
                       </div>
 
-                      {/* % + letter + status */}
-                      <div className="flex items-center gap-3 shrink-0" dir="ltr">
-                        {pct !== null ? (
-                          <span className="text-lg font-bold text-primary leading-none tabular-nums">
-                            {Math.round(pct)}%
-                          </span>
-                        ) : (
-                          <Award className="h-5 w-5 text-muted-foreground" />
-                        )}
-                        {g.letter_grade && (
-                          <span className="text-base font-bold text-primary leading-none">
-                            {g.letter_grade}
-                          </span>
-                        )}
-                        <Badge className={`flex items-center gap-1 ${statusColor} border`}>
+                      {/* Status badge — far end. */}
+                      <div className="flex-shrink-0">
+                        <Badge className={`flex items-center gap-1.5 ${statusColor} border`}>
                           <StatusIcon className="h-3 w-3" />
                           {g.is_excused
                             ? t('user.dashboard.grades.status.excused', 'Excused')
