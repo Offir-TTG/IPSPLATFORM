@@ -33,6 +33,7 @@ interface EmailRow {
   sent_at: string | null;
   failed_at: string | null;
   error_message: string | null;
+  bounce_type: 'hard' | 'soft' | 'complaint' | null;
   created_at: string;
 }
 
@@ -153,10 +154,29 @@ export function UserEmailsTab({ userId }: { userId: string }) {
   const renderStatusCell = (e: EmailRow) => {
     const StatusIcon = STATUS_ICON[e.status];
     return (
-      <Badge variant={STATUS_VARIANT[e.status]} className="gap-1 text-[10px] py-0 px-1.5">
-        <StatusIcon className="h-3 w-3" />
-        {t(`emails.status.${e.status}`, e.status)}
-      </Badge>
+      <div className="flex items-center gap-1 flex-wrap">
+        <Badge variant={STATUS_VARIANT[e.status]} className="gap-1 text-[10px] py-0 px-1.5">
+          <StatusIcon className="h-3 w-3" />
+          {t(`emails.status.${e.status}`, e.status)}
+        </Badge>
+        {e.bounce_type && (
+          <Badge
+            variant={e.bounce_type === 'hard' ? 'destructive' : 'outline'}
+            className="gap-1 text-[10px] py-0 px-1.5"
+            title={t(
+              `emails.bounce.${e.bounce_type}.tooltip`,
+              e.bounce_type === 'hard'
+                ? 'Permanent delivery failure. Future sends to this address are blocked.'
+                : e.bounce_type === 'soft'
+                ? 'Temporary delivery failure (mailbox full, server unavailable).'
+                : 'Recipient marked the message as spam.',
+            )}
+          >
+            <AlertCircle className="h-3 w-3" />
+            {t(`emails.bounce.${e.bounce_type}`, e.bounce_type === 'hard' ? 'Hard bounce' : e.bounce_type === 'soft' ? 'Soft bounce' : 'Complaint')}
+          </Badge>
+        )}
+      </div>
     );
   };
 

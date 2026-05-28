@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Mail, TrendingUp, XCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Mail, TrendingUp, XCircle, Loader2, ArrowLeft, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
@@ -33,6 +33,7 @@ interface EmailAnalyticsSummary {
   total_opened: number;
   total_clicked: number;
   total_bounced: number;
+  total_hard_bounced: number;
   open_rate: number;
   click_rate: number;
   bounce_rate: number;
@@ -194,6 +195,25 @@ export default function EmailAnalyticsPage() {
                   <div className="text-2xl font-bold text-destructive">{summary?.total_failed || 0}</div>
                   <p className="text-xs text-muted-foreground">
                     {t('analytics.emails', 'Emails')}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Bounced — counts rows with bounce_type set. Hard
+                  bounces are sub-tallied because they're the ones that
+                  actively block future sends (see is_email_hard_bounced). */}
+              <Card>
+                <CardHeader className={`flex ${isRtl ? 'flex-row-reverse' : 'flex-row'} items-center justify-between space-y-0 pb-2`}>
+                  <CardTitle className="text-sm font-medium">
+                    {t('analytics.bounced', 'Bounced')}
+                  </CardTitle>
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-destructive">{summary?.total_bounced || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {summary?.total_hard_bounced || 0}{' '}
+                    {t('analytics.hardBounced', 'blocked from future sends')}
                   </p>
                 </CardContent>
               </Card>

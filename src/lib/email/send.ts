@@ -7,6 +7,8 @@
 import nodemailer from 'nodemailer';
 import type { Transporter, SentMessageInfo } from 'nodemailer';
 import { createClient } from '@supabase/supabase-js';
+import { isEmailDeliverable } from './blocklist';
+import { classifyBounceError, type BounceClass } from './bounce';
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -30,6 +32,16 @@ export interface EmailResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  // Populated when the send was aborted before SMTP handoff because
+  // the recipient is on the hard-bounce list. Callers (e.g. the queue
+  // cron) use this to mark the row `cancelled` rather than `failed`.
+  skipped?: 'blocked';
+  // Diagnostic fields populated from the synchronous nodemailer error
+  // so the queue cron can classify and persist a bounce.
+  smtpCode?: number;
+  smtpResponse?: string;
+  errorCode?: string;
+  bounceClass?: BounceClass;
 }
 
 interface SMTPConfig {
@@ -218,6 +230,30 @@ export async function verifyEmailConnection(tenantId?: string): Promise<boolean>
  */
 export async function sendEmail(options: SendEmailOptions): Promise<EmailResult> {
   try {
+    // Universal deliverability gate. Every email path — queue cron,
+    // direct transactional (verification, password reset), admin
+    // "send now" — funnels through here, so this is the single place
+    // we need to enforce the hard-bounce list. Array recipients skip
+    // the check today; the only producer of an array is the rare bcc
+    // case and we'd need per-address filtering to handle it cleanly.
+    if (typeof options.to === 'string') {
+      const adminSb = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      );
+      const deliverable = await isEmailDeliverable(adminSb, options.to);
+      if (!deliverable) {
+        console.warn(
+          `[Email] Skipping send to ${options.to}: previously hard-bounced`,
+        );
+        return {
+          success: false,
+          skipped: 'blocked',
+          error: 'Recipient address previously hard-bounced',
+        };
+      }
+    }
+
     // Get SMTP config to check if it's configured
     const smtpConfig = await getSMTPConfig(options.tenantId);
 
@@ -306,9 +342,18 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailResult>
     };
   } catch (error) {
     console.error('❌ Error sending email:', error);
+    // Classify so callers (queue cron) can persist `bounce_type` and
+    // the gate above will pick it up on the next attempt. nodemailer
+    // attaches `responseCode`, `response`, and `code` to the thrown
+    // error when the remote MX rejects in-band — see bounce.ts.
+    const classified = classifyBounceError(error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+      smtpCode: classified.smtpCode ?? undefined,
+      smtpResponse: classified.reason,
+      errorCode: classified.errorCode ?? undefined,
+      bounceClass: classified.bounceClass,
     };
   }
 }

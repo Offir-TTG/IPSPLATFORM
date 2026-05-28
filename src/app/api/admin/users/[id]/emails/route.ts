@@ -53,7 +53,7 @@ export async function GET(
     const { data, error, count } = await admin
       .from('email_queue')
       .select(
-        'id, subject, to_email, to_name, status, priority, trigger_type, trigger_event, language_code, scheduled_for, sent_at, failed_at, error_message, template_variables, created_at',
+        'id, subject, to_email, to_name, status, priority, trigger_type, trigger_event, language_code, scheduled_for, sent_at, failed_at, error_message, bounce_type, template_variables, created_at',
         { count: 'exact' },
       )
       .eq('tenant_id', callerRow.tenant_id)

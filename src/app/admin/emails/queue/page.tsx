@@ -247,6 +247,29 @@ export default function EmailQueuePage() {
     );
   };
 
+  const getBounceBadge = (bounceType: 'hard' | 'soft' | 'complaint' | null | undefined) => {
+    if (!bounceType) return null;
+    const labelKey = `emails.bounce.${bounceType}`;
+    const fallback =
+      bounceType === 'hard' ? 'Hard bounce' : bounceType === 'soft' ? 'Soft bounce' : 'Complaint';
+    const tooltipKey = `emails.bounce.${bounceType}.tooltip`;
+    const tooltipFallback =
+      bounceType === 'hard'
+        ? 'Permanent delivery failure. Future sends to this address are blocked.'
+        : bounceType === 'soft'
+        ? 'Temporary delivery failure (mailbox full, server unavailable).'
+        : 'Recipient marked the message as spam.';
+    return (
+      <Badge
+        variant={bounceType === 'hard' ? 'destructive' : 'outline'}
+        title={t(tooltipKey, tooltipFallback)}
+      >
+        <AlertCircle className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
+        {t(labelKey, fallback)}
+      </Badge>
+    );
+  };
+
   const getPriorityBadge = (priority: EmailPriority) => {
     const priorityConfig: Record<EmailPriority, { variant: any; label: string; className?: string }> = {
       urgent: { variant: 'destructive' as const, label: t('emails.priority.urgent', 'Urgent') },
@@ -264,8 +287,8 @@ export default function EmailQueuePage() {
   };
 
   // Translate the handful of `error_message` strings WE write to
-  // email_queue (cancellation reasons). External SMTP errors pass
-  // through verbatim since we can't predict their content.
+  // email_queue (cancellation reasons, blocklist gate). External SMTP
+  // errors pass through verbatim since we can't predict their content.
   const translateErrorMessage = (msg: string): string => {
     const map: Record<string, string> = {
       'Cancelled by admin': t('emails.queue.errorMessage.cancelledByAdmin', 'Cancelled by admin'),
@@ -273,6 +296,10 @@ export default function EmailQueuePage() {
       'Schedule paused': t('emails.queue.errorMessage.schedulePaused', 'Schedule paused'),
       'Schedule stopped': t('emails.queue.errorMessage.scheduleStopped', 'Schedule stopped'),
       'Schedule deleted': t('emails.queue.errorMessage.scheduleDeleted', 'Schedule deleted'),
+      'Recipient address previously hard-bounced': t(
+        'emails.queue.errorMessage.hardBounceBlocked',
+        'Recipient address previously hard-bounced',
+      ),
     };
     return map[msg] ?? msg;
   };
@@ -473,7 +500,12 @@ export default function EmailQueuePage() {
                                 </div>
                               </TableCell>
                               <TableCell className={`max-w-xs truncate ${isRtl ? 'text-right' : 'text-left'}`}>{email.subject}</TableCell>
-                              <TableCell className={isRtl ? 'text-right' : 'text-left'}>{getStatusBadge(email.status)}</TableCell>
+                              <TableCell className={isRtl ? 'text-right' : 'text-left'}>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {getStatusBadge(email.status)}
+                                  {getBounceBadge(email.bounce_type)}
+                                </div>
+                              </TableCell>
                               <TableCell className={isRtl ? 'text-right' : 'text-left'}>{getPriorityBadge(email.priority)}</TableCell>
                               <TableCell className={`text-sm text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
                                 {formatDistanceToNow(new Date(email.created_at), { addSuffix: true, locale: isRtl ? he : undefined })}
@@ -553,6 +585,7 @@ export default function EmailQueuePage() {
                         <p className="text-sm truncate">{email.subject}</p>
                         <div className="flex flex-wrap gap-2">
                           {getStatusBadge(email.status)}
+                          {getBounceBadge(email.bounce_type)}
                           {getPriorityBadge(email.priority)}
                         </div>
                         <div className="text-xs text-muted-foreground space-y-0.5 pt-1 border-t">
@@ -630,8 +663,9 @@ export default function EmailQueuePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {getStatusBadge(selectedEmail.status)}
+                    {getBounceBadge(selectedEmail.bounce_type)}
                     {getPriorityBadge(selectedEmail.priority)}
                   </div>
 

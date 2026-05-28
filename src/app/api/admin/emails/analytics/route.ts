@@ -41,33 +41,42 @@ export async function GET(request: NextRequest) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Get overall summary statistics
+    // Get overall summary statistics. `bounce_type` is the canonical
+    // bounce signal (see 20260528_email_bounce_tracking.sql) — the
+    // legacy `email_analytics.bounced_at` column is left for
+    // open/click tracking only.
     const { data: sentEmails } = await supabase
       .from('email_queue')
-      .select('id, status')
+      .select('id, status, bounce_type')
       .eq('tenant_id', tenantId)
       .gte('created_at', startDate.toISOString());
 
     const totalSent = sentEmails?.filter(e => e.status === 'sent').length || 0;
     const totalFailed = sentEmails?.filter(e => e.status === 'failed').length || 0;
     const totalPending = sentEmails?.filter(e => e.status === 'pending').length || 0;
+    const totalBounced = sentEmails?.filter(e => !!e.bounce_type).length || 0;
+    const totalHardBounced = sentEmails?.filter(e => e.bounce_type === 'hard').length || 0;
+    // Delivered = sent rows that haven't been classified as a bounce.
+    // A row can be `status = 'sent'` and still bounce later (async DSN),
+    // but in our world bounces are classified synchronously by the
+    // queue cron and the row is moved to `failed` then, so this is a
+    // tight estimate.
     const totalDelivered = totalSent;
 
-    // Try to get analytics data (may not exist if table doesn't exist)
+    // Open/click come from the tracking pixel + redirect; bounce no
+    // longer reads here. The table is optional — swallow if missing.
     let totalOpened = 0;
     let totalClicked = 0;
-    let totalBounced = 0;
 
     try {
       const { data: analyticsData } = await supabase
         .from('email_analytics')
-        .select('opened_at, clicked_at, bounced_at')
+        .select('opened_at, clicked_at')
         .in('email_queue_id', sentEmails?.map(e => e.id) || []);
 
       if (analyticsData) {
         totalOpened = analyticsData.filter(a => a.opened_at).length;
         totalClicked = analyticsData.filter(a => a.clicked_at).length;
-        totalBounced = analyticsData.filter(a => a.bounced_at).length;
       }
     } catch (error) {
       console.log('Email analytics table not available');
@@ -87,6 +96,7 @@ export async function GET(request: NextRequest) {
       total_opened: totalOpened,
       total_clicked: totalClicked,
       total_bounced: totalBounced,
+      total_hard_bounced: totalHardBounced,
       open_rate: openRate,
       click_rate: clickRate,
       bounce_rate: bounceRate,

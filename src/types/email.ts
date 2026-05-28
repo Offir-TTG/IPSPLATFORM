@@ -118,6 +118,10 @@ export interface EmailQueueItem {
   failed_at?: string;
   error_message?: string;
   smtp_message_id?: string;
+  // Set by process-email-queue when SMTP rejects the send. Only
+  // 'hard' is enforced by isEmailDeliverable() — 'soft' and
+  // 'complaint' are recorded for visibility but do not block.
+  bounce_type?: BounceType;
   created_at: string;
 }
 

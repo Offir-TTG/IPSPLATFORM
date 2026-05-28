@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendEmail } from '@/lib/email/send';
+import { recordQueueBounce } from '@/lib/email/blocklist';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import { runCron } from '@/lib/cron/withCronLogging';
 import Handlebars from 'handlebars';
@@ -151,12 +152,34 @@ export async function GET(request: NextRequest) {
             console.log(`[Email Queue Cron] Successfully sent email ${email.id} and marked as sent`);
           }
           successCount++;
+        } else if (result.skipped === 'blocked') {
+          // Pre-send blocklist gate fired — recipient is on the hard-
+          // bounce list from a prior send. Mark cancelled (not failed)
+          // so the row visually matches other admin-suppressed sends
+          // and won't be retried.
+          await supabase
+            .from('email_queue')
+            .update({
+              status: 'cancelled',
+              error_message: result.error || 'Recipient address previously hard-bounced',
+            })
+            .eq('id', email.id);
+          console.warn(`[Email Queue Cron] Skipped email ${email.id}: recipient hard-bounced`);
+          failCount++;
         } else {
-          // Update status to failed (removed non-existent error_message and failed_at fields)
+          // SMTP rejected the send. If the rejection is hard or soft,
+          // persist the classification on the row so isEmailDeliverable
+          // short-circuits future sends to this address via the partial
+          // index (see 20260528_email_bounce_tracking.sql).
+          if (result.bounceClass === 'hard' || result.bounceClass === 'soft') {
+            await recordQueueBounce(supabase, email.id, result.bounceClass);
+          }
           const { error: updateError } = await supabase
             .from('email_queue')
             .update({
               status: 'failed',
+              error_message: result.smtpResponse || result.error || 'SMTP send failed',
+              failed_at: new Date().toISOString(),
             })
             .eq('id', email.id);
 
@@ -164,7 +187,10 @@ export async function GET(request: NextRequest) {
             console.error(`[Email Queue Cron] Failed to mark email ${email.id} as failed:`, updateError);
           }
 
-          console.error(`[Email Queue Cron] Failed to send email ${email.id}:`, result.error);
+          console.error(
+            `[Email Queue Cron] Failed to send email ${email.id} (${result.bounceClass ?? 'unknown'}):`,
+            result.error,
+          );
           failCount++;
         }
 
