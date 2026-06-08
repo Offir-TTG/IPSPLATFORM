@@ -620,8 +620,14 @@ export default function GradesPage() {
                       className="overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-primary/20"
                     >
                       {g.course_id ? (
+                        // Link straight to the course page — same pattern
+                        // the attendance card uses. The previous target
+                        // `/courses/${id}/grades` is a server-redirect to
+                        // `/grades?course=${id}`, which lands the user
+                        // back on this same list and reads as "the click
+                        // did nothing."
                         <Link
-                          href={`/courses/${g.course_id}/grades`}
+                          href={`/courses/${g.course_id}`}
                           className="block cursor-pointer"
                         >
                           {inner}
