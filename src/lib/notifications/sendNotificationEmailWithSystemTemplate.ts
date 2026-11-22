@@ -103,7 +103,7 @@ export async function sendNotificationEmailWithSystemTemplate(
       priority: options.priority,
     });
 
-    // Send email (SMTP config will be fetched from database by sendEmail)
+    // Send email (Resend settings are read from the database by sendEmail)
     const result = await sendEmail({
       to: options.to,
       subject,

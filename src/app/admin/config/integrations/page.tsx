@@ -11,7 +11,6 @@ import {
   CreditCard,
   Video,
   Mail,
-  MessageSquare,
   CheckCircle,
   XCircle,
   Loader2,
@@ -24,8 +23,6 @@ import {
   Shield,
   Settings,
   Plug,
-  Users,
-  ExternalLink
 } from 'lucide-react';
 
 interface Integration {
@@ -333,202 +330,37 @@ export default function IntegrationsPage() {
       ]
     },
     {
-      key: 'sendgrid',
-      name: 'SendGrid',
-      description: t('admin.integrations.sendgrid.description', 'Email delivery service'),
+      key: 'resend',
+      name: 'Resend',
+      description: t('admin.integrations.resend.description', 'Sends every email from the platform, and reports bounces'),
       icon: <Mail className="h-5 w-5" />,
       fields: [
         {
           key: 'api_key',
-          label: t('admin.integrations.sendgrid.apiKey', 'API Key'),
+          label: t('admin.integrations.resend.apiKey', 'API Key'),
           type: 'password',
-          placeholder: 'SG.xxxx...',
+          placeholder: 're_…',
           required: true
         },
         {
           key: 'from_email',
-          label: t('admin.integrations.sendgrid.fromEmail', 'From Email'),
+          label: t('admin.integrations.resend.fromEmail', 'Sender email'),
           type: 'text',
           placeholder: 'noreply@yourdomain.com',
           required: true
         },
         {
           key: 'from_name',
-          label: t('admin.integrations.sendgrid.fromName', 'From Name'),
+          label: t('admin.integrations.resend.fromName', 'Sender name'),
           type: 'text',
-          placeholder: t('admin.integrations.sendgrid.fromNamePlaceholder', 'Your Company'),
-          required: true
-        }
-      ],
-      settings: [
-        {
-          key: 'sandbox_mode',
-          label: t('admin.integrations.sendgrid.sandboxMode', 'Sandbox Mode'),
-          type: 'toggle'
-        },
-        {
-          key: 'tracking',
-          label: t('admin.integrations.sendgrid.emailTracking', 'Email Tracking'),
-          type: 'toggle'
-        }
-      ]
-    },
-    {
-      key: 'twilio',
-      name: 'Twilio',
-      description: t('admin.integrations.twilio.description', 'SMS and voice communication'),
-      icon: <MessageSquare className="h-5 w-5" />,
-      fields: [
-        {
-          key: 'account_sid',
-          label: t('admin.integrations.twilio.accountSid', 'Account SID'),
-          type: 'text',
-          placeholder: 'ACxxxx...',
+          placeholder: t('admin.integrations.resend.fromNamePlaceholder', 'Your organization'),
           required: true
         },
         {
-          key: 'auth_token',
-          label: t('admin.integrations.twilio.authToken', 'Auth Token'),
+          key: 'webhook_secret',
+          label: t('admin.integrations.resend.webhookSecret', 'Webhook signing secret'),
           type: 'password',
-          placeholder: t('admin.integrations.twilio.authTokenPlaceholder', 'Your Auth Token'),
-          required: true
-        },
-        {
-          key: 'phone_number',
-          label: t('admin.integrations.twilio.phoneNumber', 'Phone Number'),
-          type: 'text',
-          placeholder: '+1234567890',
-          required: true
-        }
-      ],
-      settings: [
-        {
-          key: 'messaging_service_sid',
-          label: t('admin.integrations.twilio.messagingServiceSid', 'Messaging Service SID'),
-          type: 'text',
-          placeholder: 'MGxxxx...'
-        }
-      ]
-    },
-    {
-      key: 'keap',
-      name: 'Keap (Infusionsoft)',
-      description: t('admin.integrations.keap.description', 'CRM and marketing automation platform'),
-      icon: <Users className="h-5 w-5" />,
-      fields: [
-        {
-          key: 'client_id',
-          label: t('admin.integrations.keap.clientId', 'Client ID'),
-          type: 'text',
-          placeholder: t('admin.integrations.keap.clientIdPlaceholder', 'Your Keap Client ID'),
-          required: true
-        },
-        {
-          key: 'client_secret',
-          label: t('admin.integrations.keap.clientSecret', 'Client Secret'),
-          type: 'password',
-          placeholder: t('admin.integrations.keap.clientSecretPlaceholder', 'Your Keap Client Secret'),
-          required: true
-        },
-        {
-          key: 'access_token',
-          label: t('admin.integrations.keap.accessToken', 'Access Token'),
-          type: 'password',
-          placeholder: t('admin.integrations.keap.accessTokenPlaceholder', 'Generated after OAuth authorization'),
-          required: false
-        },
-        {
-          key: 'refresh_token',
-          label: t('admin.integrations.keap.refreshToken', 'Refresh Token'),
-          type: 'password',
-          placeholder: t('admin.integrations.keap.refreshTokenPlaceholder', 'Generated after OAuth authorization'),
-          required: false
-        }
-      ],
-      settings: [
-        {
-          key: 'auto_sync_contacts',
-          label: t('admin.integrations.keap.autoSyncContacts', 'Auto-sync Contacts'),
-          type: 'toggle'
-        },
-        {
-          key: 'default_tag_category',
-          label: t('admin.integrations.keap.defaultTagCategory', 'Default Tag Category'),
-          type: 'text',
-          placeholder: t('admin.integrations.keap.defaultTagCategoryPlaceholder', 'LMS Students')
-        },
-        {
-          key: 'sync_frequency',
-          label: t('admin.integrations.keap.syncFrequency', 'Sync Frequency'),
-          type: 'select',
-          options: [
-            { value: 'realtime', label: t('admin.integrations.keap.syncRealtime', 'Real-time') },
-            { value: 'hourly', label: t('admin.integrations.keap.syncHourly', 'Hourly') },
-            { value: 'daily', label: t('admin.integrations.keap.syncDaily', 'Daily') },
-            { value: 'manual', label: t('admin.integrations.keap.syncManual', 'Manual') }
-          ]
-        }
-      ]
-    },
-    {
-      key: 'smtp',
-      name: t('admin.integrations.smtp.name', 'SMTP Email Server'),
-      description: t('admin.integrations.smtp.description', 'Configure SMTP server for sending emails'),
-      icon: <Mail className="h-5 w-5" />,
-      fields: [
-        {
-          key: 'smtp_host',
-          label: t('admin.integrations.smtp.host', 'SMTP Host'),
-          type: 'text',
-          placeholder: 'smtp.gmail.com',
-          required: true
-        },
-        {
-          key: 'smtp_port',
-          label: t('admin.integrations.smtp.port', 'SMTP Port'),
-          type: 'text',
-          placeholder: '587',
-          required: true
-        },
-        {
-          key: 'smtp_username',
-          label: t('admin.integrations.smtp.username', 'SMTP Username'),
-          type: 'text',
-          placeholder: 'your-email@example.com',
-          required: true
-        },
-        {
-          key: 'smtp_password',
-          label: t('admin.integrations.smtp.password', 'SMTP Password'),
-          type: 'password',
-          placeholder: '••••••••',
-          required: true
-        },
-        {
-          key: 'smtp_secure',
-          label: t('admin.integrations.smtp.secure', 'Security'),
-          type: 'select',
-          placeholder: t('admin.integrations.smtp.selectSecurity', 'Select security option'),
-          required: true,
-          options: [
-            { value: 'tls', label: 'TLS (Port 587)' },
-            { value: 'ssl', label: 'SSL (Port 465)' },
-            { value: 'none', label: t('admin.integrations.smtp.noSecurity', 'None') }
-          ]
-        },
-        {
-          key: 'from_email',
-          label: t('admin.integrations.smtp.fromEmail', 'From Email'),
-          type: 'text',
-          placeholder: 'noreply@yourdomain.com',
-          required: true
-        },
-        {
-          key: 'from_name',
-          label: t('admin.integrations.smtp.fromName', 'From Name'),
-          type: 'text',
-          placeholder: 'Your Organization',
-          required: true
+          placeholder: 'whsec_…'
         }
       ]
     }
@@ -537,55 +369,6 @@ export default function IntegrationsPage() {
   useEffect(() => {
     fetchIntegrations();
   }, []);
-
-  // Handle OAuth callbacks (Keap, DocuSign, etc.)
-  useEffect(() => {
-    const handleOAuthCallback = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-
-      if (code) {
-        // Determine which integration based on URL or state
-        const keapIntegration = integrations.find(i => i.integration_key === 'keap');
-
-        if (keapIntegration) {
-          try {
-            toast.info('Processing Keap authorization...');
-
-            // Exchange code for tokens
-            const response = await fetch('/api/admin/integrations/keap/oauth-callback', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ code }),
-            });
-
-            if (response.ok) {
-              const result = await response.json();
-              toast.success('Keap authorization successful! Tokens have been saved.');
-
-              // Refresh integrations to show new tokens
-              await fetchIntegrations();
-
-              // Clean up URL
-              window.history.replaceState({}, document.title, window.location.pathname);
-            } else {
-              const error = await response.json();
-              toast.error(`Keap authorization failed: ${error.error || 'Unknown error'}`);
-            }
-          } catch (error) {
-            console.error('OAuth callback error:', error);
-            toast.error('Failed to process Keap authorization');
-          }
-        }
-      }
-    };
-
-    if (integrations.length > 0) {
-      handleOAuthCallback();
-    }
-  }, [integrations]);
 
   const fetchIntegrations = async () => {
     try {
@@ -1360,58 +1143,6 @@ export default function IntegrationsPage() {
                   paddingTop: '1.5rem',
                   borderTop: '1px solid hsl(var(--border))'
                 }}>
-                  {/* Keap-only: kick off OAuth. Keap is the only integration
-                      with rotating refresh tokens; when they go stale the
-                      admin needs a one-click way to re-authorize without
-                      hand-crafting the signin.infusionsoft.com URL. */}
-                  {config.key === 'keap' && (() => {
-                    const clientId = integration?.credentials?.client_id as string | undefined;
-                    const canAuthorize = Boolean(clientId);
-                    const handleAuthorize = () => {
-                      if (!clientId) return;
-                      const redirectUri = `${window.location.origin}/admin/config/integrations`;
-                      const params = new URLSearchParams({
-                        client_id: clientId,
-                        redirect_uri: redirectUri,
-                        response_type: 'code',
-                        scope: 'full',
-                      });
-                      window.location.href = `https://signin.infusionsoft.com/app/oauth/authorize?${params.toString()}`;
-                    };
-                    return (
-                      <button
-                        onClick={handleAuthorize}
-                        disabled={!canAuthorize}
-                        title={
-                          canAuthorize
-                            ? t('admin.integrations.keap.authorizeHint', 'Opens Keap to grant access; tokens are saved automatically when you return.')
-                            : t('admin.integrations.keap.authorizeDisabled', 'Enter Client ID first, then click Save.')
-                        }
-                        style={{
-                          padding: '0.5rem 1rem',
-                          borderRadius: 'calc(var(--radius) * 1.5)',
-                          border: '1px solid hsl(var(--border))',
-                          backgroundColor: 'hsl(var(--background))',
-                          cursor: canAuthorize ? 'pointer' : 'not-allowed',
-                          opacity: canAuthorize ? 1 : 0.5,
-                          fontSize: 'var(--font-size-sm)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.5rem',
-                          transition: 'background-color 0.2s',
-                          width: isMobile ? '100%' : 'auto'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (canAuthorize) e.currentTarget.style.backgroundColor = 'hsl(var(--accent))';
-                        }}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'hsl(var(--background))'}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        {t('admin.integrations.keap.authorize', 'Authorize with Keap')}
-                      </button>
-                    );
-                  })()}
                   <button
                     onClick={() => handleTest(config.key)}
                     disabled={!hasRequiredCredentials || testing === config.key}

@@ -648,13 +648,9 @@ export default function NavigationPage() {
       visible: true,
       order: 4,
       items: [
-        { id: 'languages', label: t('admin.nav.languages', 'Languages'), href: '/admin/config/languages', visible: true, order: 1 },
-        { id: 'translations', label: t('admin.nav.translations', 'Translations'), href: '/admin/config/translations', visible: true, order: 2 },
-        { id: 'settings', label: t('admin.nav.settings', 'Settings'), href: '/admin/config/settings', visible: true, order: 3 },
-        { id: 'theme', label: t('admin.nav.theme', 'Theme'), href: '/admin/settings/theme', visible: true, order: 4 },
-        { id: 'features', label: t('admin.nav.features', 'Features'), href: '/admin/config/features', visible: true, order: 5 },
-        { id: 'integrations', label: t('admin.nav.integrations', 'Integrations'), href: '/admin/config/integrations', visible: true, order: 6 },
-        { id: 'emails', label: t('admin.nav.emails', 'Emails'), href: '/admin/emails', visible: true, order: 7 }
+        // The settings screens are cards on the Settings page, so the menu
+        // has one link to it.
+        { id: 'settings_hub', label: t('admin.nav.settings_hub', 'Settings'), href: '/admin/settings', visible: true, order: 1 }
       ]
     },
     {
@@ -744,6 +740,7 @@ export default function NavigationPage() {
     'languages': 'admin.nav.languages',
     'translations': 'admin.nav.translations',
     'settings': 'admin.nav.settings',
+    'settings_hub': 'admin.nav.settings_hub',
     'theme': 'admin.nav.theme',
     'features': 'admin.nav.features',
     'integrations': 'admin.nav.integrations',

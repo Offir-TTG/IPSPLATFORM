@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireStaff } from '@/lib/auth/requireStaff';
 
 // Force dynamic rendering - no caching
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,10 @@ export const revalidate = 0;
 
 export async function PATCH(request: NextRequest) {
   try {
+    // Students can't change course content.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
 
     // Check authentication

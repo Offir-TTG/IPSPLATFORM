@@ -4,7 +4,7 @@
  * Backed by the `bounce_type` column on `email_queue` (see migration
  * 20260528_email_bounce_tracking.sql). Once any past send to an
  * address has been classified `hard`, all future sends via `sendEmail`
- * short-circuit before SMTP handoff.
+ * short-circuit before handing it to Resend.
  *
  * Lookup goes through the `is_email_hard_bounced(p_email)` SQL
  * function so the planner uses the partial index on

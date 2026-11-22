@@ -5,7 +5,6 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { sendNotificationEmail } from './emailDelivery';
-import { sendNotificationSMS } from './smsDelivery';
 import { sendPushNotification } from './pushDelivery';
 import type { Notification, NotificationCategory, DeliveryChannel } from '@/types/notifications';
 
@@ -28,21 +27,18 @@ interface UserDeliveryInfo {
 
 interface NotificationPreferences {
   email_enabled: boolean;
-  sms_enabled: boolean;
   push_enabled: boolean;
   category_preferences: Record<
     NotificationCategory,
     {
       in_app: boolean;
       email: boolean;
-      sms: boolean;
       push: boolean;
     }
   >;
   quiet_hours_start: string | null;
   quiet_hours_end: string | null;
   quiet_hours_timezone: string;
-  phone_number: string | null;
   push_subscription: any;
 }
 
@@ -130,22 +126,6 @@ export async function deliverNotification(
         });
       }
 
-      // SMS delivery (only for urgent)
-      if (channels.includes('sms') && notification.priority === 'urgent' && userPrefs.phone_number) {
-        const smsResult = await sendNotificationSMS({
-          notification,
-          recipientPhone: userPrefs.phone_number,
-          recipientName: getUserFullName(user),
-        });
-
-        results.push({
-          channel: 'sms',
-          success: smsResult.success,
-          error: smsResult.error,
-          messageId: smsResult.messageSid,
-        });
-      }
-
       // Push delivery
       if (channels.includes('push') && userPrefs.push_subscription) {
         const pushResult = await sendPushNotification({
@@ -203,7 +183,6 @@ function determineChannels(
     return adminOverrideChannels.filter((channel) => {
       if (channel === 'in_app') return true; // Always allow in-app
       if (channel === 'email') return preferences.email_enabled;
-      if (channel === 'sms') return preferences.sms_enabled;
       if (channel === 'push') return preferences.push_enabled;
       return false;
     });
@@ -217,13 +196,11 @@ function determineChannels(
     // No category preferences, use defaults
     if (preferences.email_enabled) channels.push('email');
     if (preferences.push_enabled) channels.push('push');
-    if (preferences.sms_enabled && notification.priority === 'urgent') channels.push('sms');
     return channels;
   }
 
   // Apply category and master preferences
   if (categoryPrefs.email && preferences.email_enabled) channels.push('email');
-  if (categoryPrefs.sms && preferences.sms_enabled && notification.priority === 'urgent') channels.push('sms');
   if (categoryPrefs.push && preferences.push_enabled) channels.push('push');
 
   return channels;
@@ -294,22 +271,20 @@ async function logDeliveryResults(
 function getDefaultPreferences(): NotificationPreferences {
   return {
     email_enabled: true,
-    sms_enabled: false,
     push_enabled: true,
     category_preferences: {
-      lesson: { in_app: true, email: true, sms: false, push: true },
-      assignment: { in_app: true, email: true, sms: false, push: true },
-      payment: { in_app: true, email: true, sms: true, push: true },
-      enrollment: { in_app: true, email: true, sms: false, push: true },
-      attendance: { in_app: true, email: false, sms: false, push: false },
-      achievement: { in_app: true, email: true, sms: false, push: true },
-      announcement: { in_app: true, email: true, sms: false, push: true },
-      system: { in_app: true, email: false, sms: false, push: false },
+      lesson: { in_app: true, email: true, push: true },
+      assignment: { in_app: true, email: true, push: true },
+      payment: { in_app: true, email: true, push: true },
+      enrollment: { in_app: true, email: true, push: true },
+      attendance: { in_app: true, email: false, push: false },
+      achievement: { in_app: true, email: true, push: true },
+      announcement: { in_app: true, email: true, push: true },
+      system: { in_app: true, email: false, push: false },
     },
     quiet_hours_start: null,
     quiet_hours_end: null,
     quiet_hours_timezone: 'UTC',
-    phone_number: null,
     push_subscription: null,
   };
 }

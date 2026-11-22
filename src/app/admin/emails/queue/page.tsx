@@ -287,7 +287,7 @@ export default function EmailQueuePage() {
   };
 
   // Translate the handful of `error_message` strings WE write to
-  // email_queue (cancellation reasons, blocklist gate). External SMTP
+  // email_queue (cancellation reasons, blocklist gate). Resend
   // errors pass through verbatim since we can't predict their content.
   const translateErrorMessage = (msg: string): string => {
     const map: Record<string, string> = {
@@ -308,7 +308,7 @@ export default function EmailQueuePage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-7xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header — back link inline with title block */}
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           <Link href="/admin/emails">

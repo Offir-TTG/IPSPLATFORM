@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { randomBytes } from 'crypto';
 
 export interface BridgeLink {
   id: string;
@@ -208,7 +209,12 @@ export const bridgeService = {
       }
 
       // Generate slug if not provided
-      const slug = params.custom_slug || `bridge-${Math.random().toString(36).substring(2, 10)}`;
+      // The link opens Zoom as host, so it must be unguessable: a chosen name
+      // gets a random tail, and the default is fully random.
+      const tail = randomBytes(9).toString('base64url');
+      const slug = params.custom_slug
+        ? `${params.custom_slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 40)}-${tail}`
+        : `bridge-${tail}`;
 
       const { data, error } = await supabase
         .from('instructor_bridge_links')

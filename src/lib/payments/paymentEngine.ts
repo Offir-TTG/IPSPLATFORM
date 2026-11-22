@@ -196,14 +196,35 @@ function evaluateUserSegment(userMetadata: Record<string, any> | undefined, rule
 /**
  * Generate payment schedules based on payment plan
  */
+/**
+ * Reads the price an admin typed for a membership plan: empty is null (use
+ * the product price), otherwise a positive amount in whole cents.
+ */
+export function parsePlanPrice(value: unknown): number | null | 'invalid' {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return 'invalid';
+  return Math.round(amount * 100) / 100;
+}
+
+/** A subscription plan's own price per period, or null to use the product price. */
+export function planSubscriptionAmount(plan: unknown): number | null {
+  const value = (plan as { subscription_amount?: unknown } | null)?.subscription_amount;
+  const amount = value === null || value === undefined || value === '' ? NaN : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : null;
+}
+
 export function generatePaymentSchedules(
   enrollmentId: string,
   tenantId: string,
   plan: PaymentPlan,
   totalAmount: number,
-  startDate?: Date
+  startDate: Date | undefined,
+  /** The product or enrollment currency. Every schedule is charged in it. */
+  currency: string
 ): Omit<PaymentSchedule, 'id' | 'created_at' | 'updated_at'>[] {
   const schedules: Omit<PaymentSchedule, 'id' | 'created_at' | 'updated_at'>[] = [];
+  const scheduleCurrency = (currency || 'USD').toUpperCase();
   const now = new Date(); // Always use current date for immediate payments (one_time, deposit)
   const planStartDate = startDate || now; // Use startDate for installments/subscriptions
 
@@ -216,7 +237,7 @@ export function generatePaymentSchedules(
         payment_number: 1,
         payment_type: 'full',
         amount: totalAmount,
-        currency: 'USD',
+        currency: scheduleCurrency,
         original_due_date: now.toISOString(),
         scheduled_date: now.toISOString(),
         status: 'pending',
@@ -241,7 +262,7 @@ export function generatePaymentSchedules(
         payment_number: 1,
         payment_type: 'deposit',
         amount: depositAmount,
-        currency: 'USD',
+        currency: scheduleCurrency,
         original_due_date: now.toISOString(),
         scheduled_date: now.toISOString(),
         status: 'pending',
@@ -286,7 +307,7 @@ export function generatePaymentSchedules(
             payment_number: i + 2, // +2 because deposit is #1
             payment_type: 'installment',
             amount: installmentAmount,
-            currency: 'USD',
+            currency: scheduleCurrency,
             original_due_date: dueDate.toISOString(),
             scheduled_date: dueDate.toISOString(),
             status: 'pending',
@@ -334,7 +355,7 @@ export function generatePaymentSchedules(
             payment_number: i + 1,
             payment_type: 'installment',
             amount: installmentAmount,
-            currency: 'USD',
+            currency: scheduleCurrency,
             original_due_date: dueDate.toISOString(),
             scheduled_date: dueDate.toISOString(),
             status: 'pending',
@@ -346,16 +367,17 @@ export function generatePaymentSchedules(
       break;
 
     case 'subscription':
-      // For subscriptions, we create the first period payment
-      // Future payments are handled by Stripe subscriptions
+      // The first period is charged now; the renewal job adds each next one.
+      // A plan with its own price (monthly vs yearly) uses it; otherwise the
+      // product price.
       schedules.push({
         tenant_id: tenantId,
         enrollment_id: enrollmentId,
         payment_plan_id: plan.id,
         payment_number: 1,
         payment_type: 'subscription',
-        amount: totalAmount,
-        currency: 'USD',
+        amount: planSubscriptionAmount(plan) ?? totalAmount,
+        currency: scheduleCurrency,
         original_due_date: now.toISOString(),
         scheduled_date: now.toISOString(),
         status: 'pending',
@@ -394,8 +416,12 @@ function getFrequencyDays(frequency: string, customDays?: number): number {
  */
 function addMonths(date: Date, months: number): Date {
   const result = new Date(date);
-  // Use local methods since we're working with date-only values
+  const day = result.getDate();
+  // Move to the 1st first, so a short month can't roll over into the next.
+  result.setDate(1);
   result.setMonth(result.getMonth() + months);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(day, lastDay));
   return result;
 }
 

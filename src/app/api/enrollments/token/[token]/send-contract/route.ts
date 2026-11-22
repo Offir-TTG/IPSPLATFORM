@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getDocuSignClientByTenantId } from '@/lib/docusign/client';
+import { loadIntegration } from '@/lib/integrations/store';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.
@@ -30,8 +31,10 @@ export async function POST(
     // Get profile data from request body (memory-based wizard)
     const body = await request.json();
     const { profile } = body;
+    // Signing from the wizard shown inside the portal's child page: come back
+    // there afterwards. Only a child page address is accepted.
+    const returnTo = typeof body.return_to === 'string' && /^\/children\/[0-9a-f-]{36}(\?enroll=continue)?$/i.test(body.return_to) ? body.return_to : null;
 
-    console.log('[Send Contract] Received profile data:', profile);
 
     // Get enrollment details with product
     const { data: enrollment, error: enrollmentError } = await supabase
@@ -95,13 +98,7 @@ export async function POST(
     }
 
     // Check if DocuSign is configured and enabled
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('tenant_id', enrollment.tenant_id)
-      .eq('integration_key', 'docusign')
-      .eq('is_enabled', true)
-      .single();
+    const { data: integration } = await loadIntegration(enrollment.tenant_id, 'docusign', { enabledOnly: true });
 
     if (!integration) {
       return NextResponse.json(
@@ -113,7 +110,6 @@ export async function POST(
     // Use profile data from request body (memory-based wizard approach)
     const profileData = profile || {};
 
-    console.log('[Send Contract] Using profile data:', profileData);
 
     if (!profileData.email || !profileData.first_name) {
       return NextResponse.json(
@@ -141,8 +137,16 @@ export async function POST(
       enrollment_token: params.token // Include token for tracking
     };
 
-    // Return URL after signing (back to wizard with token)
-    const returnUrl = `${request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL}/enroll/wizard/${enrollment.id}?token=${params.token}&docusign=complete`;
+    // Where DocuSign sends the signer afterwards.
+    //  - mode 'dialog' (signing in a dialog on the wizard) or 'popup' (a new
+    //    window, the fallback): a small page that tells the wizard the result
+    //    (DocuSign adds ?event=signing_complete|cancel|decline|...).
+    //  - otherwise: back to the wizard page itself, as before.
+    const signingMode = body.mode === 'dialog' || body.mode === 'popup' ? body.mode : null;
+    const appOrigin = request.nextUrl.origin;
+    const returnUrl = signingMode
+      ? `${appOrigin}/enroll/signing-return`
+      : `${request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL}/enroll/wizard/${enrollment.id}?token=${params.token}&docusign=complete${returnTo ? `&return_to=${encodeURIComponent(returnTo)}` : ''}`;
 
     try {
       // Get DocuSign client from database integration using tenant ID
@@ -160,7 +164,9 @@ export async function POST(
       const signingUrl = await docusignClient.getRecipientViewUrl(
         envelopeResponse.envelopeId,
         recipientInfo,
-        returnUrl
+        returnUrl,
+        // Only the dialog needs DocuSign to allow being framed by our site.
+        signingMode === 'dialog' ? appOrigin : undefined
       );
 
       // Update enrollment with envelope information
@@ -174,7 +180,6 @@ export async function POST(
       // Save profile data if this is a new user enrollment (user_id is NULL)
       if (!enrollment.user_id && profileData) {
         updateData.wizard_profile_data = profileData;
-        console.log('[Send Contract] Saving wizard_profile_data for new user:', profileData);
       }
 
       const { data: updateResult, error: updateError } = await supabase

@@ -2,11 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertCircle, ShieldCheck, AlertTriangle, XCircle, Tag } from 'lucide-react';
-import { UserAuditTable } from './UserAuditTable';
-import type { AuditEvent } from '@/lib/audit/types';
 import { useAdminLanguage } from '@/context/AppContext';
 
 type EnrichedTag = { value: string; from_products: string[] };
@@ -46,7 +43,6 @@ export interface UserSummary {
 interface UserOverviewTabProps {
   userId: string;
   summary: UserSummary;
-  onSwitchToActivity: () => void;
   /** Navigate to another tab from inside a health-alert link. */
   onSwitchToTab?: (tab: 'payments' | 'attendance' | 'enrollments' | 'activity') => void;
 }
@@ -145,48 +141,27 @@ function severityStyles(sev: Severity) {
   }
 }
 
-export function UserOverviewTab({ userId, summary, onSwitchToActivity, onSwitchToTab }: UserOverviewTabProps) {
+export function UserOverviewTab({ userId, summary, onSwitchToTab }: UserOverviewTabProps) {
   const { t } = useAdminLanguage();
-  const [recent, setRecent] = useState<AuditEvent[]>([]);
-  const [loadingRecent, setLoadingRecent] = useState(true);
-  const [keapTags, setKeapTags] = useState<EnrichedTag[]>([]);
   const [crmTagSlugs, setCrmTagSlugs] = useState<EnrichedTag[]>([]);
   const [loadingTags, setLoadingTags] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/admin/users/${userId}/activity?limit=5`);
-        if (!res.ok) throw new Error('Failed');
-        const data = await res.json();
-        if (!cancelled) setRecent(data.events || []);
-      } catch {
-        if (!cancelled) setRecent([]);
-      } finally {
-        if (!cancelled) setLoadingRecent(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [userId]);
-
-  // Enrollment tags — Keap + CRM tag slugs aggregated across every
+  // Enrollment tags — CRM tag slugs aggregated across every
   // product this user is enrolled in. Read-only here (assignment is on
   // the product, not the user).
   useEffect(() => {
+    if (!userId || userId === 'null' || userId === 'undefined') return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/admin/users/${userId}/tags`);
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/tags`);
         if (!res.ok) throw new Error('Failed');
         const data = await res.json();
         if (!cancelled) {
-          setKeapTags(data.keap_tags || []);
           setCrmTagSlugs(data.crm_tag_slugs || []);
         }
       } catch {
         if (!cancelled) {
-          setKeapTags([]);
           setCrmTagSlugs([]);
         }
       } finally {
@@ -244,39 +219,10 @@ export function UserOverviewTab({ userId, summary, onSwitchToActivity, onSwitchT
         </CardContent>
       </Card>
 
-      {/* Dashboard grid: Recent activity (main) + Tags (sidebar).
-          On lg+, activity spans 2 cols so the table breathes; tags
-          live in a narrow sidebar so they're glanceable without
-          dominating. Stacks to 1 col on phones/tablets. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent activity — main column */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">
-              {t('admin.users.activity.overview.recentActivity', 'Recent activity')}
-            </CardTitle>
-            <Button variant="ghost" size="sm" onClick={onSwitchToActivity}>
-              {t('admin.users.activity.overview.viewAll', 'View all')}
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {loadingRecent ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : recent.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                {t('admin.users.activity.activity.empty', 'No activity recorded for this user yet.')}
-              </p>
-            ) : (
-              <UserAuditTable events={recent} />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Enrollment tags — sidebar. Compact: one section with two
-            sub-groups (Keap, CRM) separated by a divider, each
-            sub-group's heading inline next to a count. Badges carry
+      {/* Recent activity has its own section in the user drawer, so only the tags are here. */}
+      <div>
+        {/* Enrollment tags — sidebar. Compact: the CRM tags, with
+            the heading inline next to a count. Badges carry
             a title attr listing the contributing product(s) so the
             admin can trace "why does this user have tag X?". */}
         <Card>
@@ -284,9 +230,9 @@ export function UserOverviewTab({ userId, summary, onSwitchToActivity, onSwitchT
             <CardTitle className="text-base flex items-center gap-2">
               <Tag className="h-4 w-4 text-muted-foreground" />
               {t('admin.users.activity.overview.tags.title', 'Enrollment tags')}
-              {(keapTags.length + crmTagSlugs.length) > 0 && (
+              {crmTagSlugs.length > 0 && (
                 <span className="ms-auto text-xs font-normal text-muted-foreground tabular-nums">
-                  {keapTags.length + crmTagSlugs.length}
+                  {crmTagSlugs.length}
                 </span>
               )}
             </CardTitle>
@@ -296,45 +242,15 @@ export function UserOverviewTab({ userId, summary, onSwitchToActivity, onSwitchT
               <div className="flex items-center justify-center py-6">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
-            ) : keapTags.length === 0 && crmTagSlugs.length === 0 ? (
+            ) : crmTagSlugs.length === 0 ? (
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {t(
                   'admin.users.activity.overview.tags.empty',
-                  'No tags assigned yet — products this user has enrolled in have no Keap or CRM tags configured.',
+                  'No tags assigned yet — products this user has enrolled in have no CRM tags configured.',
                 )}
               </p>
             ) : (
               <div className="space-y-4">
-                {keapTags.length > 0 && (
-                  <div>
-                    <div className="flex items-baseline justify-between mb-2">
-                      <span className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">
-                        {t('admin.users.activity.overview.tags.keapHeading', 'Keap tags')}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground tabular-nums">
-                        {keapTags.length}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {keapTags.map((tag) => (
-                        <Badge
-                          key={`keap-${tag.value}`}
-                          variant="secondary"
-                          className="font-normal"
-                          title={t(
-                            'admin.users.activity.overview.tags.fromProducts',
-                            { products: tag.from_products.join(', ') },
-                          )}
-                        >
-                          {tag.value}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {keapTags.length > 0 && crmTagSlugs.length > 0 && (
-                  <div className="border-t border-border" aria-hidden="true" />
-                )}
                 {crmTagSlugs.length > 0 && (
                   <div>
                     <div className="flex items-baseline justify-between mb-2">

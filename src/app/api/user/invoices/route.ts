@@ -125,14 +125,17 @@ export async function GET(request: NextRequest) {
 
     for (const piId of paymentIntentIds) {
       try {
+        // On this API version a payment intent has no `charges` list; the
+        // refunds live on its latest charge.
         const pi = await stripe.paymentIntents.retrieve(piId, {
-          expand: ['charges.data.refunds'],
+          expand: ['latest_charge.refunds'],
         }) as any; // Use any to access expanded properties
+        const charge = pi.latest_charge && typeof pi.latest_charge === 'object' ? pi.latest_charge : null;
 
-        if (pi.amount_refunded && pi.amount_refunded > 0) {
+        if (charge?.amount_refunded && charge.amount_refunded > 0) {
           paymentIntentsWithRefunds.set(piId, {
-            amount_refunded: pi.amount_refunded / 100,
-            refunds: pi.charges?.data?.[0]?.refunds?.data || [],
+            amount_refunded: charge.amount_refunded / 100,
+            refunds: charge.refunds?.data || [],
           });
         }
       } catch (error) {

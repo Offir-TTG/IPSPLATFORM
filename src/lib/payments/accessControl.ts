@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { PAYMENT_CONFIG } from './config';
+import { isOwed } from './dueSchedules';
+import { hasEnded, isPausedAt, readSubscriptionDates } from './subscriptionState';
 
 export interface AccessCheckResult {
   hasAccess: boolean;
@@ -109,6 +111,15 @@ export async function checkCourseAccess(
     return { hasAccess: false, reason: 'enrollment_inactive' };
   }
 
+  // A paused membership has no access during the pause, and a stopped one
+  // none after its end date (even before the hourly job closes it). Read
+  // with '*' so this works before the stop/pause columns exist.
+  const { data: fullEnrollment } = await supabase.from('enrollments').select('*').eq('id', enrollment.id).maybeSingle();
+  const membership = readSubscriptionDates(fullEnrollment);
+  if (isPausedAt(membership) || hasEnded(membership)) {
+    return { hasAccess: false, reason: 'enrollment_inactive' };
+  }
+
   // Fetch payment schedules separately — see note above re: missing
   // PostgREST relationship between enrollments and payment_schedules.
   const { data: paymentSchedules } = await supabase
@@ -123,9 +134,11 @@ export async function checkCourseAccess(
   // Find overdue schedules (past grace period). For free courses paymentSchedules
   // is an empty array, so this correctly yields hasAccess: true.
   const overdueSchedules = (paymentSchedules ?? []).filter((schedule: any) => {
-    if (schedule.status === 'paid') return false;
+    // Paid, cancelled, refunded or paused payments aren't owed, so they never
+    // block access. Same rule as the overdue cron.
+    if (!isOwed(schedule)) return false;
 
-    const dueDate = new Date(schedule.original_due_date || schedule.scheduled_date);
+    const dueDate = new Date(schedule.scheduled_date);
     const gracePeriodEnd = new Date(dueDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
     return now > gracePeriodEnd;
@@ -134,7 +147,7 @@ export async function checkCourseAccess(
   if (overdueSchedules.length > 0) {
     const overdueAmount = overdueSchedules.reduce((sum: number, s: any) => sum + parseFloat(s.amount.toString()), 0);
     const oldestOverdue = overdueSchedules[0];
-    const dueDate = new Date(oldestOverdue.original_due_date || oldestOverdue.scheduled_date);
+    const dueDate = new Date(oldestOverdue.scheduled_date);
     const overdueDays = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
 
     return {

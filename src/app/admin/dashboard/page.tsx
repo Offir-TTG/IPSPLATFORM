@@ -224,7 +224,7 @@ export default function AdminDashboardPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-7xl space-y-6">
+      <div className="max-w-6xl p-6 space-y-6">
         {/* ─── Header ──────────────────────────────────────────────── */}
         <div>
           <h1 className="text-2xl font-bold mb-1" suppressHydrationWarning>

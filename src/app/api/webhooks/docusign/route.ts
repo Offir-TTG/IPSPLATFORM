@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { listIntegrations } from '@/lib/integrations/store';
 import crypto from 'crypto';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
@@ -61,8 +62,9 @@ function verifyDocuSignSignature(
 ): boolean {
   const hmac = crypto.createHmac('sha256', secret);
   hmac.update(payload);
-  const calculatedSignature = hmac.digest('base64');
-  return calculatedSignature === signature;
+  const calculated = Buffer.from(hmac.digest('base64'));
+  const received = Buffer.from(signature);
+  return calculated.length === received.length && crypto.timingSafeEqual(calculated, received);
 }
 
 // POST /api/webhooks/docusign - Handle DocuSign Connect webhook events
@@ -76,28 +78,21 @@ export async function POST(request: NextRequest) {
     // Get signature from headers
     const signature = request.headers.get('X-DocuSign-Signature-1');
 
-    // Get webhook secret from integrations table
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('credentials')
-      .eq('integration_key', 'docusign')
-      .single();
+    // Every message must be signed with one tenant's DocuSign Connect key.
+    // Unsigned messages used to be accepted, so anyone could fake
+    // "contract signed".
+    const { data: integrations } = await listIntegrations('docusign');
+    const secrets = (integrations ?? [])
+      .map((i) => i.credentials?.webhook_secret)
+      .filter((s): s is string => typeof s === 'string' && s.length > 0);
 
-    // Verify signature if webhook secret is configured
-    if (integration?.credentials?.webhook_secret && signature) {
-      const isValid = verifyDocuSignSignature(
-        rawPayload,
-        signature,
-        integration.credentials.webhook_secret
-      );
-
-      if (!isValid) {
-        console.error('Invalid DocuSign webhook signature');
-        return NextResponse.json(
-          { error: 'Invalid signature' },
-          { status: 401 }
-        );
-      }
+    if (secrets.length === 0) {
+      console.error('[DocuSign Webhook] No Connect HMAC key saved; message refused. Add it under Integrations → DocuSign.');
+      return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 503 });
+    }
+    if (!signature || !secrets.some((secret) => verifyDocuSignSignature(rawPayload, signature, secret))) {
+      console.error('Invalid DocuSign webhook signature');
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     // Parse the JSON payload

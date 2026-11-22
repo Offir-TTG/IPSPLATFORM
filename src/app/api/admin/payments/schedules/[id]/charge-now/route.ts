@@ -51,10 +51,10 @@ export async function POST(
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
     }
 
-    // Check if already paid
-    if (schedule.status === 'paid') {
+    // Only payments still owed can be charged.
+    if (['paid', 'cancelled', 'refunded', 'paused'].includes(schedule.status)) {
       return NextResponse.json(
-        { error: 'Payment schedule is already paid' },
+        { error: `This payment is ${schedule.status} and can't be charged` },
         { status: 400 }
       );
     }

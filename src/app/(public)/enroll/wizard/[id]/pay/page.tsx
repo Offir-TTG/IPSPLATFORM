@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import StripePaymentForm from '@/components/payments/StripePaymentForm';
 import StripeSetupForm from '@/components/payments/StripeSetupForm';
 import SavedCardDisplay from '@/components/payments/SavedCardDisplay';
 import PaymentMethodSelector from '@/components/payments/PaymentMethodSelector';
+import { nextChargeable } from '@/lib/payments/dueSchedules';
 
 interface PaymentInfo {
   schedule_id: string;
@@ -47,6 +48,14 @@ interface StripeSetupData {
 }
 
 export default function WizardPaymentPage() {
+  // Compact look when shown inside the portal's child page (framed).
+  useLayoutEffect(() => {
+    try {
+      if (window.self !== window.top) document.documentElement.classList.add('ips-embedded');
+    } catch {
+      document.documentElement.classList.add('ips-embedded');
+    }
+  }, []);
   const { t } = useUserLanguage();
   const appContext = useApp();
   const params = useParams();
@@ -156,10 +165,12 @@ export default function WizardPaymentPage() {
 
       // Check if there are any pending schedules (deposit or one-time payment)
       const hasPendingSchedules = data.schedules && data.schedules.length > 0;
+      // The earliest payment that's due now. Future installments are charged
+      // later to the saved card, so they're never offered here.
       const pendingSchedule = hasPendingSchedules
         ? (scheduleId
-            ? data.schedules.find((s: any) => s.id === scheduleId)
-            : data.schedules.find((s: any) => s.status === 'pending'))
+            ? data.schedules.find((s: any) => s.id === scheduleId && nextChargeable(data.schedules)?.id === s.id)
+            : nextChargeable(data.schedules))
         : null;
 
       // Determine mode: Payment Intent (charge now) vs Setup Intent (save card only)
@@ -481,8 +492,15 @@ export default function WizardPaymentPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 max-w-7xl">
-      <Button variant="ghost" asChild className="mb-6">
+    <div className="pay-root container mx-auto py-8 max-w-7xl">
+      {/* Inside the portal's child page (framed): compact, no outer spacing. */}
+      <style>{`
+        html.ips-embedded, html.ips-embedded body { min-height: 0 !important; height: auto !important; background: transparent; }
+        html.ips-embedded body > div, html.ips-embedded main { min-height: 0 !important; }
+        html.ips-embedded .pay-root { max-width: none; margin: 0; padding: 16px 20px 20px; }
+        html.ips-embedded .pay-root .pay-back { margin-bottom: 8px; }
+      `}</style>
+      <Button variant="ghost" asChild className="pay-back mb-6">
         <Link href={`/enroll/wizard/${params.id}?token=${enrollmentToken}`}>
           <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
           {t('user.payments.checkout.back', 'Back')}

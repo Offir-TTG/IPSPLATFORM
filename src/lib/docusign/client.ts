@@ -1,5 +1,6 @@
 import docusign from 'docusign-esign';
 import { createClient } from '@/lib/supabase/server';
+import { loadIntegration } from '@/lib/integrations/store';
 
 export interface RecipientInfo {
   email: string;
@@ -35,8 +36,11 @@ export class DocuSignClient {
   private userId: string;
   private privateKey: string;
   private settings: DocuSignSettings;
+  /** The account's API address; "demo" means DocuSign's test environment. */
+  private basePath: string;
 
   constructor(credentials: DocuSignCredentials, settings?: DocuSignSettings) {
+    this.basePath = credentials.base_path;
     this.accountId = credentials.account_id;
     this.integrationKey = credentials.integration_key;
     this.userId = credentials.user_id;
@@ -171,19 +175,26 @@ export class DocuSignClient {
   async getRecipientViewUrl(
     envelopeId: string,
     recipient: RecipientInfo,
-    returnUrl: string
+    returnUrl: string,
+    /** Signing shown in a dialog (iframe) on this origin. */
+    frameOrigin?: string
   ): Promise<string> {
     await this.authenticate();
 
     try {
       const envelopesApi = new docusign.EnvelopesApi(this.apiClient);
 
+      // DocuSign shows signing inside an iframe only for the sites listed in
+      // frameAncestors (ours plus DocuSign's own app host), and posts its
+      // messages only to messageOrigins.
+      const docusignApps = /demo/i.test(this.basePath || '') ? 'https://apps-d.docusign.com' : 'https://apps.docusign.com';
       const viewRequest = docusign.RecipientViewRequest.constructFromObject({
         returnUrl,
         authenticationMethod: 'email',
         email: recipient.email,
         userName: recipient.name,
         clientUserId: recipient.recipientId,
+        ...(frameOrigin ? { frameAncestors: [frameOrigin, docusignApps], messageOrigins: [docusignApps] } : {}),
       });
 
       const results = await envelopesApi.createRecipientView(
@@ -296,13 +307,7 @@ export async function getDocuSignClient(): Promise<DocuSignClient> {
     const tenantId = tenantUsers.tenant_id;
 
     // Query integrations filtered by tenant_id
-    const { data: integration, error } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('integration_key', 'docusign')
-      .eq('tenant_id', tenantId)
-      .eq('is_enabled', true)
-      .single();
+    const { data: integration, error } = await loadIntegration(tenantId, 'docusign', { enabledOnly: true });
 
     if (error || !integration) {
       console.error('[getDocuSignClient] Integration query error:', error);
@@ -333,13 +338,7 @@ export async function getDocuSignClientByTenantId(tenantId: string): Promise<Doc
     const supabase = createAdminClient();
 
     // Query integrations filtered by tenant_id using admin client
-    const { data: integration, error } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('integration_key', 'docusign')
-      .eq('tenant_id', tenantId)
-      .eq('is_enabled', true)
-      .single();
+    const { data: integration, error } = await loadIntegration(tenantId, 'docusign', { enabledOnly: true });
 
     if (error || !integration) {
       console.error('[getDocuSignClientByTenantId] Integration query error:', error);

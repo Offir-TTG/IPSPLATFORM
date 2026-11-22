@@ -51,3 +51,5 @@ Thumbs.db
 /AUX
 /COM[0-9]
 /LPT[0-9]
+# Local test builds (NEXT_DIST_DIR=.next-portal)
+/.next-portal/

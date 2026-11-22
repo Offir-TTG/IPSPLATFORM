@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireStaff } from '@/lib/auth/requireStaff';
 import { courseService } from '@/lib/lms/courseService.server';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,10 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Students can't change course content.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
 
     // Check authentication

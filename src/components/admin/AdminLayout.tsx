@@ -36,6 +36,7 @@ import {
   Activity,
   PanelLeftClose,
   PanelLeft,
+  Baby,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,6 +50,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Toaster } from '@/components/ui/toaster';
 import { supabase } from '@/lib/supabase/client';
+import { SETTINGS_HOME, settingsPageFor } from '@/lib/admin/settings-pages';
 import { HelpButton } from '@/components/admin/help/HelpButton';
 import { HelpDrawer } from '@/components/admin/help/HelpDrawer';
 
@@ -284,6 +286,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     'languages': 'admin.nav.languages',
     'translations': 'admin.nav.translations',
     'settings': 'admin.nav.settings',
+    'settings_hub': 'admin.nav.settings_hub',
     'theme': 'admin.nav.theme',
     'features': 'admin.nav.features',
     'integrations': 'admin.nav.integrations',
@@ -308,6 +311,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         { key: 'admin.nav.lms_programs', icon: BookOpen, href: '/admin/lms/programs' },
         { key: 'admin.nav.lms_courses', icon: GraduationCap, href: '/admin/lms/courses' },
         { key: 'admin.nav.enrollments', icon: UserPlus, href: '/admin/enrollments' },
+        { key: 'admin.nav.coaching', icon: Baby, href: '/admin/coaching' },
         { key: 'admin.nav.grading', icon: Award, href: '/admin/grading/scales' },
       ],
     },
@@ -326,16 +330,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     {
       titleKey: 'admin.nav.configuration',
       items: [
-        { key: 'admin.nav.organization', icon: Building2, href: '/admin/settings/organization' },
-        { key: 'admin.nav.languages', icon: Languages, href: '/admin/config/languages' },
-        { key: 'admin.nav.translations', icon: FileText, href: '/admin/config/translations' },
-        { key: 'admin.nav.settings', icon: Settings, href: '/admin/config/settings' },
-        { key: 'admin.nav.theme', icon: Palette, href: '/admin/settings/theme' },
-        { key: 'admin.nav.features', icon: Flag, href: '/admin/config/features' },
-        { key: 'admin.nav.integrations', icon: Plug, href: '/admin/config/integrations' },
-        { key: 'admin.nav.navigation', icon: Navigation, href: '/admin/config/navigation' },
-        { key: 'admin.nav.emails', icon: Mail, href: '/admin/emails' },
-        { key: 'admin.nav.crons', icon: Activity, href: '/admin/crons' },
+        // One link: organization, theme, languages, translations, platform
+        // settings, features, integrations, navigation, emails and crons
+        // are cards on the Settings page.
+        { key: 'admin.nav.settings_hub', icon: Settings, href: SETTINGS_HOME },
       ],
     },
     {
@@ -382,7 +380,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       }));
   }
 
-  const isActive = (href: string) => pathname === href;
+  // The settings screens aren't in the menu, so Settings stays lit on them.
+  const onSettingsPage = settingsPageFor(pathname) !== null;
+  const isActive = (href: string) =>
+    pathname === href || (href === SETTINGS_HOME && onSettingsPage);
 
   return (
     <div className="min-h-screen bg-muted/30">

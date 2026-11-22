@@ -6,6 +6,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { ZoomClient } from './client';
 import { utcToWallTime } from '@/lib/datetime/timezone';
+import { loadIntegration } from '@/lib/integrations/store';
 
 /**
  * Zoom's API has a quirk: when both `start_time` (with `Z` UTC suffix) and
@@ -100,13 +101,7 @@ export class ZoomService {
 
     // Query integrations filtered by tenant_id
     // Using admin client to bypass RLS, but still filter by tenant_id for security
-    const { data: integration, error } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('integration_key', 'zoom')
-      .eq('tenant_id', this.tenantId)
-      .eq('is_enabled', true)
-      .single();
+    const { data: integration, error } = await loadIntegration(this.tenantId, 'zoom', { enabledOnly: true });
 
     if (error || !integration) {
       console.error('[ZoomService] Integration query error:', error);
@@ -120,7 +115,7 @@ export class ZoomService {
       throw new Error('Zoom credentials are incomplete. Please configure the integration in the admin panel.');
     }
 
-    this.zoomClient = new ZoomClient(credentials, settings);
+    this.zoomClient = new ZoomClient(credentials as ConstructorParameters<typeof ZoomClient>[0], settings);
     return this.zoomClient;
   }
 

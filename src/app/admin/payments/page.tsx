@@ -3,28 +3,27 @@
 export const dynamic = 'force-dynamic';
 
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAdminLanguage } from '@/context/AppContext';
 import { useEffect, useState } from 'react';
 import {
-  DollarSign,
-  TrendingUp,
-  Users,
   AlertCircle,
-  CreditCard,
-  Calendar,
-  FileText,
-  ArrowUpRight,
-  ArrowDownRight,
-  Receipt,
   AlertTriangle,
-  UserCheck,
+  ArrowDownRight,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  DollarSign,
+  FileText,
   Package,
-  CheckCircle2,
-  ArrowRight,
+  Receipt,
+  TrendingUp,
+  UserCheck,
+  Wallet,
 } from 'lucide-react';
+import { KpiItem, KpiStrip, PageTitle } from '@/components/admin/notifications/kit';
 
 interface PaymentStats {
   totalRevenue: number;
@@ -39,326 +38,120 @@ interface PaymentStats {
   recentPayments: any[];
 }
 
+/** The payment areas, in the order they appeared as cards. */
+const SECTIONS = [
+  { href: '/admin/payments/products', icon: Package, tone: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400', titleKey: 'admin.payments.cards.products.title', title: 'Products', descKey: 'admin.payments.cards.products.description', desc: 'Manage billable products and pricing' },
+  { href: '/admin/enrollments', icon: UserCheck, tone: 'bg-purple-500/10 text-purple-600 dark:text-purple-400', titleKey: 'admin.payments.cards.enrollments.title', title: 'Enrollments', descKey: 'admin.payments.cards.enrollments.description', desc: 'Manage user enrollments and payments' },
+  { href: '/admin/payments/pdf-template', icon: FileText, tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', titleKey: 'admin.payments.cards.pdfTemplate.title', title: 'PDF Template', descKey: 'admin.payments.cards.pdfTemplate.description', desc: 'Configure PDF branding for payment receipts' },
+  { href: '/admin/payments/plans', icon: CreditCard, tone: 'bg-primary/10 text-primary', titleKey: 'admin.payments.cards.paymentPlans.title', title: 'Payment Plans', descKey: 'admin.payments.cards.paymentPlans.description', desc: 'Configure and manage payment plans' },
+  { href: '/admin/payments/schedules', icon: Calendar, tone: 'bg-blue-500/10 text-blue-600 dark:text-blue-400', titleKey: 'admin.payments.cards.schedules.title', title: 'Schedules', descKey: 'admin.payments.cards.schedules.description', desc: 'View and manage payment schedules' },
+  { href: '/admin/payments/transactions', icon: Receipt, tone: 'bg-green-500/10 text-green-600 dark:text-green-400', titleKey: 'admin.payments.cards.transactions.title', title: 'Transactions', descKey: 'admin.payments.cards.transactions.description', desc: 'View transaction history and refunds' },
+  { href: '/admin/payments/disputes', icon: AlertTriangle, tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400', titleKey: 'admin.payments.cards.disputes.title', title: 'Disputes', descKey: 'admin.payments.cards.disputes.description', desc: 'Handle payment disputes and chargebacks' },
+  { href: '/admin/payments/reports', icon: FileText, tone: 'bg-slate-500/10 text-slate-600 dark:text-slate-300', titleKey: 'admin.payments.cards.reports.title', title: 'Reports', descKey: 'admin.payments.cards.reports.description', desc: 'View payment reports and analytics' },
+];
+
+/**
+ * Payments home, in the admin list template: the title, the money numbers
+ * as one strip (Overdue opens the overdue schedules, as its link did), and
+ * the payment areas as one list. The layout shows at once; the numbers fill
+ * in when they arrive.
+ */
 export default function PaymentsPage() {
-  const { t, direction, language } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
+  const router = useRouter();
   const isRtl = direction === 'rtl';
+  const Chevron = isRtl ? ChevronLeft : ChevronRight;
   const [stats, setStats] = useState<PaymentStats | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchStats();
+    void (async () => {
+      try {
+        const response = await fetch('/api/admin/payments/reports/stats');
+        if (!response.ok) throw new Error('Failed to fetch stats');
+        setStats(await response.json());
+      } catch (error) {
+        console.error('Error fetching payment stats:', error);
+      }
+    })();
   }, []);
 
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/payments/reports/stats');
-      if (!response.ok) throw new Error('Failed to fetch stats');
-      const data = await response.json();
-      setStats(data);
-    } catch (error) {
-      console.error('Error fetching payment stats:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading || !stats) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      </AdminLayout>
-    );
-  }
+  const usd = (n: number) => `$${n.toLocaleString()}`;
+  const growth = stats?.revenueGrowth ?? 0;
+  const growthText = `${growth > 0 ? '+' : ''}${growth}% ${t('admin.payments.fromLastMonth', 'from last month')}`;
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        {/* Header — Reports and Payment Plans live in the Quick
-            Actions card grid below, so the top right is intentionally
-            empty. */}
-        <div>
-          <h1 suppressHydrationWarning style={{
-            fontSize: 'var(--font-size-3xl)',
-            fontFamily: 'var(--font-family-heading)',
-            fontWeight: 'var(--font-weight-bold)',
-            color: 'hsl(var(--text-heading))'
-          }}>
-            <span suppressHydrationWarning>{t('admin.payments.title', 'Payments')}</span>
-          </h1>
-          <p suppressHydrationWarning style={{
-            color: 'hsl(var(--muted-foreground))',
-            fontSize: 'var(--font-size-sm)',
-            marginTop: '0.25rem'
-          }}>
-            {t('admin.payments.description', 'Manage payment plans, transactions, and financial reports')}
-          </p>
-        </div>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        <PageTitle
+          icon={Wallet}
+          title={t('admin.payments.title', 'Payments')}
+          description={t('admin.payments.description', 'Manage payment plans, transactions, and financial reports')}
+        />
 
-        {/* Stats Overview */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {/* Total Revenue (Gross) */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.payments.totalRevenue', 'Total Revenue')}
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                ${stats.totalRevenue.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.grossRevenue', 'Gross revenue')}
-              </p>
-            </CardContent>
-          </Card>
+        <KpiStrip label={t('admin.list.numbers', 'Numbers')}>
+          <KpiItem
+            icon={<DollarSign />}
+            label={t('admin.payments.totalRevenue', 'Total Revenue')}
+            value={stats ? usd(stats.totalRevenue) : '—'}
+            subtitle={t('admin.payments.grossRevenue', 'Gross revenue')}
+          />
+          <KpiItem
+            icon={<TrendingUp />}
+            tone="green"
+            label={t('admin.payments.netRevenue', 'Net Revenue')}
+            value={stats ? usd(stats.netRevenue) : '—'}
+            subtitle={stats ? growthText : undefined}
+          />
+          <KpiItem
+            icon={<ArrowDownRight />}
+            tone="grey"
+            label={t('admin.payments.refunds', 'Refunds')}
+            value={stats ? `-${usd(stats.totalRefunds)}` : '—'}
+            subtitle={t('admin.payments.totalRefunded', 'Total refunded')}
+          />
+          <KpiItem
+            icon={<Calendar />}
+            tone="blue"
+            label={t('admin.payments.pendingPayments', 'Pending Payments')}
+            value={stats ? usd(stats.pendingAmount) : '—'}
+            subtitle={
+              stats
+                ? t('admin.payments.fromPayments', `From ${stats.pendingPayments} payments`).replace('{count}', stats.pendingPayments.toString())
+                : undefined
+            }
+          />
+          <KpiItem
+            icon={<AlertCircle />}
+            tone={stats && stats.overduePayments > 0 ? 'amber' : 'grey'}
+            label={t('admin.payments.overduePayments', 'Overdue Payments')}
+            value={stats ? stats.overduePayments.toLocaleString() : '—'}
+            subtitle={t('admin.payments.viewOverdue', 'View Overdue')}
+            onClick={() => router.push('/admin/payments/schedules?status=overdue')}
+          />
+        </KpiStrip>
 
-          {/* Net Revenue */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.payments.netRevenue', 'Net Revenue')}
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                ${stats.netRevenue.toLocaleString()}
-              </div>
-              <div className="flex items-center text-xs text-muted-foreground mt-1">
-                {stats.revenueGrowth > 0 ? (
-                  <>
-                    <ArrowUpRight className={`h-3 w-3 text-green-600 ${isRtl ? 'ml-1' : 'mr-1'}`} />
-                    <span className="text-green-600">+{stats.revenueGrowth}%</span>
-                  </>
-                ) : stats.revenueGrowth < 0 ? (
-                  <>
-                    <ArrowDownRight className={`h-3 w-3 text-red-600 ${isRtl ? 'ml-1' : 'mr-1'}`} />
-                    <span className="text-red-600">{stats.revenueGrowth}%</span>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">0%</span>
-                )}
-                <span className={isRtl ? 'mr-1' : 'ml-1'} suppressHydrationWarning>{t('admin.payments.fromLastMonth', 'from last month')}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Refunds */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.payments.refunds', 'Refunds')}
-              </CardTitle>
-              <ArrowDownRight className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                -${stats.totalRefunds.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.totalRefunded', 'Total refunded')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Pending Payments */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.payments.pendingPayments', 'Pending Payments')}
-              </CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                ${stats.pendingAmount.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.fromPayments', `From ${stats.pendingPayments} payments`).replace('{count}', stats.pendingPayments.toString())}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Overdue Payments */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium" suppressHydrationWarning>
-                {t('admin.payments.overduePayments', 'Overdue Payments')}
-              </CardTitle>
-              <AlertCircle className="h-4 w-4 text-destructive" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-destructive">
-                {stats.overduePayments}
-              </div>
-              <Link href="/admin/payments/schedules?status=overdue">
-                <Button variant="link" className="h-auto p-0 text-xs mt-1">
-                  <span suppressHydrationWarning>{t('admin.payments.viewOverdue', 'View Overdue')}</span>
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {/* Products */}
-          <Link href="/admin/payments/products">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                    <Package className="h-5 w-5 text-indigo-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.products.title', 'Products')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.products.description', 'Manage billable products and pricing')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* Enrollments */}
-          <Link href="/admin/enrollments">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <UserCheck className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.enrollments.title', 'Enrollments')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.enrollments.description', 'Manage user enrollments and payments')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* PDF Template */}
-          <Link href="/admin/payments/pdf-template">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-rose-500/10 flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-rose-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.pdfTemplate.title', 'PDF Template')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.pdfTemplate.description', 'Configure PDF branding for payment receipts')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* Payment Plans */}
-          <Link href="/admin/payments/plans">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <CreditCard className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.paymentPlans.title', 'Payment Plans')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.paymentPlans.description', 'Configure and manage payment plans')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* Schedules */}
-          <Link href="/admin/payments/schedules">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Calendar className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.schedules.title', 'Schedules')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.schedules.description', 'View and manage payment schedules')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* Transactions */}
-          <Link href="/admin/payments/transactions">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                    <Receipt className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.transactions.title', 'Transactions')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.transactions.description', 'View transaction history and refunds')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* Disputes */}
-          <Link href="/admin/payments/disputes">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                    <AlertTriangle className="h-5 w-5 text-orange-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.disputes.title', 'Disputes')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.disputes.description', 'Handle payment disputes and chargebacks')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-
-          {/* Reports */}
-          <Link href="/admin/payments/reports">
-            <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-slate-500/10 flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-slate-600" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.cards.reports.title', 'Reports')}</CardTitle>
-                  </div>
-                </div>
-                <CardDescription className="mt-2" suppressHydrationWarning>
-                  {t('admin.payments.cards.reports.description', 'View payment reports and analytics')}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-        </div>
+        {/* The payment areas, as one list */}
+        <nav aria-label={t('admin.payments.title', 'Payments')} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <ul className="divide-y divide-border/70">
+            {SECTIONS.map(({ href, icon: Icon, tone, titleKey, title, descKey, desc }) => (
+              <li key={href}>
+                <Link
+                  href={href}
+                  className="group flex min-h-[68px] items-center gap-4 px-5 py-3.5 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                >
+                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tone}`}>
+                    <Icon className="h-[18px] w-[18px]" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold">{t(titleKey, title)}</span>
+                    <span className="block text-sm text-muted-foreground">{t(descKey, desc)}</span>
+                  </span>
+                  <Chevron className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </div>
     </AdminLayout>
   );

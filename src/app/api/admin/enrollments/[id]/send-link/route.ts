@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import crypto from 'crypto';
+import { reasonNotToRestart } from '@/lib/payments/enrollmentLink';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,7 @@ export async function POST(
         product_id,
         payment_plan_id,
         status,
+        signature_status,
         total_amount,
         currency,
         expires_at,
@@ -88,6 +90,15 @@ export async function POST(
       return NextResponse.json({ error: 'Enrollment not found' }, { status: 404 });
     }
 
+    // Sending a new link restarts the wizard. Never on an enrollment that's
+    // done or where money was taken: it used to set the paid amount to 0
+    // and clear a signed contract.
+    const blocked = await reasonNotToRestart(supabase, enrollment.id, enrollment.status);
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 409 });
+    }
+    const keepSignature = enrollment.signature_status === 'completed';
+
     // Generate secure token (32 bytes, base64url encoded)
     const token = crypto.randomBytes(32).toString('base64url');
 
@@ -109,10 +120,10 @@ export async function POST(
       invitation_sent_by: authUser.id,
       email_language: language || 'en',
       status: 'pending', // Change from draft to pending
-      signature_status: null, // Clear signature status
-      docusign_envelope_id: null, // Clear docusign envelope
-      paid_amount: 0, // Reset payment
-      payment_status: 'pending' // Reset payment status
+      // A signed contract is kept; nothing has been paid (checked above).
+      ...(keepSignature ? {} : { signature_status: null, docusign_envelope_id: null }),
+      paid_amount: 0,
+      payment_status: 'pending'
     };
 
     // Reset wizard_profile_data to only email and name (clear any partial wizard progress)

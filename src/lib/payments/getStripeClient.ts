@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { createAdminClient } from '@/lib/supabase/server';
+import { loadIntegration } from '@/lib/integrations/store';
 
 interface StripeConfig {
   stripe: Stripe;
@@ -10,42 +10,27 @@ interface StripeConfig {
 }
 
 /**
- * Get Stripe client with credentials from database
- * This function fetches Stripe configuration from the integrations table
- * for the current tenant and returns an initialized Stripe client.
+ * The Stripe client for one tenant, built from that tenant's own Stripe
+ * settings (read server-side, secrets decrypted).
  *
- * Uses admin client to bypass RLS for cron jobs and server-side operations.
- *
- * @param tenantId - Optional tenant ID. If not provided, uses the first active Stripe integration
- * @returns Promise<StripeConfig> - Stripe client and configuration
+ * A tenant id is required: picking "any" tenant's account could charge a
+ * client through someone else's Stripe.
  */
-export async function getStripeClient(tenantId?: string): Promise<StripeConfig> {
-  const supabase = createAdminClient();
-
-  // Query for Stripe integration
-  let query = supabase
-    .from('integrations')
-    .select('*')
-    .eq('integration_key', 'stripe')
-    .eq('is_enabled', true);
-
-  if (tenantId) {
-    query = query.eq('tenant_id', tenantId);
+export async function getStripeClient(tenantId: string): Promise<StripeConfig> {
+  if (!tenantId) {
+    throw new Error('A tenant is required to use Stripe');
   }
 
-  const { data: integrations, error } = await query.limit(1).single();
-
-  if (error || !integrations) {
+  const { data: integration, error } = await loadIntegration(tenantId, 'stripe', { enabledOnly: true });
+  if (error || !integration) {
     throw new Error('No active Stripe integration found in database');
   }
 
-  const credentials = integrations.credentials || {};
-
+  const credentials = integration.credentials || {};
   if (!credentials.secret_key) {
     throw new Error('Stripe secret key not configured in database');
   }
 
-  // Initialize Stripe client
   const stripe = new Stripe(credentials.secret_key, {
     apiVersion: '2023-10-16',
   });
@@ -54,7 +39,7 @@ export async function getStripeClient(tenantId?: string): Promise<StripeConfig> 
     stripe,
     publishableKey: credentials.publishable_key || '',
     webhookSecret: credentials.webhook_secret || '',
-    tenantId: integrations.tenant_id,
-    settings: integrations.settings || {},
+    tenantId: integration.tenant_id as string,
+    settings: integration.settings || {},
   };
 }

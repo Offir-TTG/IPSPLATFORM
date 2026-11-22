@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { generatePaymentSchedules } from '@/lib/payments/paymentEngine';
+import { hasPaymentStarted, type ScheduleRow } from '@/lib/payments/dueSchedules';
 import { getStripeClient } from '@/lib/payments/getStripeClient';
 
 /**
@@ -95,7 +96,42 @@ export async function POST(
       );
     }
 
-    // 6. Update enrollment with selected payment plan
+    // 6. Once a payment has been taken or is being taken, the plan stays.
+    //    Swapping would delete a paid schedule and ask for the money again.
+    const { data: currentSchedules, error: currentSchedulesError } = await supabase
+      .from('payment_schedules')
+      .select('*')
+      .eq('enrollment_id', enrollment.id);
+    if (currentSchedulesError) {
+      return NextResponse.json({ error: 'Could not check payments' }, { status: 500 });
+    }
+    const current = (currentSchedules ?? []) as ScheduleRow[];
+    if (hasPaymentStarted(current)) {
+      return NextResponse.json(
+        { error: 'A payment has already been made, so the plan can no longer be changed.' },
+        { status: 409 }
+      );
+    }
+    // A payment may have gone through before the webhook marked it. Check
+    // Stripe, and stop any charge that's still open before deleting it.
+    const withIntent = current.filter((s) => s.stripe_payment_intent_id);
+    if (withIntent.length > 0) {
+      const { stripe } = await getStripeClient(enrollment.tenant_id);
+      for (const s of withIntent) {
+        const intent = await stripe.paymentIntents.retrieve(s.stripe_payment_intent_id!);
+        if (intent.status === 'succeeded' || intent.status === 'processing') {
+          return NextResponse.json(
+            { error: 'A payment has already been made, so the plan can no longer be changed.' },
+            { status: 409 }
+          );
+        }
+        if (intent.status !== 'canceled') {
+          await stripe.paymentIntents.cancel(intent.id);
+        }
+      }
+    }
+
+    // 7. Update enrollment with selected payment plan
     const { error: updateError } = await supabase
       .from('enrollments')
       .update({
@@ -182,7 +218,8 @@ export async function POST(
       enrollment.tenant_id,
       paymentPlan,
       enrollment.total_amount,
-      paymentStartDate
+      paymentStartDate,
+      enrollment.currency
     );
 
     // 10. Insert new payment schedules

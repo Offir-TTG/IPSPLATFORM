@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireStaff } from '@/lib/auth/requireStaff';
 import { moduleService } from '@/lib/lms/moduleService.server';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Course content is for staff here; students read it through /api/user/courses, which checks enrollment.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
     const { id } = await params;
 
@@ -65,6 +70,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Students can't change course content.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
     const { id } = await params;
 
@@ -129,6 +138,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Students can't change course content.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
     const { id } = await params;
 

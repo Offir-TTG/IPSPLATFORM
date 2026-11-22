@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
 // Extend global type
 declare global {
@@ -8,6 +9,10 @@ declare global {
 // Clear translation cache endpoint
 export async function POST(request: NextRequest) {
   try {
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     // Force reload by making a timestamp-based request
     const timestamp = Date.now();
 

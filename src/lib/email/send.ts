@@ -1,14 +1,19 @@
 /**
- * Email sending utility
- * Uses nodemailer with SMTP for sending emails
- * Fetches SMTP configuration from database integrations
+ * Email sending utility. Every email the platform sends goes through
+ * `sendEmail`, which hands it to Resend (https://resend.com).
+ *
+ * The Resend settings (API key, sender email and name) are saved per tenant
+ * on the Integrations page, encrypted, and read with `loadIntegration`. A
+ * tenant without its own settings uses the platform-wide row, and then the
+ * RESEND_API_KEY / RESEND_FROM_EMAIL environment variables.
+ *
+ * Bounces that Resend learns about later arrive at /api/webhooks/resend.
  */
 
-import nodemailer from 'nodemailer';
-import type { Transporter, SentMessageInfo } from 'nodemailer';
 import { createClient } from '@supabase/supabase-js';
 import { isEmailDeliverable } from './blocklist';
-import { classifyBounceError, type BounceClass } from './bounce';
+import { classifyResendError, type BounceClass } from './bounce';
+import { loadIntegration } from '@/lib/integrations/store';
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -25,208 +30,81 @@ export interface SendEmailOptions {
     path?: string;
     contentType?: string;
   }>;
-  tenantId?: string; // Optional tenant ID to fetch tenant-specific SMTP config
+  tenantId?: string; // Optional tenant ID to use that tenant's Resend settings
 }
 
 export interface EmailResult {
   success: boolean;
+  /** Resend's id for the email, used to match its later bounce report. */
   messageId?: string;
   error?: string;
-  // Populated when the send was aborted before SMTP handoff because
+  // Populated when the send was aborted before reaching Resend because
   // the recipient is on the hard-bounce list. Callers (e.g. the queue
   // cron) use this to mark the row `cancelled` rather than `failed`.
   skipped?: 'blocked';
-  // Diagnostic fields populated from the synchronous nodemailer error
-  // so the queue cron can classify and persist a bounce.
-  smtpCode?: number;
-  smtpResponse?: string;
-  errorCode?: string;
+  // Diagnostic fields from Resend's refusal, so the queue cron can
+  // classify and persist a bounce.
+  statusCode?: number;
+  reason?: string;
   bounceClass?: BounceClass;
 }
 
-interface SMTPConfig {
-  host: string;
-  port: number;
-  secure: boolean;
-  auth?: {
-    user: string;
-    pass: string;
-  };
+interface ResendConfig {
+  apiKey: string;
   from?: string;
   fromName?: string;
 }
 
-// Cache for SMTP configurations by tenant
-const smtpConfigCache = new Map<string, { config: SMTPConfig; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const RESEND_API = 'https://api.resend.com/emails';
 
-/**
- * Fetch SMTP configuration from database for a specific tenant
- */
-async function fetchSMTPConfig(tenantId?: string): Promise<SMTPConfig | null> {
+// Settings by tenant, for a few minutes, so a queue run reads them once.
+const configCache = new Map<string, { config: ResendConfig | null; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000;
+
+/** The tenant's Resend settings, else the platform-wide ones, else env. */
+async function getResendConfig(tenantId?: string): Promise<ResendConfig | null> {
+  const cacheKey = tenantId || 'default';
+  const cached = configCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.config;
+
+  let config: ResendConfig | null = null;
   try {
-    // Check cache first
-    const cacheKey = tenantId || 'default';
-    const cached = smtpConfigCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.log(`[SMTP] Using cached config for tenant: ${tenantId || 'default'}`);
-      return cached.config;
+    let { data } = await loadIntegration(tenantId ?? null, 'resend', { enabledOnly: true });
+    if (!data && tenantId) ({ data } = await loadIntegration(null, 'resend', { enabledOnly: true }));
+    if (data?.credentials?.api_key) {
+      config = {
+        apiKey: data.credentials.api_key,
+        from: data.credentials.from_email || undefined,
+        fromName: data.credentials.from_name || undefined,
+      };
     }
+  } catch (error) {
+    console.error('[Email] Could not read the Resend settings:', error instanceof Error ? error.message : error);
+  }
 
-    console.log(`[SMTP] Fetching SMTP config from database for tenant: ${tenantId || 'default'}`);
-
-    // Create Supabase client
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Query integrations table for SMTP config
-    // First try tenant-specific config, then fall back to global config (tenant_id IS NULL)
-    console.log(`[SMTP] Querying integrations table with tenant_id: ${tenantId}`);
-    let { data, error } = await supabase
-      .from('integrations')
-      .select('credentials, is_enabled')
-      .eq('integration_key', 'smtp')
-      .eq('is_enabled', true)
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
-
-    if (error) {
-      console.error(`[SMTP] Error querying tenant-specific config:`, error);
-    }
-    if (data) {
-      console.log(`[SMTP] Found tenant-specific config for tenant: ${tenantId}`);
-    } else {
-      console.log(`[SMTP] No tenant-specific config found for tenant: ${tenantId}`);
-    }
-
-    // If no tenant-specific config, try global config
-    if (!data && tenantId) {
-      console.log(`[SMTP] Trying global config (tenant_id IS NULL)`);
-      const globalResult = await supabase
-        .from('integrations')
-        .select('credentials, is_enabled')
-        .eq('integration_key', 'smtp')
-        .eq('is_enabled', true)
-        .is('tenant_id', null)
-        .maybeSingle();
-
-      data = globalResult.data;
-      error = globalResult.error;
-
-      if (globalResult.error) {
-        console.error(`[SMTP] Error querying global config:`, globalResult.error);
-      }
-      if (data) {
-        console.log(`[SMTP] Found global config`);
-      } else {
-        console.log(`[SMTP] No global config found`);
-      }
-    }
-
-    if (error || !data) {
-      console.log('[SMTP] No SMTP config found in database, falling back to environment variables');
-      return null;
-    }
-
-    // Extract SMTP configuration
-    const config: SMTPConfig = {
-      host: data.credentials.smtp_host,
-      port: parseInt(data.credentials.smtp_port || '587', 10),
-      secure: data.credentials.smtp_secure === 'ssl',
-      auth: {
-        user: data.credentials.smtp_username,
-        pass: data.credentials.smtp_password,
-      },
-      from: data.credentials.from_email,
-      fromName: data.credentials.from_name,
+  if (!config && process.env.RESEND_API_KEY) {
+    config = {
+      apiKey: process.env.RESEND_API_KEY,
+      from: process.env.RESEND_FROM_EMAIL,
+      fromName: process.env.RESEND_FROM_NAME,
     };
-
-    console.log(`[SMTP] Successfully loaded SMTP config:`, {
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      from: config.from,
-      fromName: config.fromName,
-      hasAuth: !!config.auth,
-    });
-
-    // Cache the config
-    smtpConfigCache.set(cacheKey, { config, timestamp: Date.now() });
-
-    return config;
-  } catch (error) {
-    console.error('Error fetching SMTP config from database:', error);
-    return null;
-  }
-}
-
-/**
- * Get SMTP configuration from database or fallback to environment variables
- */
-async function getSMTPConfig(tenantId?: string): Promise<SMTPConfig> {
-  // Try to get config from database
-  const dbConfig = await fetchSMTPConfig(tenantId);
-  if (dbConfig) {
-    return dbConfig;
   }
 
-  // Fallback to environment variables
-  return {
-    host: process.env.SMTP_HOST || 'localhost',
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: process.env.SMTP_USER && process.env.SMTP_PASSWORD ? {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD,
-    } : undefined,
-    from: process.env.SMTP_FROM,
-  };
+  configCache.set(cacheKey, { config, timestamp: Date.now() });
+  return config;
 }
 
-/**
- * Get or create nodemailer transporter with SMTP configuration
- */
-async function getTransporter(tenantId?: string): Promise<Transporter> {
-  // Get SMTP config (from database or env)
-  const smtpConfig = await getSMTPConfig(tenantId);
-
-  // Create transporter with config
-  const transporter = nodemailer.createTransport({
-    host: smtpConfig.host,
-    port: smtpConfig.port,
-    secure: smtpConfig.secure,
-    auth: smtpConfig.auth,
-    // Connection timeout
-    connectionTimeout: 10000,
-    // Greeting timeout
-    greetingTimeout: 5000,
-    // Socket timeout
-    socketTimeout: 20000,
-  });
-
-  return transporter;
-}
-
-/**
- * Verify SMTP connection
- */
+/** True when Resend is set up for this tenant (or platform-wide). */
 export async function verifyEmailConnection(tenantId?: string): Promise<boolean> {
-  try {
-    const transporter = await getTransporter(tenantId);
-    await transporter.verify();
-    console.log('✅ SMTP connection verified successfully');
-    return true;
-  } catch (error) {
-    console.error('❌ SMTP connection verification failed:', error);
-    return false;
-  }
+  return (await getResendConfig(tenantId)) !== null;
 }
 
+const asList = (value?: string | string[]) =>
+  value === undefined ? undefined : Array.isArray(value) ? value : [value];
+
 /**
- * Send an email using SMTP via nodemailer
- * Returns messageId on success for tracking
+ * Send an email through Resend.
+ * Returns Resend's message id on success, for tracking.
  */
 export async function sendEmail(options: SendEmailOptions): Promise<EmailResult> {
   try {
@@ -243,9 +121,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailResult>
       );
       const deliverable = await isEmailDeliverable(adminSb, options.to);
       if (!deliverable) {
-        console.warn(
-          `[Email] Skipping send to ${options.to}: previously hard-bounced`,
-        );
+        console.warn('[Email] Skipping send: recipient previously hard-bounced');
         return {
           success: false,
           skipped: 'blocked',
@@ -254,45 +130,39 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailResult>
       }
     }
 
-    // Get SMTP config to check if it's configured
-    const smtpConfig = await getSMTPConfig(options.tenantId);
+    const config = await getResendConfig(options.tenantId);
 
-    // If SMTP not configured (using localhost default) and in development, log to console
-    const isUsingDefaultLocalhost = smtpConfig.host === 'localhost' || smtpConfig.host === '127.0.0.1';
-    const hasNoAuth = !smtpConfig.auth;
-    const isNotConfigured = isUsingDefaultLocalhost && hasNoAuth;
-
-    if (isNotConfigured && process.env.NODE_ENV === 'development') {
-      console.log('\n' + '='.repeat(80));
-      console.log('📧 EMAIL WOULD BE SENT (Development Mode - SMTP Not Configured)');
-      console.log('='.repeat(80));
-      console.log(`To: ${Array.isArray(options.to) ? options.to.join(', ') : options.to}`);
-      console.log(`Subject: ${options.subject}`);
-      console.log('\nText Version:');
-      console.log('-'.repeat(80));
-      console.log(options.text);
-      console.log('='.repeat(80) + '\n');
-
+    if (!config) {
+      // Not set up: in development, show the email in the console instead.
+      if (process.env.NODE_ENV === 'development') {
+        console.log('\n' + '='.repeat(80));
+        console.log('📧 EMAIL WOULD BE SENT (Development Mode - Resend Not Configured)');
+        console.log('='.repeat(80));
+        console.log(`To: ${Array.isArray(options.to) ? options.to.join(', ') : options.to}`);
+        console.log(`Subject: ${options.subject}`);
+        console.log('\nText Version:');
+        console.log('-'.repeat(80));
+        console.log(options.text);
+        console.log('='.repeat(80) + '\n');
+        return { success: true, messageId: `dev-${Date.now()}@localhost` };
+      }
       return {
-        success: true,
-        messageId: `dev-${Date.now()}@localhost`,
+        success: false,
+        error: 'Email is not set up. Add the Resend API key under Settings → Integrations.',
+        bounceClass: 'transport',
       };
     }
 
-    // Get configured transporter
-    const transporter = await getTransporter(options.tenantId);
-
-    // Fetch tenant-level email branding (sender name + reply-to) so admins
-    // can override the SMTP integration's `from_name` and set a custom
-    // reply-to without touching SMTP credentials. Failure is non-fatal —
-    // we fall back to the integration's values.
+    // Tenant-level email branding (sender name + reply-to) lets admins
+    // override the integration's `from_name` and set a reply-to. Failure is
+    // non-fatal — we fall back to the integration's values.
     let tenantSenderName: string | undefined;
     let tenantReplyTo: string | undefined;
     if (options.tenantId) {
       try {
         const adminSb = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
         );
         const { data: tenantBranding } = await adminSb
           .from('tenants')
@@ -302,73 +172,83 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailResult>
         tenantSenderName = tenantBranding?.email_sender_name || undefined;
         tenantReplyTo = tenantBranding?.email_reply_to || undefined;
       } catch (err) {
-        console.warn('[Email] Could not load tenant email branding, falling back to SMTP defaults', err);
+        console.warn('[Email] Could not load tenant email branding, using the Resend defaults', err);
       }
     }
 
-    // Determine from address and name. Tenant override (admin-set) wins
-    // over SMTP integration's `from_name`.
-    let fromAddress = options.from || smtpConfig.from || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@platform.com';
-    const effectiveFromName = tenantSenderName || smtpConfig.fromName;
-    if (effectiveFromName && !options.from) {
-      fromAddress = `${effectiveFromName} <${smtpConfig.from || fromAddress}>`;
-    }
+    // From address and name. The tenant's sender name wins over the
+    // integration's `from_name`; an explicit `options.from` wins over both.
+    const senderEmail = config.from || 'onboarding@resend.dev';
+    const senderName = tenantSenderName || config.fromName;
+    const from = options.from || (senderName ? `${senderName} <${senderEmail}>` : senderEmail);
+    const replyTo = options.replyTo || tenantReplyTo;
 
-    // Prepare email options. Explicit `options.replyTo` wins over tenant.
-    const mailOptions = {
-      from: fromAddress,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text,
-      replyTo: options.replyTo || tenantReplyTo,
-      cc: options.cc,
-      bcc: options.bcc,
-      attachments: options.attachments,
-    };
+    const attachments = options.attachments?.map((a) => ({
+      filename: a.filename,
+      ...(a.path ? { path: a.path } : {}),
+      ...(a.content !== undefined
+        ? { content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : Buffer.from(a.content).toString('base64') }
+        : {}),
+      ...(a.contentType ? { content_type: a.contentType } : {}),
+    }));
 
-    // Send email
-    const info: SentMessageInfo = await transporter.sendMail(mailOptions);
-
-    console.log('✅ Email sent successfully:', {
-      messageId: info.messageId,
-      to: options.to,
-      subject: options.subject,
+    const response = await fetch(RESEND_API, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: asList(options.to),
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(options.cc ? { cc: asList(options.cc) } : {}),
+        ...(options.bcc ? { bcc: asList(options.bcc) } : {}),
+        ...(attachments?.length ? { attachments } : {}),
+        // Lets the bounce webhook find the tenant of a direct (not queued) email.
+        ...(options.tenantId ? { tags: [{ name: 'tenant_id', value: options.tenantId.replace(/[^A-Za-z0-9_-]/g, '') }] } : {}),
+      }),
     });
 
-    return {
-      success: true,
-      messageId: info.messageId,
+    const body = (await response.json().catch(() => ({}))) as {
+      id?: string;
+      message?: string;
+      name?: string;
+      statusCode?: number;
     };
+
+    if (!response.ok || !body.id) {
+      const classified = classifyResendError(response.status, body);
+      console.error('❌ Resend refused the email:', response.status, body.name ?? '', body.message ?? '');
+      return {
+        success: false,
+        error: classified.reason,
+        statusCode: response.status,
+        reason: classified.reason,
+        bounceClass: classified.bounceClass,
+      };
+    }
+
+    console.log('✅ Email sent via Resend:', { messageId: body.id, subject: options.subject });
+    return { success: true, messageId: body.id };
   } catch (error) {
+    // The request didn't reach Resend (network). Our problem, not the recipient's.
     console.error('❌ Error sending email:', error);
-    // Classify so callers (queue cron) can persist `bounce_type` and
-    // the gate above will pick it up on the next attempt. nodemailer
-    // attaches `responseCode`, `response`, and `code` to the thrown
-    // error when the remote MX rejects in-band — see bounce.ts.
-    const classified = classifyBounceError(error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      smtpCode: classified.smtpCode ?? undefined,
-      smtpResponse: classified.reason,
-      errorCode: classified.errorCode ?? undefined,
-      bounceClass: classified.bounceClass,
+      bounceClass: 'transport',
     };
   }
 }
 
-/**
- * Clear SMTP configuration cache
- * Useful when SMTP settings are updated
- */
-export function clearSMTPCache(tenantId?: string): void {
-  if (tenantId) {
-    smtpConfigCache.delete(tenantId);
-  } else {
-    smtpConfigCache.clear();
-  }
-  console.log('SMTP configuration cache cleared');
+/** Forget saved Resend settings, after they change on the Integrations page. */
+export function clearEmailConfigCache(tenantId?: string): void {
+  if (tenantId) configCache.delete(tenantId);
+  else configCache.clear();
 }
 
 /**

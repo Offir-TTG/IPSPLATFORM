@@ -371,7 +371,7 @@ export const lessonService = {
         // For Daily.co: Since room names can't be changed, we need to delete the old room and create a new one
         try {
           console.log('[updateLesson] Recreating Daily.co room with updated lesson data:', dailyRoomName);
-          const { dailyService } = await import('@/lib/daily/dailyService');
+          const { dailyService, loadDailyIntegrationForCurrentUser } = await import('@/lib/daily/dailyService');
 
           // Get tenant_id and course info from the updated lesson
           const tenantId = (data as any).tenant_id;
@@ -443,11 +443,7 @@ export const lessonService = {
               console.log('[updateLesson] New room name differs, recreating:', { old: dailyRoomName, new: newRoomName });
 
               // Get integration settings for expiry hours
-              const { data: integration } = await supabase
-                .from('integrations')
-                .select('settings')
-                .eq('integration_key', 'daily')
-                .single();
+              const { data: integration } = await loadDailyIntegrationForCurrentUser();
 
               const defaultExpiryHours = integration?.settings?.default_expiry_hours || (24 * 180);
 
@@ -587,7 +583,7 @@ export const lessonService = {
         if (dailySessions.length > 0) {
           console.log('[lessonService.deleteLesson] Found', dailySessions.length, 'Daily.co rooms to delete');
           try {
-            const { dailyService } = await import('@/lib/daily/dailyService');
+            const { dailyService, loadDailyIntegrationForCurrentUser } = await import('@/lib/daily/dailyService');
 
             for (const session of dailySessions) {
               try {

@@ -1,6 +1,6 @@
 /**
  * Cron Job: Process Email Queue
- * Processes pending emails in the queue and sends them via SMTP
+ * Processes pending emails in the queue and sends them via Resend
  * Renders templates with variables before sending
  *
  * Schedule: Every 2 minutes
@@ -25,7 +25,7 @@ ensureHandlebarsHelpers();
 // must run per-request, never pre-rendered.
 export const dynamic = 'force-dynamic';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'K8mX2vN9pL5wQ3yT7hJ6fR4aZ1cD0gH3';
+const CRON_SECRET = process.env.CRON_SECRET;
 const BATCH_SIZE = 10; // Process 10 emails per run
 
 // All Handlebars helpers (formatDate, formatTime, eq, or, and, gt,
@@ -36,7 +36,7 @@ const BATCH_SIZE = 10; // Process 10 emails per run
 export async function GET(request: NextRequest) {
   // Verify cron secret
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
     console.error('[Email Queue Cron] Unauthorized access attempt');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
 
         console.log(`[Email Queue Cron] Rendered subject: ${renderedSubject.substring(0, 50)}...`);
 
-        // Send email via SMTP
+        // Send email via Resend
         const result = await sendEmail({
           to: email.to_email,
           subject: renderedSubject,
@@ -137,12 +137,14 @@ export async function GET(request: NextRequest) {
         });
 
         if (result.success) {
-          // Update status to sent (removed non-existent message_id field)
+          // Mark sent, keeping Resend's id so its later bounce report
+          // (/api/webhooks/resend) can find this row.
           const { error: updateError } = await supabase
             .from('email_queue')
             .update({
               status: 'sent',
               sent_at: new Date().toISOString(),
+              smtp_message_id: result.messageId ?? null,
             })
             .eq('id', email.id);
 
@@ -167,7 +169,7 @@ export async function GET(request: NextRequest) {
           console.warn(`[Email Queue Cron] Skipped email ${email.id}: recipient hard-bounced`);
           failCount++;
         } else {
-          // SMTP rejected the send. If the rejection is hard or soft,
+          // Resend refused the send. If the refusal is hard or soft,
           // persist the classification on the row so isEmailDeliverable
           // short-circuits future sends to this address via the partial
           // index (see 20260528_email_bounce_tracking.sql).
@@ -178,7 +180,7 @@ export async function GET(request: NextRequest) {
             .from('email_queue')
             .update({
               status: 'failed',
-              error_message: result.smtpResponse || result.error || 'SMTP send failed',
+              error_message: result.reason || result.error || 'Email send failed',
               failed_at: new Date().toISOString(),
             })
             .eq('id', email.id);

@@ -44,12 +44,15 @@ function riskBadgeVariant(r: string): 'default' | 'secondary' | 'destructive' | 
   return 'secondary';
 }
 
-export function UserAuditTable({ events }: UserAuditTableProps) {
+/**
+ * How audit events are worded: action and resource names, field names and
+ * values, and the "what changed" details. Shared by this table and the
+ * audit page's drawer, so both say the same thing.
+ */
+export function useAuditFormatters() {
   const { t, direction } = useAdminLanguage();
   const isRtl = direction === 'rtl';
   const dateLocale = isRtl ? 'he-IL' : undefined;
-  const headerCell = isRtl ? 'text-right' : 'text-left';
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   const formatActionName = (action: string, ev: AuditEvent): string => {
     if (action?.startsWith('audit.')) return t(action, action);
@@ -106,7 +109,7 @@ export function UserAuditTable({ events }: UserAuditTableProps) {
     };
   };
 
-  const renderExpanded = (ev: AuditEvent) => {
+  const renderDetails = (ev: AuditEvent) => {
     if (ev.event_type === 'CREATE' || ev.event_type === 'DELETE') {
       const source: any = ev.event_type === 'CREATE'
         ? (ev.new_values ?? ev.metadata?.changes)
@@ -173,6 +176,28 @@ export function UserAuditTable({ events }: UserAuditTableProps) {
     }
     return null;
   };
+
+  return { formatActionName, formatResource, formatField, formatValue, formatDate, renderDetails };
+}
+
+/** The "what changed" details of one event, or a short note when there are none. */
+export function AuditEventDetails({ event }: { event: AuditEvent }) {
+  const { t } = useAdminLanguage();
+  const { renderDetails } = useAuditFormatters();
+  return (
+    renderDetails(event) ?? (
+      <div className="text-sm text-muted-foreground">{t('admin.users.activity.activity.noDetails', 'No additional details available.')}</div>
+    )
+  );
+}
+
+export function UserAuditTable({ events }: UserAuditTableProps) {
+  const { t, direction } = useAdminLanguage();
+  const isRtl = direction === 'rtl';
+  const headerCell = isRtl ? 'text-right' : 'text-left';
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const { formatActionName, formatResource, formatDate, renderDetails: renderExpanded } = useAuditFormatters();
 
   return (
     <ResponsiveTable>

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mockup · Notifications redesign</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.5"></script>
+<style>
+  body{font-family:'Rubik',system-ui,sans-serif;background:#f8fafc;color:#0f172a}
+  /* admin (IPSPlatform admin blue) */
+  .a-accent{color:#2563eb}.a-bg{background:#2563eb}.a-soft{background:#eff6ff}
+  /* portal (IPSPlatform portal purple) */
+  .p-ink{color:#221a2e}.p-muted{color:#73698a}.p-bg{background:#f6f3fa}.p-purple{background:#5b3a8e}.p-border{border-color:#e9e3f1}
+  .view{display:none}.view.on{display:block}
+  .tabbtn[aria-pressed=true]{background:#0f172a;color:#fff}
+  .pill{display:inline-flex;align-items:center;gap:.4rem;border-radius:9999px;border:1px solid #e2e8f0;padding:.25rem .75rem;font-size:12px;font-weight:500;white-space:nowrap}
+  .pill.cur{background:#2563eb;border-color:#2563eb;color:#fff}.pill.done{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+  .choice{border:2px solid #e2e8f0;border-radius:14px;padding:12px;cursor:pointer;background:#fff}
+  .choice.on{border-color:#2563eb;background:#eff6ff}
+  .stepv{display:none}.stepv.on{display:block}
+  .note{position:fixed;inset-inline-start:12px;bottom:12px;z-index:80;background:#0f172a;color:#fff;font-size:12px;padding:.5rem .8rem;border-radius:.6rem}
+</style>
+</head>
+<body class="p-4 sm:p-6">
+
+<div class="mx-auto max-w-6xl">
+  <div class="mb-5 flex flex-wrap items-center gap-2">
+    <span class="me-2 text-sm font-semibold text-slate-500">Mockup · Notifications redesign</span>
+    <button class="tabbtn rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm" aria-pressed="true" data-v="admin-list">1 · Admin: sent list</button>
+    <button class="tabbtn rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm" aria-pressed="false" data-v="admin-new">2 · Admin: new notification</button>
+    <button class="tabbtn rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm" aria-pressed="false" data-v="portal-page">3 · Portal: notifications page</button>
+    <button class="tabbtn rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm" aria-pressed="false" data-v="portal-arrive">4 · Portal: when one arrives</button>
+  </div>
+
+  <!-- ───────────── 1 · ADMIN LIST ───────────── -->
+  <section id="admin-list" class="view on">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-semibold tracking-tight">Notifications</h1>
+        <p class="mt-1 text-slate-500">What students and parents see in their portal, and by email when you choose.</p>
+      </div>
+      <div class="flex gap-2"><button class="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">Manual</button><button class="rounded-md a-bg px-4 py-2 text-sm font-medium text-white" onclick="go('admin-new')">+ New notification</button></div>
+    </div>
+
+    <div class="mt-5 grid gap-3 sm:grid-cols-4">
+      <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs text-slate-500">Sent in total</p><p class="mt-1 text-2xl font-semibold">128</p></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs text-slate-500">Sent today</p><p class="mt-1 text-2xl font-semibold">4</p></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs text-slate-500">Not read yet</p><p class="mt-1 text-2xl font-semibold">37</p></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs text-slate-500">Deleted by people</p><p class="mt-1 text-2xl font-semibold">9</p></div>
+    </div>
+
+    <div class="mt-5 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
+      <input class="h-9 min-w-0 flex-1 basis-60 rounded-md border border-slate-200 px-3 text-sm" placeholder="Search by title or words…">
+      <select class="h-9 rounded-md border border-slate-200 px-2 text-sm"><option>Everyone</option><option>A student</option><option>A course</option><option>A program</option></select>
+      <select class="h-9 rounded-md border border-slate-200 px-2 text-sm"><option>Any kind</option><option>Announcement</option><option>Payment</option><option>Lesson</option></select>
+      <span class="pill cur">All 128</span><span class="pill">Urgent 3</span><span class="pill">Important 12</span>
+    </div>
+
+    <div class="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div class="hidden grid-cols-[minmax(0,1fr)_150px_170px_100px_80px] gap-3 border-b border-slate-100 px-4 py-2 text-xs font-medium text-slate-500 md:grid"><span>Notification</span><span>Sent to</span><span>Kind</span><span>Sent</span><span class="text-end">Read</span></div>
+      <!-- rows -->
+      <div class="grid gap-1 border-b border-slate-100 px-4 py-3 md:grid-cols-[minmax(0,1fr)_150px_170px_100px_80px] md:items-center md:gap-3">
+        <div class="flex min-w-0 items-start gap-3"><span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600">⚠</span><div class="min-w-0"><p class="truncate font-medium">התשלום לחודש נובמבר לא עבר</p><p class="truncate text-sm text-slate-500">כדי להמשיך בגישה לשיעורים, עדכנו אמצעי תשלום…</p></div></div>
+        <span class="text-sm">Dana Cohen</span><span class="pill w-fit border-red-200 bg-red-50 text-red-700">Urgent · Payment</span><span class="text-sm text-slate-500">Today, 09:12</span><span class="text-sm text-end">✓ Read</span>
+      </div>
+      <div class="grid gap-1 border-b border-slate-100 px-4 py-3 md:grid-cols-[minmax(0,1fr)_150px_170px_100px_80px] md:items-center md:gap-3">
+        <div class="flex min-w-0 items-start gap-3"><span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600">📅</span><div class="min-w-0"><p class="truncate font-medium">השיעור ביום ראשון עובר ל-19:00</p><p class="truncate text-sm text-slate-500">הקישור לזום נשאר אותו קישור.</p></div></div>
+        <span class="text-sm">Course · Adler basics</span><span class="pill w-fit border-amber-200 bg-amber-50 text-amber-800">Important · Lesson</span><span class="text-sm text-slate-500">Yesterday</span><span class="text-sm text-end">18 / 24</span>
+      </div>
+      <div class="grid gap-1 px-4 py-3 md:grid-cols-[minmax(0,1fr)_150px_170px_100px_80px] md:items-center md:gap-3">
+        <div class="flex min-w-0 items-start gap-3"><span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl a-soft a-accent">📣</span><div class="min-w-0"><p class="truncate font-medium">מפגש פתוח לבוגרים ב-3 בדצמבר</p><p class="truncate text-sm text-slate-500">מוזמנים לערב מיוחד עם צוות בית הספר…</p></div></div>
+        <span class="text-sm">Everyone</span><span class="pill w-fit">Normal · Announcement</span><span class="text-sm text-slate-500">12 Nov</span><span class="text-sm text-end">61%</span>
+      </div>
+    </div>
+    <p class="mt-2 text-xs text-slate-500">Clicking a row opens the notification (read-only for what was sent, with who read it). Same list design as IParentingSchool's admin lists.</p>
+  </section>
+
+  <!-- ───────────── 2 · ADMIN NEW (WIZARD) ───────────── -->
+  <section id="admin-new" class="view">
+    <p class="text-sm text-slate-500">← Notifications</p>
+    <h1 class="mt-1 text-3xl font-semibold tracking-tight">New notification</h1>
+
+    <header class="mt-4 rounded-md border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-2"><span class="text-sm font-medium a-accent">Step <span id="snum">1</span> of 6</span><span class="text-xs text-slate-500">Click a step to jump to it</span></div>
+      <div class="mt-1.5 flex gap-1" id="bars"></div>
+      <ol class="mt-2.5 flex gap-1.5 overflow-x-auto" id="pills"></ol>
+    </header>
+
+    <div class="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div class="rounded-xl border border-slate-200 bg-white p-5">
+        <!-- step 1 who -->
+        <div class="stepv on" data-s="0">
+          <h2 class="text-xl font-semibold">Who gets it?</h2><p class="mt-1 text-sm text-slate-500">Everyone you choose sees it in their portal.</p>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div class="choice on"><p class="font-semibold">👥 Everyone</p><p class="text-sm text-slate-500">All students and parents</p></div>
+            <div class="choice"><p class="font-semibold">🎓 Certain students</p><p class="text-sm text-slate-500">Pick people by name</p></div>
+            <div class="choice"><p class="font-semibold">📘 A course</p><p class="text-sm text-slate-500">Everyone enrolled in it</p></div>
+            <div class="choice"><p class="font-semibold">🏛 A program</p><p class="text-sm text-slate-500">Everyone enrolled in it</p></div>
+          </div>
+        </div>
+        <!-- step 2 kind -->
+        <div class="stepv" data-s="1">
+          <h2 class="text-xl font-semibold">How important is it?</h2><p class="mt-1 text-sm text-slate-500">This sets its colour, and whether it pops up.</p>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div class="choice"><p class="font-semibold"><span class="me-1 inline-block h-3 w-3 rounded-full bg-slate-300"></span>Low</p><p class="text-sm text-slate-500">Quietly in the list</p></div>
+            <div class="choice on"><p class="font-semibold"><span class="me-1 inline-block h-3 w-3 rounded-full bg-violet-500"></span>Normal</p><p class="text-sm text-slate-500">In the list, with the bell count</p></div>
+            <div class="choice"><p class="font-semibold"><span class="me-1 inline-block h-3 w-3 rounded-full bg-amber-500"></span>Important</p><p class="text-sm text-slate-500">Also pops up for a few seconds</p></div>
+            <div class="choice"><p class="font-semibold"><span class="me-1 inline-block h-3 w-3 rounded-full bg-red-500"></span>Urgent</p><p class="text-sm text-slate-500">Pops up and stays longer</p></div>
+          </div>
+          <p class="mt-5 text-sm font-medium">What is it about?</p>
+          <div class="mt-2 flex flex-wrap gap-2"><span class="pill cur">📣 Announcement</span><span class="pill">📅 Lesson</span><span class="pill">📝 Assignment</span><span class="pill">💳 Payment</span><span class="pill">🧾 Enrolment</span><span class="pill">✅ Attendance</span><span class="pill">🏆 Achievement</span><span class="pill">⚙ System</span></div>
+        </div>
+        <!-- step 3 words -->
+        <div class="stepv" data-s="2">
+          <h2 class="text-xl font-semibold">What does it say?</h2><p class="mt-1 text-sm text-slate-500">Short title, then the details. The portal is in Hebrew.</p>
+          <label class="mt-4 block text-sm font-medium">Title</label><input dir="rtl" class="mt-1 h-10 w-full rounded-md border border-slate-200 px-3" value="מפגש פתוח לבוגרים ב-3 בדצמבר">
+          <label class="mt-4 block text-sm font-medium">Message <span class="text-xs text-slate-400">(up to 1,000 characters)</span></label><textarea dir="rtl" rows="4" class="mt-1 w-full rounded-md border border-slate-200 p-3">מוזמנים לערב מיוחד עם צוות בית הספר, שיחה פתוחה וכיבוד קל.</textarea>
+        </div>
+        <!-- step 4 button -->
+        <div class="stepv" data-s="3">
+          <h2 class="text-xl font-semibold">A button (optional)</h2><p class="mt-1 text-sm text-slate-500">Where to go for more, like a lesson or the billing page.</p>
+          <label class="mt-4 block text-sm font-medium">Words on the button</label><input dir="rtl" class="mt-1 h-10 w-full rounded-md border border-slate-200 px-3" value="לפרטים והרשמה">
+          <label class="mt-4 block text-sm font-medium">Where it goes</label><input class="mt-1 h-10 w-full rounded-md border border-slate-200 px-3" value="/calendar">
+        </div>
+        <!-- step 5 delivery -->
+        <div class="stepv" data-s="4">
+          <h2 class="text-xl font-semibold">How it reaches them</h2><p class="mt-1 text-sm text-slate-500">It always shows in the portal. Email is extra.</p>
+          <div class="mt-4 grid gap-3">
+            <div class="choice on"><p class="font-semibold">🔔 In the portal</p><p class="text-sm text-slate-500">Always on</p></div>
+            <div class="choice on"><p class="font-semibold">✉ Also by email</p><p class="text-sm text-slate-500">Language: <b>Hebrew</b> · English</p></div>
+            <div class="choice"><p class="font-semibold">💬 Also by SMS</p><p class="text-sm text-slate-500">As today</p></div>
+          </div>
+          <label class="mt-5 block text-sm font-medium">Stop showing it on (optional)</label><input type="datetime-local" class="mt-1 h-10 rounded-md border border-slate-200 px-3">
+        </div>
+        <!-- step 6 review -->
+        <div class="stepv" data-s="5">
+          <h2 class="text-xl font-semibold">Check and send</h2><p class="mt-1 text-sm text-slate-500">Press Change to fix anything.</p>
+          <div class="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200">
+            <div class="flex justify-between p-3 text-sm"><span class="text-slate-500">Who</span><span>Everyone · <a class="a-accent">Change</a></span></div>
+            <div class="flex justify-between p-3 text-sm"><span class="text-slate-500">Importance</span><span>Normal · Announcement · <a class="a-accent">Change</a></span></div>
+            <div class="flex justify-between p-3 text-sm"><span class="text-slate-500">Button</span><span>לפרטים והרשמה → /calendar · <a class="a-accent">Change</a></span></div>
+            <div class="flex justify-between p-3 text-sm"><span class="text-slate-500">Delivery</span><span>Portal + email (Hebrew) · <a class="a-accent">Change</a></span></div>
+          </div>
+        </div>
+        <div class="mt-6 flex justify-between border-t border-slate-100 pt-4"><button class="text-sm font-medium a-accent" onclick="step(-1)">Back</button><button id="cont" class="rounded-md a-bg px-5 py-2 text-sm font-medium text-white" onclick="step(1)">Continue</button></div>
+      </div>
+
+      <!-- live portal preview -->
+      <aside class="rounded-xl border border-slate-200 bg-white p-4">
+        <p class="text-sm font-semibold">How it looks in the portal</p>
+        <div dir="rtl" class="mt-3 overflow-hidden rounded-xl border p-border p-bg">
+          <div class="flex items-center justify-between border-b p-border bg-white px-3 py-2 text-xs p-muted"><span class="font-bold p-ink">IPS</span><span class="relative">🔔<span class="absolute -top-1 -left-2 rounded-full bg-[#c2413a] px-1 text-[9px] text-white">3</span></span></div>
+          <div class="p-3">
+            <div class="rounded-2xl border p-border bg-white p-3 shadow-sm">
+              <div class="flex items-start gap-2.5"><span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f1ebf8] text-[#5b3a8e]">📣</span>
+                <div class="min-w-0"><p class="text-sm font-bold p-ink">מפגש פתוח לבוגרים ב-3 בדצמבר</p><p class="mt-0.5 text-xs p-muted">מוזמנים לערב מיוחד עם צוות בית הספר, שיחה פתוחה וכיבוד קל.</p>
+                <span class="mt-2 inline-block rounded-full p-purple px-3 py-1 text-[11px] font-semibold text-white">לפרטים והרשמה</span></div></div>
+            </div>
+          </div>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">Updates as you type, like the site picture in IParentingSchool's Messages.</p>
+      </aside>
+    </div>
+    <div class="pointer-events-none fixed inset-x-0 bottom-4 flex justify-center"><div class="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-900 py-2 pe-2 ps-5 text-sm text-white shadow-xl"><span>Not sent yet</span><button class="rounded-full px-4 py-2">Cancel</button><button class="rounded-full a-bg px-5 py-2 font-semibold">Send notification</button></div></div>
+  </section>
+
+  <!-- ───────────── 3 · PORTAL PAGE ───────────── -->
+  <section id="portal-page" class="view">
+    <div dir="rtl" lang="he" class="overflow-hidden rounded-2xl border p-border p-bg">
+      <div class="flex items-center justify-between border-b p-border bg-white px-5 py-3"><span class="text-lg font-extrabold p-ink">IPS</span><nav class="hidden gap-5 text-sm p-muted sm:flex"><span>בית</span><span>הלימודים שלי</span><span>לוח שנה</span><span class="font-semibold text-[#5b3a8e]">הודעות</span></nav><span class="relative text-lg">🔔<span class="absolute -top-1 -left-2 rounded-full bg-[#c2413a] px-1.5 text-[10px] text-white">3</span></span></div>
+      <div class="p-5 sm:p-8">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div><h1 class="text-3xl font-extrabold p-ink">הודעות</h1><p class="mt-1 p-muted">עדכונים מצוות בית הספר, על השיעורים והתשלומים שלכם.</p></div>
+          <button class="rounded-full border p-border bg-white px-4 py-2 text-sm font-semibold text-[#5b3a8e]">✓ סמנו הכול כנקרא</button>
+        </div>
+        <div class="mt-5 flex gap-2 overflow-x-auto"><span class="rounded-full p-purple px-4 py-1.5 text-sm font-semibold text-white">הכול · 12</span><span class="rounded-full border p-border bg-white px-4 py-1.5 text-sm">לא נקראו · 3</span><span class="rounded-full border p-border bg-white px-4 py-1.5 text-sm">נקראו · 9</span><span class="rounded-full border p-border bg-white px-4 py-1.5 text-sm">נמחקו · 1</span></div>
+
+        <p class="mt-6 text-xs font-bold tracking-widest p-muted">היום</p>
+        <div class="mt-2 space-y-3">
+          <article class="relative rounded-2xl border border-red-200 bg-red-50 p-4">
+            <span class="absolute top-4 left-4 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+            <div class="flex items-start gap-3"><span class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-red-500 text-white">⚠</span>
+              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-red-900">התשלום לחודש נובמבר לא עבר</h3><span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-red-700">דחוף · תשלום</span></div>
+              <p class="mt-1 text-sm text-red-900/80">כדי להמשיך בגישה לשיעורים, עדכנו אמצעי תשלום עד יום חמישי.</p>
+              <div class="mt-3 flex flex-wrap items-center gap-2"><span class="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white">לעדכון אמצעי תשלום</span><span class="text-xs text-red-900/60">לפני שעה</span><span class="ms-auto flex gap-1 text-sm text-red-900/70"><button class="rounded-full px-2 py-1 hover:bg-white">✓ נקרא</button><button class="rounded-full px-2 py-1 hover:bg-white">🗑</button></span></div></div></div>
+          </article>
+          <article class="relative rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <span class="absolute top-4 left-4 h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+            <div class="flex items-start gap-3"><span class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-500 text-white">📅</span>
+              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-amber-950">השיעור ביום ראשון עובר ל-19:00</h3><span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-800">חשוב · שיעור · יסודות אדלר</span></div>
+              <p class="mt-1 text-sm text-amber-950/80">הקישור לזום נשאר אותו קישור.</p>
+              <div class="mt-3 flex items-center gap-2"><span class="text-xs text-amber-950/60">לפני 3 שעות</span><span class="ms-auto flex gap-1 text-sm text-amber-950/70"><button class="rounded-full px-2 py-1">✓ נקרא</button><button class="rounded-full px-2 py-1">🗑</button></span></div></div></div>
+          </article>
+        </div>
+
+        <p class="mt-6 text-xs font-bold tracking-widest p-muted">מוקדם יותר</p>
+        <div class="mt-2 space-y-3">
+          <article class="rounded-2xl border p-border bg-white p-4 opacity-90">
+            <div class="flex items-start gap-3"><span class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#f1ebf8] text-[#5b3a8e]">📣</span>
+              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><h3 class="font-semibold p-ink">מפגש פתוח לבוגרים ב-3 בדצמבר</h3><span class="rounded-full bg-[#f6f3fa] px-2 py-0.5 text-[11px] p-muted">הודעה</span></div>
+              <p class="mt-1 text-sm p-muted">מוזמנים לערב מיוחד עם צוות בית הספר, שיחה פתוחה וכיבוד קל.</p>
+              <div class="mt-3 flex items-center gap-2"><span class="rounded-full border border-[#5b3a8e] px-4 py-1.5 text-sm font-semibold text-[#5b3a8e]">לפרטים והרשמה</span><span class="text-xs p-muted">12 בנובמבר · נקרא</span><span class="ms-auto flex gap-1 text-sm p-muted"><button class="rounded-full px-2 py-1">↺ לא נקרא</button><button class="rounded-full px-2 py-1">🗑</button></span></div></div></div>
+          </article>
+        </div>
+        <p class="mt-6 text-center text-sm p-muted">טוענים עוד…</p>
+      </div>
+    </div>
+    <p class="mt-2 text-xs text-slate-500">Same tabs, mark-as-read, delete (with the confirm dialog) and links as today. New: grouped by day, colour by importance like the Messages tones, and the "mark as unread" the system already supports.</p>
+  </section>
+
+  <!-- ───────────── 4 · PORTAL ARRIVE ───────────── -->
+  <section id="portal-arrive" class="view">
+    <div dir="rtl" lang="he" class="relative h-[520px] overflow-hidden rounded-2xl border p-border p-bg">
+      <div class="flex items-center justify-between border-b p-border bg-white px-5 py-3"><span class="text-lg font-extrabold p-ink">IPS</span><span class="relative text-lg">🔔<span class="absolute -top-1 -left-2 rounded-full bg-[#c2413a] px-1.5 text-[10px] text-white">4</span></span></div>
+      <div class="space-y-3 p-6 opacity-50"><div class="h-28 rounded-2xl bg-white"></div><div class="h-16 rounded-2xl bg-white"></div><div class="h-16 rounded-2xl bg-white"></div></div>
+      <!-- toast: bottom-left in RTL, like the Messages toast -->
+      <div class="absolute bottom-5 left-5 w-[min(360px,calc(100%-2.5rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-xl">
+        <div class="flex items-start gap-3"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-500 text-white">📅</span>
+          <div class="min-w-0 flex-1"><p class="font-bold text-amber-950">השיעור ביום ראשון עובר ל-19:00</p><p class="mt-0.5 text-sm text-amber-950/80">הקישור לזום נשאר אותו קישור.</p><span class="mt-2 inline-block text-sm font-semibold text-amber-900 underline">לפרטים</span></div>
+          <button class="text-amber-900/60" aria-label="סגירה">✕</button></div>
+      </div>
+    </div>
+    <p class="mt-2 text-xs text-slate-500">Important and urgent ones pop up as today (5 and 10 seconds), now on every portal page, in the Messages toast style, bottom-left (right-to-left). Only for notifications meant for that person.</p>
+  </section>
+</div>
+
+<div class="note">Mockup · nothing here is live</div>
+
+<script>
+const views=[...document.querySelectorAll('.view')],tabs=[...document.querySelectorAll('.tabbtn')];
+function go(v){views.forEach(x=>x.classList.toggle('on',x.id===v));tabs.forEach(t=>t.setAttribute('aria-pressed',t.dataset.v===v))}
+tabs.forEach(t=>t.onclick=()=>go(t.dataset.v));
+const S=['Who','Importance','Words','Button','Delivery','Check and send'];let cur=0;
+function render(){document.getElementById('snum').textContent=cur+1;
+ document.getElementById('bars').innerHTML=S.map((_,i)=>`<i class="h-1.5 flex-1 rounded ${i<=cur?'a-bg':'bg-blue-100'}"></i>`).join('');
+ document.getElementById('pills').innerHTML=S.map((s,i)=>`<li><button class="pill ${i===cur?'cur':i<cur?'done':''}" onclick="jump(${i})"><span class="opacity-70">${i+1}</span>${s}</button></li>`).join('');
+ document.querySelectorAll('.stepv').forEach(e=>e.classList.toggle('on',+e.dataset.s===cur));
+ document.getElementById('cont').style.visibility=cur===S.length-1?'hidden':'visible';}
+function step(d){cur=Math.max(0,Math.min(S.length-1,cur+d));render()} function jump(i){cur=i;render()}
+document.querySelectorAll('.choice').forEach(c=>c.onclick=()=>{[...c.parentElement.children].forEach(x=>x.classList.remove('on'));c.classList.add('on')});
+render();
+</script>
+</body>
+</html>

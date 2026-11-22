@@ -1,11 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyTenantAdmin } from '@/lib/tenant/auth';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 // GET all common languages for reference
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const supabase = await createClient();
 
     // Fetch common languages, popular ones first

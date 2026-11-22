@@ -1,31 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { getStripeClient } from '@/lib/payments/getStripeClient';
 
 export const dynamic = 'force-dynamic';
 
-// Helper to get Stripe instance with credentials from database
+// The tenant's Stripe client, from the shared helper (keys are decrypted there).
 async function getStripeInstance(tenantId: string): Promise<Stripe> {
-  const supabase = createAdminClient();
-
-  console.log('[SetDefault API] Fetching Stripe credentials for tenant:', tenantId);
-
-  const { data: integration } = await supabase
-    .from('integrations')
-    .select('credentials')
-    .eq('tenant_id', tenantId)
-    .eq('integration_key', 'stripe')
-    .single();
-
-  if (!integration?.credentials?.secret_key) {
-    console.error('[SetDefault API] Stripe not configured for tenant:', tenantId);
-    throw new Error('Stripe not configured');
-  }
-
-  console.log('[SetDefault API] Successfully loaded Stripe credentials');
-  return new Stripe(integration.credentials.secret_key, {
-    apiVersion: '2023-10-16',
-  });
+  const { stripe } = await getStripeClient(tenantId);
+  return stripe;
 }
 
 // POST - Set default payment method

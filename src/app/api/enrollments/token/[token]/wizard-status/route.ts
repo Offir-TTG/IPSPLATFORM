@@ -23,7 +23,6 @@ export async function GET(
     const supabase = createAdminClient();
 
     // Validate token and get enrollment
-    console.log('[Wizard Status] Fetching enrollment with token:', params.token);
 
     // First get the enrollment ID using token (cannot be bypassed)
     const { data: tokenLookup, error: tokenError } = await supabase
@@ -61,10 +60,6 @@ export async function GET(
 
     console.log('[Wizard Status] Direct query returned data:', freshEnrollmentData);
     console.log('[Wizard Status] signature_status from direct query:', freshEnrollmentData.signature_status);
-    console.log('[Wizard Status] wizard_profile_data RAW from direct query:', freshEnrollmentData.wizard_profile_data);
-    console.log('[Wizard Status] wizard_profile_data TYPE:', typeof freshEnrollmentData.wizard_profile_data);
-    console.log('[Wizard Status] wizard_profile_data JSON.stringify:', JSON.stringify(freshEnrollmentData.wizard_profile_data));
-    console.log('[Wizard Status] wizard_profile_data KEYS:', freshEnrollmentData.wizard_profile_data ? Object.keys(freshEnrollmentData.wizard_profile_data) : 'null');
 
     // Get product data separately
     const { data: productData, error: productError } = await supabase
@@ -165,8 +160,6 @@ export async function GET(
     // DEBUG: Log profile completion check
     console.log('[Wizard Status] Enrollment ID:', enrollment.id);
     console.log('[Wizard Status] user_id:', enrollment.user_id);
-    console.log('[Wizard Status] wizard_profile_data:', enrollment.wizard_profile_data);
-    console.log('[Wizard Status] Final profileData:', profileData);
     console.log('[Wizard Status] userProfileComplete:', userProfileComplete);
 
     // Determine if payment is required

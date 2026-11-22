@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { createClient } from '@/lib/supabase/server';
+import { loadIntegration } from '@/lib/integrations/store';
 
 interface ZoomMeetingSettings {
   host_video?: boolean;
@@ -433,13 +434,7 @@ export async function getZoomClient(): Promise<ZoomClient> {
     const tenantId = tenantUsers.tenant_id;
 
     // Query integrations filtered by tenant_id
-    const { data: integration, error } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('integration_key', 'zoom')
-      .eq('tenant_id', tenantId)
-      .eq('is_enabled', true)
-      .single();
+    const { data: integration, error } = await loadIntegration(tenantId, 'zoom', { enabledOnly: true });
 
     if (error || !integration) {
       console.error('[getZoomClient] Integration query error:', error);

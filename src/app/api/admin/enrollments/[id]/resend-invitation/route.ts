@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { sendTemplateEmail } from '@/lib/email/emailService';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import crypto from 'crypto';
+import { reasonNotToRestart } from '@/lib/payments/enrollmentLink';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,7 @@ export async function POST(
         product_id,
         tenant_id,
         status,
+        signature_status,
         total_amount,
         currency,
         expires_at,
@@ -78,6 +80,14 @@ export async function POST(
     const enrollmentUser = Array.isArray(enrollment.user) ? enrollment.user[0] : enrollment.user;
     const product = Array.isArray(enrollment.product) ? enrollment.product[0] : enrollment.product;
 
+    // Never restart an enrollment that's done or where money was taken: it
+    // used to set the paid amount to 0 and clear a signed contract.
+    const blocked = await reasonNotToRestart(supabase, enrollment.id, enrollment.status);
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 409 });
+    }
+    const keepSignature = enrollment.signature_status === 'completed';
+
     // Generate new enrollment token (using base64url to match send-link endpoint)
     const newToken = crypto.randomBytes(32).toString('base64url');
 
@@ -100,8 +110,7 @@ export async function POST(
         status: 'draft',
         enrollment_token: newToken,
         token_expires_at: tokenExpiresAt.toISOString(),
-        signature_status: null,
-        docusign_envelope_id: null,
+        ...(keepSignature ? {} : { signature_status: null, docusign_envelope_id: null }),
         paid_amount: 0,
         payment_status: 'pending',
         wizard_profile_data: null, // Clear wizard profile data from previous attempt

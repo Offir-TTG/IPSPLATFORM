@@ -12,6 +12,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { createScheduledInvoice } from '@/lib/payments/invoiceService';
 import { PAYMENT_CONFIG } from '@/lib/payments/config';
 import { runCron } from '@/lib/cron/withCronLogging';
+import { runInBatches } from '@/lib/payments/batch';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -19,7 +20,7 @@ export const maxDuration = 60;
 export async function GET(request: NextRequest) {
   // Verify cron secret for security
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     console.error('[CRON - Payment Retry] Unauthorized access attempt');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -37,7 +38,9 @@ export async function GET(request: NextRequest) {
       .eq('status', 'failed')
       .not('next_retry_date', 'is', null)
       .lte('next_retry_date', now)
-      .lt('retry_count', PAYMENT_CONFIG.maxRetries);
+      .lt('retry_count', PAYMENT_CONFIG.maxRetries)
+      .order('next_retry_date', { ascending: true })
+      .limit(300);
 
     if (queryError) {
       throw new Error(`Database query failed: ${queryError.message}`);
@@ -67,37 +70,30 @@ export async function GET(request: NextRequest) {
     let retried = 0;
     const errors: string[] = [];
 
-    // Process each schedule for retry
-    for (const schedule of retrySchedules) {
-      console.log(
-        `[CRON - Payment Retry] Retrying schedule ${schedule.id} (attempt ${schedule.retry_count + 1}/${PAYMENT_CONFIG.maxRetries})`
-      );
-
-      // Create new invoice (old one failed)
-      const result = await createScheduledInvoice(schedule.id, schedule.tenant_id);
-
+    // A few at a time, stopping before the time limit; the rest wait for
+    // the next run. The charger pays the open invoice again, never a new one.
+    const batch = await runInBatches(retrySchedules, (schedule) =>
+      createScheduledInvoice(schedule.id, schedule.tenant_id).then((result) => ({ id: schedule.id, result })),
+    );
+    for (const { id, result } of batch.results) {
       if (result.error) {
-        errors.push(`Schedule ${schedule.id}: ${result.error}`);
-        console.error(`[CRON - Payment Retry] Failed to retry ${schedule.id}:`, result.error);
+        errors.push(`Schedule ${id}: ${result.error}`);
       } else {
         retried++;
-        console.log(`[CRON - Payment Retry] Successfully created retry invoice for ${schedule.id}`);
       }
-
-      // Rate limit: Wait 20ms between requests
-      await new Promise(resolve => setTimeout(resolve, 20));
     }
 
     console.log('[CRON - Payment Retry] Complete:', {
       retried,
       failed: errors.length,
-      totalSchedules: retrySchedules.length,
+      remaining: batch.remaining,
     });
 
     return {
       success: true,
       retried,
       failed: errors.length,
+      remaining: batch.remaining,
       errors,
       message: `Retried ${retried} payments, ${errors.length} failed`,
     };

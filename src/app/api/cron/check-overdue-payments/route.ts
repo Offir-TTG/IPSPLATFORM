@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { PAYMENT_CONFIG } from '@/lib/payments/config';
 import { runCron } from '@/lib/cron/withCronLogging';
+import { fetchAllPages, loadEnrollmentsById } from '@/lib/payments/batch';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -18,7 +19,7 @@ export const maxDuration = 60;
 export async function GET(request: NextRequest) {
   // Verify cron secret for security
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     console.error('[CRON - Overdue Check] Unauthorized access attempt');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -37,15 +38,34 @@ export async function GET(request: NextRequest) {
 
     // Find schedules with payments overdue beyond grace period
     // Check both original_due_date and scheduled_date for compatibility
-    const { data: overdueSchedules, error: scheduleError } = await supabase
-      .from('payment_schedules')
-      .select('enrollment_id, tenant_id, scheduled_date, original_due_date, amount')
-      .in('status', ['pending', 'failed'])
-      .or(`original_due_date.lt.${gracePeriodDate.toISOString()},scheduled_date.lt.${gracePeriodDate.toISOString()}`);
+    // The current due date decides: when an admin moves a date to give the
+    // client more time, the original date no longer counts (it used to, so
+    // the client was suspended anyway). Read page by page: a plain query
+    // stops at 1,000 rows. Only enrollments still collecting matter.
+    const { data: overdueRows, error: scheduleError } = await fetchAllPages<any>((from, to) =>
+      supabase
+        .from('payment_schedules')
+        .select('enrollment_id, tenant_id, scheduled_date, amount')
+        .in('status', ['pending', 'failed', 'overdue', 'adjusted', 'processing'])
+        .lt('scheduled_date', gracePeriodDate.toISOString())
+        .order('enrollment_id', { ascending: true })
+        .range(from, to),
+    );
 
     if (scheduleError) {
-      throw new Error(`Query failed: ${scheduleError.message}`);
+      throw new Error(`Query failed: ${scheduleError}`);
     }
+
+    // Active enrollments only (read separately; no join is possible).
+    const { data: enrollmentsById, error: enrollmentError } = await loadEnrollmentsById<{ id: string; status: string }>(
+      supabase,
+      overdueRows.map((r) => r.enrollment_id),
+      'id, status',
+    );
+    if (enrollmentError) {
+      throw new Error(`Query failed: ${enrollmentError}`);
+    }
+    const overdueSchedules = overdueRows.filter((r) => enrollmentsById.get(r.enrollment_id)?.status === 'active');
 
     if (!overdueSchedules || overdueSchedules.length === 0) {
       console.log('[CRON - Overdue Check] No overdue payments found');
@@ -73,20 +93,25 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Suspend enrollments that are not already suspended
-    const { data: suspendedEnrollments, error: suspendError } = await supabase
-      .from('enrollments')
-      .update({
-        status: 'suspended',
-        suspended_reason: 'payment_overdue',
-        updated_at: new Date().toISOString(),
-      })
-      .in('id', enrollmentIds)
-      .neq('status', 'suspended') // Only suspend if not already suspended
-      .select('id, user_id, tenant_id');
-
-    if (suspendError) {
-      throw new Error(`Suspension failed: ${suspendError.message}`);
+    // Suspend in chunks: thousands of ids in one request is too long a URL.
+    const suspendedEnrollments: { id: string; user_id: string; tenant_id: string }[] = [];
+    for (let i = 0; i < enrollmentIds.length; i += 200) {
+      const { data, error: suspendError } = await supabase
+        .from('enrollments')
+        .update({
+          status: 'suspended',
+          payment_status: 'overdue', // marks a payment suspension (no reason column exists)
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', enrollmentIds.slice(i, i + 200))
+        // Only active ones: a cancelled or completed enrollment must never be
+        // turned into "suspended".
+        .eq('status', 'active')
+        .select('id, user_id, tenant_id');
+      if (suspendError) {
+        throw new Error(`Suspension failed: ${suspendError.message}`);
+      }
+      suspendedEnrollments.push(...(data ?? []));
     }
 
     const suspendedCount = suspendedEnrollments?.length || 0;

@@ -1,12 +1,20 @@
 import type { Metadata, Viewport } from 'next';
-import { Heebo } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { AppProvider } from '@/context/AppContext';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { Toaster } from 'sonner';
 
-const heebo = Heebo({ subsets: ['hebrew', 'latin'], weight: ['300', '400', '500', '600', '700'] });
+// Heebo is served from the project (variable font, weights 100–900, Hebrew
+// and Latin), so building or running the app never needs Google Fonts.
+const heebo = localFont({
+  src: './fonts/Heebo-Variable.ttf',
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
+  fallback: ['Arial', 'sans-serif'],
+});
 
 export const dynamic = 'force-dynamic';
 

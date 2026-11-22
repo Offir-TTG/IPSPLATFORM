@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { attachPersonIdentity } from '@/lib/persons/attach-identity';
+import type Stripe from 'stripe';
+import { getStripeClient } from '@/lib/payments/getStripeClient';
+import { verifyDuePaid } from '@/lib/payments/dueSchedules';
+import { loadIntegration } from '@/lib/integrations/store';
+import { attachPendingChild } from '@/lib/family/coachingEnrollment';
+
+// Creates the account and talks to Stripe, contacts and email in one request;
+// the short default limit could cut it off halfway at busy times.
+export const maxDuration = 60;
 
 /**
  * POST /api/enrollments/token/:token/complete
@@ -59,7 +68,6 @@ export async function POST(
       hasProfile: !!profile,
       hasDocusignEnvelopeId: !!docusignEnvelopeId,
       isExistingUser,
-      profile
     });
 
     // TWO ENROLLMENT FLOWS:
@@ -83,7 +91,6 @@ export async function POST(
     }
 
     // Get enrollment with product details
-    console.log('[Enrollment Complete] Querying enrollment with token:', params.token);
 
     const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
@@ -109,7 +116,6 @@ export async function POST(
           type,
           requires_signature,
           payment_model,
-          keap_tag,
           crm_tag_slugs,
           metadata
         )
@@ -136,12 +142,20 @@ export async function POST(
       return NextResponse.json({ error: 'Enrollment token has expired' }, { status: 410 });
     }
 
+    // An enrollment the school cancelled or suspended can't be switched back
+    // on by reopening the enrollment link.
+    if (enrollment.status === 'cancelled' || enrollment.status === 'suspended') {
+      return NextResponse.json(
+        { error: 'This enrollment is no longer open. Please contact the school.' },
+        { status: 409 }
+      );
+    }
+
     const product = Array.isArray(enrollment.product) ? enrollment.product[0] : enrollment.product;
 
     // Use profile data from request body (memory-based wizard approach)
     const profileData = profile;
 
-    console.log('[Enrollment Complete] Using profile data from request body:', profileData);
     console.log('[Enrollment Complete] Address parts received:', {
       address: profileData?.address ?? null,
       address_line1: profileData?.address_line1 ?? null,
@@ -198,19 +212,13 @@ export async function POST(
       // Card save verification still happens below if usedSetupIntent is true
     }
 
-    // If Setup Intent was used (installment plan with no deposit),
-    // skip payment amount verification but verify card was saved
+    // A card saved for later payments must really be saved.
     if (usedSetupIntent) {
       console.log('[Enrollment Complete] Setup Intent detected - verifying card was saved');
 
       try {
         // Get Stripe credentials
-        const { data: integration } = await supabase
-          .from('integrations')
-          .select('credentials')
-          .eq('tenant_id', enrollment.tenant_id)
-          .eq('integration_key', 'stripe')
-          .single();
+        const { data: integration } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
         if (integration?.credentials?.secret_key) {
           const Stripe = (await import('stripe')).default;
@@ -272,267 +280,22 @@ export async function POST(
           { status: 500 }
         );
       }
-    } else if (paymentRequired) {
-      // Check if this enrollment has a deposit payment schedule
-      // This handles cases where product payment_model might be 'one_time' but enrollment uses deposit plan
-      const { data: depositScheduleCheck } = await supabase
-        .from('payment_schedules')
-        .select('id, payment_type, status')
-        .eq('enrollment_id', enrollment.id)
-        .eq('payment_type', 'deposit')
-        .single();
+    }
 
-      const hasDepositSchedule = !!depositScheduleCheck;
-      const isDepositPlan = product.payment_model === 'deposit_then_plan' || hasDepositSchedule;
-
-      console.log('[Enrollment Complete] Is deposit plan?', isDepositPlan, 'payment_model:', product.payment_model, 'hasDepositSchedule:', hasDepositSchedule);
-
-      if (isDepositPlan) {
-        // For deposit plans: Check if deposit payment is completed
-        // Use retry mechanism to handle race condition with webhook processing
-        console.log('[Enrollment Complete] Checking deposit schedule for enrollment:', enrollment.id);
-
-        let depositSchedule: any = null;
-        let retryCount = 0;
-        const maxRetries = 10; // Increased from 3 to handle webhook delays
-        const retryDelay = 2000; // Increased to 2 seconds (total 20s wait time)
-
-        while (retryCount < maxRetries) {
-          const { data, error: scheduleError } = await supabase
-            .from('payment_schedules')
-            .select('*')
-            .eq('enrollment_id', enrollment.id)
-            .eq('payment_type', 'deposit')
-            .single();
-
-          console.log(`[Enrollment Complete] Deposit check attempt ${retryCount + 1}/${maxRetries}:`, {
-            found: !!data,
-            status: data?.status,
-            scheduleId: data?.id,
-            error: scheduleError,
-          });
-
-          if (data && data.status === 'paid') {
-            depositSchedule = data;
-            break;
-          }
-
-          // If not paid yet and we have retries left, wait and try again
-          if (retryCount < maxRetries - 1) {
-            console.log(`[Enrollment Complete] Deposit not paid yet, retrying in ${retryDelay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-          }
-
-          retryCount++;
-        }
-
-        if (!depositSchedule || depositSchedule.status !== 'paid') {
-          console.error('[Enrollment Complete] Deposit not paid after retries:', {
-            found: !!depositSchedule,
-            status: depositSchedule?.status,
-            scheduleId: depositSchedule?.id,
-            retriesAttempted: retryCount,
-          });
-
-          // FALLBACK: Check Stripe API directly if webhook hasn't updated database yet
-          // This handles race conditions where payment succeeds but webhook is delayed
-          if (depositSchedule?.stripe_payment_intent_id) {
-            console.log('[Enrollment Complete] Checking payment status directly from Stripe API...');
-
-            try {
-              // Get Stripe credentials
-              const { data: integration } = await supabase
-                .from('integrations')
-                .select('credentials')
-                .eq('tenant_id', enrollment.tenant_id)
-                .eq('integration_key', 'stripe')
-                .single();
-
-              if (integration?.credentials?.secret_key) {
-                const Stripe = (await import('stripe')).default;
-                const stripe = new Stripe(integration.credentials.secret_key, {
-                  apiVersion: '2023-10-16',
-                });
-
-                // Retrieve payment intent from Stripe
-                const paymentIntent = await stripe.paymentIntents.retrieve(depositSchedule.stripe_payment_intent_id);
-
-                console.log('[Enrollment Complete] Stripe API payment intent status:', {
-                  id: paymentIntent.id,
-                  status: paymentIntent.status,
-                  amount: paymentIntent.amount,
-                });
-
-                // If payment succeeded in Stripe, manually process the webhook logic
-                if (paymentIntent.status === 'succeeded') {
-                  console.log('[Enrollment Complete] ⚠️ Payment succeeded in Stripe but webhook not processed yet');
-                  console.log('[Enrollment Complete] Manually processing payment to unblock user...');
-
-                  // Create payment record if it doesn't exist
-                  const { data: existingPayment } = await supabase
-                    .from('payments')
-                    .select('id')
-                    .eq('stripe_payment_intent_id', paymentIntent.id)
-                    .eq('enrollment_id', enrollment.id)
-                    .single();
-
-                  let paymentRecordId: string | undefined = existingPayment?.id;
-
-                  if (!existingPayment) {
-                    // Create payment record with Stripe IDs
-                    const stripeInvoiceId = paymentIntent.invoice as string | null;
-                    const stripeCustomerId = paymentIntent.customer as string | null;
-                    const chargeId = (paymentIntent as any).charges?.data?.[0]?.id;
-
-                    const { data: newPayment, error: paymentError } = await supabase
-                      .from('payments')
-                      .insert({
-                        tenant_id: enrollment.tenant_id,
-                        enrollment_id: enrollment.id,
-                        payment_schedule_id: depositSchedule.id,
-                        product_id: enrollment.product_id,
-                        stripe_payment_intent_id: paymentIntent.id,
-                        stripe_invoice_id: stripeInvoiceId,
-                        stripe_customer_id: stripeCustomerId,
-                        amount: paymentIntent.amount / 100,
-                        currency: paymentIntent.currency.toUpperCase(),
-                        payment_type: depositSchedule.payment_type,
-                        status: 'succeeded',
-                        installment_number: parseInt(paymentIntent.metadata?.payment_number || '1'),
-                        paid_at: new Date().toISOString(),
-                        metadata: {
-                          payment_type: depositSchedule.payment_type,
-                          schedule_id: depositSchedule.id,
-                          stripe_payment_method: paymentIntent.payment_method,
-                          charge_id: chargeId,
-                          manually_processed: true, // Flag to indicate this was processed by fallback
-                        },
-                      })
-                      .select('id')
-                      .single();
-
-                    if (paymentError) {
-                      console.error('[Enrollment Complete] Error creating payment record:', paymentError);
-                    } else {
-                      paymentRecordId = newPayment?.id;
-                      console.log('[Enrollment Complete] ✓ Created payment record:', paymentRecordId);
-                    }
-                  }
-
-                  // Update payment schedule to paid with Stripe IDs
-                  if (paymentRecordId) {
-                    const stripeInvoiceId = paymentIntent.invoice as string | null;
-
-                    const { error: updateScheduleError } = await supabase
-                      .from('payment_schedules')
-                      .update({
-                        status: 'paid',
-                        paid_date: new Date().toISOString(),
-                        payment_id: paymentRecordId,
-                        stripe_invoice_id: stripeInvoiceId,
-                        stripe_payment_intent_id: paymentIntent.id,
-                      })
-                      .eq('id', depositSchedule.id)
-                      .eq('tenant_id', enrollment.tenant_id);
-
-                    if (updateScheduleError) {
-                      console.error('[Enrollment Complete] Error updating schedule:', updateScheduleError);
-                    } else {
-                      console.log('[Enrollment Complete] ✓ Updated payment schedule to paid');
-                      // Update depositSchedule object so the check below passes
-                      depositSchedule.status = 'paid';
-                      depositSchedule.payment_id = paymentRecordId;
-                    }
-                  }
-
-                  // Update enrollment payment status
-                  const { error: updateEnrollmentError } = await supabase
-                    .from('enrollments')
-                    .update({
-                      paid_amount: depositSchedule.amount,
-                      payment_status: 'partial', // Deposit paid, installments remaining
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', enrollment.id)
-                    .eq('tenant_id', enrollment.tenant_id);
-
-                  if (updateEnrollmentError) {
-                    console.error('[Enrollment Complete] Error updating enrollment:', updateEnrollmentError);
-                  } else {
-                    console.log('[Enrollment Complete] ✓ Updated enrollment payment status');
-                  }
-
-                  console.log('[Enrollment Complete] ✅ Fallback processing complete - allowing enrollment to proceed');
-                } else {
-                  // Payment not succeeded in Stripe either
-                  console.error('[Enrollment Complete] Payment not succeeded in Stripe:', paymentIntent.status);
-                  return NextResponse.json(
-                    { error: `Payment not completed. Status: ${paymentIntent.status}` },
-                    { status: 400 }
-                  );
-                }
-              } else {
-                console.error('[Enrollment Complete] Stripe integration not configured');
-                return NextResponse.json(
-                  { error: 'Deposit payment required but not completed' },
-                  { status: 400 }
-                );
-              }
-            } catch (stripeError) {
-              console.error('[Enrollment Complete] Error checking Stripe API:', stripeError);
-              return NextResponse.json(
-                { error: 'Deposit payment required but not completed' },
-                { status: 400 }
-              );
-            }
-          } else {
-            // No payment intent ID, can't check Stripe
-            return NextResponse.json(
-              { error: 'Deposit payment required but not completed' },
-              { status: 400 }
-            );
-          }
-        }
-        // Deposit is paid - user can proceed with wizard completion
-        console.log('[Enrollment Complete] Deposit plan: deposit paid, allowing completion');
-      } else {
-        // For one-time or subscription plans: Check if full payment is completed
-        // Check both payment_status and paid_amount to handle various scenarios
-        const paymentComplete =
-          enrollment.payment_status === 'paid' ||
-          enrollment.paid_amount >= enrollment.total_amount;
-
-        console.log('[Enrollment Complete] Non-deposit plan payment check:', {
-          paid_amount: enrollment.paid_amount,
-          total_amount: enrollment.total_amount,
-          payment_status: enrollment.payment_status,
-          paymentComplete,
-        });
-
-        if (!paymentComplete) {
-          // Before failing, check if schedules exist at all (race condition check)
-          const { count: scheduleCount } = await supabase
-            .from('payment_schedules')
-            .select('*', { count: 'exact', head: true })
-            .eq('enrollment_id', enrollment.id);
-
-          console.log('[Enrollment Complete] Schedule count:', scheduleCount);
-
-          // If no schedules exist, it might be a race condition - fail with more specific error
-          if (scheduleCount === 0) {
-            console.error('[Enrollment Complete] No schedules found - possible race condition');
-            return NextResponse.json(
-              { error: 'Payment schedules not yet created. Please try again in a moment.' },
-              { status: 503 } // 503 Service Unavailable for temporary condition
-            );
-          }
-
-          console.error('[Enrollment Complete] Payment required but not completed ERROR');
-          return NextResponse.json(
-            { error: 'Payment required but not completed' },
-            { status: 400 }
-          );
-        }
+    // Everything due today or earlier must be paid. This one rule covers
+    // one-time payments, deposits and a plan's first installment, and asks
+    // Stripe directly when a payment isn't marked paid yet. Saving a card is
+    // only enough when nothing is due yet.
+    if (paymentRequired) {
+      let stripeClient: Stripe | null = null;
+      try {
+        stripeClient = (await getStripeClient(enrollment.tenant_id)).stripe;
+      } catch {
+        stripeClient = null;
+      }
+      const due = await verifyDuePaid(supabase, stripeClient, enrollment.id, enrollment.product_id);
+      if (!due.ok) {
+        return NextResponse.json({ error: due.error }, { status: due.status });
       }
     }
 
@@ -678,12 +441,7 @@ export async function POST(
           console.log('[Enrollment Complete] Found paid payment intent:', depositSchedule.stripe_payment_intent_id);
 
           // Get Stripe credentials
-          const { data: integration } = await supabase
-            .from('integrations')
-            .select('credentials')
-            .eq('tenant_id', enrollment.tenant_id)
-            .eq('integration_key', 'stripe')
-            .single();
+          const { data: integration } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
           if (integration?.credentials?.secret_key) {
             const Stripe = (await import('stripe')).default;
@@ -782,12 +540,7 @@ export async function POST(
             console.log('[Enrollment Complete] Found paid payment intent:', depositSchedule.stripe_payment_intent_id);
 
             // Get Stripe credentials
-            const { data: integration } = await supabase
-              .from('integrations')
-              .select('credentials')
-              .eq('tenant_id', enrollment.tenant_id)
-              .eq('integration_key', 'stripe')
-              .single();
+            const { data: integration } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
             if (integration?.credentials?.secret_key) {
               const Stripe = (await import('stripe')).default;
@@ -844,7 +597,11 @@ export async function POST(
       user_id: userId, // Link to new or existing user
       status: 'active',
       enrolled_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      // The link has done its job. It stays usable for one more hour (the
+      // wizard's last screen reads it), then stops working instead of
+      // exposing the client's details for the rest of the week.
+      token_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     };
 
     // Save profile data ONLY for new users (existing users already have profile in users table)
@@ -857,7 +614,6 @@ export async function POST(
       enrollmentUpdate.docusign_envelope_id = docusignEnvelopeId;
     }
 
-    console.log('[Enrollment Complete] Saving enrollment with wizard data:', enrollmentUpdate);
 
     const { error: updateError } = await supabase
       .from('enrollments')
@@ -870,6 +626,14 @@ export async function POST(
         { error: 'Failed to activate enrollment' },
         { status: 500 }
       );
+    }
+
+    // Child coaching opened for a parent who had no account: the account
+    // exists now, so the child is created under it and linked. A failure is
+    // logged for the team; it never blocks the enrollment.
+    const childLink = await attachPendingChild(enrollment.id, userId);
+    if (!childLink.ok) {
+      console.error('[Enrollment Complete] Child not linked:', enrollment.id, childLink.error);
     }
 
     // Trigger enrollment.completed event
@@ -901,47 +665,6 @@ export async function POST(
     } catch (triggerError) {
       console.error('Error processing enrollment.completed trigger:', triggerError);
       // Don't fail enrollment if trigger fails
-    }
-
-    // Sync to Keap CRM if configured
-    if (product.keap_tag) {
-      try {
-        console.log('[Enrollment Complete] Syncing to Keap with tag:', product.keap_tag);
-
-        const { syncStudentToKeap } = await import('@/lib/keap/syncService');
-
-        // For existing users, fetch their profile from users table
-        let keapProfileData = profileData;
-        if (isExistingUser) {
-          const { data: userProfile } = await supabase
-            .from('users')
-            .select('email, first_name, last_name, phone')
-            .eq('id', userId)
-            .single();
-
-          if (userProfile) {
-            keapProfileData = userProfile;
-          }
-        }
-
-        await syncStudentToKeap(
-          {
-            email: keapProfileData?.email || '',
-            first_name: keapProfileData?.first_name,
-            last_name: keapProfileData?.last_name,
-            phone: keapProfileData?.phone
-          },
-          {
-            tags: [product.keap_tag],
-            create_note: `Enrolled via ${product.type || 'course'}: ${product.title}\nEnrollment Date: ${new Date().toLocaleDateString()}`
-          }
-        );
-
-        console.log('[Enrollment Complete] Successfully synced to Keap');
-      } catch (keapError) {
-        // Log but don't fail enrollment if Keap fails
-        console.error('[Enrollment Complete] Error syncing to Keap:', keapError);
-      }
     }
 
     // Log successful enrollment completion
@@ -1112,7 +835,10 @@ export async function POST(
       enrollment_id: enrollment.id,
       user_id: userId,
       status: 'active',
-      redirect_url: shouldRedirectToDashboard ? '/dashboard' : null,
+      // Child coaching lands on the child's page in the portal (intake next).
+      redirect_url: childLink.ok && childLink.child_id
+        ? `/children/${childLink.child_id}?enrollment=complete`
+        : shouldRedirectToDashboard ? '/dashboard' : null,
       show_confirmation: showConfirmation,
       session: authData?.session || null, // Return session for auto-login (only for new users)
       message: isExistingUser

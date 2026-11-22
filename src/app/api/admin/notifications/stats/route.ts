@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { readCounts, recipientTotals, sendKey } from '@/lib/notifications/audience';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,34 +38,36 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get total notifications sent
-    const { count: totalSent } = await supabase
-      .from('notifications')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', userData.tenant_id);
-
-    // Get notifications sent today
+    // Sends, not rows: choosing several students saves one row each, and
+    // that counts as one send (same rule as the list). Unread: for each row,
+    // the people it went to who haven't read it yet.
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const { count: todaySent } = await supabase
-      .from('notifications')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', userData.tenant_id)
-      .gte('created_at', today.toISOString());
-
-    // Get total unread count across all users
-    // We need to count notifications that don't have a read record
-    const { data: allNotifications } = await supabase
-      .from('notifications')
-      .select('id')
-      .eq('tenant_id', userData.tenant_id);
-
-    const { data: readNotifications } = await supabase
-      .from('notification_reads')
-      .select('notification_id');
-
-    const readIds = new Set(readNotifications?.map(r => r.notification_id) || []);
-    const unreadTotal = (allNotifications?.length || 0) - readIds.size;
+    let totalSent = 0;
+    let todaySent = 0;
+    let unreadTotal = 0;
+    try {
+      const db = createAdminClient();
+      const { data: allNotifications, error } = await db.from('notifications').select('*').eq('tenant_id', userData.tenant_id);
+      if (error) throw error;
+      const rows = allNotifications ?? [];
+      const sends = new Set<string>();
+      const sendsToday = new Set<string>();
+      for (const n of rows) {
+        const key = sendKey(n);
+        sends.add(key);
+        if (new Date(n.created_at) >= today) sendsToday.add(key);
+      }
+      totalSent = sends.size;
+      todaySent = sendsToday.size;
+      const [totals, reads] = await Promise.all([
+        recipientTotals(db, userData.tenant_id, rows),
+        readCounts(db, rows.map((n) => n.id)),
+      ]);
+      for (const n of rows) unreadTotal += Math.max(0, (totals.get(n.id) ?? 0) - (reads.get(n.id) ?? 0));
+    } catch (error) {
+      console.error('[Admin Notifications API] Could not count notifications:', error);
+    }
 
     // Get total deleted notifications count
     const { count: totalDeleted } = await supabase

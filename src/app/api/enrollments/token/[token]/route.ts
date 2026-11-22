@@ -24,7 +24,6 @@ export async function GET(
     // Use admin client to bypass RLS - enrollment links are accessed by unauthenticated users
     const supabase = createAdminClient();
 
-    console.log('[Enrollment Token] Looking for token:', params.token);
 
     // Fetch enrollment by token
     const { data: enrollment, error } = await supabase
@@ -64,7 +63,6 @@ export async function GET(
       .eq('enrollment_token', params.token)
       .single();
 
-    console.log('[Enrollment Token] Query result:', { error, enrollmentId: enrollment?.id, token: enrollment?.enrollment_token });
 
     if (error || !enrollment) {
       console.error('[Enrollment Token] Not found. Error:', error);

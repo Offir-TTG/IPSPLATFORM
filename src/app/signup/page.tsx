@@ -81,7 +81,7 @@ export default function SignupPage() {
         localStorage.setItem('tenant_name', data.data.tenant.name);
       }
 
-      router.push('/student/dashboard');
+      router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

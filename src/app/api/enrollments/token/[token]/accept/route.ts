@@ -61,16 +61,26 @@ export async function POST(
       return NextResponse.json({ error: 'Invitation expired' }, { status: 410 });
     }
 
-    // No user verification needed - enrollment is token-based
-    // User account doesn't exist yet and will be created at completion
+    // Opening the link moves only a fresh invitation (draft) to pending.
+    // Before, it reset ANY enrollment to pending: a paid, active student lost
+    // access, and a cancelled one stopped looking cancelled.
+    if (enrollment.status === 'cancelled' || enrollment.status === 'suspended') {
+      return NextResponse.json(
+        { error: 'This enrollment is no longer open. Please contact the school.' },
+        { status: 409 }
+      );
+    }
+    if (enrollment.status === 'active' || enrollment.status === 'completed') {
+      return NextResponse.json({ error: 'You are already enrolled', already_enrolled: true }, { status: 409 });
+    }
 
-    // Update enrollment status to pending (will become active after wizard completion)
     const { error: updateError } = await supabase
       .from('enrollments')
       .update({
         status: 'pending'
       })
-      .eq('id', enrollment.id);
+      .eq('id', enrollment.id)
+      .eq('status', 'draft');
 
     if (updateError) {
       console.error('Error updating enrollment:', updateError);

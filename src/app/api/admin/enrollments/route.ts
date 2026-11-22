@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { randomUUID } from 'crypto';
 import { generatePaymentSchedules } from '@/lib/payments/paymentEngine';
+import { attachPendingChild, markRequestHandled, prepareCoaching } from '@/lib/family/coachingEnrollment';
 
 export const dynamic = 'force-dynamic';
 
@@ -423,6 +424,22 @@ export async function POST(request: NextRequest) {
       finalUserId = null;
     }
 
+    // Child coaching: coach, the child (existing, or details kept until the
+    // wizard creates a new parent's account) and the request it answers.
+    const coachingInput = body.coach_id || body.child_id || body.child;
+    const coaching = coachingInput
+      // Server key: the children table is closed to logins, admins' too.
+      ? await prepareCoaching(createAdminClient(), adminData.tenant_id, {
+          coach_id: body.coach_id ?? null,
+          child_id: body.child_id ?? null,
+          child: body.child ?? null,
+          parentUserId: finalUserId,
+        })
+      : null;
+    if (coaching && !coaching.ok) {
+      return NextResponse.json({ error: coaching.error }, { status: coaching.status });
+    }
+
     // Duplicate enrollments are allowed - admins can enroll users multiple times in the same product
     // This supports use cases like:
     // - Parents enrolling multiple children in the same program
@@ -448,6 +465,16 @@ export async function POST(request: NextRequest) {
       expires_at: expires_at || null,
       payment_start_date: body.payment_start_date || product.payment_start_date || null, // Admin override or copy from product
     };
+    if (coaching?.ok) {
+      if (coaching.coach_id) enrollmentData.coach_id = coaching.coach_id;
+      if (coaching.child_id) enrollmentData.child_id = coaching.child_id;
+      if (coaching.pending_child) {
+        enrollmentData.payment_metadata = {
+          pending_child: coaching.pending_child,
+          ...(body.coaching_request_id ? { coaching_request_id: body.coaching_request_id } : {}),
+        };
+      }
+    }
 
     // Save wizard profile data for both new and existing users
     // - For EXISTING users (finalUserId set): Store complete profile from users table
@@ -527,6 +554,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Coaching: for a parent who already has an account the child is created
+    // now; for a new parent it's created when the wizard makes the account.
+    if (coaching?.ok && coaching.pending_child && finalUserId) {
+      await attachPendingChild(data.id, finalUserId);
+    }
+    if (coaching?.ok && body.coaching_request_id) {
+      await markRequestHandled(adminData.tenant_id, body.coaching_request_id, user.id);
+    }
+
     // Generate payment schedules if payment is required and not waived
     if (!waive_payment && totalAmount > 0) {
       try {
@@ -599,7 +635,8 @@ export async function POST(request: NextRequest) {
             adminData.tenant_id,
             paymentPlan,
             totalAmount,
-            startDate
+            startDate,
+            product.currency || 'USD'
           );
 
           // Insert schedules into database

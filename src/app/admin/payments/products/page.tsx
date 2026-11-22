@@ -2,131 +2,104 @@
 
 export const dynamic = 'force-dynamic';
 
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Gift,
+  Package,
+  PauseCircle,
+  RefreshCw,
+  Search,
+  WifiOff,
+} from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { LoadingState } from '@/components/admin/LoadingState';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RichTextEditor } from '@/components/ui/rich-text-editor';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
 import { useToast } from '@/components/ui/use-toast';
-import { Product, ProductFormData, PaymentModel, ProductType, PaymentPlanConfig } from '@/types/product';
-import { ContentSelector } from '@/components/products/ContentSelector';
-import { PaymentPlanConfig as PaymentPlanConfigComponent } from '@/components/products/PaymentPlanConfig';
-import { DocuSignConfig } from '@/components/products/DocuSignConfig';
-import { PaymentPlanSelector } from '@/components/products/PaymentPlanSelector';
-import { EmailTemplateSelector } from '@/components/products/EmailTemplateSelector';
-import {
-  Plus,
-  Edit,
-  Trash2,
-  Link2,
-  Package,
-  DollarSign,
-  Search,
-  ArrowLeft,
-  BookOpen,
-  GraduationCap,
-  Video,
-  Users,
-  Star,
-  FileSignature,
-  Grid3x3,
-  Calendar,
-  Sparkles,
-  XCircle,
-  Info,
-  Check,
-  X,
-} from 'lucide-react';
 import { useHelp } from '@/hooks/useHelp';
+import type { PaymentModel, Product, ProductType } from '@/types/product';
+import {
+  ClearFilters,
+  FilterSelect,
+  IconButton,
+  KpiItem,
+  KpiStrip,
+  ListCell,
+  ListFooter,
+  ListPanel,
+  ListRow,
+  ListRowMain,
+  ListSearch,
+  ListSkeleton,
+  ListState,
+  NewButton,
+  PageTitle,
+  QuickPills,
+  StatusDot,
+  kitButton,
+  usePagedList,
+} from '@/components/admin/notifications/kit';
+import { ProductDrawer, productTypeLook } from '@/components/admin/products/ProductDrawer';
+import { useProductDelete } from '@/components/admin/products/useProductDelete';
+import { productPublicPath } from '@/components/admin/products/ProductWizardPage';
 
+const TYPES: ProductType[] = ['program', 'course', 'bundle', 'session_pack', 'lecture', 'workshop'];
+const MODELS: PaymentModel[] = ['one_time', 'deposit_then_plan', 'subscription', 'free'];
+type StatusFilter = 'all' | 'active' | 'inactive';
+
+/**
+ * Billable products, in the admin list template: the numbers strip (each
+ * number filters the list), then one card with search, type and payment
+ * model, status pills, the products and paging. A row opens a short summary
+ * in a drawer; editing and creating happen on the wizard page. Search, the
+ * three filters, copy link and delete all work as before.
+ */
 export default function ProductsPage() {
   useHelp('payments-products');
-  const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
+  const { t, direction, loading: translationsLoading } = useAdminLanguage();
   const { toast } = useToast();
-  const isRtl = direction === 'rtl';
-  const [mounted, setMounted] = useState(false);
+  const rtl = direction === 'rtl';
+  const BackArrow = rtl ? ArrowRight : ArrowLeft;
+
   const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [paymentPlans, setPaymentPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [paymentModelFilter, setPaymentModelFilter] = useState<string>('all');
-  const [activeFilter, setActiveFilter] = useState<string>('all');
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showCannotDeleteDialog, setShowCannotDeleteDialog] = useState(false);
-  const [deleteDependencies, setDeleteDependencies] = useState<{ enrollments: any[] }>({ enrollments: [] });
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | ProductType>('all');
+  const [modelFilter, setModelFilter] = useState<'all' | PaymentModel>('all');
+  const [status, setStatus] = useState<StatusFilter>('all');
 
-  // Responsive breakpoints
-  const isMobile = windowWidth <= 640;
-
-  // Prevent hydration errors
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Handle window resize for responsive behavior
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Fetch payment plans
-  const fetchPaymentPlans = async () => {
-    try {
-      const response = await fetch('/api/admin/payments/plans');
-      if (!response.ok) throw new Error('Failed to fetch payment plans');
-      const data = await response.json();
-      setPaymentPlans(data || []);
-    } catch (error) {
-      console.error('Error fetching payment plans:', error);
-    }
+  // The open product lives in the address (?product=), like the user drawer.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const openId = searchParams.get('product');
+  const setOpenId = (id: string | null) => {
+    const qs = new URLSearchParams(searchParams.toString());
+    if (id) qs.set('product', id);
+    else qs.delete('product');
+    const query = qs.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   };
 
-  // Fetch products
-  const fetchProducts = async () => {
+  const load = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (typeFilter !== 'all') params.append('type', typeFilter);
-      if (paymentModelFilter !== 'all') params.append('payment_model', paymentModelFilter);
-      if (activeFilter !== 'all') params.append('is_active', activeFilter);
-
-      const response = await fetch(`/api/admin/products?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch products');
-
-      const result = await response.json();
-      const data = result.success ? result.data : result;
-
-      setProducts(data || []);
-      setFilteredProducts(data || []);
+      const [productsRes, plansRes] = await Promise.all([fetch('/api/admin/products'), fetch('/api/admin/payments/plans')]);
+      if (!productsRes.ok) throw new Error('Failed to fetch products');
+      const result = await productsRes.json();
+      setProducts((result.success ? result.data : result) || []);
+      if (plansRes.ok) setPaymentPlans((await plansRes.json()) || []);
+      setLoadError(false);
     } catch (error) {
       console.error('Error fetching products:', error);
+      setLoadError(true);
       toast({
         title: t('common.error', 'Error'),
         description: t('admin.payments.products.loadFailed', 'Failed to load products'),
@@ -134,1445 +107,331 @@ export default function ProductsPage() {
       });
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   };
 
   useEffect(() => {
-    fetchPaymentPlans();
-    fetchProducts();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, paymentModelFilter, activeFilter]);
+  }, []);
 
-  // Filter products by search term
-  useEffect(() => {
-    if (searchTerm) {
-      const filtered = products.filter(p =>
-        p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.id.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredProducts(filtered);
-    } else {
-      setFilteredProducts(products);
-    }
-  }, [searchTerm, products]);
+  const { askDelete, dialogs } = useProductDelete({
+    onDeleted: (deleted) => {
+      if (openId === deleted.id) setOpenId(null);
+      void load();
+    },
+  });
 
-  const handleCreateProduct = () => {
-    setEditingProduct(null);
-    setIsDialogOpen(true);
-  };
-
-  const handleEditProduct = (product: Product) => {
-    setEditingProduct(product);
-    setIsDialogOpen(true);
-  };
-
-  // Handle delete click - show confirmation dialog
-  const handleDeleteClick = (product: Product) => {
-    setSelectedProduct(product);
-    setShowDeleteDialog(true);
-  };
-
-  // Copy the public product URL to the clipboard. Programs go to
-  // /program/<id>; everything else (course, lecture, workshop, bundle…)
-  // goes to /course/<id> — those are the only two public detail routes.
-  const handleCopyLink = async (product: Product) => {
-    const path = product.type === 'program' ? `/program/${product.id}` : `/course/${product.id}`;
-    const url = `${window.location.origin}${path}`;
+  const copyLink = async (product: Product) => {
+    const url = `${window.location.origin}${productPublicPath(product)}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast({
-        title: t('admin.payments.products.linkCopied', 'Link copied'),
-        description: url,
-      });
-    } catch (err) {
-      toast({
-        title: t('admin.payments.products.linkCopyFailed', 'Failed to copy link'),
-        variant: 'destructive',
-      });
+      toast({ title: t('admin.payments.products.linkCopied', 'Link copied'), description: url });
+    } catch {
+      toast({ title: t('admin.payments.products.linkCopyFailed', 'Failed to copy link'), variant: 'destructive' });
     }
   };
 
-  // Handle delete product - called from confirmation dialog
-  const handleDeleteProduct = async () => {
-    if (!selectedProduct) return;
+  /** Plan names a product offers, as the old badges showed them. */
+  const planNames = (product: Product): string[] => {
+    const ids = product.alternative_payment_plan_ids?.length
+      ? product.alternative_payment_plan_ids
+      : product.default_payment_plan_id
+        ? [product.default_payment_plan_id]
+        : [];
+    return ids.map((id) => paymentPlans.find((plan) => plan.id === id)?.plan_name).filter(Boolean) as string[];
+  };
 
+  const counts = useMemo(
+    () => ({
+      all: products.length,
+      active: products.filter((p) => p.is_active).length,
+      inactive: products.filter((p) => !p.is_active).length,
+      free: products.filter((p) => p.payment_model === 'free').length,
+    }),
+    [products],
+  );
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products.filter(
+      (p) =>
+        (typeFilter === 'all' || p.type === typeFilter) &&
+        (modelFilter === 'all' || p.payment_model === modelFilter) &&
+        (status === 'all' || (status === 'active' ? p.is_active : !p.is_active)) &&
+        (!q || p.title.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)),
+    );
+  }, [products, search, typeFilter, modelFilter, status]);
+
+  const paged = usePagedList(shown, `${search}|${typeFilter}|${modelFilter}|${status}`);
+  const openProduct = products.find((p) => p.id === openId) ?? null;
+  const filtersOn = !!search || typeFilter !== 'all' || modelFilter !== 'all' || status !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setTypeFilter('all');
+    setModelFilter('all');
+    setStatus('all');
+  };
+  const toggleStatus = (s: StatusFilter) => setStatus((cur) => (cur === s ? 'all' : s));
+  const filteredNow = t('admin.list.filteredNow', 'Filtered now');
+  const num = (n: number) => n.toLocaleString();
+  const money = (amount: number, currency?: string) => {
     try {
-      setDeleteLoading(true);
-      const response = await fetch(`/api/admin/products/${selectedProduct.id}`, {
-        method: 'DELETE',
-      });
+      return new Intl.NumberFormat(rtl ? 'he-IL' : 'en-US', { style: 'currency', currency: currency || 'USD', maximumFractionDigits: 2 }).format(amount);
+    } catch {
+      return `${amount} ${currency ?? ''}`.trim();
+    }
+  };
+  const contentLine = (p: Product) =>
+    p.program?.name ||
+    p.course?.title ||
+    (p.contains_courses?.length ? `${p.contains_courses.length} ${t('products.courses', 'courses')}` : '') ||
+    (p.session_count ? `${p.session_count} ${t('products.sessions', 'sessions')}` : '');
+  const COLS = 'minmax(0,1fr) 150px 180px 110px';
+  const createButton = <NewButton href="/admin/payments/products/new">{t('admin.payments.products.createProduct', 'Create Product')}</NewButton>;
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorJson: any = null;
+  if (translationsLoading) return <LoadingState variant="page" withLayout={true} />;
 
-        try {
-          errorJson = JSON.parse(errorText);
-        } catch (parseError) {
-          console.error('Failed to parse error response:', parseError);
+  // Loading, nothing yet, no results, or could not load: shown in place of the rows.
+  let state: ReactNode = undefined;
+  if (!loaded || (loading && products.length === 0)) state = <ListSkeleton />;
+  else if (loadError && products.length === 0)
+    state = (
+      <ListState
+        icon={WifiOff}
+        tone="red"
+        title={t('admin.list.loadError', "We couldn't load the list")}
+        text={t('admin.list.loadErrorText', 'The internet connection may have dropped. Nothing was deleted.')}
+        action={
+          <button type="button" onClick={() => void load()} className={kitButton.primary}>
+            {t('admin.list.retry', 'Try again')}
+          </button>
         }
-
-        // Check if error contains dependency information
-        console.log('Error response:', errorJson);
-        if (errorJson?.dependencies?.enrollments?.length > 0) {
-          console.log('Has dependencies, showing cannot delete dialog');
-          setDeleteDependencies(errorJson.dependencies);
-          setShowDeleteDialog(false);
-          setShowCannotDeleteDialog(true);
-          return;
+      />
+    );
+  else if (products.length === 0)
+    state = (
+      <ListState
+        icon={Package}
+        title={t('admin.payments.products.noProductsCreated', 'No products created')}
+        text={t('admin.payments.products.createFirst', 'Create your first product to start accepting payments')}
+        action={createButton}
+      />
+    );
+  else if (shown.length === 0)
+    state = (
+      <ListState
+        icon={Search}
+        tone="grey"
+        title={t('admin.payments.products.noProductsFound', 'No products found')}
+        text={t('admin.list.noMatchText', 'Clear the search and filters to see the whole list.')}
+        action={
+          <button type="button" onClick={clearFilters} className={kitButton.secondary}>
+            {t('admin.users.filters.clear', 'Clear Filters')}
+          </button>
         }
-        console.log('No dependencies found in error response');
-
-        // Show error toast for other errors
-        const errorMessage = errorJson
-          ? (language === 'he' && errorJson.error_he ? errorJson.error_he : errorJson.error)
-          : t('admin.payments.products.deleteFailed', 'Failed to delete product');
-
-        toast({
-          title: t('common.error', 'Error'),
-          description: errorMessage || t('admin.payments.products.deleteFailed', 'Failed to delete product'),
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const result = await response.json();
-      if (result.success) {
-        toast({
-          title: t('common.success', 'Success'),
-          description: t('admin.payments.products.deleteSuccess', 'Product deleted successfully'),
-        });
-        setShowDeleteDialog(false);
-        setSelectedProduct(null);
-        fetchProducts();
-      }
-    } catch (error: any) {
-      console.error('Error deleting product:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.products.deleteFailed', 'Failed to delete product'),
-        variant: 'destructive',
-      });
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleSaveProduct = async (product: ProductFormData) => {
-    try {
-      const isEditing = !!editingProduct;
-      const url = isEditing
-        ? `/api/admin/products/${editingProduct.id}`
-        : '/api/admin/products';
-
-      const response = await fetch(url, {
-        method: isEditing ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(product),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || t('admin.payments.products.saveFailed', 'Failed to save product'));
-      }
-
-      toast({
-        title: t('common.success', 'Success'),
-        description: isEditing
-          ? t('admin.payments.products.updateSuccess', 'Product updated successfully')
-          : t('admin.payments.products.createSuccess', 'Product created successfully'),
-      });
-      setIsDialogOpen(false);
-      fetchProducts();
-    } catch (error: any) {
-      console.error('Error saving product:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.products.saveFailed', 'Failed to save product'),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const getProductTypeIcon = (type: ProductType) => {
-    switch (type) {
-      case 'program': return <GraduationCap className="h-4 w-4" />;
-      case 'course': return <BookOpen className="h-4 w-4" />;
-      case 'lecture': return <Video className="h-4 w-4" />;
-      case 'workshop': return <Users className="h-4 w-4" />;
-      case 'webinar': return <Video className="h-4 w-4" />;
-      case 'session': return <Calendar className="h-4 w-4" />;
-      case 'session_pack': return <Package className="h-4 w-4" />;
-      case 'bundle': return <Grid3x3 className="h-4 w-4" />;
-      default: return <Sparkles className="h-4 w-4" />;
-    }
-  };
-
-  const getProductTypeColor = (type: ProductType) => {
-    switch (type) {
-      case 'program': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-      case 'course': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      case 'lecture': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
-      case 'workshop': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
-      case 'bundle': return 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300';
-      case 'session_pack': return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
-    }
-  };
-
-  const getPaymentModelColor = (model: PaymentModel) => {
-    switch (model) {
-      case 'one_time': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      case 'deposit_then_plan': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-      case 'subscription': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
-      case 'free': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
-    }
-  };
-
-  // Get payment plan names for a product
-  const getProductPaymentPlanNames = (product: Product): string[] => {
-    if (!product.alternative_payment_plan_ids || product.alternative_payment_plan_ids.length === 0) {
-      return [];
-    }
-
-    return product.alternative_payment_plan_ids
-      .map(planId => {
-        const plan = paymentPlans.find(p => p.id === planId);
-        return (plan as any)?.plan_name || null;
-      })
-      .filter(Boolean) as string[];
-  };
-
-  // Show loading while translations are loading
-  if (translationsLoading) {
-    return <LoadingState variant="page" withLayout={true} />;
-  }
+      />
+    );
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/admin/payments">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                <span suppressHydrationWarning>{t('admin.payments.products.back', 'Back')}</span>
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold" suppressHydrationWarning>
-                {t('admin.payments.products.title', 'Products')}
-              </h1>
-              <p className="text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.products.description', 'Manage billable products and their pricing')}
-              </p>
-            </div>
-          </div>
-          <Button onClick={handleCreateProduct}>
-            <Plus className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-            <span suppressHydrationWarning>{t('admin.payments.products.createProduct', 'Create Product')}</span>
-          </Button>
-        </div>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        <Link href="/admin/payments" className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+          <BackArrow className="h-4 w-4" aria-hidden />
+          {t('admin.payments.title', 'Payments')}
+        </Link>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="grid gap-4 md:grid-cols-4">
-              <div>
-                <Label htmlFor="search" suppressHydrationWarning>
-                  {t('admin.payments.products.search', 'Search')}
-                </Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="search"
-                    placeholder={t('admin.payments.products.searchPlaceholder', 'Search products...')}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="type-filter" suppressHydrationWarning>
-                  {t('admin.payments.products.productType', 'Product Type')}
-                </Label>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger id="type-filter">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="all"><span suppressHydrationWarning>{t('admin.payments.products.allTypes', 'All Types')}</span></SelectItem>
-                    <SelectItem value="program"><span suppressHydrationWarning>{t('products.type.program', 'Program')}</span></SelectItem>
-                    <SelectItem value="course"><span suppressHydrationWarning>{t('products.type.course', 'Course')}</span></SelectItem>
-                    <SelectItem value="bundle"><span suppressHydrationWarning>{t('products.type.bundle', 'Bundle')}</span></SelectItem>
-                    <SelectItem value="session_pack"><span suppressHydrationWarning>{t('products.type.session_pack', 'Session Pack')}</span></SelectItem>
-                    <SelectItem value="lecture"><span suppressHydrationWarning>{t('products.type.lecture', 'Lecture')}</span></SelectItem>
-                    <SelectItem value="workshop"><span suppressHydrationWarning>{t('products.type.workshop', 'Workshop')}</span></SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="payment-filter" suppressHydrationWarning>
-                  {t('admin.payments.products.paymentModel', 'Payment Model')}
-                </Label>
-                <Select value={paymentModelFilter} onValueChange={setPaymentModelFilter}>
-                  <SelectTrigger id="payment-filter">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="all"><span suppressHydrationWarning>{t('admin.payments.products.allModels', 'All Models')}</span></SelectItem>
-                    <SelectItem value="one_time"><span suppressHydrationWarning>{t('products.payment_model.one_time', 'One-time')}</span></SelectItem>
-                    <SelectItem value="deposit_then_plan"><span suppressHydrationWarning>{t('products.payment_model.deposit_then_plan', 'Deposit + Plan')}</span></SelectItem>
-                    <SelectItem value="subscription"><span suppressHydrationWarning>{t('products.payment_model.subscription', 'Subscription')}</span></SelectItem>
-                    <SelectItem value="free"><span suppressHydrationWarning>{t('products.payment_model.free', 'Free')}</span></SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="active-filter" suppressHydrationWarning>
-                  {t('admin.payments.products.status', 'Status')}
-                </Label>
-                <Select value={activeFilter} onValueChange={setActiveFilter}>
-                  <SelectTrigger id="active-filter">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="all"><span suppressHydrationWarning>{t('admin.payments.products.all', 'All')}</span></SelectItem>
-                    <SelectItem value="true"><span suppressHydrationWarning>{t('admin.payments.products.active', 'Active')}</span></SelectItem>
-                    <SelectItem value="false"><span suppressHydrationWarning>{t('admin.payments.products.inactive', 'Inactive')}</span></SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <PageTitle
+          icon={Package}
+          title={t('admin.payments.products.title', 'Products')}
+          badge={loaded ? num(counts.all) : undefined}
+          description={t('admin.payments.products.description', 'Manage billable products and their pricing')}
+          actions={createButton}
+        />
 
-        {/* Products List */}
-        {loading ? (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <div className="text-muted-foreground" suppressHydrationWarning>
-              {t('admin.payments.products.loading', 'Loading products...')}
-            </div>
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Package className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>
-                {products.length === 0
-                  ? t('admin.payments.products.noProductsCreated', 'No products created')
-                  : t('admin.payments.products.noProductsFound', 'No products found')}
-              </h3>
-              <p className="text-muted-foreground mb-4" suppressHydrationWarning>
-                {products.length === 0
-                  ? t('admin.payments.products.createFirst', 'Create your first product to start accepting payments')
-                  : t('admin.payments.products.tryAdjustingFilters', 'Try adjusting your filters')}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4">
-            {filteredProducts.map((product) => (
-            <Card key={product.id} className={!product.is_active ? 'opacity-60' : ''}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <CardTitle className="flex items-center gap-2">
-                        {getProductTypeIcon(product.type)}
-                        {product.title}
-                      </CardTitle>
-                      <Badge className={getProductTypeColor(product.type)}>
-                        {t(`products.type.${product.type}`, product.type)}
-                      </Badge>
-                      {/* Show payment plan names if using templates, otherwise show payment model */}
-                      {(() => {
-                        const planNames = getProductPaymentPlanNames(product);
-                        // Show plan badges if there are alternative plans
-                        if (planNames.length > 0) {
-                          return planNames.map((planName, idx) => (
-                            <Badge key={idx} className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
-                              {planName}
-                            </Badge>
-                          ));
-                        }
-                        // Check for default plan (legacy support)
-                        if (product.default_payment_plan_id) {
-                          const defaultPlan = paymentPlans.find(p => p.id === product.default_payment_plan_id);
-                          if (defaultPlan) {
-                            return (
-                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
-                                {(defaultPlan as any).plan_name}
-                              </Badge>
-                            );
-                          }
-                        }
-                        // Fallback to payment model if no plans
-                        return (
-                          <Badge className={getPaymentModelColor(product.payment_model)}>
-                            {t(`products.payment_model.${product.payment_model}`, product.payment_model)}
-                          </Badge>
-                        );
-                      })()}
-                      {!product.is_active && (
-                        <Badge variant="outline" className="border-gray-400 text-gray-600">
-                          {t('admin.payments.products.inactive', 'Inactive')}
-                        </Badge>
-                      )}
-                      {product.requires_signature && (
-                        <Badge variant="outline" className="border-blue-400 text-blue-600">
-                          <FileSignature className="h-3 w-3 ltr:mr-1 rtl:ml-1" />
-                          {t('products.requires_signature', 'Signature Required')}
-                        </Badge>
-                      )}
-                      {product.keap_tag && (
-                        <Badge variant="outline" className="border-purple-400 text-purple-600">
-                          {t('products.keap_tag', 'Keap Tag')}
-                        </Badge>
-                      )}
-                    </div>
-                    {product.description && (
-                      <div
-                        className="text-sm text-muted-foreground prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: product.description }}
-                      />
-                    )}
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      {product.payment_model !== 'free' && (
-                        <>
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="h-3 w-3" />
-                            {product.price} {product.currency}
-                          </span>
-                          <span>•</span>
-                        </>
-                      )}
-                      {product.program && (
-                        <span className="flex items-center gap-1">
-                          <GraduationCap className="h-3 w-3" />
-                          {product.program.name}
-                        </span>
-                      )}
-                      {product.course && (
-                        <span className="flex items-center gap-1">
-                          <BookOpen className="h-3 w-3" />
-                          {product.course.title}
-                        </span>
-                      )}
-                      {product.session_count && (
-                        <span className="flex items-center gap-1">
-                          <Package className="h-3 w-3" />
-                          {product.session_count} {t('products.sessions', 'sessions')}
-                        </span>
-                      )}
-                      {product.contains_courses && product.contains_courses.length > 0 && (
-                        <span className="flex items-center gap-1">
-                          <Grid3x3 className="h-3 w-3" />
-                          {product.contains_courses.length} {t('products.courses', 'courses')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleCopyLink(product)}
-                      title={t('admin.payments.products.copyLink', 'Copy product link')}
-                    >
-                      <Link2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleEditProduct(product)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleDeleteClick(product)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
-          ))}
-          </div>
-        )}
+        <KpiStrip label={t('admin.list.numbers', 'Numbers')}>
+          <KpiItem
+            icon={<Package />}
+            label={t('admin.products.list.kpiAll', 'All products')}
+            value={loaded ? num(counts.all) : '—'}
+            onClick={() => {
+              setStatus('all');
+              setModelFilter('all');
+            }}
+          />
+          <KpiItem
+            icon={<CheckCircle2 />}
+            tone="green"
+            label={t('admin.payments.products.active', 'Active')}
+            value={loaded ? num(counts.active) : '—'}
+            onClick={() => toggleStatus('active')}
+            active={status === 'active'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<PauseCircle />}
+            tone="grey"
+            label={t('admin.payments.products.inactive', 'Inactive')}
+            value={loaded ? num(counts.inactive) : '—'}
+            onClick={() => toggleStatus('inactive')}
+            active={status === 'inactive'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<Gift />}
+            tone="blue"
+            label={t('products.payment_model.free', 'Free')}
+            value={loaded ? num(counts.free) : '—'}
+            onClick={() => setModelFilter((cur) => (cur === 'free' ? 'all' : 'free'))}
+            active={modelFilter === 'free'}
+            activeNote={filteredNow}
+          />
+        </KpiStrip>
 
-        {/* Create/Edit Dialog */}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          {/* Sticky-header/body/footer layout. DialogContent's base styles
-              already provide `flex flex-col max-h-[90vh] overflow-hidden`;
-              we add `p-0 gap-0` here so the header and footer can own
-              their own padding + borders. ProductForm renders DialogBody
-              + DialogFooter inside its <form> so the footer's Cancel +
-              Save stay pinned while the tab content scrolls. */}
-          <DialogContent
-            className="max-w-4xl p-0 gap-0"
-            dir={direction}
-          >
-            <DialogHeader className="px-6 pt-6 pb-4 border-b bg-background">
-              <DialogTitle suppressHydrationWarning>
-                {editingProduct
-                  ? t('admin.payments.products.form.editTitle', 'Edit Product')
-                  : t('admin.payments.products.form.createTitle', 'Create Product')}
-              </DialogTitle>
-              <DialogDescription suppressHydrationWarning>
-                {editingProduct
-                  ? t('admin.payments.products.form.editDescription', 'Update product details and pricing')
-                  : t('admin.payments.products.form.createDescription', 'Create a new billable product in the system')}
-              </DialogDescription>
-            </DialogHeader>
-            <ProductForm
-              product={editingProduct}
-              onSave={handleSaveProduct}
-              onCancel={() => setIsDialogOpen(false)}
-              t={t}
-            />
-          </DialogContent>
-        </Dialog>
-
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {
-          if (!open && !deleteLoading) {
-            setShowDeleteDialog(false);
-            setSelectedProduct(null);
+        <ListPanel
+          label={t('admin.payments.products.title', 'Products')}
+          toolbar={
+            <>
+              <ListSearch
+                value={search}
+                onChange={setSearch}
+                placeholder={t('admin.payments.products.searchPlaceholder', 'Search products...')}
+                clearLabel={t('admin.users.list.clearSearch', 'Clear search')}
+              />
+              <FilterSelect<'all' | ProductType>
+                label={t('admin.payments.products.productType', 'Product Type')}
+                value={typeFilter}
+                onChange={setTypeFilter}
+                dir={direction}
+                options={[
+                  { value: 'all', label: t('admin.payments.products.allTypes', 'All Types') },
+                  ...TYPES.map((type) => ({ value: type, label: t(`products.type.${type}`, type) })),
+                ]}
+              />
+              <FilterSelect<'all' | PaymentModel>
+                label={t('admin.payments.products.paymentModel', 'Payment Model')}
+                value={modelFilter}
+                onChange={setModelFilter}
+                dir={direction}
+                options={[
+                  { value: 'all', label: t('admin.payments.products.allModels', 'All Models') },
+                  ...MODELS.map((model) => ({ value: model, label: t(`products.payment_model.${model}`, model) })),
+                ]}
+              />
+              <IconButton label={t('common.refresh', 'Refresh')} onClick={() => void load()} disabled={loading}>
+                <RefreshCw className={`h-[18px] w-[18px] ${loading ? 'animate-spin' : ''}`} aria-hidden />
+              </IconButton>
+            </>
           }
-        }}>
-          <AlertDialogContent
-            className="max-w-[90vw] sm:max-w-[500px]"
-            style={{ direction }}
-            dir={direction}>
-            <AlertDialogHeader>
-              <AlertDialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-                <span suppressHydrationWarning>
-                  {language === 'he' ? 'מחיקת מוצר' : 'Delete Product'}
-                </span>
-              </AlertDialogTitle>
-              <AlertDialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-                <span suppressHydrationWarning>
-                  {language === 'he'
-                    ? `האם אתה בטוח שברצונך למחוק את "${selectedProduct?.title}"? פעולה זו אינה ניתנת לביטול.`
-                    : `Are you sure you want to delete "${selectedProduct?.title}"? This action cannot be undone.`
+          pills={
+            <>
+              <QuickPills<StatusFilter>
+                label={t('admin.payments.products.status', 'Status')}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: 'all', label: t('admin.payments.products.all', 'All'), count: counts.all },
+                  {
+                    value: 'active',
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
+                        {t('admin.payments.products.active', 'Active')}
+                      </span>
+                    ),
+                    count: counts.active,
+                  },
+                  {
+                    value: 'inactive',
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden />
+                        {t('admin.payments.products.inactive', 'Inactive')}
+                      </span>
+                    ),
+                    count: counts.inactive,
+                  },
+                ]}
+              />
+              <span className="shrink-0">
+                <ClearFilters show={filtersOn} label={t('admin.users.filters.clear', 'Clear Filters')} onClear={clearFilters} />
+              </span>
+            </>
+          }
+          columns={COLS}
+          head={[
+            t('admin.products.list.product', 'Product'),
+            t('admin.payments.products.productType', 'Product Type'),
+            t('admin.products.list.price', 'Price'),
+            t('admin.payments.products.status', 'Status'),
+          ]}
+          state={state}
+          footer={
+            loaded && shown.length > 0 ? (
+              <ListFooter
+                showingText={t('admin.users.list.showingRange', 'Showing {from}–{to} of {total}')
+                  .replace('{from}', num(paged.start + 1))
+                  .replace('{to}', num(paged.start + paged.pageItems.length))
+                  .replace('{total}', num(shown.length))}
+                pageText={t('admin.users.list.pageOf', 'Page {page} of {pages}')
+                  .replace('{page}', String(paged.page))
+                  .replace('{pages}', String(paged.totalPages))}
+                page={paged.page}
+                totalPages={paged.totalPages}
+                onPage={paged.setPage}
+                prevLabel={t('admin.users.list.prevPage', 'Previous page')}
+                nextLabel={t('admin.users.list.nextPage', 'Next page')}
+                rtl={rtl}
+              />
+            ) : undefined
+          }
+        >
+          {paged.pageItems.map((p) => {
+            const plans = planNames(p);
+            const look = productTypeLook(p.type);
+            const Icon = look.icon;
+            return (
+              <ListRow key={p.id} columns={COLS} onOpen={() => setOpenId(p.id)} label={p.title} selected={openId === p.id} rtl={rtl}>
+                <ListRowMain
+                  lead={
+                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${look.tile}`}>
+                      <Icon className="h-[18px] w-[18px]" aria-hidden />
+                    </span>
                   }
-                </span>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className={`flex gap-3 mt-6 pt-6 border-t ${isRtl ? 'flex-row-reverse' : ''}`}>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowDeleteDialog(false);
-                  setSelectedProduct(null);
-                }}
-                disabled={deleteLoading}
-                className={`flex-1 flex items-center justify-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}
-              >
-                <X className="h-4 w-4" />
-                <span suppressHydrationWarning>
-                  {language === 'he' ? 'ביטול' : 'Cancel'}
-                </span>
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDeleteProduct}
-                disabled={deleteLoading}
-                className={`flex-1 flex items-center justify-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}
-              >
-                {deleteLoading ? (
-                  <>
-                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span suppressHydrationWarning>
-                      {language === 'he' ? 'מוחק...' : 'Deleting...'}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-4 w-4" />
-                    <span suppressHydrationWarning>
-                      {language === 'he' ? 'מחק' : 'Delete'}
-                    </span>
-                  </>
-                )}
-              </Button>
-            </div>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Cannot Delete Dialog */}
-        <AlertDialog open={showCannotDeleteDialog} onOpenChange={(open) => {
-          if (!open) {
-            setShowCannotDeleteDialog(false);
-            setDeleteDependencies({ enrollments: [] });
-            setSelectedProduct(null);
-          }
-        }}>
-          <AlertDialogContent
-            className="max-w-[90vw] sm:max-w-[600px]"
-            style={{ direction }}
-            dir={direction}>
-            <AlertDialogHeader>
-              <AlertDialogTitle className={`${isRtl ? 'text-right' : 'text-left'} text-destructive`}>
-                <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                  <XCircle className="h-5 w-5" />
-                  <span suppressHydrationWarning>
-                    {language === 'he' ? 'לא ניתן למחוק מוצר' : 'Cannot Delete Product'}
+                  title={<bdi className="font-semibold">{p.title}</bdi>}
+                  sub={contentLine(p) || undefined}
+                />
+                <ListCell label={t('admin.payments.products.productType', 'Product Type')}>{t(`products.type.${p.type}`, p.type)}</ListCell>
+                <ListCell label={t('admin.products.list.price', 'Price')}>
+                  <span className="block font-semibold tabular-nums">
+                    {p.payment_model === 'free' ? t('products.payment_model.free', 'Free') : money(Number(p.price || 0), p.currency)}
                   </span>
-                </div>
-              </AlertDialogTitle>
-              <AlertDialogDescription asChild>
-                <div className={`${isRtl ? 'text-right' : 'text-left'} space-y-4`}>
-                  <p suppressHydrationWarning className="font-medium text-foreground">
-                    {language === 'he'
-                      ? `לא ניתן למחוק את "${selectedProduct?.title}" מכיוון שיש לו ${deleteDependencies.enrollments.length} רשומות רישום:`
-                      : `Cannot delete "${selectedProduct?.title}" because it has ${deleteDependencies.enrollments.length} enrollment record(s):`
-                    }
-                  </p>
-
-                  {deleteDependencies.enrollments.length > 0 && (
-                    <div className={`space-y-2 ${isRtl ? 'text-right' : 'text-left'}`}>
-                      <p className="font-semibold" suppressHydrationWarning>
-                        {language === 'he' ? 'רשומות רישום (כולל מבוטלים):' : 'Enrollment Records (including cancelled):'}
-                      </p>
-                      <ul className={`list-disc space-y-1 ${isRtl ? 'pr-6 mr-0' : 'pl-6 ml-0'}`} dir={direction}>
-                        {deleteDependencies.enrollments.map((enrollment: any) => (
-                          <li key={enrollment.id} className="text-sm">
-                            {enrollment.user
-                              ? `${enrollment.user.first_name || ''} ${enrollment.user.last_name || ''} (${enrollment.user.email})`.trim()
-                              : t('common.unknown', 'Unknown User')}
-                            {enrollment.status && (
-                              <Badge
-                                variant={enrollment.status === 'cancelled' || enrollment.status === 'completed' ? 'secondary' : 'default'}
-                                className={`${isRtl ? 'mr-2' : 'ml-2'}`}
-                              >
-                                {enrollment.status}
-                              </Badge>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                  {p.payment_model !== 'free' && (
+                    <span className="block text-[13px] text-muted-foreground">
+                      {plans.length > 0 ? plans.join(' · ') : t(`products.payment_model.${p.payment_model}`, p.payment_model)}
+                    </span>
                   )}
-
-                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                    {language === 'he'
-                      ? 'רשומות אלה (כולל מבוטלות והושלמו) חייבות להימחק לצמיתות מהמערכת לפני מחיקת המוצר. פנה למנהל המערכת או מחק אותן ידנית מטבלת ה-enrollments.'
-                      : 'These records (including cancelled and completed) must be permanently deleted from the system before the product can be deleted. Contact the system administrator or delete them manually from the enrollments table.'
-                    }
-                  </p>
-                </div>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className={`flex gap-3 mt-6 pt-6 border-t ${isRtl ? 'flex-row-reverse' : ''}`}>
-              <Button
-                variant="default"
-                onClick={() => {
-                  setShowCannotDeleteDialog(false);
-                  setDeleteDependencies({ enrollments: [] });
-                  setSelectedProduct(null);
-                }}
-                className={`flex-1 flex items-center justify-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}
-              >
-                <Info className="h-4 w-4" />
-                <span suppressHydrationWarning>
-                  {language === 'he' ? 'הבנתי' : 'OK'}
-                </span>
-              </Button>
-            </div>
-          </AlertDialogContent>
-        </AlertDialog>
+                </ListCell>
+                <ListCell label={t('admin.payments.products.status', 'Status')}>
+                  <StatusDot tone={p.is_active ? 'green' : 'grey'}>
+                    {p.is_active ? t('admin.payments.products.active', 'Active') : t('admin.payments.products.inactive', 'Inactive')}
+                  </StatusDot>
+                </ListCell>
+              </ListRow>
+            );
+          })}
+        </ListPanel>
       </div>
+
+      <ProductDrawer
+        product={openProduct}
+        planNames={openProduct ? planNames(openProduct) : []}
+        onClose={() => setOpenId(null)}
+        onCopyLink={copyLink}
+        onDelete={askDelete}
+      />
+      {dialogs}
     </AdminLayout>
-  );
-}
-
-// Product Form Component
-function ProductForm({ product, onSave, onCancel, t }: {
-  product: Product | null;
-  onSave: (product: ProductFormData) => Promise<void>;
-  onCancel: () => void;
-  t: (key: string, fallback: string) => string;
-}) {
-  const { direction } = useAdminLanguage();
-  const isRtl = direction === 'rtl';
-  const [formData, setFormData] = useState<ProductFormData>({
-    type: 'course',
-    title: '',
-    description: '',
-    payment_model: 'one_time',
-    price: 0,
-    currency: 'USD',
-    payment_plan: {},
-    requires_signature: false,
-    completion_benefit: '',
-    completion_description: '',
-    access_duration: '',
-    access_description: '',
-    is_active: true,
-  });
-
-  // Payment plan selection state
-  const [useTemplates, setUseTemplates] = useState(false);
-
-  // Payment configuration mode: 'custom' or 'template'
-  const [configMode, setConfigMode] = useState<'custom' | 'template'>('custom');
-
-  // Error states for inline display
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  const [formError, setFormError] = useState<string | null>(null);
-
-  // Submitting state
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Enrollment stats for warning
-  const [enrollmentStats, setEnrollmentStats] = useState<{
-    active_enrollments: number;
-    pending_invitations: number;
-    total: number;
-  } | null>(null);
-
-  // Active tab state
-  const [activeTab, setActiveTab] = useState<string>('basic');
-
-  // Use ref to access product without adding it as a dependency
-  const productRef = useRef(product);
-  useEffect(() => {
-    productRef.current = product;
-  }, [product]);
-
-  // Use ref to track formData without causing callback recreation
-  const formDataRef = useRef(formData);
-  useEffect(() => {
-    formDataRef.current = formData;
-  }, [formData]);
-
-  // Handle tab change with validation
-  const handleTabChange = useCallback((newTab: string) => {
-    // Don't validate if user is just clicking on current tab
-    if (newTab === activeTab) return;
-
-    // Get current formData from ref
-    const currentFormData = formDataRef.current;
-
-    // Validate current tab before switching
-    const errors: Record<string, string> = {};
-
-    if (activeTab === 'basic') {
-      // Basic Info validation
-      if (!currentFormData.title.trim()) {
-        errors.title = t('products.validation.title_required', 'Product title is required');
-      }
-    } else if (activeTab === 'content') {
-      // Content validation
-      if (currentFormData.type === 'program' && !currentFormData.program_id) {
-        errors.program_id = t('products.validation.program_required', 'Please select a program');
-      } else if (currentFormData.type === 'bundle' && (!currentFormData.contains_courses || currentFormData.contains_courses.length === 0)) {
-        errors.contains_courses = t('products.validation.courses_required', 'Please select at least one course for the bundle');
-      } else if (currentFormData.type === 'session_pack' && (!currentFormData.session_count || currentFormData.session_count <= 0)) {
-        errors.session_count = t('products.validation.session_count_required', 'Please specify number of sessions');
-      } else if (currentFormData.type === 'course' && !currentFormData.course_id) {
-        errors.course_id = t('products.validation.course_required', 'Please select a course');
-      }
-    } else if (activeTab === 'pricing') {
-      // Pricing validation
-      if (currentFormData.payment_model !== 'free' && (!currentFormData.price || currentFormData.price <= 0)) {
-        errors.price = t('products.validation.price_required', 'Price is required for paid products');
-      }
-
-      // Payment plan validation
-      if (currentFormData.payment_model === 'deposit_then_plan') {
-        if (!currentFormData.payment_plan?.deposit_type) {
-          errors.deposit_type = t('products.validation.deposit_type_required', 'Please select a deposit type');
-        }
-        if (currentFormData.payment_plan?.deposit_type === 'percentage' && (!currentFormData.payment_plan?.deposit_percentage || currentFormData.payment_plan.deposit_percentage <= 0)) {
-          errors.deposit_percentage = t('products.validation.deposit_percentage_required', 'Please specify deposit percentage');
-        }
-        if (currentFormData.payment_plan?.deposit_type === 'fixed' && (!currentFormData.payment_plan?.deposit_amount || currentFormData.payment_plan.deposit_amount <= 0)) {
-          errors.deposit_amount = t('products.validation.deposit_amount_required', 'Please specify deposit amount');
-        }
-        if (!currentFormData.payment_plan?.installments || currentFormData.payment_plan.installments <= 0) {
-          errors.installments = t('products.validation.installments_required', 'Please specify number of installments');
-        }
-        // Note: payment_start_date moved to product level and is optional
-      }
-
-      if (currentFormData.payment_model === 'subscription' && !currentFormData.payment_plan?.subscription_interval) {
-        errors.subscription_interval = t('products.validation.subscription_interval_required', 'Please select billing interval');
-      }
-    } else if (activeTab === 'integrations') {
-      // Integrations validation
-      if (currentFormData.requires_signature && !currentFormData.signature_template_id) {
-        errors.signature_template_id = t('products.validation.template_required', 'DocuSign template is required when signature is required');
-      }
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setValidationErrors(errors);
-      setFormError(t('products.validation.complete_required', 'Please complete all required fields before proceeding'));
-      return; // Prevent tab change
-    }
-
-    // Validation passed - switch tabs and clear errors
-    setActiveTab(newTab);
-    setValidationErrors({});
-    setFormError(null);
-  }, [activeTab, t]);
-
-  useEffect(() => {
-    if (product) {
-      setFormData({
-        type: product.type,
-        title: product.title,
-        description: product.description,
-        program_id: product.program_id,
-        course_id: product.course_id,
-        contains_courses: product.contains_courses,
-        session_count: product.session_count,
-        payment_model: product.payment_model,
-        price: product.price,
-        currency: product.currency || 'USD',
-        payment_plan: product.payment_plan || {},
-        payment_start_date: product.payment_start_date ? product.payment_start_date.split('T')[0] : undefined,
-        default_payment_plan_id: product.default_payment_plan_id,
-        alternative_payment_plan_ids: product.alternative_payment_plan_ids || [],
-        allow_plan_selection: product.allow_plan_selection ?? true,
-        requires_signature: product.requires_signature,
-        signature_template_id: product.signature_template_id,
-        completion_benefit: product.completion_benefit || '',
-        completion_description: product.completion_description || '',
-        access_duration: product.access_duration || '',
-        access_description: product.access_description || '',
-        keap_tag: product.keap_tag || undefined,
-        crm_tag_slugs: product.crm_tag_slugs || [],
-        enrollment_invitation_template_key: product.enrollment_invitation_template_key,
-        enrollment_confirmation_template_key: product.enrollment_confirmation_template_key,
-        enrollment_reminder_template_key: product.enrollment_reminder_template_key,
-        is_active: product.is_active,
-        metadata: product.metadata,
-      });
-
-      // Set useTemplates based on whether product has payment plan references
-      // Check both default_payment_plan_id (legacy) and alternative_payment_plan_ids
-      const hasTemplates: boolean = !!product.default_payment_plan_id || (!!product.alternative_payment_plan_ids && product.alternative_payment_plan_ids.length > 0);
-      setUseTemplates(hasTemplates);
-
-      // Set config mode based on whether product uses templates
-      setConfigMode(hasTemplates ? 'template' : 'custom');
-
-      // Fetch enrollment stats for warning display
-      if (product.id) {
-        fetch(`/api/admin/payments/products/${product.id}/enrollment-stats`)
-          .then(res => res.json())
-          .then(data => setEnrollmentStats(data))
-          .catch(err => {
-            console.error('Failed to fetch enrollment stats:', err);
-            setEnrollmentStats(null);
-          });
-      }
-    } else {
-      // Reset enrollment stats when creating new product
-      setEnrollmentStats(null);
-    }
-  }, [product]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Reset errors
-    setValidationErrors({});
-    setFormError(null);
-
-    const errors: Record<string, string> = {};
-
-    // Validation - Basic Info
-    if (!formData.title.trim()) {
-      errors.title = t('products.validation.title_required', 'Product title is required');
-    }
-
-    // Validation - Content
-    if (formData.type === 'program' && !formData.program_id) {
-      errors.program_id = t('products.validation.program_required', 'Please select a program');
-    }
-
-    if (formData.type === 'bundle' && (!formData.contains_courses || formData.contains_courses.length === 0)) {
-      errors.contains_courses = t('products.validation.courses_required', 'Please select at least one course for the bundle');
-    }
-
-    if (formData.type === 'session_pack' && (!formData.session_count || formData.session_count <= 0)) {
-      errors.session_count = t('products.validation.session_count_required', 'Please specify number of sessions');
-    }
-
-    if (!['program', 'bundle', 'session_pack'].includes(formData.type) && !formData.course_id) {
-      errors.course_id = t('products.validation.course_required', 'Please select a course');
-    }
-
-    // Validation - Pricing
-    if (formData.payment_model !== 'free' && (!formData.price || formData.price <= 0)) {
-      errors.price = t('products.validation.price_required', 'Price is required for paid products');
-    }
-
-    if (formData.payment_model === 'deposit_then_plan') {
-      const plan = formData.payment_plan || {};
-
-      if (!plan.deposit_type || plan.deposit_type === 'none') {
-        errors.deposit_type = t('products.validation.deposit_type_required', 'Please select a deposit type');
-      }
-
-      if (plan.deposit_type === 'percentage' && (!plan.deposit_percentage || plan.deposit_percentage <= 0)) {
-        errors.deposit_percentage = t('products.validation.deposit_percentage_required', 'Please specify deposit percentage');
-      }
-
-      if (plan.deposit_type === 'fixed' && (!plan.deposit_amount || plan.deposit_amount <= 0)) {
-        errors.deposit_amount = t('products.validation.deposit_amount_required', 'Please specify deposit amount');
-      }
-
-      if (!plan.installments || plan.installments <= 0) {
-        errors.installments = t('products.validation.installments_required', 'Please specify number of installments');
-      }
-
-      // Note: payment_start_date moved to product level and is optional
-    }
-
-    if (formData.payment_model === 'subscription' && !formData.payment_plan.subscription_interval) {
-      errors.subscription_interval = t('products.validation.subscription_interval_required', 'Please select billing interval');
-    }
-
-    // Validation - Integrations
-    if (formData.requires_signature && !formData.signature_template_id) {
-      errors.signature_template_id = t('products.validation.template_required', 'DocuSign template is required when signature is required');
-    }
-
-    // If there are validation errors, set them and return
-    if (Object.keys(errors).length > 0) {
-      setValidationErrors(errors);
-      return;
-    }
-
-    // Clean up data based on payment model
-    const cleanedData = { ...formData };
-    if (formData.payment_model === 'free') {
-      cleanedData.price = undefined;
-    }
-
-    // Set submitting state
-    setIsSubmitting(true);
-    try {
-      await onSave(cleanedData);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Memoized callbacks for ContentSelector to prevent infinite loops
-  const handleTypeChange = useCallback((type: ProductType) => {
-    setFormData(prev => ({ ...prev, type }));
-    setValidationErrors(prev => {
-      const newErrors = { ...prev };
-      delete newErrors.program_id;
-      delete newErrors.course_id;
-      delete newErrors.contains_courses;
-      delete newErrors.session_count;
-      return newErrors;
-    });
-  }, []);
-
-  const handleProgramChange = useCallback((id: string | undefined) => {
-    setFormData(prev => ({ ...prev, program_id: id }));
-    setValidationErrors(prev => ({ ...prev, program_id: '' }));
-  }, []);
-
-  const handleCourseChange = useCallback((id: string | undefined) => {
-    setFormData(prev => ({ ...prev, course_id: id }));
-    setValidationErrors(prev => ({ ...prev, course_id: '' }));
-  }, []);
-
-  const handleContainsCoursesChange = useCallback((ids: string[]) => {
-    setFormData(prev => ({ ...prev, contains_courses: ids }));
-    setValidationErrors(prev => ({ ...prev, contains_courses: '' }));
-  }, []);
-
-  const handleSessionCountChange = useCallback((count: number | undefined) => {
-    setFormData(prev => ({ ...prev, session_count: count }));
-    setValidationErrors(prev => ({ ...prev, session_count: '' }));
-  }, []);
-
-  const handleContentNameChange = useCallback((name: string) => {
-    if (!productRef.current) {
-      setFormData(prev => {
-        // Only update if the title actually changed
-        if (prev.title === name) return prev;
-        return { ...prev, title: name };
-      });
-    }
-  }, []);
-
-  return (
-    // `flex flex-col flex-1 min-h-0` so the form fills the remaining
-    // DialogContent height. The body wraps tabs + alerts inside
-    // DialogBody (scrolls), DialogFooter sits below the body (frozen).
-    //
-    // `mx-0` overrides the DialogBody base's `-mx-6` (those negative
-    // margins assume the parent DialogContent has the default `p-6`
-    // gutters to negate; here DialogContent uses `p-0` so the negative
-    // margins would push content outside the dialog box). We supply
-    // our own `px-6` to indent body content from the dialog edges.
-    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0" noValidate>
-      <DialogBody className="space-y-6 mx-0 px-6 py-6">
-      {/* General Error Alert */}
-      {formError && (
-        <Alert variant="destructive" className={isRtl ? 'text-right' : 'text-left'}>
-          <XCircle className="h-4 w-4" />
-          <AlertTitle suppressHydrationWarning>{t('common.error', 'Error')}</AlertTitle>
-          <AlertDescription>{formError}</AlertDescription>
-        </Alert>
-      )}
-
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 h-auto">
-          <TabsTrigger value="basic"><span suppressHydrationWarning>{t('products.tabs.basic', 'Basic Info')}</span></TabsTrigger>
-          <TabsTrigger value="content"><span suppressHydrationWarning>{t('products.tabs.content', 'Content')}</span></TabsTrigger>
-          <TabsTrigger value="pricing"><span suppressHydrationWarning>{t('products.tabs.pricing', 'Pricing')}</span></TabsTrigger>
-          <TabsTrigger value="emails"><span suppressHydrationWarning>{t('products.tabs.emails', 'Email Templates')}</span></TabsTrigger>
-          <TabsTrigger value="integrations"><span suppressHydrationWarning>{t('products.tabs.integrations', 'Integrations')}</span></TabsTrigger>
-        </TabsList>
-
-        {/* Basic Info Tab */}
-        <TabsContent value="basic" className="space-y-4 mt-4">
-          <div>
-            <Label htmlFor="title" suppressHydrationWarning>{t('products.title', 'Product Title')} *</Label>
-            <Input
-              id="title"
-              value={formData.title}
-              onChange={(e) => {
-                setFormData({ ...formData, title: e.target.value });
-                if (validationErrors.title) {
-                  setValidationErrors({ ...validationErrors, title: '' });
-                }
-              }}
-              placeholder={t('products.title_placeholder', 'e.g., Advanced Leadership Program')}
-              className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.title ? 'border-destructive' : ''}`}
-            />
-            {validationErrors.title && (
-              <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                {validationErrors.title}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="description" suppressHydrationWarning>{t('products.description', 'Description')}</Label>
-            <RichTextEditor
-              value={formData.description || ''}
-              onChange={(value) => setFormData({ ...formData, description: value })}
-              placeholder={t('products.description_placeholder', 'Describe what this product includes...')}
-              dir={direction}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="completion_benefit" suppressHydrationWarning>
-                {t('products.completion_benefit', 'Completion Benefit')}
-              </Label>
-              <Input
-                id="completion_benefit"
-                value={formData.completion_benefit || ''}
-                onChange={(e) => setFormData({ ...formData, completion_benefit: e.target.value })}
-                placeholder={t('products.completion_benefit_placeholder', 'e.g., Certificate, Digital Badge')}
-                className={isRtl ? 'text-right' : 'text-left'}
-              />
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('products.completion_benefit_desc', 'What users receive upon completing the product')}
-              </p>
-            </div>
-
-            <div>
-              <Label htmlFor="completion_description" suppressHydrationWarning>
-                {t('products.completion_description', 'Completion Description')}
-              </Label>
-              <Input
-                id="completion_description"
-                value={formData.completion_description || ''}
-                onChange={(e) => setFormData({ ...formData, completion_description: e.target.value })}
-                placeholder={t('products.completion_description_placeholder', 'e.g., Upon completion, After all modules')}
-                className={isRtl ? 'text-right' : 'text-left'}
-              />
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('products.completion_description_desc', 'When/how users receive the benefit')}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="access_duration" suppressHydrationWarning>
-                {t('products.access_duration', 'Access Duration')}
-              </Label>
-              <Input
-                id="access_duration"
-                value={formData.access_duration || ''}
-                onChange={(e) => setFormData({ ...formData, access_duration: e.target.value })}
-                placeholder={t('products.access_duration_placeholder', 'e.g., Lifetime access, 1 year')}
-                className={isRtl ? 'text-right' : 'text-left'}
-              />
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('products.access_duration_desc', 'How long users have access to the content')}
-              </p>
-            </div>
-
-            <div>
-              <Label htmlFor="access_description" suppressHydrationWarning>
-                {t('products.access_description', 'Access Description')}
-              </Label>
-              <Input
-                id="access_description"
-                value={formData.access_description || ''}
-                onChange={(e) => setFormData({ ...formData, access_description: e.target.value })}
-                placeholder={t('products.access_description_placeholder', 'e.g., Learn at your own pace, Full access')}
-                className={isRtl ? 'text-right' : 'text-left'}
-              />
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('products.access_description_desc', 'Description of access terms')}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="is_active" suppressHydrationWarning>{t('products.active', 'Active')}</Label>
-              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
-                {t('products.active_desc', 'Only active products can accept new enrollments')}
-              </p>
-            </div>
-            <Switch
-              id="is_active"
-              checked={formData.is_active}
-              onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-            />
-          </div>
-        </TabsContent>
-
-        {/* Content Tab */}
-        <TabsContent value="content" className="space-y-4 mt-4">
-          <ContentSelector
-            productType={formData.type}
-            onTypeChange={handleTypeChange}
-            programId={formData.program_id}
-            onProgramChange={handleProgramChange}
-            courseId={formData.course_id}
-            onCourseChange={handleCourseChange}
-            containsCourses={formData.contains_courses}
-            onContainsCoursesChange={handleContainsCoursesChange}
-            sessionCount={formData.session_count}
-            onSessionCountChange={handleSessionCountChange}
-            onContentNameChange={handleContentNameChange}
-            validationErrors={validationErrors}
-            t={t}
-          />
-        </TabsContent>
-
-        {/* Pricing Tab */}
-        <TabsContent value="pricing" className="space-y-4 mt-4">
-          {/* Price and Currency - Always at top */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="price" suppressHydrationWarning>{t('products.price', 'Price')} *</Label>
-              <Input
-                id="price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.price || ''}
-                onChange={(e) => {
-                  setFormData({ ...formData, price: parseFloat(e.target.value) || 0 });
-                  if (validationErrors.price) {
-                    setValidationErrors({ ...validationErrors, price: '' });
-                  }
-                }}
-                className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.price ? 'border-destructive' : ''}`}
-              />
-              {validationErrors.price && (
-                <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {validationErrors.price}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="currency" suppressHydrationWarning>{t('products.currency', 'Currency')} *</Label>
-              <Select
-                value={formData.currency}
-                onValueChange={(value) => setFormData({ ...formData, currency: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectItem value="USD"><span suppressHydrationWarning>USD</span></SelectItem>
-                  <SelectItem value="EUR"><span suppressHydrationWarning>EUR</span></SelectItem>
-                  <SelectItem value="GBP"><span suppressHydrationWarning>GBP</span></SelectItem>
-                  <SelectItem value="ILS"><span suppressHydrationWarning>ILS</span></SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Payment Configuration Mode - Radio Buttons */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base" suppressHydrationWarning>
-                {t('products.pricing.configuration_title', 'Payment Configuration')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Custom Plan Option */}
-              <div
-                className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  configMode === 'custom' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                }`}
-                onClick={() => {
-                  setConfigMode('custom');
-                  setUseTemplates(false);
-                  setFormData({
-                    ...formData,
-                    default_payment_plan_id: undefined,
-                    alternative_payment_plan_ids: [],
-                  });
-                }}
-              >
-                <input
-                  type="radio"
-                  name="config_mode"
-                  value="custom"
-                  checked={configMode === 'custom'}
-                  onChange={() => {}}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <Label className="text-base font-medium cursor-pointer" suppressHydrationWarning>
-                    {t('products.pricing.create_custom', 'Create Custom Plan')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('products.pricing.create_custom_desc', 'Define payment terms directly for this product')}
-                  </p>
-                </div>
-              </div>
-
-              {/* Template Plan Option */}
-              <div
-                className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  configMode === 'template' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                }`}
-                onClick={() => {
-                  setConfigMode('template');
-                  setUseTemplates(true);
-                  // Clear custom payment configuration when switching to templates
-                  setFormData({
-                    ...formData,
-                    payment_model: 'one_time', // Set to one_time as default
-                    payment_plan: {}, // Clear custom plan config
-                  });
-                }}
-              >
-                <input
-                  type="radio"
-                  name="config_mode"
-                  value="template"
-                  checked={configMode === 'template'}
-                  onChange={() => {}}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <Label className="text-base font-medium cursor-pointer" suppressHydrationWarning>
-                    {t('products.pricing.use_template', 'Use Existing Payment Plan Template')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('products.pricing.use_template_desc', 'Select from pre-configured payment plans')}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Custom Plan Configuration */}
-          {configMode === 'custom' && (
-            <>
-              {/* Payment Type */}
-              <div>
-                <Label suppressHydrationWarning>{t('products.pricing.payment_type', 'Payment Type')} *</Label>
-                <Select
-                  value={formData.payment_model}
-                  onValueChange={(value: PaymentModel) => setFormData({ ...formData, payment_model: value, payment_plan: {} })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="one_time"><span suppressHydrationWarning>{t('products.pricing.one_time', 'One-time Payment')}</span></SelectItem>
-                    <SelectItem value="deposit_then_plan"><span suppressHydrationWarning>{t('products.pricing.deposit_installments', 'Deposit + Installments')}</span></SelectItem>
-                    <SelectItem value="subscription"><span suppressHydrationWarning>{t('products.pricing.subscription', 'Subscription')}</span></SelectItem>
-                    <SelectItem value="free"><span suppressHydrationWarning>{t('products.payment_model.free', 'Free')}</span></SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Payment Plan Configuration Component */}
-              {formData.payment_model !== 'free' && formData.payment_model !== 'one_time' && (
-                <PaymentPlanConfigComponent
-                  value={formData.payment_plan}
-                  onChange={(config) => setFormData({ ...formData, payment_plan: config })}
-                  paymentModel={formData.payment_model}
-                  productPrice={formData.price || 0}
-                  currency={formData.currency || 'USD'}
-                  t={t}
-                />
-              )}
-
-              {/* Payment Start Date - Only for installments and subscription */}
-              {(formData.payment_model === 'deposit_then_plan' || formData.payment_model === 'subscription') && (
-                <div>
-                  <Label htmlFor="payment_start_date" suppressHydrationWarning>
-                    {t('admin.products.payment_start_date', 'Payment Start Date')}
-                  </Label>
-                  <Input
-                    type="date"
-                    id="payment_start_date"
-                    value={formData.payment_start_date || ''}
-                    onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('admin.products.payment_start_date_help', 'Default date when first payment is due for new enrollments. Works for all payment models.')}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Template Mode - Payment Plan Selector */}
-          {configMode === 'template' && (
-            <>
-              {/* Warning Alert - Only show when editing existing product with enrollments */}
-              {product && enrollmentStats && enrollmentStats.total > 0 && (
-                <Alert variant="default" className="border-amber-500 bg-amber-50 dark:bg-amber-950">
-                  <Info className="h-4 w-4 text-amber-600" />
-                  <AlertTitle className="text-amber-900 dark:text-amber-100" suppressHydrationWarning>
-                    {t('products.payment_plans.change_warning_title', 'Note: Payment Plan Changes')}
-                  </AlertTitle>
-                  <AlertDescription className="text-amber-800 dark:text-amber-200">
-                    <p className="mb-2" suppressHydrationWarning>
-                      {t('products.payment_plans.change_warning_desc',
-                        'Changes to payment plans only affect NEW enrollments. Existing enrollments (including pending invitations) will keep their original payment terms.')}
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-sm">
-                      {enrollmentStats.active_enrollments > 0 && (
-                        <li suppressHydrationWarning>
-                          {t('products.payment_plans.active_enrollments_using_plans',
-                            'Active enrollments using current plans: {count}')
-                            .replace('{count}', enrollmentStats.active_enrollments.toString())}
-                        </li>
-                      )}
-                      {enrollmentStats.pending_invitations > 0 && (
-                        <li suppressHydrationWarning>
-                          {t('products.payment_plans.pending_invitations',
-                            'Pending invitations: {count}')
-                            .replace('{count}', enrollmentStats.pending_invitations.toString())}
-                        </li>
-                      )}
-                    </ul>
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <PaymentPlanSelector
-                useTemplates={true}
-                onUseTemplatesChange={() => {}}
-                defaultPlanId={formData.default_payment_plan_id}
-                onDefaultPlanIdChange={(planId) => setFormData({ ...formData, default_payment_plan_id: planId })}
-                alternativePlanIds={formData.alternative_payment_plan_ids}
-                onAlternativePlanIdsChange={(planIds) => setFormData({ ...formData, alternative_payment_plan_ids: planIds })}
-                allowPlanSelection={true}
-                onAllowPlanSelectionChange={() => {}}
-                t={t}
-              />
-
-              {/* Payment Start Date - For Template Mode */}
-              <div>
-                <Label htmlFor="template_payment_start_date" suppressHydrationWarning>
-                  {t('admin.products.payment_start_date', 'תאריך תחילת תשלום')}
-                </Label>
-                <Input
-                  type="date"
-                  id="template_payment_start_date"
-                  value={formData.payment_start_date || ''}
-                  onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
-                  min={new Date().toISOString().split('T')[0]}
-                  className={isRtl ? 'text-right' : 'text-left'}
-                />
-                <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                  {t('admin.products.payment_start_date_help', 'תאריך ברירת מחדל למועד תשלום ראשון עבור הרשמות חדשות. עובד עבור כל תבניות התשלום.')}
-                </p>
-              </div>
-            </>
-          )}
-        </TabsContent>
-
-        {/* Email Templates Tab */}
-        <TabsContent value="emails" className="space-y-4 mt-4">
-          <EmailTemplateSelector
-            invitationTemplateKey={formData.enrollment_invitation_template_key}
-            confirmationTemplateKey={formData.enrollment_confirmation_template_key}
-            reminderTemplateKey={formData.enrollment_reminder_template_key}
-            onInvitationTemplateChange={(key) => setFormData({ ...formData, enrollment_invitation_template_key: key })}
-            onConfirmationTemplateChange={(key) => setFormData({ ...formData, enrollment_confirmation_template_key: key })}
-            onReminderTemplateChange={(key) => setFormData({ ...formData, enrollment_reminder_template_key: key })}
-            t={t}
-            direction={direction}
-          />
-        </TabsContent>
-
-        {/* Integrations Tab */}
-        <TabsContent value="integrations" className="space-y-4 mt-4">
-          <DocuSignConfig
-            requiresSignature={formData.requires_signature}
-            onRequiresSignatureChange={(required) => setFormData({ ...formData, requires_signature: required })}
-            signatureTemplateId={formData.signature_template_id}
-            onSignatureTemplateIdChange={(id) => setFormData({ ...formData, signature_template_id: id })}
-            keapTag={formData.keap_tag}
-            onKeapTagChange={(tag) => setFormData({ ...formData, keap_tag: tag })}
-            crmTagSlugs={formData.crm_tag_slugs}
-            onCrmTagSlugsChange={(slugs) => setFormData({ ...formData, crm_tag_slugs: slugs })}
-            direction={direction}
-            t={t}
-          />
-        </TabsContent>
-      </Tabs>
-      </DialogBody>
-
-      <DialogFooter className="px-6 py-4 border-t bg-background">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
-          <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          <span suppressHydrationWarning>
-            {isSubmitting
-              ? (product
-                  ? t('common.saving', 'Saving...')
-                  : t('common.creating', 'Creating...'))
-              : (product
-                  ? t('common.save', 'Save Changes')
-                  : t('common.create', 'Create Product'))}
-          </span>
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }

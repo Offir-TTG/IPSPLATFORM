@@ -195,7 +195,7 @@ export default function EmailSchedulesPage() {
 
   return (
     <AdminLayout>
-      <div className="p-4 md:p-6 space-y-6">
+      <div className="max-w-6xl p-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap min-w-0">
             <Link href="/admin/emails">

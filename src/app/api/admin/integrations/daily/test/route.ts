@@ -1,29 +1,24 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyTenantAdmin } from '@/lib/tenant/auth';
+import { loadIntegration } from '@/lib/integrations/store';
 
 /**
  * Test Daily.co integration connection
  * Verifies API key is valid by attempting to fetch account info
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Verify admin authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Admins only (any signed-in user could run it before).
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
-    // Get Daily.co integration
-    const { data: integration, error: integrationError } = await supabase
-      .from('integrations')
-      .select('credentials, is_enabled')
-      .eq('integration_key', 'daily')
-      .single();
+    // This tenant's own Daily.co settings.
+    const { data: integration, error: integrationError } = await loadIntegration(auth.tenant.id, 'daily');
 
     if (integrationError || !integration) {
       return NextResponse.json({

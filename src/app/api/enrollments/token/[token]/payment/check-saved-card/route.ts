@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { loadIntegration } from '@/lib/integrations/store';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.
@@ -68,12 +69,7 @@ export async function GET(
     }
 
     // Get Stripe credentials
-    const { data: integration, error: integrationError } = await supabase
-      .from('integrations')
-      .select('credentials')
-      .eq('tenant_id', enrollment.tenant_id)
-      .eq('integration_key', 'stripe')
-      .single();
+    const { data: integration, error: integrationError } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
     if (integrationError || !integration?.credentials?.secret_key) {
       console.error('Stripe integration not configured for tenant:', enrollment.tenant_id);

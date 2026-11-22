@@ -97,7 +97,7 @@ export default function AutoDetectionRulesPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 p-4 md:p-0">
+      <div className="max-w-6xl p-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">

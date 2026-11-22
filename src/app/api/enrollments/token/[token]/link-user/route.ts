@@ -37,7 +37,7 @@ export async function POST(
     // Get enrollment by token
     const { data: enrollment, error: enrollmentError } = await adminClient
       .from('enrollments')
-      .select('id, user_id, tenant_id, status')
+      .select('id, user_id, tenant_id, status, token_expires_at')
       .eq('enrollment_token', params.token)
       .single();
 
@@ -47,6 +47,15 @@ export async function POST(
         { error: 'Invalid enrollment token' },
         { status: 404 }
       );
+    }
+
+    // Same rules as every other link route: an expired link, or an
+    // enrollment that's finished or cancelled, can't be claimed.
+    if (!enrollment.token_expires_at || new Date(enrollment.token_expires_at) < new Date()) {
+      return NextResponse.json({ error: 'Enrollment token has expired' }, { status: 410 });
+    }
+    if (!['draft', 'pending'].includes(enrollment.status)) {
+      return NextResponse.json({ error: 'This enrollment is no longer open' }, { status: 409 });
     }
 
     // Check if enrollment is already linked to a user

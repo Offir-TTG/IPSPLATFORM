@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireStaff } from '@/lib/auth/requireStaff';
 import { moduleService } from '@/lib/lms/moduleService.server';
 
 // Force dynamic rendering - no caching
@@ -13,6 +14,10 @@ export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
+    // Course content is for staff here; students read it through /api/user/courses, which checks enrollment.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
 
     // Check authentication
@@ -79,6 +84,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Students can't change course content.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
 
     // Check authentication
@@ -157,6 +166,10 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    // Students can't change course content.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
 
     // Check authentication

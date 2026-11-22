@@ -6,8 +6,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { lessonService } from '@/lib/lms/lessonService.server';
 import { ZoomService } from '@/lib/zoom/zoomService';
-import { dailyService } from '@/lib/daily/dailyService';
+import { dailyService, loadDailyIntegrationForCurrentUser } from '@/lib/daily/dailyService';
 import { createAdminClient } from '@/lib/supabase/server';
+import { verifyTenantAdmin } from '@/lib/tenant/auth';
 
 /**
  * Replace all tokens in a pattern with actual values
@@ -102,6 +103,12 @@ function replaceAllTokens(
 
 export async function POST(request: NextRequest) {
   try {
+    // Admins only; this ran for anyone before, with the service key.
+    const auth = await verifyTenantAdmin(request);
+    if (!auth) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       course_id,
@@ -217,6 +224,7 @@ export async function POST(request: NextRequest) {
       .from('courses')
       .select('title, tenant_id')
       .eq('id', course_id)
+      .eq('tenant_id', auth.tenant.id)
       .single();
 
     if (courseError || !course) {
@@ -224,6 +232,16 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Course not found' },
         { status: 404 }
       );
+    }
+
+    const { data: courseModule } = await supabase
+      .from('modules')
+      .select('id')
+      .eq('id', module_id)
+      .eq('course_id', course_id)
+      .maybeSingle();
+    if (!courseModule) {
+      return NextResponse.json({ success: false, error: 'Module not found in this course' }, { status: 404 });
     }
 
     const courseName = course.title || '';
@@ -460,11 +478,7 @@ export async function POST(request: NextRequest) {
       const supabase = createAdminClient();
 
       // Get integration settings for expiry hours
-      const { data: integration } = await supabase
-        .from('integrations')
-        .select('settings')
-        .eq('integration_key', 'daily')
-        .single();
+      const { data: integration } = await loadDailyIntegrationForCurrentUser();
 
       const defaultExpiryHours = integration?.settings?.default_expiry_hours || (24 * 180); // Default: 6 months
 

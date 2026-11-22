@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { getStripeClient } from '@/lib/payments/getStripeClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,22 +26,19 @@ export async function GET() {
       return NextResponse.json({ error: 'User tenant not found' }, { status: 404 });
     }
 
-    // Get Stripe credentials from integrations table (using admin client to bypass RLS)
-    const adminClient = createAdminClient();
-    const { data: integration } = await adminClient
-      .from('integrations')
-      .select('credentials')
-      .eq('tenant_id', userData.tenant_id)
-      .eq('integration_key', 'stripe')
-      .single();
-
-    if (!integration?.credentials?.publishable_key) {
+    // The tenant's Stripe settings, read server-side through the shared helper.
+    let publishableKey = '';
+    try {
+      ({ publishableKey } = await getStripeClient(userData.tenant_id));
+    } catch {
       return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
     }
 
-    return NextResponse.json({
-      publishableKey: integration.credentials.publishable_key,
-    });
+    if (!publishableKey) {
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
+    }
+
+    return NextResponse.json({ publishableKey });
 
   } catch (error: any) {
     console.error('Error fetching Stripe config:', error);

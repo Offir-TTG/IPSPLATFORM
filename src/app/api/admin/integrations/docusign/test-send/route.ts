@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
+import { loadIntegration } from '@/lib/integrations/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,14 +24,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-
-    // Get DocuSign credentials
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('integration_key', 'docusign')
-      .single();
+    // This tenant's own DocuSign settings.
+    const { data: integration } = await loadIntegration(auth.tenant.id, 'docusign');
 
     if (!integration || !integration.is_enabled) {
       return NextResponse.json(

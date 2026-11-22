@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import type {
-  CreateNotificationRequest,
-  GetNotificationsRequest,
-  GetNotificationsResponse,
+import {
+  NOTIFICATION_DISPLAY_STYLES,
+  type CreateNotificationRequest,
+  type GetNotificationsRequest,
+  type GetNotificationsResponse,
 } from '@/types/notifications';
 
 export const dynamic = 'force-dynamic';
@@ -77,8 +78,24 @@ export async function GET(request: NextRequest) {
     // Determine if there are more results
     const has_more = notifications && notifications.length === params.limit;
 
+    // How each one appears in the portal (bar, pop-up…). The database
+    // function doesn't return it, so read it alongside. Older notifications,
+    // or a database without the column yet, show only in the list.
+    const list = (notifications || []) as Array<Record<string, unknown> & { id: string }>;
+    let styleById = new Map<string, string>();
+    if (list.length > 0) {
+      const { data: styles, error: styleError } = await supabase
+        .from('notifications')
+        .select('id, display_style')
+        .in('id', list.map((n) => n.id));
+      if (!styleError) {
+        styleById = new Map((styles || []).map((s: { id: string; display_style: string | null }) => [s.id, s.display_style || 'list']));
+      }
+    }
+    const withStyle = list.map((n) => ({ ...n, display_style: styleById.get(n.id) || 'list' }));
+
     const response: GetNotificationsResponse = {
-      notifications: notifications || [],
+      notifications: withStyle as unknown as GetNotificationsResponse['notifications'],
       total: notifications?.length || 0,
       unread_count: unreadCount || 0,
       has_more: has_more || false,
@@ -126,6 +143,9 @@ export async function POST(request: NextRequest) {
     const body: CreateNotificationRequest = await request.json();
 
     // Validate required fields
+    // A title or message of only spaces counts as empty.
+    if (typeof body.title === 'string') body.title = body.title.trim();
+    if (typeof body.message === 'string') body.message = body.message.trim();
     if (!body.scope || !body.category || !body.priority || !body.title || !body.message) {
       return NextResponse.json(
         { error: 'Missing required fields: scope, category, priority, title, message' },
@@ -252,11 +272,33 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // How it appears in the portal. "list" (only in the list) is how every
+    // notification worked before, so it isn't stored: sending keeps working
+    // on a database that doesn't have the column yet.
+    const displayStyle = body.display_style ?? 'list';
+    if (!NOTIFICATION_DISPLAY_STYLES.includes(displayStyle)) {
+      return NextResponse.json({ error: 'Unknown display_style' }, { status: 400 });
+    }
+    const rows =
+      displayStyle === 'list'
+        ? notificationsToCreate
+        : notificationsToCreate.map((row) => ({ ...row, display_style: displayStyle }));
+
     // Insert all notifications
     const { data: notifications, error: createError } = await supabaseAdmin
       .from('notifications')
-      .insert(notificationsToCreate)
+      .insert(rows)
       .select();
+
+    if (createError && displayStyle !== 'list' && (createError.code === 'PGRST204' || createError.code === '42703')) {
+      return NextResponse.json(
+        {
+          error:
+            'Choosing how a notification appears needs a database update first (20261122_notification_display_style.sql). Choose "Only in the list" to send it now.',
+        },
+        { status: 400 },
+      );
+    }
 
     if (createError) {
       console.error('[Notifications API] Error creating notifications:', JSON.stringify(createError, null, 2));

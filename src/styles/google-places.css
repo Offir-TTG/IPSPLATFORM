@@ -12,6 +12,9 @@
 .pac-container {
   font-family: inherit;
   z-index: 9999;
+  /* An open drawer turns off clicks on everything outside it; the
+     suggestions live outside it, so they must stay clickable. */
+  pointer-events: auto !important;
   direction: ltr !important;
   text-align: left !important;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, CheckCircle2, FileText, User, CreditCard, ArrowRight, ArrowLeft, Lock } from 'lucide-react';
 import { useLanguage } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase/client';
@@ -87,6 +88,24 @@ const loadGoogleMapsScript = (apiKey: string): Promise<void> => {
 
 type WizardStep = 'signature' | 'profile' | 'payment' | 'password' | 'complete';
 
+/** Shown inside a frame (the portal's child page shows the wizard compactly). */
+function isEmbedded(): boolean {
+  if (typeof window === 'undefined') return false;
+  try { return window.self !== window.top; } catch { return true; }
+}
+
+/** The portal child page this framed wizard sits in, to return to after signing. */
+function embeddedReturnTo(): string | null {
+  if (!isEmbedded()) return null;
+  try {
+    const path = window.top ? window.top.location.pathname : new URL(document.referrer).pathname;
+    // ?enroll=continue: the child page reopens the wizard by itself (at payment).
+    return /^\/children\/[0-9a-f-]{36}$/i.test(path) ? `${path}?enroll=continue` : null;
+  } catch {
+    return null;
+  }
+}
+
 interface PaymentPlanTemplate {
   id: string;
   plan_name: string;
@@ -140,6 +159,46 @@ export default function EnrollmentWizardPage() {
   const [loading, setLoading] = useState(true);
   const [enrollment, setEnrollment] = useState<EnrollmentWizardData | null>(null);
   const [currentStep, setCurrentStep] = useState<WizardStep>('signature');
+  // Compact look when framed (the portal frame sets this too; set it here as well).
+  useLayoutEffect(() => {
+    if (isEmbedded()) document.documentElement.classList.add('ips-embedded');
+  }, []);
+
+  // DocuSign signing in a dialog. The result arrives as a message from the
+  // signing-return page; the real status is then checked with DocuSign.
+  const [signingUrl, setSigningUrl] = useState<string | null>(null);
+  const syncSignatureRef = useRef<null | (() => Promise<void>)>(null);
+  useEffect(() => {
+    const onMessage = async (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.data?.source !== 'ips-docusign') return;
+      setSigningUrl(null);
+      if (e.data.event === 'signing_complete' || e.data.event === 'viewing_complete') {
+        await syncSignatureRef.current?.();
+        setProcessing(false);
+        return;
+      }
+      setProcessing(false);
+      if (e.data.event === 'decline') {
+        toast.error(t('enrollment.wizard.signature.declined', 'The agreement was declined. Contact us if this was a mistake.'));
+      } else {
+        toast(t('enrollment.wizard.signature.notSigned', 'The agreement was not signed yet. You can sign it whenever you are ready.'));
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Inside the portal's child page the wizard frame is only as tall as its
+  // content: while the dialog is open, ask the page to spread the frame over
+  // the whole screen so the dialog shows full size.
+  useEffect(() => {
+    if (!isEmbedded()) return;
+    try {
+      window.parent.postMessage({ source: 'ips-wizard', overlay: !!signingUrl }, window.location.origin);
+    } catch {
+      // Not our page around us; nothing to ask.
+    }
+  }, [signingUrl]);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [initialStepDetermined, setInitialStepDetermined] = useState(false);
@@ -282,6 +341,14 @@ export default function EnrollmentWizardPage() {
 
         // Sync signature status from DocuSign immediately (don't wait for webhook)
         await syncSignatureStatus();
+
+        // Signed from the portal's child page: return there; the wizard
+        // reopens in it at the next step.
+        const returnTo = urlParams.get('return_to');
+        if (returnTo && /^\/children\/[0-9a-f-]{36}(\?enroll=continue)?$/i.test(returnTo)) {
+          window.location.replace(returnTo);
+          return;
+        }
 
         // NOW set flag after both async operations complete
         setInitialStepDetermined(true);
@@ -958,11 +1025,17 @@ export default function EnrollmentWizardPage() {
     setCurrentStep('complete');
   };
 
-  const handleSignatureStep = async () => {
+  /**
+   * Signing happens in a dialog on this page (DocuSign framed). 'popup' is the
+   * fallback when DocuSign refuses the frame: a new window. Either way the
+   * result comes back as a message (see the signing-return page), and the
+   * wizard then checks the real status with DocuSign and moves on.
+   */
+  const handleSignatureStep = async (mode: 'dialog' | 'popup' = 'dialog') => {
     setProcessing(true);
+    // A window must be opened during the click, or browsers block it.
+    const popup = mode === 'popup' ? window.open('', 'ips-docusign', 'width=960,height=820') : null;
     try {
-      console.log('[Wizard] Sending profile data with signature request:', wizardData.profile);
-
       // Use token-based endpoint to create DocuSign envelope
       // Send profile data in request body (memory-based approach)
       const response = await fetch(`/api/enrollments/token/${enrollmentToken}/send-contract`, {
@@ -971,7 +1044,8 @@ export default function EnrollmentWizardPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          profile: wizardData.profile
+          profile: wizardData.profile,
+          mode,
         })
       });
 
@@ -990,12 +1064,17 @@ export default function EnrollmentWizardPage() {
         }));
       }
 
-      // Redirect to DocuSign signing URL
       if (data.signing_url) {
-        window.location.href = data.signing_url;
+        if (popup) {
+          popup.location.href = data.signing_url;
+          setSigningUrl(null);
+        } else {
+          setSigningUrl(data.signing_url);
+        }
       }
     } catch (err: any) {
       console.error('Signature step error:', err);
+      popup?.close();
       setError(err.message);
       setProcessing(false);
     }
@@ -1083,6 +1162,8 @@ export default function EnrollmentWizardPage() {
     }
   };
 
+  // The dialog's message handler calls the latest version of this.
+  syncSignatureRef.current = () => syncSignatureStatus();
   const syncSignatureStatus = async () => {
     try {
       console.log('[Wizard] Syncing signature status from DocuSign...');
@@ -1273,6 +1354,11 @@ export default function EnrollmentWizardPage() {
 
       // Check if user is currently logged in
       const { data: { user: currentUser } } = await supabase.auth.getUser();
+      // Where to land: the server's choice (e.g. the child's page for child
+      // coaching), otherwise the dashboard.
+      const landing = typeof data.redirect_url === 'string' && data.redirect_url.startsWith('/') && !data.redirect_url.startsWith('//')
+        ? data.redirect_url
+        : '/dashboard?enrollment=complete';
 
       if (!isExistingUser) {
         // NEW USER: Auto-login with the new session
@@ -1280,11 +1366,11 @@ export default function EnrollmentWizardPage() {
           await supabase.auth.setSession(data.session);
         }
         console.log('[Wizard] Redirecting new user to dashboard');
-        router.push('/dashboard?enrollment=complete');
+        router.push(landing);
       } else if (currentUser) {
         // EXISTING USER WHO IS LOGGED IN: Go directly to dashboard
         console.log('[Wizard] Redirecting logged-in existing user to dashboard');
-        router.push('/dashboard?enrollment=complete');
+        router.push(landing);
       } else {
         // EXISTING USER WHO IS NOT LOGGED IN: Redirect to login
         console.log('[Wizard] Redirecting non-logged-in existing user to login');
@@ -1418,7 +1504,7 @@ export default function EnrollmentWizardPage() {
               <Button
                 size="lg"
                 className="flex-1"
-                onClick={handleSignatureStep}
+                onClick={() => handleSignatureStep('dialog')}
                 disabled={processing}
                 suppressHydrationWarning
               >
@@ -2223,13 +2309,29 @@ export default function EnrollmentWizardPage() {
           margin-top: 4px;
           margin-right: 8px;
         }
+        /* Inside the portal's child page (framed): just the step, compact. */
+        /* No page height inside the frame, so it can shrink to its content. */
+        html.ips-embedded, html.ips-embedded body { min-height: 0 !important; height: auto !important; background: transparent; }
+        html.ips-embedded body > div, html.ips-embedded main { min-height: 0 !important; }
+        /* Same inner spacing as the portal's cards. */
+        html.ips-embedded .wizard-root { min-height: 0; background: transparent; padding: 16px 20px 20px; }
+        /* Main action buttons: normal size, at the start, not full-width bars. */
+        html.ips-embedded .wizard-content button.w-full { width: auto; min-width: 200px; padding-inline: 24px; }
+        html.ips-embedded .wizard-content button.flex-1 { flex: 0 0 auto; min-width: 200px; padding-inline: 24px; }
+        html.ips-embedded .wizard-inner { max-width: none; margin: 0; }
+        html.ips-embedded .wizard-card { box-shadow: none; background: transparent; backdrop-filter: none; border-radius: 0; border: 0; }
+        /* The card around the frame already says what this is: no second title, divider or help line. */
+        html.ips-embedded .wizard-hero, html.ips-embedded .wizard-help,
+        html.ips-embedded .wizard-step-header, html.ips-embedded .wizard-step-header-mobile { display: none !important; }
+        html.ips-embedded .wizard-content { padding: 0; }
+        html.ips-embedded .wizard-content > .space-y-6 > * + * { margin-top: 12px; }
       `}</style>
-      <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background py-4 sm:py-8 px-4" dir={direction}>
-        <div className="max-w-3xl mx-auto">
+      <div className="wizard-root min-h-screen bg-gradient-to-br from-background via-muted/30 to-background py-4 sm:py-8 px-4" dir={direction}>
+        <div className="wizard-inner max-w-3xl mx-auto">
         {/* Modern Card with Gradient Header */}
-        <Card className="shadow-2xl border-0 overflow-hidden backdrop-blur-sm bg-card/95">
+        <Card className="wizard-card shadow-2xl border-0 overflow-hidden backdrop-blur-sm bg-card/95">
           {/* Gradient Header */}
-          <div className="relative bg-gradient-to-r from-primary via-primary/90 to-primary/80 text-primary-foreground px-4 sm:px-8 py-6 sm:py-8">
+          <div className="wizard-hero relative bg-gradient-to-r from-primary via-primary/90 to-primary/80 text-primary-foreground px-4 sm:px-8 py-6 sm:py-8">
             <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,transparent,black)]"></div>
             <div className="relative">
               <h1 className="text-2xl sm:text-3xl font-bold mb-2 text-white" suppressHydrationWarning>
@@ -2241,7 +2343,7 @@ export default function EnrollmentWizardPage() {
             </div>
           </div>
 
-          <CardContent className="p-4 sm:p-8">
+          <CardContent className="wizard-content p-4 sm:p-8">
             {/* Wizard Step Indicator */}
             <WizardStepIndicator
               currentStep={currentStep}
@@ -2255,8 +2357,8 @@ export default function EnrollmentWizardPage() {
             {/* Current Step Content */}
             <div className="space-y-6">
               {/* Step Header - Hidden on mobile, shown on desktop */}
-              <div className="hidden sm:flex items-center gap-4 pb-4 border-b">
-                <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-sm">
+              <div className="wizard-step-header hidden sm:flex items-center gap-4 pb-4 border-b">
+                <div className="wizard-step-icon w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-sm">
                   {getStepIcon(currentStep)}
                 </div>
                 <div className="flex-1">
@@ -2270,7 +2372,7 @@ export default function EnrollmentWizardPage() {
               </div>
 
               {/* Mobile Step Header */}
-              <div className="sm:hidden pb-4 border-b">
+              <div className="wizard-step-header-mobile sm:hidden pb-4 border-b">
                 <h3 className="font-bold text-lg text-foreground mb-1" suppressHydrationWarning>
                   {getStepTitle(currentStep)}
                 </h3>
@@ -2288,11 +2390,52 @@ export default function EnrollmentWizardPage() {
         </Card>
 
         {/* Footer Help Text */}
-        <p className="text-center text-xs sm:text-sm text-muted-foreground mt-6 px-4" suppressHydrationWarning>
+        <p className="wizard-help text-center text-xs sm:text-sm text-muted-foreground mt-6 px-4" suppressHydrationWarning>
           {t('enrollment.wizard.help.text', 'Need help? Contact support for assistance with your enrollment.')}
         </p>
       </div>
     </div>
+
+      {/* DocuSign signing, in a dialog on this page */}
+      <Dialog
+        open={!!signingUrl}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSigningUrl(null);
+            setProcessing(false);
+          }
+        }}
+      >
+        <DialogContent dir={direction} className="max-w-5xl h-[90dvh] p-0 gap-0 overflow-hidden">
+          <div className="px-5 py-3 border-b pe-12">
+            <DialogTitle suppressHydrationWarning>{t('enrollment.wizard.signature.dialogTitle', 'Sign the agreement')}</DialogTitle>
+            <DialogDescription className="text-xs" suppressHydrationWarning>
+              {t('enrollment.wizard.signature.dialogHint', 'When you finish signing, this window closes and the enrollment continues.')}
+            </DialogDescription>
+          </div>
+          {signingUrl && (
+            <iframe
+              src={signingUrl}
+              title={t('enrollment.wizard.signature.dialogTitle', 'Sign the agreement')}
+              className="flex-1 w-full border-0"
+              allow="clipboard-write"
+            />
+          )}
+          <div className="px-5 py-2 border-t text-xs text-muted-foreground">
+            <button
+              type="button"
+              className="underline hover:text-foreground"
+              onClick={() => {
+                setSigningUrl(null);
+                handleSignatureStep('popup');
+              }}
+              suppressHydrationWarning
+            >
+              {t('enrollment.wizard.signature.openWindow', 'Not loading? Open the signing in a new window')}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

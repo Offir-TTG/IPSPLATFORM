@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { requireStaff } from '@/lib/auth/requireStaff';
 import { NextRequest, NextResponse } from 'next/server';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
@@ -11,6 +12,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Course content is for staff here; students read it through /api/user/courses, which checks enrollment.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const { id } = await params;
     const supabase = await createClient();
 

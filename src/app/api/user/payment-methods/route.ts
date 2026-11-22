@@ -1,31 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { getStripeClient } from '@/lib/payments/getStripeClient';
 
 export const dynamic = 'force-dynamic';
 
-// Helper to get Stripe instance with credentials from database
+// The tenant's Stripe client, from the shared helper (keys are decrypted there).
 async function getStripeInstance(tenantId: string): Promise<Stripe> {
-  const supabase = createAdminClient();
-
-  console.log('[PaymentMethods API] Fetching Stripe credentials for tenant:', tenantId);
-
-  const { data: integration } = await supabase
-    .from('integrations')
-    .select('credentials')
-    .eq('tenant_id', tenantId)
-    .eq('integration_key', 'stripe')
-    .single();
-
-  if (!integration?.credentials?.secret_key) {
-    console.error('[PaymentMethods API] Stripe not configured for tenant:', tenantId);
-    throw new Error('Stripe not configured');
-  }
-
-  console.log('[PaymentMethods API] Successfully loaded Stripe credentials');
-  return new Stripe(integration.credentials.secret_key, {
-    apiVersion: '2023-10-16',
-  });
+  const { stripe } = await getStripeClient(tenantId);
+  return stripe;
 }
 
 // GET - List user's payment methods
@@ -219,10 +202,10 @@ export async function DELETE(request: NextRequest) {
 
     console.log('[PaymentMethods API] User authenticated:', user.id);
 
-    // Get user's tenant_id
+    // Get user's tenant_id and their Stripe customer
     const { data: userData } = await supabase
       .from('users')
-      .select('tenant_id')
+      .select('tenant_id, stripe_customer_id')
       .eq('id', user.id)
       .single();
 
@@ -239,6 +222,14 @@ export async function DELETE(request: NextRequest) {
 
     if (!paymentMethodId) {
       return NextResponse.json({ error: 'payment_method_id is required' }, { status: 400 });
+    }
+
+    // Only the client's own cards can be removed. Without this, anyone signed
+    // in could remove another client's card by its id.
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId).catch(() => null);
+    const owner = typeof paymentMethod?.customer === 'string' ? paymentMethod.customer : paymentMethod?.customer?.id;
+    if (!paymentMethod || !userData.stripe_customer_id || owner !== userData.stripe_customer_id) {
+      return NextResponse.json({ error: 'Payment method not found' }, { status: 404 });
     }
 
     // Detach payment method from customer

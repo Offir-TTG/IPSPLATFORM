@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { nextChargeable, recordSchedulePaid, refreshEnrollmentTotals, type ScheduleRow } from '@/lib/payments/dueSchedules';
+import { loadIntegration } from '@/lib/integrations/store';
 
 /**
  * POST /api/enrollments/token/:token/payment/create-intent
@@ -56,12 +58,7 @@ export async function POST(
     }
 
     // Get Stripe credentials from integrations table
-    const { data: integration, error: integrationError } = await supabase
-      .from('integrations')
-      .select('credentials')
-      .eq('tenant_id', enrollment.tenant_id)
-      .eq('integration_key', 'stripe')
-      .single();
+    const { data: integration, error: integrationError } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
     if (integrationError || !integration?.credentials?.secret_key || !integration?.credentials?.publishable_key) {
       console.error('Stripe integration not configured for tenant:', enrollment.tenant_id);
@@ -102,6 +99,18 @@ export async function POST(
       );
     }
 
+    // Only the earliest payment that's due may be paid now.
+    const { data: dueCheck, error: dueCheckError } = await supabase
+      .from('payment_schedules')
+      .select('*')
+      .eq('enrollment_id', enrollment.id);
+    if (dueCheckError) {
+      return NextResponse.json({ error: 'Could not check payments' }, { status: 500 });
+    }
+    if (nextChargeable((dueCheck ?? []) as ScheduleRow[])?.id !== schedule.id) {
+      return NextResponse.json({ error: "This payment isn't due yet." }, { status: 400 });
+    }
+
     // Check if there's an existing incomplete payment intent for this schedule
     const existingIntentId = schedule.stripe_payment_intent_id;
     console.log('[Stripe] Checking for existing intent. Schedule ID:', schedule_id, 'Intent ID:', existingIntentId);
@@ -122,6 +131,22 @@ export async function POST(
             payment_intent_id: existingIntent.id,
             publishableKey: integration.credentials.publishable_key,
           });
+        } else if (existingIntent.status === 'succeeded') {
+          // Paid, but the webhook hasn't marked it yet. Record it, don't charge again.
+          const recorded = await recordSchedulePaid(supabase, schedule, existingIntent, {
+            productId: enrollment.product_id,
+            source: 'create-intent',
+          });
+          if (recorded.ok) await refreshEnrollmentTotals(supabase, enrollment.id);
+          return NextResponse.json(
+            { error: 'This payment has already been completed', already_paid: true },
+            { status: 409 }
+          );
+        } else if (existingIntent.status === 'processing') {
+          return NextResponse.json(
+            { error: 'Your payment is still being processed. Please wait a few minutes.' },
+            { status: 409 }
+          );
         } else {
           console.log('[Stripe] Existing intent status is', existingIntent.status, '- creating new one');
         }
@@ -258,7 +283,6 @@ export async function POST(
           customerName = userData.first_name && userData.last_name
             ? `${userData.first_name} ${userData.last_name}`
             : undefined;
-          console.log('[Stripe] Using user profile for new customer:', customerEmail);
         }
       } else if (profileData?.first_name && profileData?.last_name) {
         customerName = `${profileData.first_name} ${profileData.last_name}`;
@@ -377,7 +401,10 @@ Remaining After: ${schedule.currency} ${formatAmount(totalAmount - paidAmount - 
       setup_future_usage: paymentIntentParams.setup_future_usage,
     });
 
-    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+    // Two tabs or a retried request get the same intent back, not a second one.
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams, {
+      idempotencyKey: `intent:${schedule.id}:${existingIntentId ?? 'first'}:${Math.round(schedule.amount * 100)}`,
+    });
 
     console.log('[Stripe] ✓ Payment intent created:', paymentIntent.id);
     console.log('[Stripe] Customer:', paymentIntent.customer);

@@ -1,18 +1,8 @@
-'use client';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
-import { useParams } from 'next/navigation';
-import { AdminLayout } from '@/components/admin/AdminLayout';
-import { UserAccessManagement } from '@/components/admin/users/UserAccessManagement';
-
-export default function UserAccessManagementPage() {
-  const params = useParams();
-  const userId = params.id as string;
-
-  return (
-    <AdminLayout>
-      <UserAccessManagement userId={userId} />
-    </AdminLayout>
-  );
+/** Access is now a tab in the user drawer on the Users list. */
+export default function UserAccessRedirect({ params }: { params: { id: string } }) {
+  redirect(`/admin/settings/users?user=${encodeURIComponent(params.id)}&tab=access`);
 }

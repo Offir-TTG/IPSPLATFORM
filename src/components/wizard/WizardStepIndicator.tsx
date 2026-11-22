@@ -82,6 +82,45 @@ export default function WizardStepIndicator({
     return t(step.shortLabelKey, fallbacks[step.key]);
   };
 
+  // Inside the portal's child page (framed) the wizard is part of a card, so
+  // a slim row of small steps replaces the big circles.
+  const [embedded, setEmbedded] = React.useState(false);
+  React.useEffect(() => {
+    try { setEmbedded(window.self !== window.top); } catch { setEmbedded(true); }
+  }, []);
+
+  if (embedded) {
+    return (
+      <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-2 pb-3 text-xs" aria-label={t('enrollment.wizard.steps.current', 'Current step')}>
+        {visibleSteps.map((step, index) => {
+          const state = getStepState(step.key);
+          const clickable = isClickable(step.key);
+          return (
+            <li key={step.key} className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => clickable && onStepClick?.(step.key)}
+                disabled={!clickable}
+                aria-current={state === 'current' ? 'step' : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors ${
+                  state === 'current'
+                    ? 'bg-primary text-primary-foreground'
+                    : state === 'completed'
+                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-muted text-muted-foreground'
+                } ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+              >
+                {state === 'completed' ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <span>{index + 1}</span>}
+                <span>{getStepShortLabel(step)}</span>
+              </button>
+              {index < visibleSteps.length - 1 && <span aria-hidden="true" className="h-px w-3 bg-border" />}
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
+
   return (
     <div className="w-full py-6 px-2 sm:px-4">
       {/* Mobile: Vertical Steps */}

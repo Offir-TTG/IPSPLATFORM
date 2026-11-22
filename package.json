@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -62,7 +62,6 @@
     "moment-timezone": "^0.6.0",
     "next": "^14.2.33",
     "next-themes": "^0.4.6",
-    "nodemailer": "^7.0.11",
     "pdf-lib": "^1.17.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -80,13 +79,11 @@
     "tailwindcss-animate": "^1.0.7",
     "tinymce": "^6.8.6",
     "tldraw": "^4.2.0",
-    "twilio": "^5.11.2",
     "zod": "^3.25.76",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
-    "@types/nodemailer": "^7.0.4",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.4.17",

@@ -1,35 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
+import { randomBytes } from 'crypto';
 
-// Generate unique enrollment token
-function generateEnrollmentToken(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let token = '';
-  for (let i = 0; i < 7; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
-}
-
-// Ensure token is unique
-async function ensureUniqueToken(supabase: any, tenantId: string): Promise<string> {
-  let token = generateEnrollmentToken();
-  let exists = true;
-
-  while (exists) {
-    const { data } = await supabase
-      .from('enrollments')
-      .select('id')
-      .eq('enrollment_token', token)
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
-
-    exists = !!data;
-    if (exists) token = generateEnrollmentToken();
-  }
-
-  return token;
+/**
+ * The enrollment link is the only thing protecting the client's details and
+ * payment, so it gets the same strength as admin-sent links: 32 random bytes.
+ * (It was 7 characters from Math.random, unique per tenant only, while the
+ * link routes look it up across all tenants.) No uniqueness check needed.
+ */
+async function ensureUniqueToken(_supabase: unknown, _tenantId: string): Promise<string> {
+  return randomBytes(32).toString('base64url');
 }
 
 export async function POST(request: NextRequest) {
@@ -233,7 +214,8 @@ export async function POST(request: NextRequest) {
             tenant.id,
             paymentPlan,
             totalAmount,
-            new Date() // Start immediately for public enrollments
+            new Date(), // Start immediately for public enrollments
+            product.currency
           );
 
           const { error: schedulesError } = await adminClient

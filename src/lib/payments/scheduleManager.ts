@@ -35,6 +35,10 @@ export async function adjustScheduleDate(
   if (['paid', 'cancelled', 'refunded'].includes(schedule.status)) {
     throw new Error(`Cannot adjust schedule with status: ${schedule.status}`);
   }
+  // A charge is underway; moving the date could lead to charging it again.
+  if (schedule.status === 'processing') {
+    throw new Error('This payment is being charged right now. Wait for the result, then adjust it.');
+  }
 
   // Create adjustment record
   const adjustmentRecord: AdjustmentRecord = {
@@ -52,14 +56,19 @@ export async function adjustScheduleDate(
     .from('payment_schedules')
     .update({
       scheduled_date: newDate.toISOString(),
-      status: 'adjusted',
+      // A paused payment stays paused; moving its date doesn't restart it.
+      status: schedule.status === 'paused' ? 'paused' : 'adjusted',
+      // The automatic retry would otherwise charge before the new date.
+      next_retry_date: null,
       adjusted_by: adminId,
       adjustment_reason: reason,
-      adjustment_history: [...schedule.adjustment_history, adjustmentRecord],
+      adjustment_history: [...(schedule.adjustment_history ?? []), adjustmentRecord],
       updated_at: new Date().toISOString(),
     })
     .eq('id', scheduleId)
     .eq('tenant_id', tenantId)
+    // Only if a charge didn't start since it was read.
+    .eq('status', schedule.status)
     .select()
     .single();
 

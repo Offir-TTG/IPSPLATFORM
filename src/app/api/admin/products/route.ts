@@ -198,7 +198,6 @@ export async function POST(request: NextRequest) {
         completion_description: body.completion_description,
         access_duration: body.access_duration,
         access_description: body.access_description,
-        keap_tag: body.keap_tag,
         crm_tag_slugs: Array.isArray(body.crm_tag_slugs) ? body.crm_tag_slugs : [],
         payment_model: body.payment_model,
         price: body.payment_model === 'free' ? null : body.price,

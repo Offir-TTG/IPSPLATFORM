@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
 import Stripe from 'stripe';
+import { loadIntegration } from '@/lib/integrations/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,12 +66,7 @@ export async function POST(
     } = body;
 
     // Get Stripe credentials from integrations table
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('credentials')
-      .eq('tenant_id', tenant.id)
-      .eq('integration_key', 'stripe')
-      .single();
+    const { data: integration } = await loadIntegration(tenant.id, 'stripe');
 
     if (!integration?.credentials?.secret_key) {
       return NextResponse.json(

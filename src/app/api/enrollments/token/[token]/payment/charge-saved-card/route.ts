@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { nextChargeable, recordSchedulePaid, refreshEnrollmentTotals, type ScheduleRow } from '@/lib/payments/dueSchedules';
+import { loadIntegration } from '@/lib/integrations/store';
 
 /**
  * POST /api/enrollments/token/:token/payment/charge-saved-card
@@ -66,12 +68,7 @@ export async function POST(
     }
 
     // Get Stripe credentials
-    const { data: integration, error: integrationError } = await supabase
-      .from('integrations')
-      .select('credentials')
-      .eq('tenant_id', enrollment.tenant_id)
-      .eq('integration_key', 'stripe')
-      .single();
+    const { data: integration, error: integrationError } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
     if (integrationError || !integration?.credentials?.secret_key) {
       console.error('Stripe integration not configured for tenant:', enrollment.tenant_id);
@@ -108,6 +105,40 @@ export async function POST(
         message: 'Payment already completed',
         already_paid: true,
       });
+    }
+
+    // A charge already started for this payment: never start a second one.
+    if (schedule.stripe_payment_intent_id) {
+      const earlier = await stripe.paymentIntents.retrieve(schedule.stripe_payment_intent_id);
+      if (earlier.status === 'succeeded') {
+        const recorded = await recordSchedulePaid(supabase, schedule, earlier, {
+          productId: enrollment.product_id,
+          source: 'charge-saved-card',
+        });
+        if (!recorded.ok) {
+          return NextResponse.json({ error: 'Payment received but not saved. Please contact us.' }, { status: 500 });
+        }
+        await refreshEnrollmentTotals(supabase, enrollment.id);
+        return NextResponse.json({ success: true, message: 'Payment already completed', already_paid: true });
+      }
+      if (earlier.status === 'processing') {
+        return NextResponse.json(
+          { error: 'Your payment is still being processed. Please wait a few minutes.' },
+          { status: 409 },
+        );
+      }
+    }
+
+    // Only the earliest payment that's due may be charged now.
+    const { data: allSchedules, error: allSchedulesError } = await supabase
+      .from('payment_schedules')
+      .select('*')
+      .eq('enrollment_id', enrollment.id);
+    if (allSchedulesError) {
+      return NextResponse.json({ error: 'Could not check payments' }, { status: 500 });
+    }
+    if (nextChargeable((allSchedules ?? []) as ScheduleRow[])?.id !== schedule.id) {
+      return NextResponse.json({ error: "This payment isn't due yet." }, { status: 400 });
     }
 
     // Get customer's default payment method if not provided
@@ -162,7 +193,8 @@ export async function POST(
       payment_method: paymentMethodId,
     });
 
-    // Create Payment Intent with saved payment method
+    // Create Payment Intent with saved payment method. The key makes a double
+    // click or a retried request return the same charge instead of a new one.
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(schedule.amount * 100), // Convert to cents
       currency: schedule.currency.toLowerCase(),
@@ -180,7 +212,14 @@ export async function POST(
         product_type: product?.type || 'unknown',
       },
       description: `${schedule.payment_type === 'deposit' ? 'Deposit' : `Payment ${schedule.payment_number || 1}`} for ${product?.title || 'Product'}`,
+    }, {
+      idempotencyKey: `charge-saved:${schedule.id}:${paymentMethodId}:${Math.floor(Date.now() / 60000)}`,
     });
+
+    await supabase
+      .from('payment_schedules')
+      .update({ stripe_payment_intent_id: paymentIntent.id })
+      .eq('id', schedule.id);
 
     console.log('[Charge Saved Card] Payment Intent created:', {
       id: paymentIntent.id,
@@ -197,57 +236,16 @@ export async function POST(
       );
     }
 
-    // Update payment schedule
-    await supabase
-      .from('payment_schedules')
-      .update({
-        status: 'paid',
-        paid_date: new Date().toISOString(),
-        stripe_payment_intent_id: paymentIntent.id,
-      })
-      .eq('id', schedule_id);
-
-    // Create payment record
-    const chargeId = (paymentIntent as any).charges?.data?.[0]?.id;
-
-    await supabase
-      .from('payments')
-      .insert({
-        tenant_id: enrollment.tenant_id,
-        enrollment_id: enrollment.id,
-        payment_schedule_id: schedule.id,
-        product_id: enrollment.product_id,
-        stripe_payment_intent_id: paymentIntent.id,
-        stripe_customer_id: enrollment.stripe_customer_id,
-        amount: schedule.amount,
-        currency: schedule.currency,
-        payment_type: schedule.payment_type,
-        status: 'succeeded',
-        installment_number: schedule.payment_number || 1,
-        paid_at: new Date().toISOString(),
-        metadata: {
-          payment_type: schedule.payment_type,
-          schedule_id: schedule.id,
-          stripe_payment_method: paymentMethodId,
-          charge_id: chargeId,
-          used_saved_card: true,
-        },
-      });
-
-    // Update enrollment paid_amount
-    const newPaidAmount = (enrollment.total_amount || 0) >= schedule.amount
-      ? schedule.amount
-      : enrollment.total_amount;
-
-    const paymentStatus = newPaidAmount >= enrollment.total_amount ? 'paid' : 'partial';
-
-    await supabase
-      .from('enrollments')
-      .update({
-        paid_amount: newPaidAmount,
-        payment_status: paymentStatus,
-      })
-      .eq('id', enrollment.id);
+    const recorded = await recordSchedulePaid(supabase, schedule, paymentIntent, {
+      productId: enrollment.product_id,
+      source: 'charge-saved-card',
+    });
+    if (!recorded.ok) {
+      console.error('[Charge Saved Card] Paid in Stripe but not saved:', recorded.error);
+      return NextResponse.json({ error: 'Payment received but not saved. Please contact us.' }, { status: 500 });
+    }
+    const totals = await refreshEnrollmentTotals(supabase, enrollment.id);
+    if (!totals.ok) console.error('[Charge Saved Card] Could not update totals:', totals.error);
 
     console.log('[Charge Saved Card] ✓ Payment successful');
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getDocuSignClient } from '@/lib/docusign/client';
+import { loadIntegration } from '@/lib/integrations/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,13 +90,7 @@ export async function POST(
     }
 
     // Check if DocuSign is configured and enabled
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('tenant_id', userData.tenant_id)
-      .eq('integration_key', 'docusign')
-      .eq('is_enabled', true)
-      .single();
+    const { data: integration } = await loadIntegration(userData.tenant_id, 'docusign', { enabledOnly: true });
 
     if (!integration) {
       return NextResponse.json(

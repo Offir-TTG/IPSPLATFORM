@@ -112,7 +112,7 @@ function AcceptInvitationForm() {
         } else if (role === 'instructor') {
           router.push('/instructor/dashboard');
         } else {
-          router.push('/student/dashboard');
+          router.push('/dashboard');
         }
       } else {
         setError(data.error || 'Failed to accept invitation');

@@ -4,6 +4,20 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { loadIntegration } from '@/lib/integrations/store';
+
+/**
+ * The Daily.co settings of the signed-in user's own tenant. Before, the first
+ * Daily row in the database was used, whichever tenant it belonged to.
+ */
+export async function loadDailyIntegrationForCurrentUser() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { data: null, error: { message: 'Not signed in' } };
+  const { data: profile } = await supabase.from('users').select('tenant_id').eq('id', user.id).maybeSingle();
+  if (!profile?.tenant_id) return { data: null, error: { message: 'No tenant for this user' } };
+  return loadIntegration(profile.tenant_id, 'daily');
+}
 
 export interface DailyRoom {
   id: string;
@@ -43,13 +57,7 @@ class DailyService {
    * Get Daily.co API key from database integrations
    */
   private async getApiKey(): Promise<string> {
-    const supabase = await createClient();
-
-    const { data: integration, error } = await supabase
-      .from('integrations')
-      .select('credentials, is_enabled')
-      .eq('integration_key', 'daily')
-      .single();
+    const { data: integration, error } = await loadDailyIntegrationForCurrentUser();
 
     if (error || !integration) {
       throw new Error('Daily.co integration not configured. Please add it in Admin > Settings > Integrations');

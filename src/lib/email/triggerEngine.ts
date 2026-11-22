@@ -420,7 +420,6 @@ function extractTemplateVariables(
   // We import here to avoid a circular dep in this server file.
   if (eventData.lessonStartTime) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const {
         resolveDisplayTimezone,
         formatInTimezone,

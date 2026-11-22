@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Send email notification to support via SMTP
+    // Send email notification to support via Resend
     const timestamp = new Date().toLocaleString();
 
     const emailHtml = `
@@ -80,7 +80,7 @@ Submitted at: ${timestamp}
       html: emailHtml,
       text: emailText,
       replyTo: email,
-      tenantId: tenant.id, // Use tenant-specific SMTP configuration
+      tenantId: tenant.id, // Use the tenant's Resend settings
     });
 
     console.log(`✅ Contact form notification sent to ${contactEmail} for tenant: ${tenant.name}`);

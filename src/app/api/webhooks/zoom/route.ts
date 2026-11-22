@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { ZoomService } from '@/lib/zoom/zoomService';
+import { listIntegrations } from '@/lib/integrations/store';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -59,12 +60,7 @@ export async function POST(request: NextRequest) {
     // code did `.limit(1)` without an ORDER BY, which picked a random row —
     // often NOT the one that the active admin saved their fresh token into.
     // Fix: load ALL enabled zoom rows and gather every candidate token.
-    const { data: integrations, error: intErr } = await supabase
-      .from('integrations')
-      .select('settings, credentials, tenant_id, updated_at')
-      .eq('integration_key', 'zoom')
-      .eq('is_enabled', true)
-      .order('updated_at', { ascending: false });
+    const { data: integrations, error: intErr } = await listIntegrations('zoom', { enabledOnly: true });
 
     if (intErr) {
       console.error('[Zoom Webhook] integrations query failed:', intErr);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { cancelEnrollment } from '@/lib/payments/enrollmentService';
+import { cancelEnrollment, CancelEnrollmentError } from '@/lib/payments/enrollmentService';
 export const dynamic = 'force-dynamic';
 
 // POST /api/admin/enrollments/:id/cancel - Cancel an enrollment
@@ -37,32 +37,39 @@ export async function POST(
       );
     }
 
-    // Verify enrollment exists
-    const { data: enrollment } = await supabase
-      .from('enrollments')
-      .select('id, user_id, product_id, total_amount, paid_amount')
-      .eq('id', params.id)
-      .eq('tenant_id', userData.tenant_id)
-      .single();
-
-    if (!enrollment) {
-      return NextResponse.json({ error: 'Enrollment not found' }, { status: 404 });
-    }
-
-    // Cancel enrollment
-    await cancelEnrollment(
+    const result = await cancelEnrollment(
       params.id,
       userData.tenant_id,
       reason,
       user.id,
-      refund_amount
-    );return NextResponse.json({
+      refund_amount,
+      user.email,
+    );
+
+    // Cancelled, but the money didn't go back: say so plainly, so the admin
+    // doesn't tell the client a refund is on its way.
+    if (result.refundError) {
+      return NextResponse.json(
+        {
+          error: `The enrollment was cancelled, but the refund failed: ${result.refundError}. Refunded so far: ${result.refunded.toFixed(2)}. Finish the refund from the payments page.`,
+          cancelled: true,
+          ...result,
+        },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
       success: true,
       message: 'Enrollment cancelled successfully',
-      refund_amount: refund_amount || 0,
+      refund_amount: result.refunded,
+      ...result,
     });
 
   } catch (error: any) {
+    if (error instanceof CancelEnrollmentError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error in POST /api/admin/enrollments/:id/cancel:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

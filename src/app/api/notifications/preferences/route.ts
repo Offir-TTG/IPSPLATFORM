@@ -121,9 +121,6 @@ export async function PATCH(request: NextRequest) {
     if (typeof body.email_enabled === 'boolean') {
       updateData.email_enabled = body.email_enabled;
     }
-    if (typeof body.sms_enabled === 'boolean') {
-      updateData.sms_enabled = body.sms_enabled;
-    }
     if (typeof body.push_enabled === 'boolean') {
       updateData.push_enabled = body.push_enabled;
     }

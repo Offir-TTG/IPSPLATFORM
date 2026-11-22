@@ -125,10 +125,6 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Translations API] Fetched ${translations?.length || 0} translations for language=${languageCode}, context=${context}, tenant_id=${tenantId}`);
 
-    // Count Keap translations for debugging
-    const keapCount = translations?.filter(t => t.translation_key.includes('keap')).length || 0;
-    console.log(`[Translations API] Keap translations in result: ${keapCount}`);
-
     // Convert array to object for easier lookup
     const translationsMap: Record<string, string> = {};
     translations?.forEach((t) => {

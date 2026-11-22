@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 //
 // Why this endpoint exists: `queue_triggered_email` stores the raw
 // template body in `email_queue` (placeholders intact) and renders
-// only at SMTP-send time inside `process-email-queue`. The queue
+// only at send time inside `process-email-queue`. The queue
 // preview modal would otherwise show literal `{{notificationTitle}}`
 // text, which is useless for "what will this look like".
 //

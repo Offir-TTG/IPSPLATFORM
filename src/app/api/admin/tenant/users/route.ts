@@ -11,16 +11,16 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
 
-    // Check authentication
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // Who is asking, and which school: both at once (each is a round trip).
+    const [
+      {
+        data: { user },
+      },
+      tenant,
+    ] = await Promise.all([supabase.auth.getUser(), getCurrentTenant(request)]);
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
-
-    // Get current tenant
-    const tenant = await getCurrentTenant(request);
     if (!tenant) {
       return NextResponse.json({ success: false, error: 'Tenant not found' }, { status: 404 });
     }
@@ -54,36 +54,30 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
 
-    // Build query for tenant_users
-    let query = adminClient
-      .from('tenant_users')
-      .select('*', { count: 'exact' })
-      .eq('tenant_id', tenant.id);
+    const statusValue = statusFilter === 'active' || statusFilter === 'inactive' || statusFilter === 'suspended' ? statusFilter : null;
 
-    // Apply role filter
-    if (roleFilter) {
-      query = query.eq('role', roleFilter);
-    }
-
-    // Apply status filter
-    if (statusFilter === 'active') {
-      query = query.eq('status', 'active');
-    } else if (statusFilter === 'inactive') {
-      query = query.eq('status', 'inactive');
-    } else if (statusFilter === 'suspended') {
-      query = query.eq('status', 'suspended');
-    }
-
-    // Apply sorting
-    const ascending = sortOrder === 'asc';
-    if (sortBy === 'role') {
-      query = query.order('role', { ascending });
-    } else {
-      query = query.order('joined_at', { ascending });
-    }
+    // Build query for tenant_users. Normally without the status filter, so
+    // each status can be counted from the same rows (filtered below).
+    const buildQuery = (withStatus: boolean) => {
+      let query = adminClient
+        .from('tenant_users')
+        .select('*', { count: 'exact' })
+        .eq('tenant_id', tenant.id);
+      if (roleFilter) query = query.eq('role', roleFilter);
+      if (withStatus && statusValue) query = query.eq('status', statusValue);
+      const ascending = sortOrder === 'asc';
+      return sortBy === 'role' ? query.order('role', { ascending }) : query.order('joined_at', { ascending });
+    };
 
     // Fetch tenant_users
-    const { data: tenantUsersData, error, count: totalCount } = await query;
+    let { data: tenantUsersData, error, count: totalCount } = await buildQuery(false);
+    // Every row came back (the database returns at most 1,000 per request),
+    // so counts made from these rows are exact.
+    const complete = !error && (totalCount ?? tenantUsersData?.length ?? 0) <= (tenantUsersData?.length ?? 0);
+    // Too many to read at once: filter by status in the database, as before.
+    if (!error && !complete && statusValue) {
+      ({ data: tenantUsersData, error, count: totalCount } = await buildQuery(true));
+    }
 
     if (error) {
       console.error('Error fetching tenant users:', error);
@@ -104,6 +98,7 @@ export async function GET(request: NextRequest) {
             limit,
             totalPages: 0,
           },
+          counts: { all: 0, active: 0, inactive: 0, suspended: 0 },
         },
       });
     }
@@ -165,7 +160,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const count = search ? tenantUsers.length : totalCount || 0;
+    // Status counts for this search and role, then the status filter.
+    const counts = complete
+      ? {
+          all: tenantUsers.length,
+          active: tenantUsers.filter((tu) => tu.status === 'active').length,
+          inactive: tenantUsers.filter((tu) => tu.status === 'inactive').length,
+          suspended: tenantUsers.filter((tu) => tu.status === 'suspended').length,
+        }
+      : undefined;
+    if (statusValue && complete) {
+      tenantUsers = tenantUsers.filter((tu) => tu.status === statusValue);
+    }
+
+    const count = search || (statusValue && complete) ? tenantUsers.length : totalCount || 0;
 
     // Apply pagination
     const from = (page - 1) * limit;
@@ -185,6 +193,8 @@ export async function GET(request: NextRequest) {
           limit,
           totalPages,
         },
+        // Left out when not every row could be read; the page then counts separately.
+        ...(counts ? { counts } : {}),
       },
     });
   } catch (error) {

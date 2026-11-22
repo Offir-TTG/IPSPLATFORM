@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
+import { loadIntegration } from '@/lib/integrations/store';
 // import { DocuSignClient } from '@/lib/docusign/client';
 // import { ZoomClient } from '@/lib/zoom/client';
 import Stripe from 'stripe';
@@ -25,14 +26,8 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const supabase = await createClient();
-
-    // Fetch integration credentials
-    const { data: integration, error: fetchError } = await supabase
-      .from('integrations')
-      .select('*')
-      .eq('integration_key', params.key)
-      .single();
+    // This tenant's own integration, secrets decrypted on the server only.
+    const { data: integration, error: fetchError } = await loadIntegration(auth.tenant.id, params.key);
 
     if (fetchError || !integration) {
       return NextResponse.json(
@@ -61,20 +56,8 @@ export async function POST(
         testResult = await testZoomConnection(credentials);
         break;
 
-      case 'sendgrid':
-        testResult = await testSendGridConnection(credentials);
-        break;
-
-      case 'twilio':
-        testResult = await testTwilioConnection(credentials);
-        break;
-
-      case 'keap':
-        testResult = await testKeapConnection(credentials);
-        break;
-
-      case 'smtp':
-        testResult = await testSMTPConnection(credentials);
+      case 'resend':
+        testResult = await testResendConnection(credentials);
         break;
 
       default:
@@ -415,267 +398,38 @@ async function testZoomConnection(credentials: Record<string, any>) {
   }
 }
 
-// Test SendGrid connection
-async function testSendGridConnection(credentials: Record<string, any>) {
+// Test Resend: the key is valid, and the sender's domain is verified there.
+async function testResendConnection(credentials: Record<string, any>) {
+  if (!credentials.api_key) {
+    return { success: false, message: 'Add the Resend API key, then save.' };
+  }
   try {
-    if (!credentials.api_key) {
-      return {
-        success: false,
-        message: 'SendGrid API key is missing'
-      };
-    }
-
-    // Test SendGrid API connection
-    const response = await fetch('https://api.sendgrid.com/v3/user/profile', {
-      headers: {
-        'Authorization': `Bearer ${credentials.api_key}`,
-        'Content-Type': 'application/json'
-      }
+    const response = await fetch('https://api.resend.com/domains', {
+      headers: { Authorization: `Bearer ${credentials.api_key}` },
     });
-
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        success: true,
-        message: `Connected to SendGrid account: ${data.email || 'Success'}`
-      };
-    } else if (response.status === 401) {
-      return {
-        success: false,
-        message: 'Invalid SendGrid API key'
-      };
-    } else {
-      return {
-        success: false,
-        message: `SendGrid API error: ${response.statusText}`
-      };
+    if (response.status === 401 || response.status === 403) {
+      return { success: false, message: 'Resend refused the API key. Check that it was copied in full.' };
     }
+    if (!response.ok) {
+      return { success: false, message: `Resend answered with an error (${response.status}).` };
+    }
+    const body = (await response.json()) as { data?: Array<{ name: string; status: string }> };
+    const domain = String(credentials.from_email || '').split('@')[1]?.toLowerCase();
+    if (!domain) {
+      return { success: true, message: 'The API key works. Add the sender email so emails can go out.' };
+    }
+    const match = (body.data ?? []).find((d) => d.name.toLowerCase() === domain);
+    if (!match) {
+      return { success: false, message: `The API key works, but ${domain} isn't added in Resend. Add and verify it under Domains in Resend.` };
+    }
+    if (match.status !== 'verified') {
+      return { success: false, message: `The API key works, but ${domain} isn't verified in Resend yet (${match.status}).` };
+    }
+    return { success: true, message: `Connected. Emails will be sent from ${credentials.from_email}.` };
   } catch (error) {
     return {
       success: false,
-      message: error instanceof Error ? error.message : 'SendGrid connection failed'
-    };
-  }
-}
-
-// Test Twilio connection
-async function testTwilioConnection(credentials: Record<string, any>) {
-  try {
-    if (!credentials.account_sid || !credentials.auth_token) {
-      return {
-        success: false,
-        message: 'Twilio account SID or auth token is missing'
-      };
-    }
-
-    // Test Twilio API connection
-    const authString = Buffer.from(
-      `${credentials.account_sid}:${credentials.auth_token}`
-    ).toString('base64');
-
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${credentials.account_sid}.json`,
-      {
-        headers: {
-          'Authorization': `Basic ${authString}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        success: true,
-        message: `Connected to Twilio account: ${data.friendly_name || credentials.account_sid}`
-      };
-    } else if (response.status === 401) {
-      return {
-        success: false,
-        message: 'Invalid Twilio credentials'
-      };
-    } else {
-      return {
-        success: false,
-        message: `Twilio API error: ${response.statusText}`
-      };
-    }
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : 'Twilio connection failed'
-    };
-  }
-}
-
-// Test Keap connection
-async function testKeapConnection(credentials: Record<string, any>) {
-  try {
-    // Validate required fields
-    const requiredFields = ['client_id', 'client_secret'];
-    const missingFields = requiredFields.filter(field => !credentials[field]);
-
-    if (missingFields.length > 0) {
-      return {
-        success: false,
-        message: `Missing required fields: ${missingFields.join(', ')}`
-      };
-    }
-
-    // Check if we have tokens already
-    if (!credentials.access_token || !credentials.refresh_token) {
-      // Generate OAuth authorization URL
-      const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/admin/config/integrations`;
-      const authUrl = `https://signin.infusionsoft.com/app/oauth/authorize?client_id=${credentials.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=full`;
-
-      return {
-        success: false,
-        message: `Keap requires OAuth authorization.
-
-AUTHORIZATION REQUIRED:
-1. Click this link to authorize: ${authUrl}
-2. After authorization, you'll receive an access token and refresh token
-3. The system will automatically save these tokens
-
-Note: This is a one-time setup. After authorization, the tokens will auto-refresh.`
-      };
-    }
-
-    // Test with existing access token or refresh it
-    try {
-      // Try to get account info with current access token
-      const accountResponse = await fetch('https://api.infusionsoft.com/crm/rest/v1/account/profile', {
-        headers: {
-          'Authorization': `Bearer ${credentials.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (accountResponse.ok) {
-        const accountData = await accountResponse.json();
-        return {
-          success: true,
-          message: `Connected to Keap account: ${accountData.company_name || accountData.email || 'Success'}`
-        };
-      }
-
-      // If access token is expired, try to refresh it
-      if (accountResponse.status === 401 && credentials.refresh_token) {
-        const authString = Buffer.from(`${credentials.client_id}:${credentials.client_secret}`).toString('base64');
-
-        const refreshResponse = await fetch('https://api.infusionsoft.com/token', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Basic ${authString}`,
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: new URLSearchParams({
-            grant_type: 'refresh_token',
-            refresh_token: credentials.refresh_token
-          })
-        });
-
-        if (!refreshResponse.ok) {
-          const errorData = await refreshResponse.json();
-          return {
-            success: false,
-            message: `Failed to refresh Keap token: ${errorData.error_description || errorData.error || 'Token refresh failed'}. You may need to re-authorize the application.`
-          };
-        }
-
-        const tokenData = await refreshResponse.json();
-
-        // Update credentials with new tokens
-        const supabase = await createClient();
-        await supabase
-          .from('integrations')
-          .update({
-            credentials: {
-              ...credentials,
-              access_token: tokenData.access_token,
-              refresh_token: tokenData.refresh_token
-            }
-          })
-          .eq('integration_key', 'keap');
-
-        // Test again with new token
-        const retryResponse = await fetch('https://api.infusionsoft.com/crm/rest/v1/account/profile', {
-          headers: {
-            'Authorization': `Bearer ${tokenData.access_token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (retryResponse.ok) {
-          const accountData = await retryResponse.json();
-          return {
-            success: true,
-            message: `Connected to Keap account: ${accountData.company_name || accountData.email || 'Success'} (token refreshed)`
-          };
-        }
-      }
-
-      return {
-        success: false,
-        message: `Keap API error: ${accountResponse.statusText}. Status: ${accountResponse.status}`
-      };
-
-    } catch (apiError: any) {
-      return {
-        success: false,
-        message: `Keap API test failed: ${apiError.message || 'Unknown error'}`
-      };
-    }
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : 'Keap connection failed'
-    };
-  }
-}
-
-// Test SMTP connection
-async function testSMTPConnection(credentials: Record<string, any>) {
-  try {
-    // Validate required fields
-    const requiredFields = ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_secure'];
-    const missingFields = requiredFields.filter(field => !credentials[field]);
-
-    if (missingFields.length > 0) {
-      return {
-        success: false,
-        message: `Missing required fields: ${missingFields.join(', ')}`
-      };
-    }
-
-    // Import nodemailer dynamically
-    const nodemailer = require('nodemailer');
-
-    // Create nodemailer transporter
-    const transporter = nodemailer.createTransport({
-      host: credentials.smtp_host,
-      port: parseInt(credentials.smtp_port, 10),
-      secure: credentials.smtp_secure === 'ssl',
-      auth: {
-        user: credentials.smtp_username,
-        pass: credentials.smtp_password,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 5000,
-      socketTimeout: 20000,
-    });
-
-    // Verify SMTP connection
-    await transporter.verify();
-
-    return {
-      success: true,
-      message: `SMTP connection successful! Connected to ${credentials.smtp_host}:${credentials.smtp_port}`
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      message: `SMTP connection failed: ${error.message || 'Unknown error'}. Please check your SMTP credentials and ensure your server can connect to the SMTP host.`
+      message: error instanceof Error ? error.message : 'Could not reach Resend',
     };
   }
 }

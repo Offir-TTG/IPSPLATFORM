@@ -292,7 +292,7 @@ export default function EmailSettingsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-4xl p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header — back link inline with title block */}
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           <Link href="/admin/emails">

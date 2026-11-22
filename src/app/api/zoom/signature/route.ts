@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
+import { loadIntegration } from '@/lib/integrations/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,11 +81,15 @@ export async function POST(request: NextRequest) {
     // Get user's tenant_id
     const { data: userData } = await supabase
       .from('users')
-      .select('tenant_id')
+      .select('tenant_id, role')
       .eq('id', user.id)
       .single();
 
     const tenantId = userData?.tenant_id;
+    // Only staff may join as host; students always join as participants,
+    // whatever the browser asks for.
+    const mayHost = ['admin', 'super_admin', 'instructor', 'teacher'].includes(userData?.role ?? '');
+    const meetingRole = mayHost && Number(role) === 1 ? 1 : 0;
 
     if (!tenantId) {
       return NextResponse.json(
@@ -94,12 +99,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get Zoom SDK credentials from integrations table for this tenant
-    const { data: zoomIntegration, error: integrationError } = await supabase
-      .from('integrations')
-      .select('credentials, is_enabled')
-      .eq('integration_key', 'zoom')
-      .eq('tenant_id', tenantId)
-      .single();
+    const { data: zoomIntegration, error: integrationError } = await loadIntegration(tenantId, 'zoom');
 
     if (integrationError || !zoomIntegration) {
       console.error('Zoom SDK integration not found:', integrationError);
@@ -129,11 +129,11 @@ export async function POST(request: NextRequest) {
 
     // Generate signature
     // role: 0 = participant, 1 = host
-    const signature = generateSignature(sdkKey, sdkSecret, meetingNumber, role || 0);
+    const signature = generateSignature(sdkKey, sdkSecret, meetingNumber, meetingRole);
 
     console.log('[Zoom Signature] Generated for meeting:', {
       meetingNumber,
-      role: role || 0,
+      role: meetingRole,
       sdkKeyPrefix: sdkKey.substring(0, 10),
       signatureLength: signature.length,
     });

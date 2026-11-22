@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import type Stripe from 'stripe';
 import { getStripeClient } from '@/lib/payments/getStripeClient';
+import { refreshEnrollmentTotals } from '@/lib/payments/dueSchedules';
+import { refundPayment, refundableCents, type RefundablePayment } from '@/lib/payments/refunds';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -218,136 +221,88 @@ export async function POST(
       }
     }
 
-    // Calculate refund amount
-    const refundAmount = is_full_refund ? schedule.amount : amount;
-
-    if (!refundAmount || refundAmount <= 0) {
-      return NextResponse.json(
-        { error: 'Invalid refund amount' },
-        { status: 400 }
-      );
-    }
-
-    if (refundAmount > parseFloat(schedule.amount.toString())) {
-      return NextResponse.json(
-        { error: 'Refund amount cannot exceed payment amount' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`[Refund] Processing refund for schedule ${scheduleId}`);
-    console.log(`[Refund] Amount: ${refundAmount} ${schedule.currency}`);
-    console.log(`[Refund] Payment Intent: ${stripePaymentIntentId}`);
-    console.log(`[Refund] Reason: ${reason}`);
-
-    // Get Stripe client
     const { stripe } = await getStripeClient(userData.tenant_id);
 
-    // Process refund in Stripe
-    const stripeRefund = await stripe.refunds.create({
-      payment_intent: stripePaymentIntentId,
-      amount: Math.round(refundAmount * 100), // Convert to cents
-      reason: reason === 'duplicate' ? 'duplicate' : reason === 'fraudulent' ? 'fraudulent' : 'requested_by_customer',
-      metadata: {
-        tenant_id: userData.tenant_id,
-        schedule_id: scheduleId,
-        enrollment_id: schedule.enrollment_id,
-        refund_reason: reason,
-        refunded_by: user.id,
-        refunded_by_email: userData.email || 'unknown',
-      },
-    });
+    // The payment record carries what was already refunded, so a second
+    // partial refund can't go past what's left.
+    const { data: paymentRow } = await adminClient
+      .from('payments')
+      .select('id, payment_schedule_id, stripe_payment_intent_id, amount, refunded_amount, metadata')
+      .eq('tenant_id', userData.tenant_id)
+      .eq('stripe_payment_intent_id', stripePaymentIntentId)
+      .maybeSingle();
 
-    console.log(`[Refund] ✓ Stripe refund created: ${stripeRefund.id}`);
-    console.log(`[Refund] Stripe refund status: ${stripeRefund.status}`);
+    const payment: RefundablePayment = paymentRow
+      ? { ...(paymentRow as RefundablePayment), payment_schedule_id: paymentRow.payment_schedule_id ?? scheduleId }
+      : {
+          // Older payments recorded only on the schedule.
+          id: `schedule-${scheduleId}`,
+          payment_schedule_id: scheduleId,
+          stripe_payment_intent_id: stripePaymentIntentId,
+          amount: schedule.amount,
+          refunded_amount: 0,
+          metadata: null,
+        };
 
-    // Update payment schedule status
-    const isPartialRefund = refundAmount < parseFloat(schedule.amount.toString());
-    const newScheduleStatus = isPartialRefund ? 'paid' : 'refunded';
+    const leftCents = refundableCents(payment);
+    const refundCents = is_full_refund ? leftCents : Math.round(Number(amount) * 100);
 
-    const { error: updateScheduleError } = await adminClient
-      .from('payment_schedules')
-      .update({
-        status: newScheduleStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', scheduleId);
-
-    if (updateScheduleError) {
-      console.error('[Refund] Error updating payment schedule:', updateScheduleError);
-      // Don't fail silently - this is critical
+    if (!Number.isFinite(refundCents) || refundCents <= 0) {
+      return NextResponse.json({ error: 'Invalid refund amount' }, { status: 400 });
+    }
+    if (refundCents > leftCents) {
       return NextResponse.json(
-        { error: `Failed to update payment schedule: ${updateScheduleError.message}` },
-        { status: 500 }
+        { error: `Only ${(leftCents / 100).toFixed(2)} ${schedule.currency} is left to refund on this payment` },
+        { status: 400 }
       );
-    } else {
-      console.log(`[Refund] ✓ Payment schedule updated to status: ${newScheduleStatus}`);
     }
 
-    // Update or create payment record
-    const { data: existingPayment } = await supabase
-      .from('payments')
-      .select('id, amount, status, refunded_amount, metadata')
-      .eq('payment_schedule_id', scheduleId)
-      .eq('enrollment_id', schedule.enrollment_id)
-      .single();
-
-    if (existingPayment) {
-      // Update existing payment record
-      const totalRefunded = (existingPayment.refunded_amount || 0) + refundAmount;
-      const paymentStatus = totalRefunded >= existingPayment.amount ? 'refunded' : 'partially_refunded';
-
-      const { error: updatePaymentError } = await adminClient
-        .from('payments')
-        .update({
-          status: paymentStatus,
-          refunded_amount: totalRefunded,
-          refunded_at: new Date().toISOString(),
-          refund_reason: reason,
+    let stripeRefund: Stripe.Refund;
+    if (paymentRow) {
+      const result = await refundPayment(adminClient, stripe, payment, refundCents, {
+        tenantId: userData.tenant_id,
+        enrollmentId: schedule.enrollment_id,
+        reason,
+        adminId: user.id,
+        adminEmail: userData.email,
+      });
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      stripeRefund = result.refund;
+    } else {
+      stripeRefund = await stripe.refunds.create(
+        {
+          payment_intent: stripePaymentIntentId,
+          amount: refundCents,
+          reason: reason === 'duplicate' ? 'duplicate' : reason === 'fraudulent' ? 'fraudulent' : 'requested_by_customer',
           metadata: {
-            ...(existingPayment.metadata || {}),
-            refund_id: stripeRefund.id,
-            refund_reason: reason,
-            refunded_at: new Date().toISOString(),
+            tenant_id: userData.tenant_id,
+            schedule_id: scheduleId,
+            enrollment_id: schedule.enrollment_id,
             refunded_by: user.id,
           },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingPayment.id);
-
-      if (updatePaymentError) {
-        console.error('[Refund] Error updating payment record:', updatePaymentError);
-        // Log but don't fail - payment record is optional
-      } else {
-        console.log(`[Refund] ✓ Payment record updated to status: ${paymentStatus}`);
+        },
+        { idempotencyKey: `refund:schedule:${scheduleId}:${refundCents}` },
+      );
+      if (refundCents >= leftCents) {
+        const { error: updateScheduleError } = await adminClient
+          .from('payment_schedules')
+          .update({ status: 'refunded', updated_at: new Date().toISOString() })
+          .eq('id', scheduleId);
+        if (updateScheduleError) {
+          return NextResponse.json(
+            { error: `Refunded in Stripe (${stripeRefund.id}) but not saved: ${updateScheduleError.message}` },
+            { status: 500 }
+          );
+        }
       }
     }
 
-    // Update enrollment paid_amount
-    const { data: paidSchedules } = await adminClient
-      .from('payment_schedules')
-      .select('amount')
-      .eq('enrollment_id', schedule.enrollment_id)
-      .eq('status', 'paid');
+    const refundAmount = refundCents / 100;
 
-    const totalPaid = paidSchedules
-      ? paidSchedules.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0)
-      : 0;
-
-    const { error: enrollmentError } = await adminClient
-      .from('enrollments')
-      .update({
-        paid_amount: totalPaid,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', schedule.enrollment_id);
-
-    if (enrollmentError) {
-      console.error('[Refund] Error updating enrollment:', enrollmentError);
-      // Log but don't fail - enrollment update is not critical for refund
-    } else {
-      console.log(`[Refund] ✓ Enrollment paid_amount updated to: ${totalPaid}`);
-    }
+    // Paid amount and status worked out again, partial refunds included.
+    await refreshEnrollmentTotals(adminClient, schedule.enrollment_id);
 
     return NextResponse.json({
       success: true,

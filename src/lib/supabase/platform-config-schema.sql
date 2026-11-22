@@ -104,7 +104,7 @@ CREATE TABLE public.feature_flags (
 -- Integrations configuration
 CREATE TABLE public.integrations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  integration_key TEXT UNIQUE NOT NULL, -- 'zoom', 'stripe', 'docusign', 'sendgrid', 'twilio'
+  integration_key TEXT UNIQUE NOT NULL, -- 'zoom', 'stripe', 'docusign', 'daily', 'resend'
   integration_name TEXT NOT NULL,
   is_enabled BOOLEAN DEFAULT FALSE,
   credentials JSONB DEFAULT '{}', -- Encrypted credentials

@@ -30,12 +30,9 @@ export async function POST(
       address
     } = body;
 
-    console.log('[Profile Save] Token:', params.token);
-    console.log('[Profile Save] Received data:', { first_name, last_name, email, phone, address });
 
     // Validate required fields
     if (!first_name || !last_name || !email || !phone || !address) {
-      console.error('[Profile Save] Missing required fields:', { first_name, last_name, email, phone, address });
       return NextResponse.json(
         { error: 'First name, last name, email, phone, and address are required' },
         { status: 400 }
@@ -69,7 +66,6 @@ export async function POST(
     };
 
     console.log('[Profile Save] Enrollment ID:', enrollment.id);
-    console.log('[Profile Save] Saving profile data:', profileDataToSave);
 
     const updateTimestamp = new Date().toISOString();
     console.log('[Profile Save] Setting updated_at to:', updateTimestamp);
@@ -92,7 +88,6 @@ export async function POST(
     }
 
     console.log('[Profile Save] Successfully saved profile data');
-    console.log('[Profile Save] Updated enrollment data:', updateData);
     console.log('[Profile Save] Returned updated_at:', updateData?.[0]?.updated_at);
 
     // Verify the data was actually saved
@@ -102,7 +97,6 @@ export async function POST(
       .eq('enrollment_token', params.token)
       .single();
 
-    console.log('[Profile Save] Verification query result:', verifyData);
     if (verifyError) {
       console.error('[Profile Save] Verification error:', verifyError);
     }

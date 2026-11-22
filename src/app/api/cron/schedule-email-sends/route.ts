@@ -9,7 +9,7 @@
  *   2. Insert one `email_queue` row per recipient with
  *      trigger_type='scheduled' and the schedule's template + vars.
  *      The existing `process-email-queue` cron picks those up and
- *      handles the actual SMTP send + rendering.
+ *      handles the actual send (Resend) + rendering.
  *   3. Bump emails_queued on the schedule.
  *   4. Advance the schedule:
  *        - one-off (no recurrence_rule) → status='completed'
@@ -29,11 +29,11 @@ import { renderQueueSubject } from '@/lib/email/renderQueueSubject';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const CRON_SECRET = process.env.CRON_SECRET || 'K8mX2vN9pL5wQ3yT7hJ6fR4aZ1cD0gH3';
+const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
     console.error('[Schedule Email Sends] Unauthorized');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

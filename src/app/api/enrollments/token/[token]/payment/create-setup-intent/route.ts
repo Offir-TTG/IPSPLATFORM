@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { dueUnpaid, type ScheduleRow } from '@/lib/payments/dueSchedules';
 import Stripe from 'stripe';
+import { loadIntegration } from '@/lib/integrations/store';
 
 /**
  * POST /api/enrollments/token/:token/payment/create-setup-intent
@@ -20,7 +22,7 @@ export async function POST(
     // Get enrollment using token
     const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
-      .select('id, tenant_id, token_expires_at, product_id, user_id, wizard_profile_data, stripe_customer_id, stripe_setup_intent_id')
+      .select('id, tenant_id, token_expires_at, product_id, user_id, wizard_profile_data, stripe_customer_id, stripe_setup_intent_id, is_parent')
       .eq('enrollment_token', params.token)
       .single();
 
@@ -39,17 +41,30 @@ export async function POST(
       );
     }
 
+    // When a payment is due now it has to be paid, not just a card saved.
+    // Parent enrollments only ever save a card.
+    if (!enrollment.is_parent) {
+      const { data: schedules, error: schedulesError } = await supabase
+        .from('payment_schedules')
+        .select('*')
+        .eq('enrollment_id', enrollment.id);
+      if (schedulesError) {
+        return NextResponse.json({ error: 'Could not check payments' }, { status: 500 });
+      }
+      if (dueUnpaid((schedules ?? []) as ScheduleRow[]).length > 0) {
+        return NextResponse.json(
+          { error: 'A payment is due now. Please pay it instead of saving a card.' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Check if already has setup intent
     if (enrollment.stripe_setup_intent_id) {
       console.log('[Setup Intent] Existing setup intent found:', enrollment.stripe_setup_intent_id);
       // Try to retrieve it to check status
       try {
-        const { data: integration } = await supabase
-          .from('integrations')
-          .select('credentials')
-          .eq('tenant_id', enrollment.tenant_id)
-          .eq('integration_key', 'stripe')
-          .single();
+        const { data: integration } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
         if (integration?.credentials?.secret_key && integration?.credentials?.publishable_key) {
           const stripe = new Stripe(integration.credentials.secret_key, {
@@ -76,12 +91,7 @@ export async function POST(
     }
 
     // Get Stripe credentials from integrations table
-    const { data: integration, error: integrationError } = await supabase
-      .from('integrations')
-      .select('credentials')
-      .eq('tenant_id', enrollment.tenant_id)
-      .eq('integration_key', 'stripe')
-      .single();
+    const { data: integration, error: integrationError } = await loadIntegration(enrollment.tenant_id, 'stripe');
 
     if (integrationError || !integration?.credentials?.secret_key || !integration?.credentials?.publishable_key) {
       console.error('Stripe integration not configured for tenant:', enrollment.tenant_id);
@@ -166,7 +176,6 @@ export async function POST(
           customerName = userData.first_name && userData.last_name
             ? `${userData.first_name} ${userData.last_name}`
             : undefined;
-          console.log('[Setup Intent] Using user profile for new customer:', customerEmail);
         }
       } else if (profileData?.email) {
         customerEmail = profileData.email;

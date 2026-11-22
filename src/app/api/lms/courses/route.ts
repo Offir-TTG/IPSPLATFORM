@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireStaff } from '@/lib/auth/requireStaff';
 import { courseService } from '@/lib/lms/courseService.server';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
+    // Course content is for staff here; students read it through /api/user/courses, which checks enrollment.
+    const denied = await requireStaff();
+    if (denied) return denied;
+
     const supabase = await createClient();
 
     // Check authentication

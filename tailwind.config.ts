@@ -9,6 +9,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        rubik: ["var(--font-rubik)", "Rubik", "Heebo", "sans-serif"],
+      },
       colors: {
         /* Base */
         border: "hsl(var(--border))",

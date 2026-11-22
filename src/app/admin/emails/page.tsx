@@ -105,7 +105,7 @@ export default function EmailDashboardPage() {
     },
     {
       title: t('emails.settings.title', 'Email Settings'),
-      description: t('emails.settings.smtp', 'Configure SMTP and email settings'),
+      description: t('emails.settings.description', 'Configure email template categories and badge colors'),
       icon: Mail,
       href: '/admin/emails/settings',
       color: 'text-gray-500',

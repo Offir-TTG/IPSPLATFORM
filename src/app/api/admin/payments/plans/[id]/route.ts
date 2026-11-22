@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { parsePlanPrice } from '@/lib/payments/paymentEngine';
 export const dynamic = 'force-dynamic';
 
 // PUT /api/admin/payments/plans/[id] - Update a payment plan
@@ -36,6 +37,7 @@ export async function PUT(
       installment_count,
       installment_frequency,
       subscription_frequency,
+      subscription_amount,
       auto_detect_enabled,
       priority,
       is_active,
@@ -68,6 +70,7 @@ export async function PUT(
       installment_count: null,
       installment_frequency: null,
       subscription_frequency: null,
+      subscription_amount: null,
     };
 
     // Add type-specific fields
@@ -85,6 +88,13 @@ export async function PUT(
 
     if (plan_type === 'subscription') {
       if (subscription_frequency) updateData.subscription_frequency = subscription_frequency;
+      // The plan's own price per period; empty means "use the product price".
+      // Applies from each membership's next charge, never to past payments.
+      const price = parsePlanPrice(subscription_amount);
+      if (price === 'invalid') {
+        return NextResponse.json({ error: 'Price per period must be a positive amount' }, { status: 400 });
+      }
+      updateData.subscription_amount = price;
     }
 
     // Update payment plan

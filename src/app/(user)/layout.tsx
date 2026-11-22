@@ -1,20 +1,12 @@
-import { UserLayout } from '@/components/user/UserLayout';
+import { redirect } from 'next/navigation';
+import { PortalFrame } from '@/components/user/portal/PortalFrame';
 
 /**
- * User Portal Layout
- *
- * NOTE: Authentication is handled client-side via the UserLayout component
- * and protected by middleware. We don't check auth here to avoid cookie
- * sync issues between API routes and server components in Next.js 14.
+ * Client portal layout. Checks the session on the server so pages render
+ * with the user already known, instead of waiting for the browser.
  */
-export default function UserPortalLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <UserLayout>
-      {children}
-    </UserLayout>
-  );
+export default async function UserPortalLayout({ children }: { children: React.ReactNode }) {
+  const framed = await PortalFrame({ children });
+  if (!framed) redirect('/login');
+  return framed;
 }

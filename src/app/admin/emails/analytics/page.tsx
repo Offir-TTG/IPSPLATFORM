@@ -95,7 +95,7 @@ export default function EmailAnalyticsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-7xl p-4 md:p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
         {/* Header — back link sits inline with the title block,
             matching the platform convention (payments/schedules etc.) */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

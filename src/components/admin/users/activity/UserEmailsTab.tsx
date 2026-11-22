@@ -63,7 +63,7 @@ export function UserEmailsTab({ userId }: { userId: string }) {
   // Translate the known-string error_messages WE write to email_queue
   // (cancellation reasons, schedule actions). Same mapping as the
   // global /admin/emails/queue page so RTL admins see Hebrew here too.
-  // External SMTP errors pass through verbatim — we can't predict them.
+  // Resend errors pass through verbatim — we can't predict them.
   const translateErrorMessage = (msg: string | null): string => {
     if (!msg) return '';
     const map: Record<string, string> = {

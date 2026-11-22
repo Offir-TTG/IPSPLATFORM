@@ -270,6 +270,13 @@ export default function EnrollmentsPage() {
 
       if (!response.ok) {
         const error = await response.json();
+        if (error.cancelled) {
+          // Cancelled, but the refund didn't go through: show why and refresh.
+          toast.error(error.error, { duration: 15000 });
+          setCancelDialogOpen(false);
+          fetchEnrollments();
+          return;
+        }
         throw new Error(error.error || 'Failed to cancel enrollment');
       }
 

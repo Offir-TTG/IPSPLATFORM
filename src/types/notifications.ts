@@ -23,7 +23,18 @@ export type NotificationCategory =
 
 export type NotificationPriority = 'low' | 'medium' | 'high' | 'urgent';
 
-export type DeliveryChannel = 'in_app' | 'email' | 'sms' | 'push';
+export type DeliveryChannel = 'in_app' | 'email' | 'push';
+
+/** How a notification appears in the client portal, besides the
+ *  Notifications list and the bell count (where every notification goes):
+ *  list      only there (how every notification worked before)
+ *  toast     a small pop-up in the corner
+ *  top_bar   a bar above the portal header on every page
+ *  home_card a card at the top of the home page
+ *  modal     a window in the middle of the screen
+ *  Closing a bar, card, window or pop-up marks the notification as read. */
+export const NOTIFICATION_DISPLAY_STYLES = ['list', 'toast', 'top_bar', 'home_card', 'modal'] as const;
+export type NotificationDisplayStyle = (typeof NOTIFICATION_DISPLAY_STYLES)[number];
 
 export type DeliveryStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 
@@ -54,6 +65,9 @@ export interface Notification {
   action_url?: string;
   action_label?: string; // e.g., "View Details", "Pay Now"
 
+  /** How it appears in the portal. Missing on older rows: 'list'. */
+  display_style?: NotificationDisplayStyle;
+
   // Lifecycle
   expires_at?: string;
   created_at: string;
@@ -81,7 +95,6 @@ export interface NotificationPreferences {
 
   // Master channel toggles
   email_enabled: boolean;
-  sms_enabled: boolean;
   push_enabled: boolean;
   // in_app is always enabled
 
@@ -119,7 +132,6 @@ export interface CategoryPreferences {
 
 export interface ChannelToggles {
   email: boolean;
-  sms: boolean;
   push: boolean;
   // in_app is always true, not configurable
 }
@@ -141,7 +153,6 @@ export interface NotificationDelivery {
 
   // External service IDs
   email_queue_id?: string;
-  sms_message_id?: string;
   push_message_id?: string;
 
   // Error tracking
@@ -181,6 +192,8 @@ export interface CreateNotificationRequest {
   action_url?: string;
   action_label?: string;
   expires_at?: string;
+  /** How it appears in the portal. Leave out for 'list'. */
+  display_style?: NotificationDisplayStyle;
 }
 
 export interface GetNotificationsRequest {
@@ -200,7 +213,6 @@ export interface GetNotificationsResponse {
 
 export interface UpdatePreferencesRequest {
   email_enabled?: boolean;
-  sms_enabled?: boolean;
   push_enabled?: boolean;
   category_preferences?: Partial<CategoryPreferences>;
   quiet_hours_start?: string;

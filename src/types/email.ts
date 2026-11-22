@@ -117,8 +117,10 @@ export interface EmailQueueItem {
   sent_at?: string;
   failed_at?: string;
   error_message?: string;
+  /** Resend's id for the sent email (the column predates Resend). */
   smtp_message_id?: string;
-  // Set by process-email-queue when SMTP rejects the send. Only
+  // Set when Resend refuses the send, or reports a bounce or complaint
+  // by webhook (/api/webhooks/resend). Only
   // 'hard' is enforced by isEmailDeliverable() — 'soft' and
   // 'complaint' are recorded for visibility but do not block.
   bounce_type?: BounceType;

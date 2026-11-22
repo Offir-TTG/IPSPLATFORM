@@ -2,6 +2,16 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { detectPaymentPlan, generatePaymentSchedules } from './paymentEngine';
 import { getProduct } from './productService';
 import { Product, PaymentPlan, PaymentSchedule } from '@/types/payments';
+import type Stripe from 'stripe';
+import { getStripeClient } from './getStripeClient';
+import { refreshEnrollmentTotals } from './dueSchedules';
+import {
+  closeUnpaidInvoice,
+  loadRefundablePayments,
+  refundPayment,
+  refundableCents,
+  type RefundablePayment,
+} from './refunds';
 
 export interface EnrollmentRequest {
   user_id: string;
@@ -254,7 +264,8 @@ export async function processEnrollment(
     tenant_id,
     paymentPlan,
     totalAmount,
-    paymentStartDate
+    paymentStartDate,
+    product.currency
   );
 
   // 6. Insert payment schedules
@@ -269,40 +280,8 @@ export async function processEnrollment(
     throw new Error(`Failed to create payment schedules: ${schedulesError?.message}`);
   }
 
-  // 7. Create Stripe invoices for future installments (automatic recurring payments)
-  try {
-    const { createScheduledInvoice } = await import('./invoiceService');
-
-    // Get future schedules (not the immediate deposit/first payment)
-    const futureSchedules = insertedSchedules.filter(s => {
-      if (s.status !== 'pending') return false;
-
-      const scheduleDate = new Date(s.scheduled_date);
-      const now = new Date();
-
-      // Only create invoices for future payments, not immediate ones
-      return scheduleDate > now;
-    });
-
-    console.log(`[EnrollmentService] Creating ${futureSchedules.length} invoices for future installments`);
-
-    // Create invoice for each future schedule
-    for (const schedule of futureSchedules) {
-      const result = await createScheduledInvoice(schedule.id, tenant_id);
-
-      if (result.error) {
-        console.error(`[EnrollmentService] Failed to create invoice for schedule ${schedule.id}:`, result.error);
-      } else {
-        console.log(`[EnrollmentService] Created invoice ${result.invoice_id} for schedule ${schedule.id}`);
-      }
-
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  } catch (error) {
-    console.error('[EnrollmentService] Error creating invoices for future schedules:', error);
-    // Don't fail enrollment if invoice creation fails - cron job will create them
-  }
+  // 7. Future installments are charged to the saved card on their due date by
+  //    the daily cron (create-payment-invoices). Nothing is created ahead.
 
   // 8. Update enrollment with next payment date
   const nextSchedule = insertedSchedules.find(s => s.status === 'pending');
@@ -370,15 +349,14 @@ export async function processEnrollment(
       paymentIntentId = result.payment_intent_id;
 
       // Update schedule with Stripe payment intent ID
+      // Link the open payment to its schedule (there is no metadata column
+      // on schedules, so this write used to fail silently). The status stays
+      // as it is: the client hasn't paid yet, and "processing" would stop
+      // them paying.
       if (scheduleId) {
         await supabase
           .from('payment_schedules')
-          .update({
-            status: 'processing',
-            metadata: {
-              stripe_payment_intent_id: paymentIntentId,
-            },
-          })
+          .update({ stripe_payment_intent_id: paymentIntentId })
           .eq('id', scheduleId);
       }
     } catch (error: any) {
@@ -575,7 +553,8 @@ export async function getEnrollmentPaymentDetails(
         tenant_id,
         paymentPlan,
         enrollment.total_amount,
-        startDate
+        startDate,
+        enrollment.currency || product.currency
       );
 
       if (generatedSchedules && generatedSchedules.length > 0) {
@@ -589,7 +568,21 @@ export async function getEnrollmentPaymentDetails(
           schedules = insertedSchedules;
           console.log(`[EnrollmentService] Auto-generated ${schedules.length} payment schedules for enrollment ${enrollment_id} starting ${startDate.toISOString().split('T')[0]}`);
         } else {
+          // Another request created them a moment earlier (unique payment
+          // number per enrollment). Use those, never an empty list, which
+          // would make the pay page think nothing is due.
           console.error('[EnrollmentService] Error creating payment schedules:', scheduleError);
+          const { data: existingSchedules } = await supabase
+            .from('payment_schedules')
+            .select('*')
+            .eq('enrollment_id', enrollment_id)
+            .eq('tenant_id', tenant_id)
+            .order('payment_number', { ascending: true });
+          if (existingSchedules && existingSchedules.length > 0) {
+            schedules = existingSchedules;
+          } else {
+            throw new Error('Could not create the payment schedule');
+          }
         }
       }
     } catch (error) {
@@ -676,76 +669,203 @@ export async function getEnrollmentPaymentDetails(
   };
 }
 
+/** A cancel request the admin needs to fix, with the HTTP status to answer. */
+export class CancelEnrollmentError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
+export type CancelEnrollmentResult = {
+  /** What was actually refunded, in the enrollment's currency. */
+  refunded: number;
+  /** Set when the enrollment was cancelled but the refund didn't (fully) go through. */
+  refundError?: string;
+  /** Unpaid Stripe invoices voided so the client can't pay them any more. */
+  invoicesClosed: number;
+  /** Payments left alone because the client paid or is paying them right now. */
+  leftOpen: number;
+};
+
+/** Every schedule status that still means money could be collected. */
+const OPEN_SCHEDULE_STATUSES = ['pending', 'paused', 'adjusted', 'failed', 'overdue', 'processing'];
+const CANCELABLE_INTENT = new Set(['requires_payment_method', 'requires_confirmation', 'requires_action', 'requires_capture']);
+
 /**
- * Cancel an enrollment and handle payment refunds
+ * Cancels an enrollment: nothing more is collected (unpaid invoices voided,
+ * open charges cancelled, every unpaid payment cancelled) and, if asked, the
+ * refund is made from the tenant's Stripe account across the paid payments,
+ * newest first. A refund that fails is reported back, never hidden.
  */
 export async function cancelEnrollment(
   enrollment_id: string,
   tenant_id: string,
   reason: string,
   admin_id: string,
-  refund_amount?: number
-): Promise<void> {
-  const supabase = await createClient();
+  refund_amount?: number,
+  admin_email?: string | null,
+): Promise<CancelEnrollmentResult> {
+  const supabase = createAdminClient();
 
-  // Update enrollment status
-  const { error: updateError } = await supabase
+  const { data: enrollment, error: findError } = await supabase
     .from('enrollments')
-    .update({
-      payment_status: 'cancelled',
-      status: 'cancelled',
-      payment_metadata: {
-        cancelled_at: new Date().toISOString(),
-        cancelled_by: admin_id,
-        cancellation_reason: reason,
-        refund_amount: refund_amount || 0,
-      },
-    })
+    .select('id, status, payment_metadata')
     .eq('id', enrollment_id)
-    .eq('tenant_id', tenant_id);
-
-  if (updateError) {
-    throw new Error(`Failed to cancel enrollment: ${updateError.message}`);
+    .eq('tenant_id', tenant_id)
+    .maybeSingle();
+  if (findError) throw new CancelEnrollmentError(findError.message, 500);
+  if (!enrollment) throw new CancelEnrollmentError('Enrollment not found', 404);
+  if (enrollment.status === 'cancelled') {
+    throw new CancelEnrollmentError('This enrollment is already cancelled. Refund payments from the payments page.', 409);
   }
 
-  // Cancel all pending payment schedules
-  await supabase
-    .from('payment_schedules')
-    .update({ status: 'cancelled' })
-    .eq('enrollment_id', enrollment_id)
-    .eq('tenant_id', tenant_id)
-    .in('status', ['pending', 'paused', 'adjusted']);
+  const requestedCents = Math.round(Number(refund_amount ?? 0) * 100);
+  if (!Number.isFinite(requestedCents) || requestedCents < 0) {
+    throw new CancelEnrollmentError('Refund amount must be zero or more', 400);
+  }
 
-  // Process refund through Stripe if refund_amount > 0
-  if (refund_amount && refund_amount > 0 && process.env.STRIPE_SECRET_KEY) {
-    try {
-      // Get the most recent paid payment with Stripe payment intent
-      const { data: payment } = await supabase
-        .from('payments')
-        .select('stripe_payment_intent_id')
-        .eq('enrollment_id', enrollment_id)
-        .eq('tenant_id', tenant_id)
-        .eq('status', 'completed')
-        .not('stripe_payment_intent_id', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+  let stripe: Stripe | null = null;
+  try {
+    stripe = (await getStripeClient(tenant_id)).stripe;
+  } catch {
+    stripe = null;
+  }
 
-      if (payment?.stripe_payment_intent_id) {
-        const { processRefund } = await import('./stripeService');
-
-        await processRefund(
-          payment.stripe_payment_intent_id,
-          tenant_id,
-          refund_amount,
-          reason
-        );
-      }
-    } catch (error: any) {
-      console.error('Error processing Stripe refund:', error);
-      // Don't fail cancellation if refund fails - can process manually
+  // Check the refund can be made before changing anything.
+  let refundable: RefundablePayment[] = [];
+  if (requestedCents > 0) {
+    if (!stripe) throw new CancelEnrollmentError('Stripe is not set up, so no refund can be made', 400);
+    const loaded = await loadRefundablePayments(supabase, tenant_id, enrollment_id);
+    if (!loaded.ok) throw new CancelEnrollmentError(loaded.error, 500);
+    refundable = loaded.payments;
+    const available = refundable.reduce((sum, p) => sum + refundableCents(p), 0);
+    if (requestedCents > available) {
+      throw new CancelEnrollmentError(
+        `Only ${(available / 100).toFixed(2)} was paid by card and can be refunded`,
+        400,
+      );
     }
   }
+
+  // Claim the cancellation, so two clicks can't both go on to refund.
+  const now = new Date().toISOString();
+  const { data: claimed, error: claimError } = await supabase
+    .from('enrollments')
+    .update({
+      status: 'cancelled',
+      payment_status: 'cancelled',
+      payment_metadata: {
+        ...((enrollment.payment_metadata as Record<string, unknown> | null) ?? {}),
+        cancelled_at: now,
+        cancelled_by: admin_id,
+        cancellation_reason: reason,
+        refund_requested: requestedCents / 100,
+      },
+      updated_at: now,
+    })
+    .eq('id', enrollment_id)
+    .eq('tenant_id', tenant_id)
+    .neq('status', 'cancelled')
+    .select('id');
+  if (claimError) throw new CancelEnrollmentError(`Failed to cancel enrollment: ${claimError.message}`, 500);
+  if (!claimed || claimed.length === 0) {
+    throw new CancelEnrollmentError('This enrollment is already cancelled', 409);
+  }
+
+  // Stop collecting: close unpaid invoices and open charges, then cancel the
+  // payments. One the client has already paid is left for the webhook to record.
+  const { data: openSchedules, error: schedulesError } = await supabase
+    .from('payment_schedules')
+    .select('id, status, stripe_invoice_id, stripe_payment_intent_id')
+    .eq('enrollment_id', enrollment_id)
+    .eq('tenant_id', tenant_id)
+    .in('status', OPEN_SCHEDULE_STATUSES);
+  if (schedulesError) throw new CancelEnrollmentError(schedulesError.message, 500);
+
+  let invoicesClosed = 0;
+  let leftOpen = 0;
+  const toCancel: string[] = [];
+  for (const schedule of openSchedules ?? []) {
+    if (stripe && schedule.stripe_invoice_id) {
+      const closed = await closeUnpaidInvoice(stripe, schedule.stripe_invoice_id);
+      if (closed === 'paid' || typeof closed === 'object') {
+        leftOpen++;
+        continue;
+      }
+      if (closed === 'closed') invoicesClosed++;
+    } else if (stripe && schedule.stripe_payment_intent_id) {
+      try {
+        const intent = await stripe.paymentIntents.retrieve(schedule.stripe_payment_intent_id);
+        if (intent.status === 'succeeded' || intent.status === 'processing') {
+          leftOpen++;
+          continue;
+        }
+        if (CANCELABLE_INTENT.has(intent.status)) {
+          await stripe.paymentIntents.cancel(intent.id);
+        }
+      } catch (error: any) {
+        if (error?.code !== 'resource_missing') {
+          leftOpen++;
+          continue;
+        }
+      }
+    } else if (schedule.status === 'processing') {
+      // A charge is underway and Stripe can't be asked about it.
+      leftOpen++;
+      continue;
+    }
+    toCancel.push(schedule.id);
+  }
+
+  if (toCancel.length > 0) {
+    const { error: cancelError } = await supabase
+      .from('payment_schedules')
+      .update({ status: 'cancelled', updated_at: now })
+      .in('id', toCancel);
+    if (cancelError) throw new CancelEnrollmentError(`Failed to cancel the payments: ${cancelError.message}`, 500);
+  }
+
+  // Refund, newest payment first.
+  let refundedCents = 0;
+  let refundError: string | undefined;
+  for (const payment of refundable) {
+    const remaining = requestedCents - refundedCents;
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, refundableCents(payment));
+    const result = await refundPayment(supabase, stripe as Stripe, payment, take, {
+      tenantId: tenant_id,
+      enrollmentId: enrollment_id,
+      reason,
+      adminId: admin_id,
+      adminEmail: admin_email,
+    });
+    if (!result.ok) {
+      refundError = result.error;
+      break;
+    }
+    refundedCents += take;
+  }
+
+  await refreshEnrollmentTotals(supabase, enrollment_id);
+  const { data: after } = await supabase
+    .from('enrollments')
+    .select('paid_amount, payment_metadata')
+    .eq('id', enrollment_id)
+    .maybeSingle();
+  const everythingRefunded = refundedCents > 0 && Number(after?.paid_amount ?? 0) <= 0;
+  await supabase
+    .from('enrollments')
+    .update({
+      payment_status: everythingRefunded ? 'refunded' : 'cancelled',
+      payment_metadata: {
+        ...((after?.payment_metadata as Record<string, unknown> | null) ?? {}),
+        refund_amount: refundedCents / 100,
+        ...(refundError ? { refund_error: refundError } : {}),
+      },
+    })
+    .eq('id', enrollment_id);
+
+  return { refunded: refundedCents / 100, refundError, invoicesClosed, leftOpen };
 }
 
 /**
@@ -765,19 +885,62 @@ export async function recordManualPayment(
   const supabase = createAdminClient();
 
   // Get schedule
-  const { data: schedule } = await supabase
+  // Read separately: the database has no schedule→enrollment relationship
+  // to join on, so the joined query this used always failed and recording a
+  // payment by hand never worked.
+  const { data: scheduleRow } = await supabase
     .from('payment_schedules')
-    .select('*, enrollments!inner(id, paid_amount, total_amount, payment_status)')
+    .select('*')
     .eq('id', schedule_id)
     .eq('tenant_id', tenant_id)
-    .single();
+    .maybeSingle();
 
-  if (!schedule) {
+  if (!scheduleRow) {
     throw new Error('Payment schedule not found');
   }
+  const { data: scheduleEnrollment } = await supabase
+    .from('enrollments')
+    .select('id, user_id, product_id')
+    .eq('id', scheduleRow.enrollment_id)
+    .eq('tenant_id', tenant_id)
+    .maybeSingle();
+  if (!scheduleEnrollment) {
+    throw new Error('Enrollment not found');
+  }
+  const schedule = { ...scheduleRow, enrollments: scheduleEnrollment };
 
   if (schedule.status === 'paid') {
     throw new Error('Payment schedule is already paid');
+  }
+  if (['cancelled', 'refunded'].includes(schedule.status)) {
+    throw new Error(`This payment is ${schedule.status}, so it can't be recorded as paid`);
+  }
+  if (schedule.status === 'processing') {
+    throw new Error('This payment is being charged to the card right now. Wait for the result before recording it by hand.');
+  }
+
+  // Paid outside Stripe: make any Stripe invoice or open charge for it
+  // unpayable, so the client can't be charged for it as well.
+  if (schedule.stripe_invoice_id || schedule.stripe_payment_intent_id) {
+    let stripe: Stripe | null = null;
+    try {
+      stripe = (await getStripeClient(tenant_id)).stripe;
+    } catch {
+      stripe = null;
+    }
+    if (stripe && schedule.stripe_invoice_id) {
+      const closed = await closeUnpaidInvoice(stripe, schedule.stripe_invoice_id);
+      if (closed === 'paid') throw new Error('The client already paid this by card. Refresh the page.');
+      if (typeof closed === 'object') throw new Error(`Could not close the Stripe invoice: ${closed.error}`);
+    } else if (stripe && schedule.stripe_payment_intent_id) {
+      const intent = await stripe.paymentIntents.retrieve(schedule.stripe_payment_intent_id).catch(() => null);
+      if (intent?.status === 'succeeded' || intent?.status === 'processing') {
+        throw new Error('The client already paid this by card. Refresh the page.');
+      }
+      if (intent && CANCELABLE_INTENT.has(intent.status)) {
+        await stripe.paymentIntents.cancel(intent.id).catch(() => null);
+      }
+    }
   }
 
   // Create payment record
@@ -787,6 +950,11 @@ export async function recordManualPayment(
       tenant_id,
       user_id: schedule.enrollments.user_id,
       enrollment_id: schedule.enrollment_id,
+      payment_schedule_id: schedule_id,
+      product_id: schedule.enrollments.product_id ?? null,
+      payment_type: schedule.payment_type,
+      installment_number: schedule.payment_number,
+      paid_at: new Date().toISOString(),
       amount: schedule.amount,
       currency: schedule.currency,
       payment_method,
@@ -806,28 +974,24 @@ export async function recordManualPayment(
     throw new Error(`Failed to create payment record: ${paymentError?.message}`);
   }
 
-  // Update schedule status
-  await supabase
+  const { error: scheduleError } = await supabase
     .from('payment_schedules')
     .update({
       status: 'paid',
       paid_date: new Date().toISOString(),
+      payment_id: payment.id,
+      next_retry_date: null,
+      last_error: null,
     })
     .eq('id', schedule_id);
+  if (scheduleError) {
+    throw new Error(`Payment saved but the schedule wasn't updated: ${scheduleError.message}`);
+  }
 
-  // Update enrollment paid amount
-  const enrollment = schedule.enrollments;
-  const newPaidAmount = parseFloat(enrollment.paid_amount.toString()) + parseFloat(schedule.amount.toString());
-  const isFullyPaid = newPaidAmount >= parseFloat(enrollment.total_amount.toString());
-
-  await supabase
-    .from('enrollments')
-    .update({
-      paid_amount: newPaidAmount,
-      payment_status: isFullyPaid ? 'paid' : 'partial',
-      deposit_paid: schedule.payment_type === 'deposit' ? true : enrollment.deposit_paid,
-    })
-    .eq('id', schedule.enrollment_id);
+  // Paid amount and status worked out from the schedules (also restores
+  // access after an overdue suspension).
+  const totals = await refreshEnrollmentTotals(supabase, schedule.enrollment_id);
+  if (!totals.ok) throw new Error(`Payment saved but the enrollment wasn't updated: ${totals.error}`);
 }
 
 /**

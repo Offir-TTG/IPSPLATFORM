@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { dailyService } from '@/lib/daily/dailyService';
+import { dailyService, loadDailyIntegrationForCurrentUser } from '@/lib/daily/dailyService';
 
 /**
  * Create a Daily.co room for a lesson
@@ -134,11 +134,7 @@ export async function POST(request: NextRequest) {
     console.log('[Daily.co] Creating room:', roomName);
 
     // Get integration settings for expiry hours
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('settings')
-      .eq('integration_key', 'daily')
-      .single();
+    const { data: integration } = await loadDailyIntegrationForCurrentUser();
 
     const defaultExpiryHours = integration?.settings?.default_expiry_hours || (24 * 180); // Default: 6 months
 

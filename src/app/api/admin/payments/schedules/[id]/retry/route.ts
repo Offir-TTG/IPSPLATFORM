@@ -46,50 +46,29 @@ export async function POST(
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
     }
 
-    // Check if already paid
-    if (schedule.status === 'paid') {
+    // Only payments still owed can be retried.
+    if (['paid', 'cancelled', 'refunded', 'paused'].includes(schedule.status)) {
       return NextResponse.json(
-        { error: 'Payment schedule is already paid' },
+        { error: `This payment is ${schedule.status} and can't be charged` },
         { status: 400 }
       );
     }
 
-    // Increment retry count
-    const newRetryCount = (schedule.retry_count || 0) + 1;
-    await supabase
-      .from('payment_schedules')
-      .update({
-        retry_count: newRetryCount,
-        last_error: null, // Clear previous error on retry
-      })
-      .eq('id', scheduleId);
-
-    console.log(`[Admin Retry] Retrying payment for schedule ${scheduleId} (attempt ${newRetryCount})`);
-
-    // Create invoice and charge immediately (chargeNow = true)
+    // The charger refuses payments that can't be charged and guards against a
+    // double charge; the webhook records a decline and its retry count.
+    // Nothing is written here, so a refused retry can't turn a cancelled
+    // payment back into "failed".
     const result = await createScheduledInvoice(scheduleId, userData.tenant_id, true);
 
     if (result.error) {
       console.error(`[Admin Retry] Error:`, result.error);
-
-      // Update schedule with error
-      await supabase
-        .from('payment_schedules')
-        .update({
-          status: 'failed',
-          last_error: result.error,
-        })
-        .eq('id', scheduleId);
-
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
-
-    console.log(`[Admin Retry] Invoice ${result.invoice_id} created and charged successfully`);
 
     return NextResponse.json({
       success: true,
       invoice_id: result.invoice_id,
-      retry_count: newRetryCount,
+      retry_count: schedule.retry_count || 0,
       message: 'Payment retry initiated successfully.',
     });
 

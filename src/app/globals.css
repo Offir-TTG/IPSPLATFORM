@@ -491,3 +491,15 @@
     border-color: hsl(var(--border));
   }
 }
+
+/* Client portal: the slow light behind the home hero. */
+@keyframes portal-drift { to { transform: translate(6%, -4%) rotate(8deg) scale(1.08); } }
+@keyframes portal-drift2 { to { transform: translate(-7%, 5%) rotate(-6deg) scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .portal-aura { animation: none !important; } }
+
+/* Client portal: a page shown inside a child's page (the enrollment wizard frame)
+   blends into the card around it, with nothing floating on top. */
+html.ips-embedded,
+html.ips-embedded body { background: transparent !important; }
+html.ips-embedded .tsqd-open-btn-container,
+html.ips-embedded .tsqd-main-panel { display: none !important; }

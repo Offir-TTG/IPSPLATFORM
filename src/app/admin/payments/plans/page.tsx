@@ -43,6 +43,8 @@ interface PaymentPlan {
   installment_count?: number;
   installment_frequency?: string;
   subscription_frequency?: string;
+  /** Membership plans: price per period; empty = the product price. */
+  subscription_amount?: number | null;
   auto_detect_enabled: boolean;
   priority: number;
   is_active: boolean;
@@ -219,8 +221,12 @@ export default function PaymentPlansPage() {
       case 'subscription':
         const subscriptionFrequency = translateFrequency(plan.subscription_frequency);
         const subscriptionTemplate = t('admin.payments.plans.details.subscription', `${plan.subscription_frequency} recurring billing`);
-        return subscriptionTemplate
+        const subscriptionText = subscriptionTemplate
           .replace('{frequency}', subscriptionFrequency);
+        // Show the plan's own price; without one the product price is charged.
+        return plan.subscription_amount
+          ? `${subscriptionText} · ${Number(plan.subscription_amount).toLocaleString()}`
+          : `${subscriptionText} · ${t('admin.payments.plans.details.productPrice', 'product price')}`;
       default:
         return t('admin.payments.plans.details.fullPayment', 'Pay full amount upfront');
     }
@@ -663,6 +669,29 @@ function PaymentPlanForm({ plan, onSave, onCancel, t, direction, isRtl }: {
                   <SelectItem value="annually" suppressHydrationWarning>{t('admin.payments.plans.form.annually', 'Annually')}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label htmlFor="subscription_amount" suppressHydrationWarning>{t('admin.payments.plans.form.pricePerPeriod', 'Price per period')}</Label>
+              <Input
+                id="subscription_amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={formData.subscription_amount ?? ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    subscription_amount: e.target.value === '' ? null : Number(e.target.value),
+                  })
+                }
+                placeholder="100"
+              />
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {t(
+                  'admin.payments.plans.form.pricePerPeriodHelp',
+                  'Charged every period, e.g. 100 monthly or 1,000 yearly. Leave empty to use the product price. A change applies from each member\'s next charge.'
+                )}
+              </p>
             </div>
           </CardContent>
         </Card>

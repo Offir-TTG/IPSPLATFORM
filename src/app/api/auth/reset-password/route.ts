@@ -181,10 +181,6 @@ export async function POST(request: NextRequest) {
     console.log('📮 Preparing to send email...');
     console.log('   To:', email);
     console.log('   Subject:', renderedEmail.subject);
-    console.log('   SMTP Host:', process.env.SMTP_HOST || 'NOT CONFIGURED');
-    console.log('   SMTP Port:', process.env.SMTP_PORT || 'NOT CONFIGURED');
-    console.log('   SMTP User:', process.env.SMTP_USER || 'NOT CONFIGURED');
-    console.log('   SMTP From:', process.env.SMTP_FROM || 'NOT CONFIGURED');
 
     const emailResult = await sendEmail({
       to: email,
