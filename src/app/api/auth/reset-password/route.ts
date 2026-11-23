@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { noStoreFetch } from '@/lib/supabase/noStoreFetch';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 import { renderEmailTemplate } from '@/lib/email/renderTemplate';
 import { sendEmail } from '@/lib/email/send';
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       {
+        global: { fetch: noStoreFetch },
         auth: {
           autoRefreshToken: false,
           persistSession: false,

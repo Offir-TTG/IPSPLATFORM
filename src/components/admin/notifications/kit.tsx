@@ -13,8 +13,9 @@
  */
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { AlertTriangle, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, Sparkles, X, type LucideIcon } from 'lucide-react';
 
 export const LIST_PAGE_SIZE = 10;
@@ -630,17 +631,54 @@ export function ListPanel({
 }
 
 /** Quick filter pills on one line, for inside a ListPanel. */
+/**
+ * The standard choice chips: one connected bar with dividers, the chosen
+ * segment filled. For hand-built groups: put joinedBar on the wrapper and
+ * joinedSegment(on) on each button.
+ */
+export const joinedBar = 'inline-flex shrink-0 overflow-hidden rounded-full border border-border bg-card [&>*+*]:border-s [&>*+*]:border-border';
+export const joinedSegment = (on: boolean) =>
+  `inline-flex min-h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap px-3.5 text-sm transition-colors focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+    on ? 'bg-primary font-semibold text-primary-foreground' : 'text-foreground hover:bg-muted'
+  }`;
+
 export function QuickPills<T extends string>({
   label,
   value,
   onChange,
   options,
+  joined = true,
 }: {
   label: string;
   value: T;
   onChange: (value: T) => void;
   options: { value: T; label: ReactNode; count?: number }[];
+  /** One connected bar with dividers; the chosen segment is filled (the standard). False = separate chips. */
+  joined?: boolean;
 }) {
+  if (joined) {
+    return (
+      <div role="group" aria-label={label} className={joinedBar}>
+        {options.map((o) => {
+          const on = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(o.value)}
+              className={joinedSegment(on)}
+            >
+              {o.label}
+              {o.count != null && (
+                <span className={`text-xs tabular-nums ${on ? 'rounded-full bg-white/20 px-1.5' : 'text-muted-foreground'}`}>{o.count.toLocaleString()}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div role="group" aria-label={label} className="flex shrink-0 gap-1.5">
       {options.map((o) => {
@@ -713,6 +751,172 @@ export function ListState({
       {action && <div className="mt-2">{action}</div>}
     </div>
   );
+}
+
+// ─── Saving (the one bar every editor uses) ───────────────────────────
+
+/**
+ * The floating save bar, as on the IParentingSchool admin: always at the
+ * bottom of an editor. Something new: "Not saved yet · Cancel · Save".
+ * Editing: "No changes" (Save and Discard greyed) until something changes,
+ * then "You have unsaved changes · Discard · Save".
+ */
+export function SaveBar({
+  isNew,
+  dirty,
+  saving,
+  onSave,
+  onDiscard,
+  cancelHref,
+  saveLabel,
+  text,
+}: {
+  isNew: boolean;
+  dirty: boolean;
+  saving: boolean;
+  onSave: () => void;
+  onDiscard?: () => void;
+  /** Something new: Cancel goes here instead of Discard. */
+  cancelHref?: string;
+  saveLabel: string;
+  text: { newItem: string; clean: string; dirty: string; saving: string; discard: string; cancel: string };
+}) {
+  const canSave = isNew || dirty;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-full bg-foreground py-2 pe-2 ps-5 text-sm text-background shadow-xl">
+        <span className="inline-flex items-center gap-2">
+          {!isNew && !dirty && !saving && <Check className="h-4 w-4 opacity-70" aria-hidden />}
+          {saving ? text.saving : isNew ? text.newItem : dirty ? text.dirty : text.clean}
+        </span>
+        {isNew
+          ? cancelHref && (
+              <Link href={cancelHref} className="rounded-full px-4 py-2 font-medium hover:bg-background/10">
+                {text.cancel}
+              </Link>
+            )
+          : onDiscard && (
+              <button
+                type="button"
+                onClick={onDiscard}
+                disabled={saving || !dirty}
+                className="rounded-full px-4 py-2 font-medium hover:bg-background/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {text.discard}
+              </button>
+            )}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving || !canSave}
+          className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
+          {saveLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Asks before leaving an editor with unsaved changes: links inside the
+ * admin ask in the platform's dialog; closing or reloading the tab gets the
+ * browser's own question. `allowLeave` lets the page leave on purpose
+ * (after saving or deleting) without asking.
+ */
+export function useLeaveGuard(
+  dirty: boolean,
+  text: { title: string; body: string; stay: string; leave: string },
+): { dialog: ReactNode; allowLeave: () => void } {
+  const router = useRouter();
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  const leaving = useRef(false);
+
+  useEffect(() => {
+    if (!dirty) return;
+    leaving.current = false;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (leaving.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    const onClick = (e: MouseEvent) => {
+      if (leaving.current) return;
+      const link = (e.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+      // Ctrl/Cmd/Shift-click opens another tab, which loses nothing here.
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+      if (link.getAttribute('href')?.startsWith('#')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveTo(link.href);
+    };
+    window.addEventListener('beforeunload', onUnload);
+    document.addEventListener('click', onClick, true);
+    return () => {
+      window.removeEventListener('beforeunload', onUnload);
+      document.removeEventListener('click', onClick, true);
+    };
+  }, [dirty]);
+
+  const allowLeave = useCallback(() => {
+    leaving.current = true;
+  }, []);
+
+  const go = () => {
+    if (!leaveTo) return;
+    const url = new URL(leaveTo, window.location.href);
+    leaving.current = true;
+    setLeaveTo(null);
+    if (url.origin === window.location.origin) router.push(`${url.pathname}${url.search}${url.hash}`);
+    else window.location.href = url.href;
+  };
+
+  const dialog = leaveTo ? (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="leave-guard-title">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl">
+        <h2 id="leave-guard-title" className="text-lg font-extrabold [font-family:inherit]">
+          {text.title}
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">{text.body}</p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={() => setLeaveTo(null)} className={kitButton.secondary} autoFocus>
+            {text.stay}
+          </button>
+          <button
+            type="button"
+            onClick={go}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            {text.leave}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  return { dialog, allowLeave };
+}
+
+/** The bar's and the leave question's words, translated (shared by every editor). */
+export function saveBarText(t: (key: string, fallback: string) => string) {
+  return {
+    bar: {
+      newItem: t('admin.saveBar.new', 'Not saved yet'),
+      clean: t('admin.saveBar.clean', 'No changes'),
+      dirty: t('admin.saveBar.dirty', 'You have unsaved changes'),
+      saving: t('admin.saveBar.saving', 'Saving…'),
+      discard: t('admin.saveBar.discard', 'Discard'),
+      cancel: t('admin.saveBar.cancel', 'Cancel'),
+    },
+    leave: {
+      title: t('admin.saveBar.leaveTitle', 'Leave without saving?'),
+      body: t('admin.saveBar.leaveBody', "You have changes on this page that aren't saved. If you leave now, they'll be lost."),
+      stay: t('admin.saveBar.stay', 'Stay on this page'),
+      leave: t('admin.saveBar.leave', 'Leave without saving'),
+    },
+  };
 }
 
 // ─── Wizard ───────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { CLIENT_ROLES, NEW_CLIENT_ROLE, isClientRole } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     // Apply role filter if provided
     if (roleFilter) {
-      query = query.eq('role', roleFilter);
+      query = isClientRole(roleFilter) ? query.in('role', [...CLIENT_ROLES]) : query.eq('role', roleFilter);
     }
 
     // Apply email filter if provided (case-insensitive exact match)

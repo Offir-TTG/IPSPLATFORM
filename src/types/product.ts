@@ -24,7 +24,8 @@ export type PaymentModel =
   | 'free'              // No payment required
   | 'one_time'          // Single payment
   | 'deposit_then_plan' // Deposit + installments
-  | 'subscription';     // Recurring subscription
+  | 'subscription'      // Recurring subscription
+  | 'per_session';      // Pay as you go: card saved, each held session charged
 
 export type PaymentFrequency =
   | 'weekly'
@@ -54,6 +55,7 @@ export type SubscriptionInterval =
  * - one_time: {} (empty)
  * - deposit_then_plan: installments, frequency, deposit settings
  * - subscription: subscription_interval, trial_days
+ * - per_session: session_amount
  * - free: {} (empty)
  */
 export interface PaymentPlanConfig {
@@ -70,6 +72,9 @@ export interface PaymentPlanConfig {
   // Subscription configuration (for subscription)
   subscription_interval?: SubscriptionInterval;
   trial_days?: number;
+
+  // Price per session (for per_session); the product total is sessions × this.
+  session_amount?: number;
 }
 
 // =====================================================
@@ -91,6 +96,7 @@ export interface Product {
   course_id?: string;          // If type = 'course'
   contains_courses?: string[]; // If type = 'bundle' - array of course IDs
   session_count?: number;      // If type = 'session_pack' - number of sessions
+  session_duration_minutes?: number | null; // Session packs: minutes per session
 
   // DocuSign integration
   requires_signature: boolean;
@@ -167,6 +173,7 @@ export interface ProductFormData {
   course_id?: string;
   contains_courses?: string[];
   session_count?: number;
+  session_duration_minutes?: number | null;
 
   // DocuSign
   requires_signature: boolean;
@@ -239,6 +246,9 @@ export interface PricingBreakdown {
   subscription_amount?: number;
   subscription_interval?: SubscriptionInterval;
   trial_days?: number;
+
+  // Price per session (for per_session); the product total is sessions × this.
+  session_amount?: number;
 }
 
 // =====================================================

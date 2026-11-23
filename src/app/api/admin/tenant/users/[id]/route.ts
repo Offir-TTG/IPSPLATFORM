@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
+import { NEW_CLIENT_ROLE } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -218,6 +219,21 @@ export async function PATCH(
 
     if (body.role !== undefined) tenantUserUpdates.role = body.role;
     if (body.status !== undefined) tenantUserUpdates.status = body.status;
+
+    // The role is also kept on the user record: permission checks (withAuth)
+    // and the user drawer read it there. Before, only the membership changed,
+    // so someone made an instructor kept a student's access and label.
+    if (body.role !== undefined) {
+      const USER_ROLE: Record<string, string> = { owner: 'admin', admin: 'admin', instructor: 'instructor', student: NEW_CLIENT_ROLE, client: NEW_CLIENT_ROLE };
+      const userRole = USER_ROLE[String(body.role)];
+      if (userRole) {
+        const { data: current } = await adminClient.from('users').select('role, tenant_id').eq('id', id).maybeSingle();
+        // Never downgrade a platform super-admin, and only for this school's user.
+        if (current && current.role !== 'super_admin' && (!current.tenant_id || current.tenant_id === tenant.id)) {
+          userUpdates.role = userRole;
+        }
+      }
+    }
 
     // Update users table if there are changes
     if (Object.keys(userUpdates).length > 0) {

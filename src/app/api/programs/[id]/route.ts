@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/logger';
 
@@ -48,7 +48,7 @@ export const GET = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin', 'instructor']);
+}, ['admin', 'super_admin', 'instructor']);
 
 // PATCH /api/programs/[id] - Update a program
 export const PATCH = withAuth(async (
@@ -58,7 +58,10 @@ export const PATCH = withAuth(async (
 ) => {
   try {
     const body = await request.json();
-    const supabase = await createClient();
+    // withAuth has checked the admin role. Saving goes through the server
+    // client (the signed-in user's own connection can be stopped by row
+    // rules), limited to the admin's own tenant.
+    const supabase = createAdminClient();
 
     // Build update object with only provided fields
     const updateData: any = {};
@@ -73,6 +76,7 @@ export const PATCH = withAuth(async (
       .from('programs')
       .update(updateData)
       .eq('id', params.id)
+      .eq('tenant_id', user.tenant_id)
       .select()
       .single();
 
@@ -115,7 +119,7 @@ export const PATCH = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin']);
+}, ['admin', 'super_admin']);
 
 // DELETE /api/programs/[id] - Delete a program
 export const DELETE = withAuth(async (
@@ -124,20 +128,44 @@ export const DELETE = withAuth(async (
   { params }: { params: { id: string } }
 ) => {
   try {
-    const supabase = await createClient();
+    // Same as saving: the admin role is checked; limited to the admin's tenant.
+    const supabase = createAdminClient();
 
     // First get the program name for audit logging
     const { data: program } = await supabase
       .from('programs')
       .select('name')
       .eq('id', params.id)
+      .eq('tenant_id', user.tenant_id)
       .single();
+    if (!program) {
+      return NextResponse.json({ success: false, error: 'Program not found' }, { status: 404 });
+    }
+
+    // A program with enrollments still running (active or pending) can't be
+    // deleted: those students would lose their program.
+    const { data: running, error: runningError } = await supabase
+      .from('enrollments')
+      .select('id, product:products!enrollments_product_id_fkey!inner(program_id)')
+      .eq('product.program_id', params.id)
+      .in('status', ['active', 'pending']);
+    if (runningError) {
+      console.error('Failed to check program enrollments:', runningError);
+      return NextResponse.json({ success: false, error: 'Could not check the enrollments' }, { status: 500 });
+    }
+    if (running && running.length > 0) {
+      return NextResponse.json(
+        { success: false, error: 'has_active_enrollments', active_count: running.length },
+        { status: 409 }
+      );
+    }
 
     // Delete the program (cascade will handle related records)
     const { error } = await supabase
       .from('programs')
       .delete()
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .eq('tenant_id', user.tenant_id);
 
     if (error) {
       console.error('Failed to delete program:', error);
@@ -171,4 +199,4 @@ export const DELETE = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin']);
+}, ['admin', 'super_admin']);

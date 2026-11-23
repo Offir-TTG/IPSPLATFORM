@@ -2,217 +2,157 @@
 
 export const dynamic = 'force-dynamic';
 
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { AlertCircle, CheckCircle2, Clock, GraduationCap, Mail, Pencil, RefreshCw, Search, WifiOff } from 'lucide-react';
+import { toast } from 'sonner';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CreateEnrollmentDialog } from '@/components/admin/CreateEnrollmentDialog';
+import { useAdminLanguage } from '@/context/AppContext';
+import { useHelp } from '@/hooks/useHelp';
 import { EditEnrollmentDialog } from '@/components/admin/EditEnrollmentDialog';
 import { PaymentPlanDetailsDialog } from '@/components/admin/PaymentPlanDetailsDialog';
 import { SendEnrollmentLinkDialog } from '@/components/admin/SendEnrollmentLinkDialog';
-import React, { useState, useEffect } from 'react';
-import { useAdminLanguage } from '@/context/AppContext';
-import { useHelp } from '@/hooks/useHelp';
-import { toast } from 'sonner';
-import Link from 'next/link';
+import { productTypeLook } from '@/components/admin/products/ProductDrawer';
+import type { ProductType } from '@/types/product';
 import {
-  Users,
-  Filter,
-  Eye,
-  X,
-  DollarSign,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  Edit,
-  Plus,
-  UserPlus,
-  Trash2,
-  RotateCcw,
-} from 'lucide-react';
+  ClearFilters,
+  FilterSelect,
+  IconButton,
+  KpiItem,
+  KpiStrip,
+  ListCell,
+  ListFooter,
+  ListPanel,
+  ListRow,
+  ListRowMain,
+  ListSearch,
+  ListSkeleton,
+  ListState,
+  NewButton,
+  PageTitle,
+  QuickPills,
+  kitButton,
+  usePagedList,
+} from '@/components/admin/notifications/kit';
+import { EnrollmentDrawer } from '@/components/admin/enrollments/EnrollmentDrawer';
+import { CancelEnrollmentDialog, ManualPaymentDialog, ResetEnrollmentDialog } from '@/components/admin/enrollments/EnrollmentDialogs';
+import { useEnrollmentFormat } from '@/components/admin/enrollments/useEnrollmentFormat';
+import {
+  ENROLLMENT_STATUSES,
+  PAYMENT_STATUSES,
+  PAYMENT_TONE,
+  STATUS_TONE,
+  type Enrollment,
+  type ScheduleItem,
+} from '@/components/admin/enrollments/types';
 
-interface Enrollment {
-  id: string;
-  user_id: string;
-  user_name: string;
-  user_email: string;
-  product_id: string;
-  product_name: string;
-  product_type: string;
-  payment_plan_id: string;
-  payment_plan_key: string;
-  payment_plan_data?: any;
-  payment_model?: string;
-  payment_plan?: any;
-  total_amount: number;
-  paid_amount: number;
-  currency: string;
-  payment_status: 'pending' | 'partial' | 'paid' | 'overdue';
-  status: 'draft' | 'pending' | 'active' | 'suspended' | 'cancelled' | 'completed';
-  enrollment_type?: 'admin_assigned' | 'self_enrolled';
-  next_payment_date?: string;
-  payment_start_date?: string;
-  enrolled_at?: string;
-  created_at: string;
-  expires_at?: string | null;
-  invitation_sent_at?: string | null;
-}
+type StatusFilter = 'all' | (typeof ENROLLMENT_STATUSES)[number];
 
-interface EnrollmentFilters {
-  status?: string;
-  paymentStatus?: string;
-  search?: string;
-}
-
+/**
+ * Enrollments, in the admin list template: the numbers that need action
+ * (each filters the list), then one card with search, payment and product
+ * filters, status pills, the enrollments with "what to do next", and
+ * paging. Pressing an enrollment opens its drawer with the payments and
+ * every action (send link, reset, edit, cancel, plan details, record a
+ * payment). New enrollments are made on their own step-by-step page.
+ */
 export default function EnrollmentsPage() {
   useHelp('enrollments-overview');
   const { t, direction, language } = useAdminLanguage();
-  const isRtl = direction === 'rtl';
+  const f = useEnrollmentFormat();
+  const rtl = direction === 'rtl';
+
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState<EnrollmentFilters>({});
-  const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
-  const [manualPaymentDialogOpen, setManualPaymentDialogOpen] = useState(false);
-  const [createEnrollmentDialogOpen, setCreateEnrollmentDialogOpen] = useState(false);
-  const [paymentPlanDialogOpen, setPaymentPlanDialogOpen] = useState(false);
-  const [sendLinkDialogOpen, setSendLinkDialogOpen] = useState(false);
-  const [sendLinkEnrollment, setSendLinkEnrollment] = useState<Enrollment | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [payment, setPayment] = useState<string>('all');
+  const [product, setProduct] = useState<string>('all');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Dialogs (the same ones as before), opened from the drawer.
+  const [sendLinkFor, setSendLinkFor] = useState<Enrollment | null>(null);
+  const [sendLanguage, setSendLanguage] = useState('en');
   const [sendingLink, setSendingLink] = useState(false);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetFor, setResetFor] = useState<Enrollment | null>(null);
   const [resetting, setResetting] = useState(false);
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const [editFor, setEditFor] = useState<Enrollment | null>(null);
+  const [cancelFor, setCancelFor] = useState<Enrollment | null>(null);
+  const [planFor, setPlanFor] = useState<Enrollment | null>(null);
+  const [paymentFor, setPaymentFor] = useState<{ enrollment: Enrollment; schedule: ScheduleItem; label: string } | null>(null);
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(5);
+  // The open enrollment lives in the address (?enrollment=), like the other drawers.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const openId = searchParams.get('enrollment');
+  const setOpenId = (id: string | null) => {
+    const qs = new URLSearchParams(searchParams.toString());
+    if (id) qs.set('enrollment', id);
+    else qs.delete('enrollment');
+    const query = qs.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
 
-  // Responsive breakpoints
-  const isMobile = windowWidth <= 640;
-
-  // Calculate pagination
-  const totalPages = Math.ceil(enrollments.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedEnrollments = enrollments.slice(startIndex, endIndex);
-
+  // Search waits a moment while typing.
   useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    const timer = setTimeout(() => setDebounced(search), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  useEffect(() => {
-    fetchEnrollments();
-  }, [filters]);
-
-  const fetchEnrollments = async () => {
+  // Everything is loaded once and filtered here, so the numbers always
+  // cover every enrollment (not just the filtered ones). `t` is read
+  // through a ref: it changes on every render, and as a dependency it made
+  // the list reload endlessly.
+  const tRef = useRef(t);
+  tRef.current = t;
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
-      if (filters.paymentStatus) params.append('paymentStatus', filters.paymentStatus);
-      if (filters.search) params.append('search', filters.search);
-      // Add cache-busting timestamp to force fresh fetch
-      params.append('_t', Date.now().toString());
-
-      const response = await fetch(`/api/admin/enrollments?${params.toString()}`);
+      const response = await fetch(`/api/admin/enrollments?_t=${Date.now()}`);
       if (!response.ok) throw new Error('Failed to fetch enrollments');
       const data = await response.json();
       setEnrollments(data.enrollments || []);
+      setLoadError(false);
     } catch (error) {
       console.error('Error fetching enrollments:', error);
-      toast.error(t('admin.enrollments.loadError', 'Failed to load enrollments'));
+      setLoadError(true);
+      toast.error(tRef.current('admin.enrollments.loadError', 'Failed to load enrollments'));
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const changed = () => {
+    void load();
+    setRefreshKey((k) => k + 1);
   };
 
-  const formatPaymentPlanName = (enrollment: Enrollment): string => {
-    const key = enrollment.payment_plan_key;
-    const data = enrollment.payment_plan_data || {};
-
-    if (key === 'custom' && data.name) {
-      return data.name;
-    } else if (key === 'admin.enrollments.paymentPlan.multiplePlans') {
-      return t('admin.enrollments.paymentPlan.multiplePlans', 'Multiple plans available');
-    } else if (key === 'admin.enrollments.paymentPlan.defaultPlan') {
-      return t('admin.enrollments.paymentPlan.defaultPlan', 'Default plan');
-    } else if (key === 'admin.enrollments.paymentPlan.oneTime') {
-      return t('admin.enrollments.paymentPlan.oneTime', 'One-Time Payment');
-    } else if (key === 'admin.enrollments.paymentPlan.deposit') {
-      const count = data.count || 'N';
-      const frequency = data.frequency || 'monthly';
-      const frequencyKey = `admin.enrollments.paymentPlan.frequency.${frequency}`;
-      const frequencyText = t(frequencyKey, frequency);
-
-      // Format deposit info
-      let depositInfo = '';
-      if (data.deposit_type === 'percentage' && data.deposit_percentage) {
-        depositInfo = `${data.deposit_percentage}% ${t('admin.enrollments.paymentPlan.depositLabel', 'deposit')}`;
-      } else if (data.deposit_type === 'fixed' && data.deposit_amount) {
-        depositInfo = `${enrollment.currency || 'USD'} ${data.deposit_amount} ${t('admin.enrollments.paymentPlan.depositLabel', 'deposit')}`;
-      } else {
-        depositInfo = t('admin.enrollments.paymentPlan.depositLabel', 'Deposit');
-      }
-
-      // Use the translated template with placeholder replacement
-      const template = t('admin.enrollments.paymentPlan.deposit', 'Deposit + {count} Installments');
-      return depositInfo + ' + ' + String(count) + ' ' + frequencyText;
-    } else if (key === 'admin.enrollments.paymentPlan.installments') {
-      const count = data.count || 'N';
-      const frequency = data.frequency || 'monthly';
-      const frequencyKey = `admin.enrollments.paymentPlan.frequency.${frequency}`;
-      const frequencyText = t(frequencyKey, frequency);
-
-      // Use the translated template with placeholder replacement
-      const template = t('admin.enrollments.paymentPlan.installments', '{count} Installments');
-      return template.replace('{count}', String(count)) + ' - ' + frequencyText;
-    } else if (key === 'admin.enrollments.paymentPlan.subscription') {
-      const interval = data.interval || 'monthly';
-      const intervalKey = `admin.enrollments.paymentPlan.interval.${interval}`;
-      const intervalText = t(intervalKey, interval);
-      return `${intervalText} ${t('admin.enrollments.paymentPlan.subscriptionLabel', 'Subscription')}`;
-    } else if (key === 'admin.enrollments.paymentPlan.free') {
-      return t('admin.enrollments.paymentPlan.free', 'Free');
-    }
-    return t('admin.enrollments.paymentPlan.notAvailable', 'N/A');
-  };
-
-  const formatProductType = (type: string): string => {
-    if (!type || type === 'N/A') return type;
-    const typeKey = `admin.enrollments.productType.${type.toLowerCase()}`;
-    return t(typeKey, type);
-  };
-
-  const handleSendEnrollmentLink = async () => {
-    if (!sendLinkEnrollment) return;
-
+  // ── Actions (same requests and messages as before) ──
+  const sendLink = async () => {
+    if (!sendLinkFor) return;
     setSendingLink(true);
     try {
-      const response = await fetch(`/api/admin/enrollments/${sendLinkEnrollment.id}/send-link`, {
+      const response = await fetch(`/api/admin/enrollments/${sendLinkFor.id}/send-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language: selectedLanguage })
+        body: JSON.stringify({ language: sendLanguage }),
       });
-
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to send link');
       }
-
       toast.success(t('admin.enrollments.sendLink.success', 'Enrollment link sent successfully'));
-      setSendLinkDialogOpen(false);
-      setSendLinkEnrollment(null);
-      fetchEnrollments(); // Refresh to show pending status
+      setSendLinkFor(null);
+      changed();
     } catch (error: any) {
       console.error('Error sending link:', error);
       toast.error(error.message || t('admin.enrollments.sendLink.error', 'Failed to send enrollment link'));
@@ -221,37 +161,24 @@ export default function EnrollmentsPage() {
     }
   };
 
-  const handleResetEnrollment = async (resetSignature: boolean, resetPayment: boolean) => {
-    if (!selectedEnrollment) return;
-
+  const reset = async (resetSignature: boolean, resetPayment: boolean) => {
+    if (!resetFor) return;
     setResetting(true);
     try {
       const params = new URLSearchParams();
       if (resetSignature) params.append('reset_signature', 'true');
       if (resetPayment) params.append('reset_payment', 'true');
       params.append('reset_profile', 'true'); // Always reset profile for complete restart
-
-      const response = await fetch(`/api/admin/enrollments/${selectedEnrollment.id}/reset?${params.toString()}`, {
-        method: 'POST',
-      });
-
+      const response = await fetch(`/api/admin/enrollments/${resetFor.id}/reset?${params.toString()}`, { method: 'POST' });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to reset enrollment');
       }
-
       const data = await response.json();
       toast.success(t('admin.enrollments.reset.success', 'Enrollment reset successfully'));
-
-      // Show wizard URL to admin
-      toast.info(
-        t('admin.enrollments.reset.wizardInfo', 'User can now restart at: ') + data.wizard_url,
-        { duration: 5000 }
-      );
-
-      setResetDialogOpen(false);
-      setSelectedEnrollment(null);
-      fetchEnrollments();
+      toast.info(t('admin.enrollments.reset.wizardInfo', 'User can now restart at: ') + data.wizard_url, { duration: 5000 });
+      setResetFor(null);
+      changed();
     } catch (error: any) {
       console.error('Error resetting enrollment:', error);
       toast.error(error.message || t('admin.enrollments.reset.error', 'Failed to reset enrollment'));
@@ -260,1182 +187,419 @@ export default function EnrollmentsPage() {
     }
   };
 
-  const handleCancelEnrollment = async (enrollmentId: string, reason: string, refundAmount?: number) => {
+  const cancel = async (enrollmentId: string, reason: string, refundAmount?: number) => {
     try {
       const response = await fetch(`/api/admin/enrollments/${enrollmentId}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason, refund_amount: refundAmount }),
       });
-
       if (!response.ok) {
         const error = await response.json();
         if (error.cancelled) {
           // Cancelled, but the refund didn't go through: show why and refresh.
           toast.error(error.error, { duration: 15000 });
-          setCancelDialogOpen(false);
-          fetchEnrollments();
+          setCancelFor(null);
+          changed();
           return;
         }
         throw new Error(error.error || 'Failed to cancel enrollment');
       }
-
       toast.success(t('admin.enrollments.cancel.success', 'Enrollment cancelled successfully'));
-      setCancelDialogOpen(false);
-      fetchEnrollments();
+      setCancelFor(null);
+      changed();
     } catch (error: any) {
       console.error('Error cancelling enrollment:', error);
       toast.error(error.message || t('admin.enrollments.cancel.error', 'Failed to cancel enrollment'));
     }
   };
 
-  const handleRecordManualPayment = async (
-    enrollmentId: string,
-    scheduleId: string,
-    paymentMethod: string,
-    reference: string,
-    notes: string
-  ) => {
+  const recordPayment = async (_enrollmentId: string, scheduleId: string, paymentMethod: string, reference: string, notes: string) => {
     try {
       const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/record-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          payment_method: paymentMethod,
-          transaction_reference: reference,
-          notes,
-        }),
+        body: JSON.stringify({ payment_method: paymentMethod, transaction_reference: reference, notes }),
       });
-
       if (!response.ok) throw new Error('Failed to record payment');
       toast.success(t('admin.enrollments.manualPayment.success', 'Manual payment recorded successfully'));
-      setManualPaymentDialogOpen(false);
-      fetchEnrollments();
+      setPaymentFor(null);
+      changed();
     } catch (error: any) {
       console.error('Error recording payment:', error);
       toast.error(error.message || t('admin.enrollments.manualPayment.error', 'Failed to record payment'));
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    if (!status) return <Badge variant="outline" className="text-xs px-2 py-1">N/A</Badge>;
-
-    const variants: Record<string, any> = {
-      draft: 'outline',
-      pending: 'secondary',
-      active: 'default',
-      suspended: 'secondary',
-      cancelled: 'outline',
-      completed: 'default',
-    };
-    const statusKey = `admin.enrollments.status.${status}`;
-    const statusText = t(statusKey, status.replace(/_/g, ' '));
-    return <Badge variant={variants[status] || 'outline'} className="text-xs px-3 py-1 font-medium">{statusText}</Badge>;
+  const openSendLink = (e: Enrollment) => {
+    setSendLanguage(language || 'en');
+    setSendLinkFor(e);
   };
 
-  const getPaymentStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { variant: any; color: string; icon: any; text: string }> = {
-      paid: {
-        variant: 'default',
-        color: 'bg-green-100 text-green-700 border-green-300',
-        icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-        text: t('admin.enrollments.paymentStatus.paid', 'שולם')
-      },
-      partial: {
-        variant: 'secondary',
-        color: 'bg-yellow-100 text-yellow-700 border-yellow-300',
-        icon: <Clock className="h-3.5 w-3.5" />,
-        text: t('admin.enrollments.paymentStatus.partial', 'חלקי')
-      },
-      overdue: {
-        variant: 'destructive',
-        color: 'bg-red-100 text-red-700 border-red-300',
-        icon: <AlertCircle className="h-3.5 w-3.5" />,
-        text: t('admin.enrollments.paymentStatus.overdue', 'באיחור')
-      },
-      pending: {
-        variant: 'outline',
-        color: 'bg-gray-100 text-gray-700 border-gray-300',
-        icon: <Clock className="h-3.5 w-3.5" />,
-        text: t('admin.enrollments.paymentStatus.pending', 'ממתין')
-      },
-    };
+  // ── Numbers, filters, rows ──
+  const count = (s: string) => enrollments.filter((e) => e.status === s).length;
+  const overdue = enrollments.filter((e) => e.payment_status === 'overdue' && e.status !== 'cancelled');
+  const overdueOwed = overdue.reduce((sum, e) => sum + Math.max(0, Number(e.total_amount || 0) - Number(e.paid_amount || 0)), 0);
+  const overdueCurrency = overdue[0]?.currency || 'USD';
 
-    const config = statusConfig[status] || statusConfig.pending;
-    return (
-      <Badge variant={config.variant} className={`text-xs px-2 py-1 font-medium flex items-center gap-1.5 ${config.color}`}>
-        {config.icon}
-        {config.text}
-      </Badge>
+  const productOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const e of enrollments) if (e.product_id && !seen.has(e.product_id)) seen.set(e.product_id, e.product_name);
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
+  }, [enrollments]);
+
+  const beforeStatus = useMemo(() => {
+    const q = debounced.trim().toLowerCase();
+    return enrollments.filter(
+      (e) =>
+        (payment === 'all' || e.payment_status === payment) &&
+        (product === 'all' || e.product_id === product) &&
+        (!q || `${e.user_name} ${e.user_email} ${e.product_name}`.toLowerCase().includes(q)),
     );
-  };
+  }, [enrollments, debounced, payment, product]);
+  const shown = status === 'all' ? beforeStatus : beforeStatus.filter((e) => e.status === status);
+  const pillCount = (s: string) => beforeStatus.filter((e) => e.status === s).length;
 
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-    }).format(amount || 0);
+  const paged = usePagedList(shown, `${debounced}|${status}|${payment}|${product}`);
+  const filtersOn = !!search || status !== 'all' || payment !== 'all' || product !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setStatus('all');
+    setPayment('all');
+    setProduct('all');
   };
+  const toggleStatus = (s: StatusFilter) => setStatus((cur) => (cur === s ? 'all' : s));
+  const filteredNow = t('admin.list.filteredNow', 'Filtered now');
+  const num = (n: number) => n.toLocaleString();
+  const openEnrollment = enrollments.find((e) => e.id === openId) ?? null;
+  const COLS = 'minmax(0,1.15fr) minmax(0,1.25fr) 110px 170px 200px';
+  const createButton = <NewButton href="/admin/enrollments/new">{t('admin.enrollments.createEnrollment', 'New enrollment')}</NewButton>;
+  const initials = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase() || '?';
 
-  const formatPercentage = (paid: number, total: number) => {
-    if (!total || total === 0) return '0';
-    return Math.round((paid / total) * 100).toString();
-  };
+  let state: ReactNode = undefined;
+  if (!loaded || (loading && enrollments.length === 0)) state = <ListSkeleton />;
+  else if (loadError && enrollments.length === 0)
+    state = (
+      <ListState
+        icon={WifiOff}
+        tone="red"
+        title={t('admin.list.loadError', "We couldn't load the list")}
+        text={t('admin.list.loadErrorText', 'The internet connection may have dropped. Nothing was deleted.')}
+        action={
+          <button type="button" onClick={() => void load()} className={kitButton.primary}>
+            {t('admin.list.retry', 'Try again')}
+          </button>
+        }
+      />
+    );
+  else if (enrollments.length === 0)
+    state = (
+      <ListState
+        icon={GraduationCap}
+        title={t('admin.enrollments.noEnrollments', 'No enrollments found')}
+        text={t('admin.enrollments.noEnrollmentsDescription', 'Create an enrollment to get started.')}
+        action={createButton}
+      />
+    );
+  else if (shown.length === 0)
+    state = (
+      <ListState
+        icon={Search}
+        tone="grey"
+        title={t('admin.enrollments.noEnrollments', 'No enrollments found')}
+        text={t('admin.list.noMatchText', 'Clear the search and filters to see the whole list.')}
+        action={
+          <button type="button" onClick={clearFilters} className={kitButton.secondary}>
+            {t('admin.enrollments.clearFilters', 'Clear filters')}
+          </button>
+        }
+      />
+    );
 
-  const formatDate = (dateString: string) => {
-    const locale = language === 'he' ? 'he-IL' : 'en-US';
-    return new Date(dateString).toLocaleDateString(locale, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  const chipTone = {
+    red: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300',
+    amber: 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+    violet: 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300',
   };
 
   return (
     <AdminLayout>
-      {loading ? (
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
-          <div>
-            <h1 suppressHydrationWarning style={{
-              fontSize: 'var(--font-size-3xl)',
-              fontFamily: 'var(--font-family-heading)',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'hsl(var(--text-heading))'
-            }}>
-              <span suppressHydrationWarning>{t('admin.enrollments.title', 'Enrollments')}</span>
-            </h1>
-            <p suppressHydrationWarning style={{
-              color: 'hsl(var(--muted-foreground))',
-              fontSize: 'var(--font-size-sm)',
-              marginTop: '0.25rem'
-            }}>
-              {t('admin.enrollments.description', 'Manage user enrollments and payments')}
-            </p>
-          </div>
-          <Button
-            onClick={() => setCreateEnrollmentDialogOpen(true)}
-            style={{
-              width: isMobile ? '100%' : 'auto'
-            }}
-          >
-            <Plus className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-            <span suppressHydrationWarning>{t('admin.enrollments.createEnrollment', 'Create Enrollment')}</span>
-          </Button>
-        </div>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        <PageTitle
+          icon={GraduationCap}
+          title={t('admin.enrollments.title', 'Enrollments')}
+          badge={loaded ? num(enrollments.length) : undefined}
+          description={t('admin.enrollments.description', 'Manage user enrollments and payments')}
+          actions={createButton}
+        />
 
-        {/* Summary Cards */}
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          {/* Total Enrollments Card */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.stats.total', 'Total')}
-              </CardTitle>
-              <Users className="h-3.5 w-3.5 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
-                {enrollments.length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.enrollments.stats.totalDesc', 'All enrollments')}
-              </p>
-            </CardContent>
-          </Card>
+        <KpiStrip label={t('admin.list.numbers', 'Numbers')}>
+          <KpiItem
+            icon={<Pencil />}
+            tone="grey"
+            label={t('admin.enrollments.stats.draft', 'Drafts')}
+            value={loaded ? num(count('draft')) : '—'}
+            subtitle={t('admin.enrollments.stats.draftDesc', 'Link not sent yet')}
+            onClick={() => toggleStatus('draft')}
+            active={status === 'draft'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<Clock />}
+            tone="amber"
+            label={t('admin.enrollments.stats.pending', 'Waiting for the parent')}
+            value={loaded ? num(count('pending')) : '—'}
+            subtitle={t('admin.enrollments.stats.pendingDesc', 'Got the link, not finished')}
+            onClick={() => toggleStatus('pending')}
+            active={status === 'pending'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<AlertCircle />}
+            tone={overdue.length > 0 ? 'amber' : 'grey'}
+            label={t('admin.enrollments.stats.overdue', 'Payment overdue')}
+            value={loaded ? num(overdue.length) : '—'}
+            subtitle={
+              loaded && overdue.length > 0
+                ? t('admin.enrollments.stats.overdueOwed', '{amount} still to pay').replace('{amount}', f.money(overdueOwed, overdueCurrency))
+                : undefined
+            }
+            onClick={() => setPayment((cur) => (cur === 'overdue' ? 'all' : 'overdue'))}
+            active={payment === 'overdue'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<CheckCircle2 />}
+            tone="green"
+            label={t('admin.enrollments.stats.active', 'Active')}
+            value={loaded ? num(count('active')) : '—'}
+            subtitle={t('admin.enrollments.stats.activeDesc', 'Currently enrolled')}
+            onClick={() => toggleStatus('active')}
+            active={status === 'active'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<GraduationCap />}
+            tone="blue"
+            label={t('admin.enrollments.stats.completed', 'Completed')}
+            value={loaded ? num(count('completed')) : '—'}
+            subtitle={t('admin.enrollments.stats.completedDesc', 'Finished')}
+            onClick={() => toggleStatus('completed')}
+            active={status === 'completed'}
+            activeNote={filteredNow}
+          />
+        </KpiStrip>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.stats.draft', 'Draft')}
-              </CardTitle>
-              <Edit className="h-3.5 w-3.5 text-gray-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
-                {enrollments.filter(e => e.status === 'draft').length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.enrollments.stats.draftDesc', 'Not sent yet')}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.stats.pending', 'Pending')}
-              </CardTitle>
-              <Clock className="h-3.5 w-3.5 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
-                {enrollments.filter(e => e.status === 'pending').length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.enrollments.stats.pendingDesc', 'Awaiting completion')}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.stats.active', 'Active')}
-              </CardTitle>
-              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
-                {enrollments.filter(e => e.status === 'active').length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.enrollments.stats.activeDesc', 'Currently enrolled')}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.stats.completed', 'Completed')}
-              </CardTitle>
-              <CheckCircle2 className="h-3.5 w-3.5 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
-                {enrollments.filter(e => e.status === 'active').length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.enrollments.stats.completedDesc', 'Finished')}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium" suppressHydrationWarning>
-                {t('admin.enrollments.stats.cancelled', 'Cancelled')}
-              </CardTitle>
-              <X className="h-3.5 w-3.5 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">
-                {enrollments.filter(e => e.status === 'cancelled').length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.enrollments.stats.cancelledDesc', 'Cancelled')}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div style={{
-              display: 'flex',
-              flexDirection: isMobile ? 'column' : 'row',
-              gap: '1rem',
-              alignItems: 'center',
-              flexWrap: 'wrap'
-            }}>
-              {/* Search */}
-              <div style={{
-                flex: isMobile ? 'none' : 1,
-                width: isMobile ? '100%' : 'auto',
-                display: 'flex',
-                gap: '0.5rem'
-              }}>
-                <Input
-                  placeholder={t('admin.enrollments.searchPlaceholder', 'User name, email, or product')}
-                  value={filters.search || ''}
-                  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                  style={{ flex: 1 }}
+        <ListPanel
+          label={t('admin.enrollments.title', 'Enrollments')}
+          toolbar={
+            <>
+              <ListSearch
+                value={search}
+                onChange={setSearch}
+                placeholder={t('admin.enrollments.searchPlaceholder', 'User name, email, or product')}
+                clearLabel={t('admin.users.list.clearSearch', 'Clear search')}
+              />
+              <FilterSelect
+                label={t('admin.enrollments.paymentStatus', 'Payment')}
+                value={payment}
+                onChange={setPayment}
+                dir={direction}
+                options={[
+                  { value: 'all', label: t('admin.enrollments.allPaymentStatuses', 'All') },
+                  ...PAYMENT_STATUSES.map((p) => ({ value: p, label: f.paymentLabel(p) })),
+                ]}
+              />
+              <FilterSelect
+                label={t('admin.enrollments.table.product', 'Product')}
+                value={product}
+                onChange={setProduct}
+                dir={direction}
+                options={[{ value: 'all', label: t('admin.enrollments.allProducts', 'All products') }, ...productOptions]}
+              />
+              <IconButton label={t('common.refresh', 'Refresh')} onClick={() => void load()} disabled={loading}>
+                <RefreshCw className={`h-[18px] w-[18px] ${loading ? 'animate-spin' : ''}`} aria-hidden />
+              </IconButton>
+            </>
+          }
+          pills={
+            <>
+              <QuickPills<StatusFilter>
+                label={t('admin.enrollments.status', 'Status')}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: 'all', label: t('admin.enrollments.allStatuses', 'All'), count: beforeStatus.length },
+                  ...ENROLLMENT_STATUSES.map((s) => ({
+                    value: s,
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${STATUS_TONE[s].dot}`} aria-hidden />
+                        {f.statusLabel(s)}
+                      </span>
+                    ),
+                    count: pillCount(s),
+                  })),
+                ]}
+              />
+              <span className="shrink-0">
+                <ClearFilters show={filtersOn} label={t('admin.enrollments.clearFilters', 'Clear filters')} onClear={clearFilters} />
+              </span>
+            </>
+          }
+          columns={COLS}
+          head={[
+            t('admin.enrollments.table.student', 'Client'),
+            t('admin.enrollments.table.productAndPlan', 'Product and payment plan'),
+            t('admin.enrollments.table.status', 'Status'),
+            t('admin.enrollments.table.paid', 'Paid'),
+            t('admin.enrollments.table.nextStep', 'Next step'),
+          ]}
+          state={state}
+          footer={
+            loaded && shown.length > 0 ? (
+              <ListFooter
+                showingText={t('admin.users.list.showingRange', 'Showing {from}–{to} of {total}')
+                  .replace('{from}', num(paged.start + 1))
+                  .replace('{to}', num(paged.start + paged.pageItems.length))
+                  .replace('{total}', num(shown.length))}
+                pageText={t('admin.users.list.pageOf', 'Page {page} of {pages}').replace('{page}', String(paged.page)).replace('{pages}', String(paged.totalPages))}
+                page={paged.page}
+                totalPages={paged.totalPages}
+                onPage={paged.setPage}
+                prevLabel={t('admin.users.list.prevPage', 'Previous page')}
+                nextLabel={t('admin.users.list.nextPage', 'Next page')}
+                rtl={rtl}
+              />
+            ) : undefined
+          }
+        >
+          {paged.pageItems.map((e) => {
+            const tone = STATUS_TONE[e.status] ?? STATUS_TONE.draft;
+            const payTone = PAYMENT_TONE[e.payment_status] ?? PAYMENT_TONE.pending;
+            const look = productTypeLook((e.product_type || '').toLowerCase() as ProductType);
+            const TypeIcon = look.icon;
+            const total = Number(e.total_amount || 0);
+            const pct = total > 0 ? Math.min(100, Math.round((Number(e.paid_amount || 0) / total) * 100)) : 0;
+            const step = f.nextStep(e);
+            return (
+              <ListRow key={e.id} columns={COLS} onOpen={() => setOpenId(e.id)} label={e.user_name} selected={openId === e.id} rtl={rtl}>
+                <ListRowMain
+                  lead={
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary" aria-hidden>
+                      {initials(e.user_name)}
+                    </span>
+                  }
+                  title={<bdi className="font-semibold">{e.user_name}</bdi>}
+                  sub={<span dir="ltr">{e.user_email}</span>}
                 />
-              </div>
-
-              {/* Status Filter */}
-              <Select
-                value={filters.status || 'all'}
-                onValueChange={(value) => setFilters({ ...filters, status: value === 'all' ? undefined : value })}
-                dir={direction}
-              >
-                <SelectTrigger style={{ width: isMobile ? '100%' : '180px' }} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectValue placeholder={t('admin.enrollments.status', 'Status')} />
-                </SelectTrigger>
-                <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectItem value="all" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.allStatuses', 'All Statuses')}</span></SelectItem>
-                  <SelectItem value="draft" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.status.draft', 'Draft')}</span></SelectItem>
-                  <SelectItem value="pending" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.status.pending', 'Pending')}</span></SelectItem>
-                  <SelectItem value="active" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.status.active', 'Active')}</span></SelectItem>
-                  <SelectItem value="suspended" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.status.suspended', 'Suspended')}</span></SelectItem>
-                  <SelectItem value="cancelled" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.status.cancelled', 'Cancelled')}</span></SelectItem>
-                  <SelectItem value="completed" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.status.completed', 'Completed')}</span></SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Payment Status Filter */}
-              <Select
-                value={filters.paymentStatus || 'all'}
-                onValueChange={(value) => setFilters({ ...filters, paymentStatus: value === 'all' ? undefined : value })}
-                dir={direction}
-              >
-                <SelectTrigger style={{ width: isMobile ? '100%' : '180px' }} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectValue placeholder={t('admin.enrollments.paymentStatus', 'Payment Status')} />
-                </SelectTrigger>
-                <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectItem value="all" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.allPaymentStatuses', 'All Payment Statuses')}</span></SelectItem>
-                  <SelectItem value="paid" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.paymentStatus.paid', 'Paid')}</span></SelectItem>
-                  <SelectItem value="partial" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.paymentStatus.partial', 'Partial')}</span></SelectItem>
-                  <SelectItem value="pending" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.paymentStatus.pending', 'Pending')}</span></SelectItem>
-                  <SelectItem value="overdue" className={isRtl ? 'text-right' : 'text-left'}><span suppressHydrationWarning>{t('admin.enrollments.paymentStatus.overdue', 'Overdue')}</span></SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Clear Filters Button */}
-              <Button
-                variant="outline"
-                onClick={() => setFilters({})}
-                style={{
-                  width: isMobile ? '100%' : 'auto'
-                }}
-              >
-                <X className={`w-4 h-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('admin.enrollments.clearFilters', 'Clear Filters')}</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Enrollments Table */}
-        <Card>
-          <CardContent className="p-0">
-            {/* Mobile Card View */}
-            <div className="block md:hidden">
-              {enrollments.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground" suppressHydrationWarning>
-                  {t('admin.enrollments.noEnrollments', 'No enrollments found')}
-                </div>
-              ) : (
-                paginatedEnrollments.map((enrollment) => (
-                  <div key={enrollment.id} className="border-b p-4 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">{enrollment.user_name}</div>
-                        <div className="text-sm text-muted-foreground">{enrollment.user_email}</div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                            {enrollment.id.substring(0, 8)}...
-                          </code>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(enrollment.id);
-                              toast.success(t('admin.enrollments.idCopied', 'מזהה הועתק ללוח'));
-                            }}
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                            title={t('admin.enrollments.copyId', 'העתק מזהה מלא')}
-                          >
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      {getStatusBadge(enrollment.status)}
-                    </div>
-
-                    <div>
-                      <div className="text-sm font-medium">{enrollment.product_name}</div>
-                      <div className="text-xs text-muted-foreground">{formatProductType(enrollment.product_type)}</div>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-sm">
-                      {getPaymentStatusBadge(enrollment.payment_status)}
-                      <span className="font-medium">
-                        {formatCurrency(enrollment.paid_amount, enrollment.currency)} / {formatCurrency(enrollment.total_amount, enrollment.currency)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        ({formatPercentage(enrollment.paid_amount, enrollment.total_amount)}%)
-                      </span>
-                    </div>
-
-                    {/* Enrollment date — falls back to created_at for drafts
-                        that haven't completed the wizard yet. */}
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Calendar className="h-3.5 w-3.5" />
-                      <span suppressHydrationWarning>
-                        {enrollment.enrolled_at
-                          ? `${t('admin.enrollments.table.enrolledAt', 'תאריך הרשמה')}: ${formatDate(enrollment.enrolled_at)}`
-                          : `${t('admin.enrollments.table.draftCreated', 'טיוטה נוצרה')}: ${formatDate(enrollment.created_at)}`}
-                      </span>
-                    </div>
-
-                    <div className="flex gap-2 pt-2 flex-wrap">
-                      {enrollment.status !== 'cancelled' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSendLinkEnrollment(enrollment);
-                            setSelectedLanguage(language || 'en');
-                            setSendLinkDialogOpen(true);
-                          }}
-                          title={t('admin.enrollments.sendLink', 'Send enrollment link')}
-                          className="relative"
-                        >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
-                          {enrollment.invitation_sent_at && (
-                            <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 border-2 border-background"
-                                  title={`Sent: ${new Date(enrollment.invitation_sent_at).toLocaleString()}`} />
-                          )}
-                        </Button>
-                      )}
-                      {(enrollment.status === 'pending' || enrollment.status === 'active') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedEnrollment(enrollment);
-                            setResetDialogOpen(true);
-                          }}
-                          title={t('admin.enrollments.reset', 'Reset enrollment wizard')}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {enrollment.status === 'draft' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedEnrollment(enrollment);
-                            setOverrideDialogOpen(true);
-                          }}
-                          title={t('admin.enrollments.edit', 'Edit enrollment')}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {enrollment.status !== 'cancelled' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedEnrollment(enrollment);
-                            setCancelDialogOpen(true);
-                          }}
-                          title={t('admin.enrollments.delete', 'Delete enrollment')}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Desktop Table View - Two Row Layout */}
-            <div className="hidden md:block space-y-3">
-              {enrollments.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground" suppressHydrationWarning>
-                  {t('admin.enrollments.noEnrollments', 'No enrollments found')}
-                </div>
-              ) : (
-                paginatedEnrollments.map((enrollment) => (
-                  <div key={enrollment.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow bg-card" dir={isRtl ? 'rtl' : 'ltr'}>
-                    {/* Row 1: Identity + Badges + Actions */}
-                    <div className="flex items-center gap-4 px-4 py-3 border-b bg-muted/30">
-                      {/* Type Badge + ID */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <div
-                          className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-semibold ${
-                            enrollment.enrollment_type === 'admin_assigned'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-secondary text-secondary-foreground'
-                          }`}
-                          title={enrollment.enrollment_type === 'admin_assigned'
-                            ? t('admin.enrollments.type.adminAssigned', 'הוקצה על ידי מנהל')
-                            : t('admin.enrollments.type.selfEnrolled', 'הרשמה עצמית')}
-                        >
-                          {enrollment.enrollment_type === 'admin_assigned' ? 'מ' : 'ע'}
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                          <code className="text-xs bg-muted px-2 py-0.5 rounded font-mono">
-                            {enrollment.id.substring(0, 8)}
-                          </code>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(enrollment.id);
-                              toast.success(t('admin.enrollments.idCopied', 'המזהה הועתק'));
-                            }}
-                            className="text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
-                            title={t('admin.enrollments.copyId', 'העתק מזהה מלא')}
-                          >
-                            {t('admin.enrollments.copy', 'העתק')}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* User Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm truncate">{enrollment.user_name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{enrollment.user_email}</div>
-                      </div>
-
-                      {/* Status Badges */}
-                      <div className="flex items-center gap-4 flex-shrink-0">
-                        <div className="flex items-center gap-2">
-                          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                            {t('admin.enrollments.table.status', 'סטטוס')}:
-                          </div>
-                          {getStatusBadge(enrollment.status)}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                            {t('admin.enrollments.paymentStatus', 'תשלום')}:
-                          </div>
-                          {getPaymentStatusBadge(enrollment.payment_status)}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-1 flex-shrink-0">
-                        {enrollment.status !== 'cancelled' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 relative"
-                            onClick={() => {
-                              setSendLinkEnrollment(enrollment);
-                              setSelectedLanguage(language || 'en');
-                              setSendLinkDialogOpen(true);
-                            }}
-                            title={t('admin.enrollments.sendLink', 'שלח קישור הרשמה')}
-                          >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                            </svg>
-                            {enrollment.invitation_sent_at && (
-                              <span className={`absolute -top-0.5 h-2 w-2 rounded-full bg-green-500 border border-background ${isRtl ? '-left-0.5' : '-right-0.5'}`} />
-                            )}
-                          </Button>
-                        )}
-                        {(enrollment.status === 'pending' || enrollment.status === 'active') && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => {
-                              setSelectedEnrollment(enrollment);
-                              setResetDialogOpen(true);
-                            }}
-                            title={t('admin.enrollments.reset', 'אפס הרשמה')}
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
-                        )}
-                        {enrollment.status === 'draft' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => {
-                              setSelectedEnrollment(enrollment);
-                              setOverrideDialogOpen(true);
-                            }}
-                            title={t('admin.enrollments.edit', 'ערוך הרשמה')}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        )}
-                        {enrollment.status !== 'cancelled' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => {
-                              setSelectedEnrollment(enrollment);
-                              setCancelDialogOpen(true);
-                            }}
-                            title={t('admin.enrollments.delete', 'מחק הרשמה')}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Row 2: Product + Payment Details + Enrollment Date.
-                        For drafts, enrolled_at is null — fall back to
-                        created_at so the cell never shows blank. */}
-                    <div className="grid grid-cols-4 gap-4 px-4 py-3">
-                      {/* Product Info */}
-                      <div className="flex flex-col gap-1">
-                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                          {t('admin.enrollments.table.product', 'מוצר')}
-                        </div>
-                        <div className="font-semibold text-sm truncate">{enrollment.product_name}</div>
-                        <div className="text-xs text-muted-foreground">{formatProductType(enrollment.product_type)}</div>
-                      </div>
-
-                      {/* Payment Plan */}
-                      <div className="flex flex-col gap-1">
-                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                          {t('admin.enrollments.table.paymentPlan', 'תוכנית תשלום')}
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className="cursor-pointer hover:bg-muted transition-colors text-xs font-medium px-3 py-1.5 w-fit"
-                          onClick={() => {
-                            setSelectedEnrollment(enrollment);
-                            setPaymentPlanDialogOpen(true);
-                          }}
-                        >
-                          {formatPaymentPlanName(enrollment)}
-                        </Badge>
-                      </div>
-
-                      {/* Payment Amount */}
-                      <div className="flex flex-col gap-1">
-                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                          {t('admin.enrollments.table.amount', 'סכומים')}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="font-bold text-sm whitespace-nowrap">
-                            {formatCurrency(enrollment.paid_amount, enrollment.currency)}
-                          </div>
-                          <span className="text-xs text-muted-foreground">/</span>
-                          <div className="font-semibold text-sm text-muted-foreground whitespace-nowrap">
-                            {formatCurrency(enrollment.total_amount, enrollment.currency)}
-                          </div>
-                        </div>
-                        <div className="text-xs font-medium text-muted-foreground">
-                          {formatPercentage(enrollment.paid_amount, enrollment.total_amount)}% {t('admin.enrollments.completed', 'הושלם')}
-                        </div>
-                      </div>
-
-                      {/* Enrollment Date */}
-                      <div className="flex flex-col gap-1">
-                        <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                          {t('admin.enrollments.table.enrolledAt', 'תאריך הרשמה')}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-sm font-medium">
-                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span suppressHydrationWarning>
-                            {formatDate(enrollment.enrolled_at || enrollment.created_at)}
-                          </span>
-                        </div>
-                        {!enrollment.enrolled_at && (
-                          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
-                            {t('admin.enrollments.table.draftCreated', 'טיוטה נוצרה')}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {enrollments.length === 0 && !loading && (
-              <div className="py-12 text-center">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">{t('admin.enrollments.noEnrollments', 'No Enrollments Found')}</h3>
-                <p className="text-muted-foreground">
-                  {t('admin.enrollments.noEnrollmentsDescription', 'No enrollments match your current filters')}
-                </p>
-              </div>
-            )}
-
-            {/* Pagination Controls */}
-            {enrollments.length > 0 && (
-              <div className="flex items-center justify-between px-4 py-5 border-t bg-muted/20" dir={isRtl ? 'rtl' : 'ltr'}>
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="items-per-page" className="text-base font-medium" suppressHydrationWarning>
-                    {t('admin.enrollments.pagination.itemsPerPage', 'פריטים בעמוד')}:
-                  </Label>
-                  <Select
-                    value={itemsPerPage.toString()}
-                    onValueChange={(value) => {
-                      setItemsPerPage(Number(value));
-                      setCurrentPage(1); // Reset to first page when changing items per page
-                    }}
-                  >
-                    <SelectTrigger className="w-24 text-base">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="5" className="text-base">5</SelectItem>
-                      <SelectItem value="10" className="text-base">10</SelectItem>
-                      <SelectItem value="20" className="text-base">20</SelectItem>
-                      <SelectItem value="50" className="text-base">50</SelectItem>
-                      <SelectItem value="100" className="text-base">100</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-base text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.enrollments.pagination.showing', 'מציג {start}-{end} מתוך {total}')
-                      .replace('{start}', (startIndex + 1).toString())
-                      .replace('{end}', Math.min(endIndex, enrollments.length).toString())
-                      .replace('{total}', enrollments.length.toString())}
+                <ListCell label={t('admin.enrollments.table.product', 'Product')}>
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className={`hidden h-9 w-9 shrink-0 place-items-center rounded-[10px] md:grid ${look.tile}`} aria-hidden>
+                      <TypeIcon className="h-[17px] w-[17px]" />
+                    </span>
+                    <span className="min-w-0">
+                      <bdi className="block truncate font-medium">{e.product_name}</bdi>
+                      <span className="block truncate text-[13px] text-muted-foreground">{f.planName(e)}</span>
+                    </span>
                   </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="default"
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
-                    className="h-9 w-9 p-0"
-                  >
-                    <span suppressHydrationWarning className="text-base">←</span>
-                  </Button>
-
-                  <div className="flex gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter(page => {
-                        // Show first page, last page, current page, and pages around current
-                        return page === 1 ||
-                               page === totalPages ||
-                               Math.abs(page - currentPage) <= 1;
-                      })
-                      .map((page, index, array) => {
-                        // Add ellipsis if there's a gap
-                        const showEllipsisBefore = index > 0 && page - array[index - 1] > 1;
-
-                        return (
-                          <React.Fragment key={page}>
-                            {showEllipsisBefore && (
-                              <span className="px-2 py-2 text-sm text-muted-foreground">...</span>
-                            )}
-                            <Button
-                              variant={currentPage === page ? 'default' : 'outline'}
-                              size="default"
-                              onClick={() => setCurrentPage(page)}
-                              className="h-9 min-w-[2.25rem] text-sm font-medium"
-                            >
-                              {page}
-                            </Button>
-                          </React.Fragment>
-                        );
-                      })}
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    size="default"
-                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                    disabled={currentPage === totalPages}
-                    className="h-9 w-9 p-0"
-                  >
-                    <span suppressHydrationWarning className="text-base">→</span>
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Cancel Enrollment Dialog */}
-        <CancelEnrollmentDialog
-          open={cancelDialogOpen}
-          enrollment={selectedEnrollment}
-          onClose={() => setCancelDialogOpen(false)}
-          onCancel={handleCancelEnrollment}
-        />
-
-        {/* Manual Payment Dialog */}
-        <ManualPaymentDialog
-          open={manualPaymentDialogOpen}
-          enrollment={selectedEnrollment}
-          onClose={() => setManualPaymentDialogOpen(false)}
-          onRecord={handleRecordManualPayment}
-        />
-
-        {/* Create Enrollment Dialog */}
-        <CreateEnrollmentDialog
-          open={createEnrollmentDialogOpen}
-          onClose={() => setCreateEnrollmentDialogOpen(false)}
-          onSuccess={() => {
-            setCreateEnrollmentDialogOpen(false);
-            fetchEnrollments();
-          }}
-        />
-
-        {/* Edit Enrollment Dialog */}
-        <EditEnrollmentDialog
-          open={overrideDialogOpen}
-          enrollment={selectedEnrollment}
-          onClose={() => setOverrideDialogOpen(false)}
-          onSuccess={() => {
-            setOverrideDialogOpen(false);
-            fetchEnrollments();
-          }}
-        />
-
-        {/* Payment Plan Details Dialog */}
-        <PaymentPlanDetailsDialog
-          open={paymentPlanDialogOpen}
-          enrollment={selectedEnrollment}
-          onClose={() => setPaymentPlanDialogOpen(false)}
-        />
-
-        {/* Send Enrollment Link Dialog */}
-        <SendEnrollmentLinkDialog
-          open={sendLinkDialogOpen}
-          enrollment={sendLinkEnrollment}
-          selectedLanguage={selectedLanguage}
-          onLanguageChange={setSelectedLanguage}
-          onClose={() => {
-            setSendLinkDialogOpen(false);
-            setSendLinkEnrollment(null);
-          }}
-          onSend={handleSendEnrollmentLink}
-          sending={sendingLink}
-        />
-
-        {/* Reset Enrollment Dialog */}
-        <ResetEnrollmentDialog
-          open={resetDialogOpen}
-          enrollment={selectedEnrollment}
-          onClose={() => {
-            setResetDialogOpen(false);
-            setSelectedEnrollment(null);
-          }}
-          onReset={handleResetEnrollment}
-          resetting={resetting}
-        />
+                </ListCell>
+                <ListCell label={t('admin.enrollments.table.status', 'Status')}>
+                  <span className={`inline-flex items-center gap-2 font-semibold ${tone.text}`}>
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden />
+                    {f.statusLabel(e.status)}
+                  </span>
+                </ListCell>
+                <ListCell label={t('admin.enrollments.table.paid', 'Paid')}>
+                  {total > 0 ? (
+                    <span className="block w-full max-w-[11rem]">
+                      <span className="flex items-baseline justify-between gap-2 text-[13.5px] font-semibold tabular-nums">
+                        <span dir="ltr">
+                          {f.money(e.paid_amount, e.currency)} / {f.money(total, e.currency)}
+                        </span>
+                        <span className={`text-[12.5px] ${payTone.text}`}>{f.paymentLabel(e.payment_status)}</span>
+                      </span>
+                      <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                        <span className={`block h-full rounded-full ${payTone.bar}`} style={{ width: `${pct}%` }} />
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{t('admin.enrollments.paymentPlan.free', 'Free')}</span>
+                  )}
+                </ListCell>
+                <ListCell label={t('admin.enrollments.table.nextStep', 'Next step')}>
+                  {step.kind === 'send' ? (
+                    <button
+                      type="button"
+                      onClick={() => openSendLink(e)}
+                      className="relative z-10 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-[13px] font-semibold text-primary hover:bg-muted"
+                    >
+                      <Mail className="h-4 w-4" aria-hidden />
+                      {t('admin.enrollments.sendLink', 'Send link')}
+                    </button>
+                  ) : step.kind === 'chip' ? (
+                    <span className={`inline-flex max-w-full items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12.5px] font-semibold ${chipTone[step.tone]}`}>
+                      {step.text}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{step.text}</span>
+                  )}
+                </ListCell>
+              </ListRow>
+            );
+          })}
+        </ListPanel>
       </div>
-      )}
+
+      <EnrollmentDrawer
+        enrollment={openEnrollment}
+        refreshKey={refreshKey}
+        onClose={() => setOpenId(null)}
+        onSendLink={openSendLink}
+        onReset={setResetFor}
+        onEdit={setEditFor}
+        onCancel={setCancelFor}
+        onPlanDetails={setPlanFor}
+        onRecordPayment={(enrollment, schedule, label) => setPaymentFor({ enrollment, schedule, label })}
+      />
+
+      {/* The same dialogs as before */}
+      <SendEnrollmentLinkDialog
+        open={!!sendLinkFor}
+        enrollment={sendLinkFor}
+        selectedLanguage={sendLanguage}
+        onLanguageChange={setSendLanguage}
+        onClose={() => setSendLinkFor(null)}
+        onSend={sendLink}
+        sending={sendingLink}
+      />
+      <ResetEnrollmentDialog open={!!resetFor} enrollment={resetFor} onClose={() => setResetFor(null)} onReset={reset} resetting={resetting} />
+      <EditEnrollmentDialog
+        open={!!editFor}
+        enrollment={editFor}
+        onClose={() => setEditFor(null)}
+        onSuccess={() => {
+          setEditFor(null);
+          changed();
+        }}
+      />
+      <CancelEnrollmentDialog open={!!cancelFor} enrollment={cancelFor} onClose={() => setCancelFor(null)} onCancel={cancel} />
+      <PaymentPlanDetailsDialog open={!!planFor} enrollment={planFor} onClose={() => setPlanFor(null)} />
+      <ManualPaymentDialog
+        open={!!paymentFor}
+        enrollment={paymentFor?.enrollment ?? null}
+        schedule={paymentFor?.schedule ?? null}
+        scheduleLabel={paymentFor?.label}
+        onClose={() => setPaymentFor(null)}
+        onRecord={recordPayment}
+      />
     </AdminLayout>
-  );
-}
-
-// Cancel Enrollment Dialog
-function CancelEnrollmentDialog({
-  open,
-  enrollment,
-  onClose,
-  onCancel,
-}: {
-  open: boolean;
-  enrollment: Enrollment | null;
-  onClose: () => void;
-  onCancel: (enrollmentId: string, reason: string, refundAmount?: number) => void;
-}) {
-  const { t, direction } = useAdminLanguage();
-  const [reason, setReason] = useState('');
-  const [refundAmount, setRefundAmount] = useState(0);
-  const [includeRefund, setIncludeRefund] = useState(false);
-
-  useEffect(() => {
-    if (enrollment) {
-      setReason('');
-      setRefundAmount(enrollment.paid_amount);
-      setIncludeRefund(false);
-    }
-  }, [enrollment]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (enrollment) {
-      onCancel(enrollment.id, reason, includeRefund ? refundAmount : undefined);
-    }
-  };
-
-  if (!enrollment) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction}>
-        <DialogHeader>
-          <DialogTitle>{t('admin.enrollments.cancel.title', 'Cancel Enrollment')}</DialogTitle>
-          <DialogDescription>
-            {t('admin.enrollments.cancel.description', 'Cancel {user}\'s enrollment in {product}')
-              .replace('{user}', enrollment.user_name)
-              .replace('{product}', enrollment.product_name)}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Alert variant="destructive">
-            <AlertDescription>
-              {t('admin.enrollments.cancel.alert', 'This action will cancel all future scheduled payments for this enrollment.')}
-            </AlertDescription>
-          </Alert>
-
-          <div>
-            <Label>{t('admin.enrollments.cancel.reason', 'Reason')}</Label>
-            <Input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={t('admin.enrollments.cancel.reasonPlaceholder', 'e.g., User requested cancellation')}
-              required
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="include_refund"
-              checked={includeRefund}
-              onChange={(e) => setIncludeRefund(e.target.checked)}
-            />
-            <Label htmlFor="include_refund">{t('admin.enrollments.cancel.processRefund', 'Process refund')}</Label>
-          </div>
-
-          {includeRefund && (
-            <div>
-              <Label>{t('admin.enrollments.cancel.refundAmount', 'Refund Amount')}</Label>
-              <Input
-                type="number"
-                min="0"
-                max={enrollment.paid_amount}
-                step="0.01"
-                value={refundAmount}
-                onChange={(e) => setRefundAmount(Number(e.target.value))}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('admin.enrollments.cancel.maximum', 'Maximum')}: {new Intl.NumberFormat('en-US', { style: 'currency', currency: enrollment.currency }).format(enrollment.paid_amount)}
-              </p>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button type="submit" variant="destructive">
-              {t('admin.enrollments.cancel.cancelButton', 'Cancel Enrollment')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Manual Payment Dialog
-function ManualPaymentDialog({
-  open,
-  enrollment,
-  onClose,
-  onRecord,
-}: {
-  open: boolean;
-  enrollment: Enrollment | null;
-  onClose: () => void;
-  onRecord: (enrollmentId: string, scheduleId: string, paymentMethod: string, reference: string, notes: string) => void;
-}) {
-  const { t, direction } = useAdminLanguage();
-  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
-  const [reference, setReference] = useState('');
-  const [notes, setNotes] = useState('');
-  const [scheduleId, setScheduleId] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (enrollment) {
-      onRecord(enrollment.id, scheduleId, paymentMethod, reference, notes);
-    }
-  };
-
-  if (!enrollment) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction}>
-        <DialogHeader>
-          <DialogTitle>{t('admin.enrollments.manualPayment.title', 'Record Manual Payment')}</DialogTitle>
-          <DialogDescription>
-            {t('admin.enrollments.manualPayment.description', 'Record an offline payment for {user}')
-              .replace('{user}', enrollment.user_name)}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label>{t('admin.enrollments.manualPayment.paymentMethod', 'Payment Method')}</Label>
-            <Select value={paymentMethod} onValueChange={setPaymentMethod} dir={direction}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent dir={direction}>
-                <SelectItem value="bank_transfer">{t('admin.enrollments.manualPayment.bankTransfer', 'Bank Transfer')}</SelectItem>
-                <SelectItem value="cash">{t('admin.enrollments.manualPayment.cash', 'Cash')}</SelectItem>
-                <SelectItem value="check">{t('admin.enrollments.manualPayment.check', 'Check')}</SelectItem>
-                <SelectItem value="other">{t('admin.enrollments.manualPayment.other', 'Other')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>{t('admin.enrollments.manualPayment.reference', 'Transaction Reference')}</Label>
-            <Input
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder={t('admin.enrollments.manualPayment.referencePlaceholder', 'e.g., TXN-12345')}
-              required
-            />
-          </div>
-
-          <div>
-            <Label>{t('admin.enrollments.manualPayment.notes', 'Notes')}</Label>
-            <Input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={t('admin.enrollments.manualPayment.notesPlaceholder', 'Additional notes')}
-            />
-          </div>
-
-          <Alert>
-            <AlertDescription>
-              {t('admin.enrollments.manualPayment.alert', 'This will mark the payment as completed without processing through Stripe.')}
-            </AlertDescription>
-          </Alert>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button type="submit">
-              {t('admin.enrollments.manualPayment.recordButton', 'Record Payment')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Reset Enrollment Dialog
-function ResetEnrollmentDialog({
-  open,
-  enrollment,
-  onClose,
-  onReset,
-  resetting,
-}: {
-  open: boolean;
-  enrollment: Enrollment | null;
-  onClose: () => void;
-  onReset: (resetSignature: boolean, resetPayment: boolean) => void;
-  resetting: boolean;
-}) {
-  const { t, direction } = useAdminLanguage();
-  const [resetSignature, setResetSignature] = useState(true);
-  const [resetPayment, setResetPayment] = useState(true);
-
-  useEffect(() => {
-    if (enrollment) {
-      setResetSignature(true);
-      setResetPayment(true);
-    }
-  }, [enrollment]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onReset(resetSignature, resetPayment);
-  };
-
-  if (!enrollment) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction}>
-        <DialogHeader>
-          <DialogTitle suppressHydrationWarning>
-            {t('admin.enrollments.reset.title', 'Reset Enrollment Wizard')}
-          </DialogTitle>
-          <DialogDescription suppressHydrationWarning>
-            {t('admin.enrollments.reset.description', 'Reset the enrollment wizard for {user} to allow them to go through the steps again')
-              .replace('{user}', enrollment.user_name)}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Alert>
-            <AlertDescription suppressHydrationWarning>
-              {t('admin.enrollments.reset.info', 'This will reset the enrollment status to "pending" and allow the user to restart the enrollment wizard.')}
-            </AlertDescription>
-          </Alert>
-
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="reset_signature"
-                checked={resetSignature}
-                onChange={(e) => setResetSignature(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="reset_signature" className="cursor-pointer" suppressHydrationWarning>
-                {t('admin.enrollments.reset.resetSignature', 'Reset DocuSign signature status')}
-              </Label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="reset_payment"
-                checked={resetPayment}
-                onChange={(e) => setResetPayment(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="reset_payment" className="cursor-pointer" suppressHydrationWarning>
-                {t('admin.enrollments.reset.resetPayment', 'Reset payment status (paid amount to 0)')}
-              </Label>
-            </div>
-
-            <div className="flex items-center gap-2 opacity-50">
-              <input
-                type="checkbox"
-                id="reset_profile"
-                checked={true}
-                disabled
-                className="rounded"
-              />
-              <Label htmlFor="reset_profile" suppressHydrationWarning>
-                {t('admin.enrollments.reset.resetProfile', 'Reset profile onboarding flags')} ({t('admin.enrollments.reset.always', 'always enabled')})
-              </Label>
-            </div>
-          </div>
-
-          <Alert variant="destructive">
-            <AlertDescription suppressHydrationWarning>
-              {resetPayment && t('admin.enrollments.reset.warning', 'Warning: Resetting payment will set paid_amount to 0. This cannot be undone!')}
-            </AlertDescription>
-          </Alert>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={resetting}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button type="submit" disabled={resetting} suppressHydrationWarning>
-              {resetting ? (
-                <>
-                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  {t('admin.enrollments.reset.resetting', 'Resetting...')}
-                </>
-              ) : (
-                t('admin.enrollments.reset.button', 'Reset Enrollment')
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

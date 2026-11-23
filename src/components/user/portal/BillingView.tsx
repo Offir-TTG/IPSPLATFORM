@@ -146,6 +146,7 @@ export function BillingView({ data }: { data: BillingData }) {
                   <span className="min-w-0">
                     <b className="block text-[15.5px]">{s.title}</b>
                     <span className="text-[#73698a] text-[13px]">{s.line}</span>
+                    {s.upcomingLine && <span className="block text-[#5b3a8e] text-[13px] font-medium">{s.upcomingLine}</span>}
                   </span>
                   <span className={`font-semibold text-xs px-2.5 py-[5px] rounded-full whitespace-nowrap ${chip[s.tone]}`}>{s.status}</span>
                   <button

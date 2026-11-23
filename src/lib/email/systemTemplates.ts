@@ -859,7 +859,7 @@ Thank you for your continued support of {{studentName}}'s education.
         subject: 'עדכון התקדמות: {{studentName}} - {{productName}}',
         bodyHtml: `
 <div style="padding: 20px;">
-  <h2>דו"ח התקדמות תלמיד</h2>
+  <h2>דו"ח התקדמות לקוח</h2>
 
   <p>שלום {{parentName}},</p>
 
@@ -899,7 +899,7 @@ Thank you for your continued support of {{studentName}}'s education.
 </div>
         `,
         bodyText: `
-דו"ח התקדמות תלמיד
+דו"ח התקדמות לקוח
 
 שלום {{parentName}},
 

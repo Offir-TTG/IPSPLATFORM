@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CoachingSessionView } from '@/lib/portal/familyTypes';
+import { portalBar, portalSeg, portalSegStyle } from './joined';
 
 const TZ = 'Asia/Jerusalem';
 const dayKey = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso));
@@ -70,22 +71,24 @@ export function SlotPicker({ enrollmentId, sessionId, accent, onDone, onCancel }
       {slots === null && <span className="text-sm text-[#73698a]">טוענים מועדים…</span>}
       {slots && slots.length === 0 && !error && <span className="text-sm text-[#73698a]">אין מועדים פנויים בשלושת השבועות הקרובים.</span>}
       {days.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label="יום">
-          {days.map((d) => {
-            const first = (slots ?? []).find((s) => dayKey(s.starts_at) === d)!;
-            return (
-              <button
-                key={d}
-                type="button"
-                aria-pressed={day === d}
-                onClick={() => setDay(d)}
-                className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] font-semibold ${day === d ? 'text-white' : 'bg-[#f6f2fb] text-[#3b3349]'}`}
-                style={day === d ? { background: accent } : undefined}
-              >
-                {dayLabel(first.starts_at)}
-              </button>
-            );
-          })}
+        <div className="overflow-x-auto pb-0.5">
+          <div className={portalBar} role="group" aria-label="יום">
+            {days.map((d) => {
+              const first = (slots ?? []).find((s) => dayKey(s.starts_at) === d)!;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={day === d}
+                  onClick={() => setDay(d)}
+                  className={`${portalSeg(day === d)} px-3 py-1.5 text-[13px]`}
+                  style={portalSegStyle(day === d, accent)}
+                >
+                  {dayLabel(first.starts_at)}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       {ofDay.length > 0 && (

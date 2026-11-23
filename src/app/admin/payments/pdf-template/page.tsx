@@ -2,100 +2,129 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Calendar, Eye, FileBarChart, FileText, ImageIcon, Loader2, Upload, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAdminLanguage } from '@/context/AppContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, Save, FileText, ArrowLeft, Upload, X, Eye, FileBarChart, Calendar } from 'lucide-react';
-import { toast } from 'sonner';
-import Link from 'next/link';
+import { PageTitle, SaveBar, kitButton, saveBarText, useLeaveGuard } from '@/components/admin/notifications/kit';
+import { StepWizard, WizardField, useStepWizard } from '@/components/admin/wizard/StepWizard';
 import type { PDFBrandingConfig } from '@/app/api/admin/payments/pdf-template/route';
 
+const STEPS = ['organization', 'branding', 'footer'] as const;
+type Step = (typeof STEPS)[number];
+
+const EMPTY: PDFBrandingConfig = {
+  organization: { name: '', email: '', phone: '', address: '', website: '', tax_id: '' },
+  branding: { logo_url: '', primary_color: '#3B82F6', show_logo: true, show_organization_name: true },
+  footer: { show_contact_info: true, custom_footer_text: '', show_page_numbers: true },
+};
+
+// Fields may be missing in older saved settings: empty counts as fine (except the colour).
+const isEmail = (v?: string) => !v?.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+const isUrl = (v?: string) => !v?.trim() || /^https?:\/\/\S+\.\S+/.test(v.trim());
+const isColor = (v?: string) => !!v && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
+const isLogo = (v?: string) => !v?.trim() || v.startsWith('data:image/') || /^https?:\/\/\S+/.test(v.trim());
+
+function ToggleRow({ id, title, text, checked, onChange }: { id: string; title: string; text: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
+      <label htmlFor={id} className="cursor-pointer">
+        <span className="block font-semibold">{title}</span>
+        <span className="block text-[13px] text-muted-foreground">{text}</span>
+      </label>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+/**
+ * The receipt and payment-schedule PDF settings, step by step like the other
+ * admin editors: organization details, branding, footer. Every field of the
+ * old tabbed form is kept; Continue stops on a wrong email, website or colour
+ * with the reason in red. Saving is in the floating Save/Discard bar; Preview
+ * PDF stays at the top.
+ */
 export default function PDFTemplatePage() {
   const { t, direction } = useAdminLanguage();
-  const isRtl = direction === 'rtl';
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-  const isMobile = windowWidth <= 640;
+  const words = saveBarText(t);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [selectedDocType, setSelectedDocType] = useState<'invoice' | 'schedule' | 'both'>('invoice');
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'he'>('en');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [config, setConfig] = useState<PDFBrandingConfig>({
-    organization: {
-      name: '',
-      email: '',
-      phone: '',
-      address: '',
-      website: '',
-      tax_id: '',
-    },
-    branding: {
-      logo_url: '',
-      primary_color: '#3B82F6',
-      show_logo: true,
-      show_organization_name: true,
-    },
-    footer: {
-      show_contact_info: true,
-      custom_footer_text: '',
-      show_page_numbers: true,
-    },
-  });
+  const [config, setConfig] = useState<PDFBrandingConfig>(EMPTY);
+  const [saved, setSaved] = useState<PDFBrandingConfig>(EMPTY);
 
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    loadConfig();
-  }, []);
-
-  const loadConfig = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/payments/pdf-template');
-      const data = await response.json();
-
-      if (data.success && data.config) {
-        setConfig(data.config);
-      } else {
-        toast.error(t('admin.pdf.loadError', 'Failed to load configuration'));
-      }
-    } catch (error) {
-      console.error('Error loading config:', error);
-      toast.error(t('admin.pdf.loadError', 'Failed to load configuration'));
-    } finally {
-      setLoading(false);
+  const check = (s: Step): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (s === 'organization') {
+      if (!isEmail(config.organization.email)) e.email = t('admin.pdf.err.email', 'Write a full email address, like name@example.com.');
+      if (!isUrl(config.organization.website)) e.website = t('admin.pdf.err.website', 'Write a full address starting with https://');
     }
+    if (s === 'branding') {
+      if (!isColor(config.branding.primary_color)) e.primary_color = t('admin.pdf.err.color', 'Choose a colour, or write it like #3B82F6.');
+      if (!isLogo(config.branding.logo_url)) e.logo_url = t('admin.pdf.err.logo', 'Upload a logo, or write an address starting with https://');
+    }
+    return e;
+  };
+  const w = useStepWizard(STEPS, check);
+  const errors = w.errors;
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/admin/payments/pdf-template');
+        const data = await response.json();
+        if (data.success && data.config) {
+          setConfig(data.config);
+          setSaved(data.config);
+        } else {
+          toast.error(t('admin.pdf.loadError', 'Failed to load configuration'));
+        }
+      } catch (error) {
+        console.error('Error loading config:', error);
+        toast.error(t('admin.pdf.loadError', 'Failed to load configuration'));
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dirty = useMemo(() => JSON.stringify(config) !== JSON.stringify(saved), [config, saved]);
+  const guard = useLeaveGuard(dirty, words.leave);
+
+  const updateOrganization = (field: keyof PDFBrandingConfig['organization'], value: string) => {
+    setConfig((prev) => ({ ...prev, organization: { ...prev.organization, [field]: value } }));
+    w.clearError(field);
+  };
+  const updateBranding = (field: keyof PDFBrandingConfig['branding'], value: any) => {
+    setConfig((prev) => ({ ...prev, branding: { ...prev.branding, [field]: value } }));
+    w.clearError(field);
+  };
+  const updateFooter = (field: keyof PDFBrandingConfig['footer'], value: any) => {
+    setConfig((prev) => ({ ...prev, footer: { ...prev.footer, [field]: value } }));
   };
 
   const handleSave = async () => {
+    if (!w.checkAll()) return;
     try {
       setSaving(true);
       const response = await fetch('/api/admin/payments/pdf-template', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config }),
       });
-
       const data = await response.json();
-
       if (data.success) {
+        setSaved(config);
         toast.success(t('admin.pdf.saveSuccess', 'Configuration saved successfully'));
       } else {
         toast.error(data.error || t('admin.pdf.saveError', 'Failed to save configuration'));
@@ -108,105 +137,39 @@ export default function PDFTemplatePage() {
     }
   };
 
-  const updateOrganization = (field: keyof PDFBrandingConfig['organization'], value: string) => {
-    setConfig(prev => ({
-      ...prev,
-      organization: {
-        ...prev.organization,
-        [field]: value,
-      },
-    }));
-  };
-
-  const updateBranding = (field: keyof PDFBrandingConfig['branding'], value: any) => {
-    setConfig(prev => ({
-      ...prev,
-      branding: {
-        ...prev.branding,
-        [field]: value,
-      },
-    }));
-  };
-
-  const updateFooter = (field: keyof PDFBrandingConfig['footer'], value: any) => {
-    setConfig(prev => ({
-      ...prev,
-      footer: {
-        ...prev.footer,
-        [field]: value,
-      },
-    }));
-  };
-
-  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
     if (!file) return;
-
-    // Validate file type
     const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml'];
     if (!validTypes.includes(file.type)) {
-      toast.error(t('admin.pdf.branding.invalidFileType', 'Please upload a PNG, JPG, or SVG file'));
+      w.setErrors((x) => ({ ...x, logo_url: t('admin.pdf.branding.invalidFileType', 'Please upload a PNG, JPG, or SVG file') }));
       return;
     }
-
-    // Validate file size (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
-      toast.error(t('admin.pdf.branding.fileTooLarge', 'File size must be less than 2MB'));
+      w.setErrors((x) => ({ ...x, logo_url: t('admin.pdf.branding.fileTooLarge', 'File size must be less than 2MB') }));
       return;
     }
-
-    try {
-      setUploading(true);
-
-      // Convert to base64 data URL
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        updateBranding('logo_url', dataUrl);
-        toast.success(t('admin.pdf.branding.logoUploaded', 'Logo uploaded successfully'));
-      };
-      reader.onerror = () => {
-        toast.error(t('admin.pdf.branding.uploadError', 'Failed to upload logo'));
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
-      console.error('Error uploading logo:', error);
-      toast.error(t('admin.pdf.branding.uploadError', 'Failed to upload logo'));
-    } finally {
-      setUploading(false);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const handleRemoveLogo = () => {
-    updateBranding('logo_url', '');
-    toast.success(t('admin.pdf.branding.logoRemoved', 'Logo removed'));
+    // Kept in the settings as a data URL, as before.
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      updateBranding('logo_url', e.target?.result as string);
+      toast.success(t('admin.pdf.branding.logoUploaded', 'Logo uploaded successfully'));
+    };
+    reader.onerror = () => toast.error(t('admin.pdf.branding.uploadError', 'Failed to upload logo'));
+    reader.readAsDataURL(file);
   };
 
   const handlePreview = async () => {
     try {
       setPreviewing(true);
       setShowPreviewDialog(false);
-
       const response = await fetch('/api/admin/payments/pdf-template/preview', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          branding: config,
-          documentType: selectedDocType,
-          language: selectedLanguage,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branding: config, documentType: selectedDocType, language: selectedLanguage }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate preview');
-      }
-
+      if (!response.ok) throw new Error('Failed to generate preview');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -216,7 +179,6 @@ export default function PDFTemplatePage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-
       toast.success(t('admin.pdf.previewSuccess', 'Preview PDF generated successfully'));
     } catch (error) {
       console.error('Error generating preview:', error);
@@ -226,363 +188,244 @@ export default function PDFTemplatePage() {
     }
   };
 
-  if (loading) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4 animate-pulse" />
-            <p className="text-muted-foreground">{t('common.loading', 'Loading...')}</p>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
+  const labels: Record<Step, string> = {
+    organization: t('admin.pdf.tabs.organization', 'Organization Info'),
+    branding: t('admin.pdf.tabs.branding', 'Branding'),
+    footer: t('admin.pdf.tabs.footer', 'Footer'),
+  };
+  const leads: Record<Step, string> = {
+    organization: t('admin.pdf.lead.organization', 'Who the receipt is from: the details printed at the top.'),
+    branding: t('admin.pdf.lead.branding', 'Your logo and colour on every PDF.'),
+    footer: t('admin.pdf.lead.footer', 'What appears at the bottom of each page.'),
+  };
+  const errBorder = (k: string) => (errors[k] ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20' : '');
+
+  const docTypes = [
+    { value: 'invoice' as const, icon: FileBarChart, label: t('admin.pdf.dialog.invoice', 'Invoice') },
+    { value: 'schedule' as const, icon: Calendar, label: t('admin.pdf.dialog.schedule', 'Payment Schedule') },
+    { value: 'both' as const, icon: FileText, label: t('admin.pdf.dialog.both', 'Both Documents') },
+  ];
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-4 md:p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link href="/admin/payments">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="ltr:mr-2 rtl:ml-2 h-4 w-4" />
-                <span suppressHydrationWarning>{t('admin.payments.products.back', 'Back')}</span>
-              </Button>
-            </Link>
-            <div className="min-w-0">
-              <h1 className="text-2xl md:text-3xl font-bold truncate" suppressHydrationWarning>
-                {t('admin.pdf.title', 'PDF Template Configuration')}
-              </h1>
-              <p className="text-muted-foreground mt-1 text-sm md:text-base" suppressHydrationWarning>
-                {t('admin.pdf.description', 'Customize the branding and information that appears on enrollment payment receipts')}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setShowPreviewDialog(true)} disabled={previewing}>
-              {previewing ? (
-                <>
-                  <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <span suppressHydrationWarning>{t('admin.pdf.previewing', 'Generating...')}</span>
-                </>
-              ) : (
-                <>
-                  <Eye className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <span suppressHydrationWarning>{t('admin.pdf.preview', 'Preview PDF')}</span>
-                </>
-              )}
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  {t('admin.pdf.saving', 'Saving...')}
-                </>
-              ) : (
-                <>
-                  <Save className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  {t('admin.pdf.save', 'Save Changes')}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+      <div className="max-w-6xl space-y-4 p-4 md:p-6" dir={direction}>
+        <PageTitle
+          icon={FileText}
+          title={t('admin.pdf.title', 'PDF Template Configuration')}
+          description={t('admin.pdf.description', 'Customize the branding and information that appears on enrollment payment receipts')}
+          actions={
+            <button type="button" onClick={() => setShowPreviewDialog(true)} disabled={previewing || loading} className={kitButton.secondary}>
+              {previewing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+              {previewing ? t('admin.pdf.previewing', 'Generating...') : t('admin.pdf.preview', 'Preview PDF')}
+            </button>
+          }
+        />
 
-        {/* Main Content */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              <CardTitle suppressHydrationWarning>{t('admin.pdf.cardTitle', 'Branding Configuration')}</CardTitle>
-            </div>
-            <CardDescription suppressHydrationWarning>
-              {t('admin.pdf.cardDescription', 'Configure how your organization\'s branding appears on PDF receipts')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="organization" className="w-full">
-              <TabsList className="grid w-full grid-cols-3 h-auto">
-                <TabsTrigger value="organization" suppressHydrationWarning>
-                  {t('admin.pdf.tabs.organization', 'Organization Info')}
-                </TabsTrigger>
-                <TabsTrigger value="branding" suppressHydrationWarning>
-                  {t('admin.pdf.tabs.branding', 'Branding')}
-                </TabsTrigger>
-                <TabsTrigger value="footer" suppressHydrationWarning>
-                  {t('admin.pdf.tabs.footer', 'Footer')}
-                </TabsTrigger>
-              </TabsList>
-
-            {/* Organization Info Tab */}
-            <TabsContent value="organization" className="space-y-4 mt-6">
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="org-name" suppressHydrationWarning>
-                    {t('admin.pdf.org.name', 'Organization Name')}
-                  </Label>
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" aria-hidden />
+          </div>
+        ) : (
+          <StepWizard steps={STEPS} step={w.step} labels={labels} onGo={w.go} blocked={w.blocked} title={labels[w.step]} lead={leads[w.step]}>
+            {w.step === 'organization' && (
+              <>
+                <WizardField label={t('admin.pdf.org.name', 'Organization Name')} hint={t('admin.pdf.org.nameHint', 'This name will appear in the PDF header')} htmlFor="org-name">
                   <Input
                     id="org-name"
                     value={config.organization.name}
                     onChange={(e) => updateOrganization('name', e.target.value)}
                     placeholder={t('admin.pdf.org.namePlaceholder', 'Your Organization Name')}
+                    className="h-11"
                   />
-                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.pdf.org.nameHint', 'This name will appear in the PDF header')}
-                  </p>
+                </WizardField>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <WizardField label={t('admin.pdf.org.email', 'Contact Email')} error={errors.email} htmlFor="org-email">
+                    <Input
+                      id="org-email"
+                      type="email"
+                      dir="ltr"
+                      value={config.organization.email}
+                      onChange={(e) => updateOrganization('email', e.target.value)}
+                      placeholder="contact@example.com"
+                      className={`h-11 ${errBorder('email')}`}
+                    />
+                  </WizardField>
+                  <WizardField label={t('admin.pdf.org.phone', 'Contact Phone')} htmlFor="org-phone">
+                    <Input
+                      id="org-phone"
+                      type="tel"
+                      dir="ltr"
+                      value={config.organization.phone}
+                      onChange={(e) => updateOrganization('phone', e.target.value)}
+                      placeholder="+1 (555) 123-4567"
+                      className="h-11"
+                    />
+                  </WizardField>
                 </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="org-email" suppressHydrationWarning>
-                    {t('admin.pdf.org.email', 'Contact Email')}
-                  </Label>
-                  <Input
-                    id="org-email"
-                    type="email"
-                    value={config.organization.email}
-                    onChange={(e) => updateOrganization('email', e.target.value)}
-                    placeholder="contact@example.com"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="org-phone" suppressHydrationWarning>
-                    {t('admin.pdf.org.phone', 'Contact Phone')}
-                  </Label>
-                  <Input
-                    id="org-phone"
-                    type="tel"
-                    value={config.organization.phone}
-                    onChange={(e) => updateOrganization('phone', e.target.value)}
-                    placeholder="+1 (555) 123-4567"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="org-address" suppressHydrationWarning>
-                    {t('admin.pdf.org.address', 'Address')}
-                  </Label>
+                <WizardField label={t('admin.pdf.org.address', 'Address')} htmlFor="org-address">
                   <Textarea
                     id="org-address"
                     value={config.organization.address}
                     onChange={(e) => updateOrganization('address', e.target.value)}
-                    placeholder="123 Main Street&#10;City, State ZIP"
+                    placeholder={'123 Main Street\nCity, State ZIP'}
                     rows={3}
                   />
+                </WizardField>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <WizardField label={t('admin.pdf.org.website', 'Website')} error={errors.website} htmlFor="org-website">
+                    <Input
+                      id="org-website"
+                      type="url"
+                      dir="ltr"
+                      value={config.organization.website}
+                      onChange={(e) => updateOrganization('website', e.target.value)}
+                      placeholder="https://www.example.com"
+                      className={`h-11 ${errBorder('website')}`}
+                    />
+                  </WizardField>
+                  <WizardField label={t('admin.pdf.org.taxId', 'Tax ID / Business Registration')} htmlFor="org-tax-id">
+                    <Input
+                      id="org-tax-id"
+                      dir="ltr"
+                      value={config.organization.tax_id}
+                      onChange={(e) => updateOrganization('tax_id', e.target.value)}
+                      placeholder="12-3456789"
+                      className="h-11"
+                    />
+                  </WizardField>
                 </div>
+              </>
+            )}
 
-                <div className="grid gap-2">
-                  <Label htmlFor="org-website" suppressHydrationWarning>
-                    {t('admin.pdf.org.website', 'Website')}
-                  </Label>
-                  <Input
-                    id="org-website"
-                    type="url"
-                    value={config.organization.website}
-                    onChange={(e) => updateOrganization('website', e.target.value)}
-                    placeholder="https://www.example.com"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="org-tax-id" suppressHydrationWarning>
-                    {t('admin.pdf.org.taxId', 'Tax ID / Business Registration')}
-                  </Label>
-                  <Input
-                    id="org-tax-id"
-                    value={config.organization.tax_id}
-                    onChange={(e) => updateOrganization('tax_id', e.target.value)}
-                    placeholder="12-3456789"
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* Branding Tab */}
-            <TabsContent value="branding" className="space-y-4 mt-6">
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label suppressHydrationWarning>
-                    {t('admin.pdf.branding.logo', 'Organization Logo')}
-                  </Label>
-
-                  {/* Logo Preview or Upload Area */}
+            {w.step === 'branding' && (
+              <>
+                <WizardField label={t('admin.pdf.branding.logo', 'Organization Logo')} error={errors.logo_url} hint={t('admin.pdf.branding.uploadHint', 'Upload your organization logo (PNG, JPG, or SVG)')}>
+                  <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" onChange={handleLogoUpload} className="hidden" />
                   {config.branding.logo_url ? (
-                    <div className="border rounded-lg p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium mb-2" suppressHydrationWarning>
-                            {t('admin.pdf.branding.logoPreview', 'Preview:')}
-                          </p>
-                          <div className="bg-gray-50 p-4 rounded-md flex items-center justify-center min-h-[100px]">
-                            <img
-                              src={config.branding.logo_url}
-                              alt="Logo preview"
-                              className="max-h-24 max-w-full object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = '';
-                                (e.target as HTMLImageElement).alt = 'Failed to load image';
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRemoveLogo}
-                          className="text-destructive hover:text-destructive"
+                    <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-3">
+                      <span className="grid h-20 w-36 shrink-0 place-items-center overflow-hidden rounded-xl bg-white p-2 ring-1 ring-border">
+                        <img src={config.branding.logo_url} alt="" className="max-h-full max-w-full object-contain" />
+                      </span>
+                      <div className="flex flex-wrap items-center gap-x-4">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="min-h-[44px] text-sm font-semibold text-primary hover:underline">
+                          {t('admin.pdf.branding.replaceLogo', 'Replace logo')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateBranding('logo_url', '');
+                            toast.success(t('admin.pdf.branding.logoRemoved', 'Logo removed'));
+                          }}
+                          className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-red-600 hover:underline"
                         >
-                          <X className="h-4 w-4 mr-2" />
-                          <span suppressHydrationWarning>{t('admin.pdf.branding.removeLogo', 'Remove')}</span>
-                        </Button>
+                          <X className="h-4 w-4" aria-hidden />
+                          {t('admin.pdf.branding.removeLogo', 'Remove')}
+                        </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                      <Upload className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground mb-3" suppressHydrationWarning>
-                        {t('admin.pdf.branding.uploadHint', 'Upload your organization logo (PNG, JPG, or SVG)')}
-                      </p>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/png,image/jpeg,image/jpg,image/svg+xml"
-                        onChange={handleLogoUpload}
-                        className="hidden"
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                      >
-                        {uploading ? (
-                          <>
-                            <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                            <span suppressHydrationWarning>{t('admin.pdf.branding.uploading', 'Uploading...')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                            <span suppressHydrationWarning>{t('admin.pdf.branding.uploadLogo', 'Upload Logo')}</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-primary/30 bg-primary/[0.03] px-4 py-7 text-center hover:border-primary/60 hover:bg-primary/[0.06]"
+                    >
+                      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary" aria-hidden>
+                        <Upload className="h-6 w-6" />
+                      </span>
+                      <span className="font-semibold">{t('admin.pdf.branding.uploadLogo', 'Upload Logo')}</span>
+                      <span className="text-[13px] text-muted-foreground">PNG, JPG, SVG · 2MB</span>
+                    </button>
                   )}
+                </WizardField>
 
-                  {/* Alternative: Logo URL Input */}
-                  <div className="space-y-2">
-                    <Label htmlFor="logo-url" className="text-sm text-muted-foreground" suppressHydrationWarning>
-                      {t('admin.pdf.branding.orEnterUrl', 'Or enter logo URL:')}
-                    </Label>
-                    <Input
-                      id="logo-url"
-                      value={config.branding.logo_url}
-                      onChange={(e) => updateBranding('logo_url', e.target.value)}
-                      placeholder="https://example.com/logo.png"
-                      className="text-sm"
-                    />
-                  </div>
-                </div>
+                <WizardField label={t('admin.pdf.branding.orEnterUrl', 'Or enter logo URL:')} htmlFor="logo-url">
+                  <Input
+                    id="logo-url"
+                    dir="ltr"
+                    value={(config.branding.logo_url ?? '').startsWith('data:') ? '' : config.branding.logo_url ?? ''}
+                    onChange={(e) => updateBranding('logo_url', e.target.value)}
+                    placeholder="https://example.com/logo.png"
+                    className={`h-11 ${errBorder('logo_url')}`}
+                  />
+                </WizardField>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="primary-color" suppressHydrationWarning>
-                    {t('admin.pdf.branding.primaryColor', 'Primary Color')}
-                  </Label>
+                <WizardField label={t('admin.pdf.branding.primaryColor', 'Primary Color')} error={errors.primary_color} hint={t('admin.pdf.branding.colorHint', 'This color will be used for headers, borders, and accents in the PDF')} htmlFor="primary-color">
                   <div className="flex gap-2">
-                    <Input
+                    <input
                       id="primary-color"
                       type="color"
-                      value={config.branding.primary_color}
+                      value={isColor(config.branding.primary_color) ? config.branding.primary_color : '#3B82F6'}
                       onChange={(e) => updateBranding('primary_color', e.target.value)}
-                      className="w-20 h-10"
+                      className="h-11 w-16 cursor-pointer rounded-lg border border-border bg-card p-1"
                     />
                     <Input
+                      dir="ltr"
                       value={config.branding.primary_color}
                       onChange={(e) => updateBranding('primary_color', e.target.value)}
                       placeholder="#3B82F6"
-                      className="flex-1"
+                      className={`h-11 flex-1 ${errBorder('primary_color')}`}
                     />
                   </div>
-                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.pdf.branding.colorHint', 'This color will be used for headers, borders, and accents in the PDF')}
-                  </p>
-                </div>
+                </WizardField>
 
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="show-logo" suppressHydrationWarning>
-                      {t('admin.pdf.branding.showLogo', 'Show Logo')}
-                    </Label>
-                    <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                      {t('admin.pdf.branding.showLogoDesc', 'Display the logo in the PDF header')}
-                    </p>
-                  </div>
-                  <Switch
+                <div className="grid gap-3">
+                  <ToggleRow
                     id="show-logo"
+                    title={t('admin.pdf.branding.showLogo', 'Show Logo')}
+                    text={t('admin.pdf.branding.showLogoDesc', 'Display the logo in the PDF header')}
                     checked={config.branding.show_logo}
-                    onCheckedChange={(checked) => updateBranding('show_logo', checked)}
+                    onChange={(v) => updateBranding('show_logo', v)}
                   />
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="show-org-name" suppressHydrationWarning>
-                      {t('admin.pdf.branding.showOrgName', 'Show Organization Name')}
-                    </Label>
-                    <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                      {t('admin.pdf.branding.showOrgNameDesc', 'Display the organization name in the PDF header')}
-                    </p>
-                  </div>
-                  <Switch
+                  <ToggleRow
                     id="show-org-name"
+                    title={t('admin.pdf.branding.showOrgName', 'Show Organization Name')}
+                    text={t('admin.pdf.branding.showOrgNameDesc', 'Display the organization name in the PDF header')}
                     checked={config.branding.show_organization_name}
-                    onCheckedChange={(checked) => updateBranding('show_organization_name', checked)}
+                    onChange={(v) => updateBranding('show_organization_name', v)}
                   />
                 </div>
-              </div>
-            </TabsContent>
 
-            {/* Footer Tab */}
-            <TabsContent value="footer" className="space-y-4 mt-6">
-              <div className="grid gap-4">
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="show-contact" suppressHydrationWarning>
-                      {t('admin.pdf.footer.showContact', 'Show Contact Information')}
-                    </Label>
-                    <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                      {t('admin.pdf.footer.showContactDesc', 'Display contact info (email, phone, address) in the footer')}
-                    </p>
+                {/* How the top of the PDF will look */}
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="h-1.5" style={{ background: isColor(config.branding.primary_color) ? config.branding.primary_color : '#3B82F6' }} aria-hidden />
+                  <div className="flex items-center gap-3 bg-white p-4 text-slate-800">
+                    {config.branding.show_logo &&
+                      (config.branding.logo_url ? (
+                        <img src={config.branding.logo_url} alt="" className="h-10 max-w-[120px] object-contain" />
+                      ) : (
+                        <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-400" aria-hidden>
+                          <ImageIcon className="h-5 w-5" />
+                        </span>
+                      ))}
+                    {config.branding.show_organization_name && (
+                      <b className="text-lg" style={{ color: isColor(config.branding.primary_color) ? config.branding.primary_color : undefined }}>
+                        {config.organization.name || t('admin.pdf.org.namePlaceholder', 'Your Organization Name')}
+                      </b>
+                    )}
                   </div>
-                  <Switch
+                </div>
+              </>
+            )}
+
+            {w.step === 'footer' && (
+              <>
+                <div className="grid gap-3">
+                  <ToggleRow
                     id="show-contact"
+                    title={t('admin.pdf.footer.showContact', 'Show Contact Information')}
+                    text={t('admin.pdf.footer.showContactDesc', 'Display contact info (email, phone, address) in the footer')}
                     checked={config.footer.show_contact_info}
-                    onCheckedChange={(checked) => updateFooter('show_contact_info', checked)}
+                    onChange={(v) => updateFooter('show_contact_info', v)}
                   />
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="show-page-numbers" suppressHydrationWarning>
-                      {t('admin.pdf.footer.showPageNumbers', 'Show Page Numbers')}
-                    </Label>
-                    <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                      {t('admin.pdf.footer.showPageNumbersDesc', 'Display "Page X of Y" in the footer')}
-                    </p>
-                  </div>
-                  <Switch
+                  <ToggleRow
                     id="show-page-numbers"
+                    title={t('admin.pdf.footer.showPageNumbers', 'Show Page Numbers')}
+                    text={t('admin.pdf.footer.showPageNumbersDesc', 'Display "Page X of Y" in the footer')}
                     checked={config.footer.show_page_numbers}
-                    onCheckedChange={(checked) => updateFooter('show_page_numbers', checked)}
+                    onChange={(v) => updateFooter('show_page_numbers', v)}
                   />
                 </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="custom-footer" suppressHydrationWarning>
-                    {t('admin.pdf.footer.customText', 'Custom Footer Text (Optional)')}
-                  </Label>
+                <WizardField label={t('admin.pdf.footer.customText', 'Custom Footer Text (Optional)')} hint={t('admin.pdf.footer.customTextHint', 'This text will appear at the bottom of each page')} htmlFor="custom-footer">
                   <Textarea
                     id="custom-footer"
                     value={config.footer.custom_footer_text}
@@ -590,139 +433,90 @@ export default function PDFTemplatePage() {
                     placeholder={t('admin.pdf.footer.customTextPlaceholder', 'Enter any additional text you want to appear in the footer')}
                     rows={3}
                   />
-                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.pdf.footer.customTextHint', 'This text will appear at the bottom of each page')}
-                  </p>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+                </WizardField>
+              </>
+            )}
+          </StepWizard>
+        )}
 
-      {/* Save Button (Bottom) */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving} size="lg">
-          {saving ? (
-            <>
-              <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
-              {t('admin.pdf.saving', 'Saving...')}
-            </>
-          ) : (
-            <>
-              <Save className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-              {t('admin.pdf.save', 'Save Changes')}
-            </>
-          )}
-        </Button>
+        <div className="h-20" aria-hidden />
+        {!loading && (
+          <SaveBar
+            isNew={false}
+            dirty={dirty}
+            saving={saving}
+            onSave={() => void handleSave()}
+            onDiscard={() => {
+              setConfig(saved);
+              w.reset();
+            }}
+            saveLabel={t('admin.pdf.save', 'Save Changes')}
+            text={words.bar}
+          />
+        )}
+        {guard.dialog}
       </div>
 
-      {/* Preview Dialog */}
+      {/* Preview: which document and which language */}
       <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
         <DialogContent className="sm:max-w-lg" dir={direction}>
           <DialogHeader>
-            <DialogTitle suppressHydrationWarning>
-              {t('admin.pdf.dialog.title', 'Select Document Type')}
-            </DialogTitle>
-            <DialogDescription suppressHydrationWarning>
-              {t('admin.pdf.dialog.description', 'Choose which document you would like to preview')}
-            </DialogDescription>
+            <DialogTitle className="[font-family:inherit]">{t('admin.pdf.dialog.title', 'Select Document Type')}</DialogTitle>
+            <DialogDescription>{t('admin.pdf.dialog.description', 'Choose which document you would like to preview')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-6 py-4">
-            {/* Document Type Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold" suppressHydrationWarning>
-                {t('admin.pdf.dialog.documentType', 'Document Type')}
-              </Label>
-              <div className="grid gap-2">
-                <Button
-                  variant={selectedDocType === 'invoice' ? 'default' : 'outline'}
-                  className="justify-start h-auto py-3"
-                  onClick={() => setSelectedDocType('invoice')}
-                >
-                  <FileBarChart className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <div className={`flex flex-col items-start ${isRtl ? 'text-right' : 'text-left'}`}>
-                    <span className="font-medium" suppressHydrationWarning>
-                      {t('admin.pdf.dialog.invoice', 'Invoice')}
-                    </span>
-                  </div>
-                </Button>
-                <Button
-                  variant={selectedDocType === 'schedule' ? 'default' : 'outline'}
-                  className="justify-start h-auto py-3"
-                  onClick={() => setSelectedDocType('schedule')}
-                >
-                  <Calendar className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <div className={`flex flex-col items-start ${isRtl ? 'text-right' : 'text-left'}`}>
-                    <span className="font-medium" suppressHydrationWarning>
-                      {t('admin.pdf.dialog.schedule', 'Payment Schedule')}
-                    </span>
-                  </div>
-                </Button>
-                <Button
-                  variant={selectedDocType === 'both' ? 'default' : 'outline'}
-                  className="justify-start h-auto py-3"
-                  onClick={() => setSelectedDocType('both')}
-                >
-                  <FileText className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <div className={`flex flex-col items-start ${isRtl ? 'text-right' : 'text-left'}`}>
-                    <span className="font-medium" suppressHydrationWarning>
-                      {t('admin.pdf.dialog.both', 'Both Documents')}
-                    </span>
-                  </div>
-                </Button>
+          <div className="grid gap-5">
+            <div className="grid gap-1.5 text-sm">
+              <span className="font-semibold">{t('admin.pdf.dialog.documentType', 'Document Type')}</span>
+              <div role="radiogroup" className="grid grid-cols-3 gap-2">
+                {docTypes.map(({ value, icon: Icon, label }) => {
+                  const on = selectedDocType === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setSelectedDocType(value)}
+                      className={`flex min-h-[84px] flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-[13px] font-semibold ${
+                        on ? 'border-2 border-primary bg-primary/5 text-primary' : 'border-border hover:bg-muted/50'
+                      }`}
+                    >
+                      <span className={`grid h-9 w-9 place-items-center rounded-lg ${on ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`} aria-hidden>
+                        <Icon className="h-[18px] w-[18px]" />
+                      </span>
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-
-            {/* Language Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold" suppressHydrationWarning>
-                {t('admin.pdf.dialog.language', 'Language')}
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant={selectedLanguage === 'en' ? 'default' : 'outline'}
-                  className="justify-center"
-                  onClick={() => setSelectedLanguage('en')}
-                >
-                  <span suppressHydrationWarning>
-                    {t('admin.pdf.dialog.english', 'English')}
-                  </span>
-                </Button>
-                <Button
-                  variant={selectedLanguage === 'he' ? 'default' : 'outline'}
-                  className="justify-center"
-                  onClick={() => setSelectedLanguage('he')}
-                >
-                  <span suppressHydrationWarning>
-                    {t('admin.pdf.dialog.hebrew', 'Hebrew')}
-                  </span>
-                </Button>
+            <div className="grid gap-1.5 text-sm">
+              <span className="font-semibold">{t('admin.pdf.dialog.language', 'Language')}</span>
+              <div role="radiogroup" className="grid grid-cols-2 gap-2">
+                {(['en', 'he'] as const).map((lang) => {
+                  const on = selectedLanguage === lang;
+                  return (
+                    <button
+                      key={lang}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setSelectedLanguage(lang)}
+                      className={`min-h-[44px] rounded-xl border font-semibold ${on ? 'border-2 border-primary bg-primary/5 text-primary' : 'border-border hover:bg-muted/50'}`}
+                    >
+                      {lang === 'en' ? t('admin.pdf.dialog.english', 'English') : t('admin.pdf.dialog.hebrew', 'Hebrew')}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-
-            {/* Preview Button */}
-            <Button
-              onClick={handlePreview}
-              disabled={previewing}
-              className="w-full"
-            >
-              {previewing ? (
-                <>
-                  <Loader2 className={`h-4 w-4 animate-spin ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <span suppressHydrationWarning>{t('admin.pdf.previewing', 'Generating...')}</span>
-                </>
-              ) : (
-                <>
-                  <Eye className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <span suppressHydrationWarning>{t('admin.pdf.dialog.generate', 'Generate Preview')}</span>
-                </>
-              )}
-            </Button>
+            <button type="button" onClick={() => void handlePreview()} disabled={previewing} className={kitButton.primary}>
+              {previewing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+              {previewing ? t('admin.pdf.previewing', 'Generating...') : t('admin.pdf.dialog.generate', 'Generate Preview')}
+            </button>
           </div>
         </DialogContent>
       </Dialog>
-    </div>
     </AdminLayout>
   );
 }

@@ -482,7 +482,7 @@ export function ScheduleDialog({ open, onOpenChange, schedule, onSaved }: Schedu
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{t('common.all', 'All')}</SelectItem>
-                      <SelectItem value="student">{t('admin.users.roles.student', 'Student')}</SelectItem>
+                      <SelectItem value="student">{t('admin.users.roles.student', 'Client')}</SelectItem>
                       <SelectItem value="instructor">{t('admin.users.roles.instructor', 'Instructor')}</SelectItem>
                       <SelectItem value="staff">{t('admin.users.roles.staff', 'Staff')}</SelectItem>
                       <SelectItem value="admin">{t('admin.users.roles.admin', 'Admin')}</SelectItem>

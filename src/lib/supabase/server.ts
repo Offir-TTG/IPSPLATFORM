@@ -1,6 +1,9 @@
 import { cookies, headers } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { noStoreFetch } from './noStoreFetch';
+
+export { noStoreFetch };
 
 // Regular authenticated client (subject to RLS)
 export async function createClient() {
@@ -10,6 +13,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: noStoreFetch },
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;
@@ -78,6 +82,7 @@ export function createAdminClient() {
         schema: 'public'
       },
       global: {
+        fetch: noStoreFetch,
         headers: {
           'X-Client-Info': 'ips-platform-admin',
           'Prefer': 'return=representation'

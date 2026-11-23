@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { QuickPills } from '@/components/admin/notifications/kit';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
@@ -22,6 +22,7 @@ import 'react-phone-number-input/style.css';
 import '@/styles/phone-input.css';
 import '@/styles/google-places.css';
 import { loadGoogleMapsScript } from '@/lib/address/googleMaps';
+import { NEW_CLIENT_ROLE, isClientRole } from '@/lib/auth/roles';
 
 // Schema matches the actual users table structure. Phone uses E.164
 // (validated via react-phone-number-input). Address is a single text
@@ -38,7 +39,7 @@ const userUpdateSchema = z.object({
       (v) => !v || isValidPhoneNumber(v),
       'Invalid phone number'
     ),
-  role: z.enum(['student', 'instructor', 'admin', 'staff']),
+  role: z.enum(['student', 'client', 'instructor', 'admin', 'staff']),
   status: z.enum(['active', 'invited', 'suspended', 'deleted']),
   bio: z.string().optional(),
   location: z.string().optional(),
@@ -109,7 +110,7 @@ export function UserProfileForm({
       last_name: '',
       email: '',
       phone: '',
-      role: 'student',
+      role: NEW_CLIENT_ROLE,
       status: 'active',
       bio: '',
       location: '',
@@ -144,7 +145,7 @@ export function UserProfileForm({
           last_name: user.users.last_name || '',
           email: user.users.email || '',
           phone: user.users.phone || '',
-          role: user.role || 'student',
+          role: isClientRole(user.role) || !user.role ? NEW_CLIENT_ROLE : user.role,
           status: user.status || 'active',
           bio: user.users.bio || '',
           location: user.users.location || '',
@@ -500,7 +501,7 @@ export function UserProfileForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="student">{t('admin.users.drawer.role.student', 'Student')}</SelectItem>
+                    <SelectItem value={NEW_CLIENT_ROLE}>{t('admin.users.drawer.role.student', 'Client')}</SelectItem>
                     <SelectItem value="instructor">{t('admin.users.drawer.role.instructor', 'Instructor')}</SelectItem>
                     <SelectItem value="staff">{t('admin.users.drawer.role.staff', 'Staff')}</SelectItem>
                     <SelectItem value="admin">{t('admin.users.drawer.role.admin', 'Admin')}</SelectItem>
@@ -518,23 +519,28 @@ export function UserProfileForm({
               <FormItem className="space-y-3">
                 <FormLabel>{t('admin.users.drawer.status', 'Status')}</FormLabel>
                 <FormControl>
-                  <RadioGroup
-                    onValueChange={field.onChange}
-                    value={field.value}
-                    className="flex flex-wrap gap-x-4 gap-y-2"
-                  >
-                    {(['active', 'invited', 'suspended', 'deleted'] as const).map((s) => (
-                      <div
-                        key={s}
-                        className={`flex items-center ${isRtl ? 'space-x-reverse' : ''} space-x-2`}
-                      >
-                        <RadioGroupItem value={s} id={`status-${s}`} />
-                        <Label htmlFor={`status-${s}`}>
-                          {t(`admin.users.drawer.status.${s}`, s.charAt(0).toUpperCase() + s.slice(1))}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
+                  <div className="max-w-full overflow-x-auto pb-0.5">
+                    <QuickPills
+                      joined
+                      label={t('admin.users.drawer.status', 'Status')}
+                      value={field.value}
+                      onChange={field.onChange}
+                      options={(['active', 'invited', 'suspended', 'deleted'] as const).map((s) => ({
+                        value: s,
+                        label: (
+                          <span className="inline-flex items-center gap-2">
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                s === 'active' ? 'bg-green-500' : s === 'suspended' ? 'bg-red-500' : s === 'invited' ? 'bg-amber-500' : 'bg-slate-400'
+                              }`}
+                              aria-hidden
+                            />
+                            {t(`admin.users.drawer.status.${s}`, s.charAt(0).toUpperCase() + s.slice(1))}
+                          </span>
+                        ),
+                      }))}
+                    />
+                  </div>
                 </FormControl>
                 <FormMessage />
               </FormItem>

@@ -1,0 +1,60 @@
+-- Enrollments: older labels that never had Hebrew (they showed in English on the new screens).
+-- Adds only missing keys; existing translations are never changed. Safe to rerun.
+INSERT INTO translations (tenant_id, language_code, translation_key, translation_value, context, created_at, updated_at)
+SELECT NULL, v.lang, v.key, v.value, 'admin', NOW(), NOW()
+FROM (VALUES
+  ('en', 'admin.enrollments.type.adminAssigned', 'Assigned by an admin'),
+  ('he', 'admin.enrollments.type.adminAssigned', 'שויך על ידי מנהל'),
+  ('en', 'admin.enrollments.type.selfEnrolled', 'Self-enrolled'),
+  ('he', 'admin.enrollments.type.selfEnrolled', 'נרשם בעצמו'),
+  ('en', 'admin.enrollments.table.enrolledAt', 'Enrolled'),
+  ('he', 'admin.enrollments.table.enrolledAt', 'נרשם'),
+  ('en', 'admin.enrollments.table.draftCreated', 'Draft created'),
+  ('he', 'admin.enrollments.table.draftCreated', 'הטיוטה נוצרה'),
+  ('en', 'admin.enrollments.idCopied', 'ID copied'),
+  ('he', 'admin.enrollments.idCopied', 'המזהה הועתק'),
+  ('en', 'admin.enrollments.copyId', 'Copy ID'),
+  ('he', 'admin.enrollments.copyId', 'העתקת המזהה'),
+  ('en', 'admin.enrollments.sendLink.error', 'Failed to send enrollment link'),
+  ('he', 'admin.enrollments.sendLink.error', 'שליחת קישור ההרשמה נכשלה'),
+  ('en', 'admin.enrollments.paymentPlan.multiplePlans', 'Multiple plans available'),
+  ('he', 'admin.enrollments.paymentPlan.multiplePlans', 'כמה תוכניות לבחירה'),
+  ('en', 'admin.enrollments.paymentPlan.defaultPlan', 'Default plan'),
+  ('he', 'admin.enrollments.paymentPlan.defaultPlan', 'תוכנית ברירת מחדל'),
+  ('en', 'admin.enrollments.paymentPlan.depositLabel', 'Deposit'),
+  ('he', 'admin.enrollments.paymentPlan.depositLabel', 'מקדמה'),
+  ('en', 'admin.enrollments.paymentPlanDetails.status.processing', 'Processing'),
+  ('he', 'admin.enrollments.paymentPlanDetails.status.processing', 'בעיבוד'),
+  ('en', 'admin.enrollments.paymentPlanDetails.status.failed', 'Failed'),
+  ('he', 'admin.enrollments.paymentPlanDetails.status.failed', 'נכשל'),
+  ('en', 'admin.enrollments.create.selectProductError', 'Please select a product'),
+  ('he', 'admin.enrollments.create.selectProductError', 'יש לבחור מוצר.'),
+  ('en', 'admin.enrollments.create.success', 'Enrollment created successfully'),
+  ('he', 'admin.enrollments.create.success', 'ההרשמה נוצרה'),
+  ('en', 'admin.enrollments.create.error', 'Failed to create enrollment'),
+  ('he', 'admin.enrollments.create.error', 'יצירת ההרשמה נכשלה'),
+  ('en', 'admin.enrollments.create.alert', 'This enrollment will be marked as admin-assigned and will bypass the normal purchase flow.'),
+  ('he', 'admin.enrollments.create.alert', 'ההרשמה תסומן כמשויכת על ידי מנהל ותדלג על תהליך הרכישה הרגיל.'),
+  ('en', 'admin.enrollments.create.noUsers', 'No users found'),
+  ('he', 'admin.enrollments.create.noUsers', 'לא נמצאו תלמידים'),
+  ('en', 'admin.enrollments.create.firstName', 'First name'),
+  ('he', 'admin.enrollments.create.firstName', 'שם פרטי'),
+  ('en', 'admin.enrollments.create.lastName', 'Last name'),
+  ('he', 'admin.enrollments.create.lastName', 'שם משפחה'),
+  ('en', 'admin.enrollments.create.email', 'Email address'),
+  ('he', 'admin.enrollments.create.email', 'כתובת מייל'),
+  ('en', 'admin.enrollments.create.phone', 'Phone (optional)'),
+  ('he', 'admin.enrollments.create.phone', 'טלפון (לא חובה)'),
+  ('en', 'admin.enrollments.create.newUserNote', 'A new account will be created with these details. They''ll get an email to complete registration.'),
+  ('he', 'admin.enrollments.create.newUserNote', 'ייפתח חשבון חדש עם הפרטים האלה. יישלח אליו מייל להשלמת ההרשמה.'),
+  ('en', 'admin.enrollments.create.productHelp', 'Products hold all the program or course details, including price and payment plans.'),
+  ('he', 'admin.enrollments.create.productHelp', 'המוצר כולל את כל פרטי התוכנית או הקורס, כולל המחיר ותוכניות התשלום.'),
+  ('en', 'admin.enrollments.create.noProducts', 'No products found'),
+  ('he', 'admin.enrollments.create.noProducts', 'לא נמצאו מוצרים'),
+  ('en', 'admin.enrollments.create.waivePayment', 'Waive payment requirement (scholarship, staff, or free enrollment)'),
+  ('he', 'admin.enrollments.create.waivePayment', 'פטור מתשלום (מלגה, צוות, או הרשמה בחינם)')
+) AS v(lang, key, value)
+WHERE NOT EXISTS (
+  SELECT 1 FROM translations t
+  WHERE t.translation_key = v.key AND t.language_code = v.lang AND t.tenant_id IS NULL
+);

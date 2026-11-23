@@ -35,7 +35,7 @@ export function AuditFilters({ onFilterChange, isAdmin = false, t = (_, fallback
     { value: 'CONFIG', label: t('admin.audit.filters.category.config', 'Configuration') },
     { value: 'DATA', label: t('admin.audit.filters.category.data', 'Data') },
     { value: 'ADMIN', label: t('admin.audit.filters.category.admin', 'Admin') },
-    { value: 'STUDENT_RECORD', label: t('admin.audit.filters.category.studentRecord', 'Student Records') },
+    { value: 'STUDENT_RECORD', label: t('admin.audit.filters.category.studentRecord', 'Client Records') },
     { value: 'GRADE', label: t('admin.audit.filters.category.grade', 'Grades') },
     { value: 'ATTENDANCE', label: t('admin.audit.filters.category.attendance', 'Attendance') },
   ];

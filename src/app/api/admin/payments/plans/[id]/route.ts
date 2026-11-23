@@ -38,6 +38,7 @@ export async function PUT(
       installment_frequency,
       subscription_frequency,
       subscription_amount,
+      session_amount,
       auto_detect_enabled,
       priority,
       is_active,
@@ -95,6 +96,16 @@ export async function PUT(
         return NextResponse.json({ error: 'Price per period must be a positive amount' }, { status: 400 });
       }
       updateData.subscription_amount = price;
+    }
+
+    // Per session: the plan's price per session (required; a product's total is
+    // its sessions × this price). Sent only for this type.
+    if (plan_type === 'per_session') {
+      const sessionPrice = parsePlanPrice(session_amount);
+      if (sessionPrice === 'invalid' || sessionPrice == null) {
+        return NextResponse.json({ error: 'Price per session must be a positive amount' }, { status: 400 });
+      }
+      updateData.session_amount = sessionPrice;
     }
 
     // Update payment plan

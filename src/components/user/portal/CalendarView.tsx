@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { ClientSession } from '@/lib/portal/clientSessions';
+import { portalBar, portalSeg } from './joined';
 
 export type CalendarDay = { key: string; name: string; short: string; date: string; isToday: boolean };
 
@@ -71,34 +72,22 @@ export function CalendarView({ days, sessions, serverNow }: { days: CalendarDay[
       )}
 
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3">
-        <div className="flex gap-2 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 pb-1" role="group" aria-label="סינון">
-          {filters.map((f) => {
-            const on = filter === f.key;
-            return (
-              <button
-                key={f.key}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setFilter(f.key)}
-                className={`shrink-0 inline-flex gap-[7px] items-center border-0 px-3.5 py-2 rounded-full text-sm font-medium ${
-                  on ? 'bg-[#221a2e] text-white' : 'bg-white text-[#221a2e] shadow-[inset_0_0_0_1px_#e3dcef]'
-                }`}
-              >
-                <span className="w-[9px] h-[9px] rounded-full" style={{ background: on && f.key === 'all' ? '#fff' : f.color }} />
-                {f.label}
-              </button>
-            );
-          })}
+        <div className="overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 pb-1">
+          <div className={portalBar} role="group" aria-label="סינון">
+            {filters.map((f) => {
+              const on = filter === f.key;
+              return (
+                <button key={f.key} type="button" aria-pressed={on} onClick={() => setFilter(f.key)} className={portalSeg(on)}>
+                  <span className="w-[9px] h-[9px] rounded-full" style={{ background: on && f.key === 'all' ? '#fff' : f.color }} />
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="self-start flex gap-1 bg-white rounded-xl p-1 shadow-[inset_0_0_0_1px_#e3dcef]">
+        <div className={`${portalBar} self-start`} role="group" aria-label="שבוע">
           {(['השבוע', 'השבוע הבא'] as const).map((label, w) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={week === w}
-              onClick={() => setWeek(w as 0 | 1)}
-              className={`border-0 px-3.5 py-[7px] rounded-[9px] font-semibold text-[13.5px] ${week === w ? 'bg-[#5b3a8e] text-white' : 'bg-transparent text-[#5f5675]'}`}
-            >
+            <button key={label} type="button" aria-pressed={week === w} onClick={() => setWeek(w as 0 | 1)} className={portalSeg(week === w)}>
               {label}
             </button>
           ))}

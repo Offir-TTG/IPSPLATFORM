@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ProductType } from '@/types/product';
 import { useAdminLanguage } from '@/context/AppContext';
+import { stripHtml } from '@/components/admin/programs/types';
 import {
   BookOpen,
   GraduationCap,
@@ -20,6 +21,19 @@ import {
   Grid3x3,
   Loader2,
 } from 'lucide-react';
+
+/** The product types as choice cards, each with its picture. */
+const PRODUCT_TYPE_CARDS: { value: ProductType; icon: typeof BookOpen; fallback: string }[] = [
+  { value: 'program', icon: GraduationCap, fallback: 'Program' },
+  { value: 'course', icon: BookOpen, fallback: 'Course' },
+  { value: 'bundle', icon: Grid3x3, fallback: 'Bundle' },
+  { value: 'session_pack', icon: Package, fallback: 'Session Pack' },
+  { value: 'lecture', icon: Video, fallback: 'Lecture' },
+  { value: 'workshop', icon: Users, fallback: 'Workshop' },
+  { value: 'webinar', icon: Video, fallback: 'Webinar' },
+  { value: 'session', icon: Calendar, fallback: 'Session' },
+  { value: 'custom', icon: Sparkles, fallback: 'Custom' },
+];
 
 interface Program {
   id: string;
@@ -192,8 +206,9 @@ export function ContentSelector({
             </p>
           )}
           {!validationErrors.program_id && programId && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {programs.find((p) => p.id === programId)?.description}
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+              {/* The description is rich text: show its words, not its HTML. */}
+              {stripHtml(programs.find((p) => p.id === programId)?.description)}
             </p>
           )}
         </div>
@@ -319,8 +334,8 @@ export function ContentSelector({
           </p>
         )}
         {!validationErrors.course_id && courseId && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {courses.find((c) => c.id === courseId)?.description}
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+            {stripHtml(courses.find((c) => c.id === courseId)?.description)}
           </p>
         )}
       </div>
@@ -329,73 +344,34 @@ export function ContentSelector({
 
   return (
     <div className="space-y-4">
-      {/* Product Type Selector */}
+      {/* Product type: one card per kind, with a picture */}
       <div>
         <Label>{t('products.product_type', 'Product Type')} *</Label>
-        <Select value={productType} onValueChange={(value) => handleTypeChange(value as ProductType)}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-            <SelectItem value="program">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.program', 'Program')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="course">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.course', 'Course')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="bundle">
-              <div className="flex items-center gap-2">
-                <Grid3x3 className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.bundle', 'Bundle')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="session_pack">
-              <div className="flex items-center gap-2">
-                <Package className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.session_pack', 'Session Pack')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="lecture">
-              <div className="flex items-center gap-2">
-                <Video className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.lecture', 'Lecture')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="workshop">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.workshop', 'Workshop')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="webinar">
-              <div className="flex items-center gap-2">
-                <Video className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.webinar', 'Webinar')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="session">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.session', 'Session')}</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="custom">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('products.type.custom', 'Custom')}</span>
-              </div>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground mt-1">
+        <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
           {t('products.type_desc', 'Select the type of content this product will provide access to')}
         </p>
+        <div role="radiogroup" aria-label={t('products.product_type', 'Product Type')} className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {PRODUCT_TYPE_CARDS.map(({ value, icon: Icon, fallback }) => {
+            const on = productType === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => handleTypeChange(value)}
+                className={`flex min-h-[84px] flex-col items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
+                  on ? 'border-2 border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/40 hover:bg-muted/50'
+                }`}
+              >
+                <span className={`grid h-10 w-10 place-items-center rounded-xl ${on ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`} aria-hidden>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span suppressHydrationWarning>{t(`products.type.${value}`, fallback)}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Content Picker */}

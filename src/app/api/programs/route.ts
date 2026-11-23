@@ -24,37 +24,34 @@ export const GET = withAuth(async (request: NextRequest, user: any) => {
       );
     }
 
-    // Get course counts and student counts for each program
-    const transformedPrograms = await Promise.all(
-      (programs || []).map(async (program) => {
-        // Get course count
-        const { count: courseCount } = await supabase
-          .from('program_courses')
-          .select('*', { count: 'exact', head: true })
-          .eq('program_id', program.id);
-
-        // Get student count by counting enrollments for products that reference this program
-        const { data: enrollments } = await supabase
+    // Course and student counts in two reads for all programs (this used to
+    // read every enrollment once per program).
+    const ids = (programs || []).map((p) => p.id);
+    const courseCounts = new Map<string, number>();
+    const studentCounts = new Map<string, number>();
+    // Enrollments still running (active or pending) stop a program from being deleted.
+    const activeCounts = new Map<string, number>();
+    if (ids.length > 0) {
+      const [{ data: links }, { data: enrollments }] = await Promise.all([
+        supabase.from('program_courses').select('program_id').in('program_id', ids),
+        supabase
           .from('enrollments')
-          .select(`
-            id,
-            product:products!enrollments_product_id_fkey(
-              program_id
-            )
-          `);
-
-        // Filter enrollments where product.program_id matches this program
-        const programEnrollments = (enrollments || []).filter((e: any) =>
-          e.product?.program_id === program.id
-        );
-
-        return {
-          ...program,
-          course_count: courseCount || 0,
-          student_count: programEnrollments.length,
-        };
-      })
-    );
+          .select('id, status, product:products!enrollments_product_id_fkey!inner(program_id)')
+          .in('product.program_id', ids),
+      ]);
+      for (const l of links || []) courseCounts.set(l.program_id, (courseCounts.get(l.program_id) || 0) + 1);
+      for (const e of (enrollments || []) as any[]) {
+        const pid = Array.isArray(e.product) ? e.product[0]?.program_id : e.product?.program_id;
+        if (pid) studentCounts.set(pid, (studentCounts.get(pid) || 0) + 1);
+        if (pid && (e.status === 'active' || e.status === 'pending')) activeCounts.set(pid, (activeCounts.get(pid) || 0) + 1);
+      }
+    }
+    const transformedPrograms = (programs || []).map((program) => ({
+      ...program,
+      course_count: courseCounts.get(program.id) || 0,
+      student_count: studentCounts.get(program.id) || 0,
+      active_count: activeCounts.get(program.id) || 0,
+    }));
 
     return NextResponse.json({
       success: true,
@@ -67,7 +64,7 @@ export const GET = withAuth(async (request: NextRequest, user: any) => {
       { status: 500 }
     );
   }
-}, ['admin', 'instructor']);
+}, ['admin', 'super_admin', 'instructor']);
 
 // POST /api/programs - Create a new program
 export const POST = withAuth(async (request: NextRequest, user: any) => {
@@ -137,4 +134,4 @@ export const POST = withAuth(async (request: NextRequest, user: any) => {
       { status: 500 }
     );
   }
-}, ['admin']);
+}, ['admin', 'super_admin']);

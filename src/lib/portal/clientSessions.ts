@@ -44,7 +44,7 @@ export async function loadClientSessions(userId: string, from: Date, to: Date): 
       out.push({
         lessonId: l.id,
         courseId,
-        href: `/courses/${courseId}`,
+        href: `/courses/${courseId}?lesson=${l.id}`,
         title: l.title,
         source: src?.label ?? courseById.get(courseId)?.title ?? '',
         group: src?.group ?? 'me',

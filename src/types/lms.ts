@@ -948,7 +948,7 @@ export interface Enrollment {
 export interface User {
   id: string;
   email: string;
-  role: 'admin' | 'instructor' | 'student';
+  role: 'admin' | 'instructor' | 'student' | 'client';
   first_name: string;
   last_name: string;
   phone: string | null;

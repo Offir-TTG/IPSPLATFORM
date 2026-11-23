@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createClient } from '@supabase/supabase-js';
+import { noStoreFetch } from '@/lib/supabase/noStoreFetch';
 import type {
   AuditEvent,
   CreateAuditEventParams,
@@ -24,6 +25,7 @@ let supabase: ReturnType<typeof createClient> | null = null;
 function getSupabaseClient() {
   if (!supabase) {
     supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      global: { fetch: noStoreFetch },
       auth: {
         autoRefreshToken: false,
         persistSession: false

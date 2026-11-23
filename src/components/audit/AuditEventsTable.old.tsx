@@ -446,7 +446,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                             </div>
                             {event.is_student_record && (
                               <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                ⚠️ {t('admin.audit.details.studentRecord', 'Student Record (FERPA Protected)')}
+                                ⚠️ {t('admin.audit.details.studentRecord', 'Client Record (FERPA Protected)')}
                               </div>
                             )}
                             {event.is_minor_data && (

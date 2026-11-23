@@ -2,6 +2,8 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/server';
 import { lessonEnd, loadClientLearning } from './clientLearning';
 import { loadMembershipView, money, type MembershipView } from './membership';
+import { plainText } from '@/components/user/portal/course/courseModel';
+import { ALL_FEATURES, loadCourseFeatures, type CourseFeatures } from '@/lib/lms/courseFeatures';
 
 /**
  * The two kinds of "space" a client can step into from home: a program
@@ -23,17 +25,21 @@ const whenLabel = (iso: string, now: Date) => {
 const minutes = (l: any) => Number(l.duration) || null;
 
 export type SpaceSession = { lessonId: string; courseId: string; title: string; when: string; sub: string; start: string; end: string; joinUrl: string | null };
-export type SpaceNews = { key: string; title: string; sub: string; href: string };
+/** Something new in a program's course; it opens that course (and lesson) inside the program page. */
+export type SpaceNews = { key: string; title: string; sub: string; courseId: string; lessonId: string | null; part: 'lessons' | 'files' };
 
 export type ProgramSpace = {
   programId: string;
   name: string;
   kicker: string;
   lead: string | null;
+  /** The program's description (plain text) and picture, from the admin. */
+  about: string | null;
+  imageUrl: string | null;
   color: string;
   overall: number;
   doneLine: string;
-  courses: { id: string; title: string; line: string; pct: number; state: 'done' | 'active' | 'todo'; action: string; required: boolean; n: number }[];
+  courses: { id: string; title: string; line: string; pct: number; state: 'done' | 'active' | 'todo'; action: string; required: boolean; n: number; features: CourseFeatures }[];
   next: SpaceSession | null;
   news: SpaceNews[];
   payment: { label: string; sum: string } | null;
@@ -91,6 +97,8 @@ export async function loadProgramSpace(userId: string, programId: string): Promi
   const program: any = learning.programs.find((p: any) => p.id === programId);
   const pcs = learning.programCourses.filter((pc: any) => pc.program_id === programId).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
   const courseIds = pcs.map((pc: any) => pc.course_id as string);
+  // Whether each course shows grades / attendance (Course → Settings).
+  const features = await loadCourseFeatures(admin, courseIds);
 
   const courses = pcs.map((pc: any, i: number) => {
     const c = learning.courseById.get(pc.course_id) ?? {};
@@ -115,6 +123,7 @@ export async function loadProgramSpace(userId: string, programId: string): Promi
       action: state === 'done' ? 'לחזרה' : state === 'active' ? 'המשך' : 'לפרטים',
       required: pc.is_required !== false,
       n: i + 1,
+      features: features.get(pc.course_id) ?? ALL_FEATURES,
     };
   });
   // Learning hours, as the old programs page showed them.
@@ -143,7 +152,7 @@ export async function loadProgramSpace(userId: string, programId: string): Promi
   for (const id of courseIds) {
     for (const l of learning.lessonsByCourse.get(id) ?? []) {
       if (l.recording_url && l.start_time && now.getTime() - new Date(l.start_time).getTime() < 14 * DAY && new Date(l.start_time) < now) {
-        news.push({ key: `r-${l.id}`, title: `הקלטה מוכנה: ${l.title}`, sub: [learning.courseById.get(id)?.title, minutes(l) ? `${minutes(l)} דק׳` : null].filter(Boolean).join(' · '), href: `/courses/${id}` });
+        news.push({ key: `r-${l.id}`, title: `הקלטה מוכנה: ${l.title}`, sub: [learning.courseById.get(id)?.title, minutes(l) ? `${minutes(l)} דק׳` : null].filter(Boolean).join(' · '), courseId: id, lessonId: l.id, part: 'lessons' });
       }
     }
   }
@@ -165,7 +174,7 @@ export async function loadProgramSpace(userId: string, programId: string): Promi
       .order('payment_number', { ascending: true }),
   ]);
   for (const m of materials ?? []) {
-    news.push({ key: `m-${m.id}`, title: `חומר חדש: ${m.title}`, sub: `${learning.courseById.get(m.course_id)?.title ?? ''} · קבצי הקורס`, href: `/courses/${m.course_id}` });
+    news.push({ key: `m-${m.id}`, title: `חומר חדש: ${m.title}`, sub: `${learning.courseById.get(m.course_id)?.title ?? ''} · קבצי הקורס`, courseId: m.course_id, lessonId: null, part: 'files' });
   }
 
   const schedules = owed ?? [];
@@ -182,6 +191,8 @@ export async function loadProgramSpace(userId: string, programId: string): Promi
     name: program?.name ?? enrollment.product.title,
     kicker: `תוכנית · ${courses.length} קורסים${hours}`,
     lead,
+    about: plainText((program as any)?.description ?? null) || null,
+    imageUrl: (program as any)?.image_url ?? null,
     color: learning.colorOf(`program:${programId}`),
     overall,
     doneLine: `${doneCount} מתוך ${required.length} קורסי חובה הושלמו`,
@@ -211,13 +222,13 @@ export async function loadClubSpace(userId: string, courseId: string): Promise<C
 
   return {
     courseId,
-    title: course.title ?? enrollment.product.title,
+    title: enrollment.product.club_name ?? course.title ?? enrollment.product.title,
     kicker: 'מועדון · מנוי',
     tagline: course.description ? String(course.description).replace(/<[^>]+>/g, '').slice(0, 140) : null,
     color,
     next: nextSession(learning, [courseId], now),
     expert: learning.instructorInfo.get(courseId) ?? null,
     recordings,
-    membership: await loadMembershipView(userId, enrollment.id, course.title ?? enrollment.product.title, color),
+    membership: await loadMembershipView(userId, enrollment.id, enrollment.product.club_name ?? course.title ?? enrollment.product.title, color),
   };
 }

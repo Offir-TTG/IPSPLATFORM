@@ -78,7 +78,7 @@ export default function SettingsHomePage() {
   const { t } = useAdminLanguage();
   return (
     <AdminLayout>
-      <div className="max-w-6xl">
+      <div className="max-w-6xl p-4 md:p-6">
         <h1 className="text-2xl md:text-3xl font-bold">{t('admin.settingsHub.title', 'Settings')}</h1>
         <p className="mt-1 text-muted-foreground">
           {t('admin.settingsHub.subtitle', 'Everything that sets up the platform, in one place. Choose a card to open it.')}

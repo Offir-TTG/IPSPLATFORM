@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { listIntegrations } from '@/lib/integrations/store';
 import { recordQueueBounce } from '@/lib/email/blocklist';
 import { bounceClassFromResendEvent } from '@/lib/email/bounce';
+import { RESEND_APP_TAG } from '@/lib/email/send';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,8 +31,18 @@ type ResendEvent = {
     email_id?: string;
     to?: string[] | string;
     bounce?: { type?: string; subType?: string; message?: string };
+    /** The tags the email was sent with: an object, or a list of {name, value}. */
+    tags?: Record<string, string> | Array<{ name?: string; value?: string }>;
   };
 };
+
+/** A tag the email was sent with, in either shape Resend uses. */
+function tagValue(event: ResendEvent, name: string): string | null {
+  const tags = event.data?.tags;
+  if (Array.isArray(tags)) return tags.find((t) => t?.name === name)?.value ?? null;
+  if (tags && typeof tags === 'object') return typeof tags[name] === 'string' ? tags[name] : null;
+  return null;
+}
 
 /** Svix signature check: HMAC-SHA256 of "id.timestamp.body" with the secret. */
 function verifySvix(secret: string, id: string, timestamp: string, body: string, signatures: string): boolean {
@@ -103,6 +114,7 @@ export async function POST(request: NextRequest) {
       const to = Array.isArray(event.data?.to) ? event.data?.to[0] : event.data?.to;
       await markBounce(supabase, {
         tenantId,
+        sentByUs: tagValue(event, 'app') === RESEND_APP_TAG,
         emailId: event.data?.email_id ?? null,
         to: typeof to === 'string' ? to : null,
         kind,
@@ -130,10 +142,21 @@ export async function POST(request: NextRequest) {
  * id, else by the most recent email to that address. An email sent directly
  * (not through the queue, such as a password reset) has no row, so a small
  * failed row is added: the gate reads rows, and the bounce must count.
+ *
+ * The Resend account is shared with IParentingSchool, and every webhook gets
+ * every email's events. So beyond a queue row found by id, an event counts
+ * only for an email this platform sent (tagged app=ipsplatform by send.ts).
  */
 async function markBounce(
   supabase: ReturnType<typeof createAdminClient>,
-  input: { tenantId: string | null; emailId: string | null; to: string | null; kind: 'hard' | 'soft' | 'complaint'; reason: string },
+  input: {
+    tenantId: string | null;
+    sentByUs: boolean;
+    emailId: string | null;
+    to: string | null;
+    kind: 'hard' | 'soft' | 'complaint';
+    reason: string;
+  },
 ) {
   let rowId: string | null = null;
 
@@ -143,6 +166,8 @@ async function markBounce(
     const { data } = await query.limit(1).maybeSingle();
     rowId = data?.id ?? null;
   }
+  // Not one of ours (for example an IParentingSchool email): nothing to mark.
+  if (!rowId && !input.sentByUs) return;
   if (!rowId && input.to) {
     let query = supabase.from('email_queue').select('id').ilike('to_email', input.to);
     if (input.tenantId) query = query.eq('tenant_id', input.tenantId);

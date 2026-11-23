@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { upcomingForBuyers } from '@/lib/payments/subscriptionPrice';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.
@@ -53,6 +54,7 @@ export async function GET(
           description,
           payment_model,
           payment_plan,
+          default_payment_plan_id,
           alternative_payment_plan_ids
         ),
         payment_plan:payment_plans!enrollments_payment_plan_id_fkey (
@@ -161,6 +163,11 @@ export async function GET(
       paymentPlanData = {
         type: 'free'
       };
+    } else if (product.payment_model === 'per_session') {
+      paymentPlanData = {
+        type: 'per_session',
+        session_amount: Number(product.payment_plan?.session_amount) || null
+      };
     }
 
     // Return enrollment details (no sensitive user data)
@@ -179,7 +186,9 @@ export async function GET(
       user_email: userEmail, // Show email so user can verify it's for them
       enrollment_type: enrollment.enrollment_type, // 'admin_invited' or 'self_enrolled'
       has_multiple_plans: hasMultiplePlans,
-      alternative_payment_plan_ids: hasMultiplePlans ? alternativePlanIds : []
+      alternative_payment_plan_ids: hasMultiplePlans ? alternativePlanIds : [],
+      // A scheduled membership price, shown before paying.
+      upcoming_price: (await upcomingForBuyers(supabase, [product as any])).get(product.id) ?? null,
     });
 
   } catch (error) {

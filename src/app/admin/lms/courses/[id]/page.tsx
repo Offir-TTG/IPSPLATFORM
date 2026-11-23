@@ -2,9 +2,15 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import dynamicImport from 'next/dynamic';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { CourseSettingsForm } from '@/components/admin/courses/CourseSettingsForm';
+import { AttendanceTab } from '@/components/admin/courses/attendance/AttendanceTab';
+import { GradesTab } from '@/components/admin/courses/grades/GradesTab';
+import { COURSE_TYPE_FALLBACK, courseStatus, dateRange, personName, type AdminCourse } from '@/components/admin/courses/types';
+import { stripHtml } from '@/components/admin/programs/types';
+import { StatusDot, kitButton } from '@/components/admin/notifications/kit';
 import {
   DndContext,
   closestCenter,
@@ -27,71 +33,56 @@ import {
   Plus,
   Eye,
   EyeOff,
-  PlusCircle,
   BookOpen,
   GraduationCap,
   Clock,
-  MoreVertical,
-  Edit2,
   Trash2,
   ChevronDown,
   ChevronRight,
-  GripVertical,
-  Video,
-  VideoOff,
   Loader2,
   ExternalLink,
   CheckCircle,
   Award,
   Link2,
   Copy,
-  RefreshCw,
+  Layers,
+  Upload,
+  CalendarDays,
+  Users,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdminLanguage, useTenant } from '@/context/AppContext';
 import {
   wallTimeToUTC,
   utcToWallTime,
-  formatInTimezone,
-  resolveDisplayTimezone,
   nextRoundHourInTimezone,
 } from '@/lib/datetime/timezone';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { CourseImageUploader } from '@/components/lms/CourseImageUploader';
 import { LessonTopicsBuilder } from '@/components/lms/LessonTopicsBuilder';
+import { SortableModule, type LessonActions } from '@/components/admin/courses/builder/ModuleCard';
+import { LessonPanel, type LessonFormState } from '@/components/admin/courses/builder/LessonPanel';
+import { ModuleDeleteDialog } from '@/components/admin/courses/builder/ModuleDeleteDialog';
+import { AddModulesDialog, fillPattern } from '@/components/admin/courses/builder/AddModulesDialog';
+import { SeriesWizard } from '@/components/admin/courses/builder/SeriesWizard';
+import { lengthText, type BuilderLesson, type BuilderModule } from '@/components/admin/courses/builder/types';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { InlineConfirm, SidePanel, panelSecondary } from '@/components/admin/courses/builder/SidePanel';
 import { Badge } from '@/components/ui/badge';
 
-// Dynamically import RichTextEditor to avoid SSR issues
-const RichTextEditor = dynamicImport(() => import('@/components/ui/rich-text-editor').then(mod => mod.RichTextEditor), { ssr: false });
-import TokenInserter, { Token } from '@/components/ui/token-inserter';
+import type { Token } from '@/components/ui/token-inserter';
 import { CourseMaterials } from '@/components/lms/CourseMaterials';
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
-  ZoomSettingsPanel,
   ZOOM_SETTINGS_DEFAULTS,
 } from '@/components/admin/lms/ZoomSettingsPanel';
-import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useSortable } from '@dnd-kit/sortable';
-import { useDroppable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 
 interface Course {
   id: string;
@@ -110,527 +101,8 @@ interface Course {
   } | null;
 }
 
-interface Module {
-  id: string;
-  course_id: string;
-  title: string;
-  description: string | null;
-  order: number;
-  is_published: boolean;
-  is_optional: boolean;
-  duration_minutes: number | null;
-  lessons?: Lesson[];
-  isExpanded?: boolean;
-}
-
-interface Lesson {
-  id: string;
-  module_id: string | null;
-  course_id: string;
-  title: string;
-  description: string | null;
-  order: number;
-  duration: number | null;  // Changed from duration_minutes to match actual schema
-  start_time?: string | null;
-  timezone?: string;
-  is_published: boolean;
-  zoom_meeting_id?: string | null;
-  topics?: Topic[];
-  zoom_session?: {
-    id: string;
-    meeting_id: string;
-    join_url: string;
-    start_url: string;
-    has_recording: boolean;
-    platform?: 'zoom' | 'daily';
-    daily_room_name?: string;
-  } | null;
-}
-
-interface Topic {
-  id: string;
-  lesson_id: string;
-  title: string;
-  content_type: 'video' | 'text' | 'pdf' | 'quiz' | 'assignment' | 'link';
-  order: number;
-  duration_minutes: number;
-  is_required: boolean;
-}
-
-// Sortable Module Component
-function SortableModule({
-  module,
-  onToggleExpand,
-  onAddLesson,
-  onBulkAddLessons,
-  onEdit,
-  onDelete,
-  onEditLesson,
-  onDeleteLesson,
-  onEditLessonContent,
-  onOpenZoomMeeting,
-  onCreateZoomMeeting,
-  creatingZoomFor,
-  onSyncRecording,
-  syncingRecordingFor,
-  t,
-  direction,
-  isRtl,
-  tenantTimezone,
-}: {
-  module: Module;
-  onToggleExpand: () => void;
-  onAddLesson: () => void;
-  onBulkAddLessons: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onEditLesson: (lesson: Lesson) => void;
-  onDeleteLesson: (lessonId: string) => void;
-  onEditLessonContent: (lessonId: string, lessonTitle: string) => void;
-  onOpenZoomMeeting: (lessonId: string) => void;
-  onCreateZoomMeeting: (lessonId: string, platform?: 'zoom' | 'daily') => void;
-  creatingZoomFor: string | null;
-  onSyncRecording: (lessonId: string) => void;
-  syncingRecordingFor: string | null;
-  t: (key: string, fallback: string) => string;
-  direction: 'ltr' | 'rtl';
-  isRtl: boolean;
-  /** Tenant's configured timezone — forwarded to each lesson card so
-      legacy lessons without `timezone` fall back to it, not a literal. */
-  tenantTimezone: string;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: module.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`border rounded-lg bg-card ${isDragging ? 'opacity-50' : ''}`}
-    >
-      <div className="p-3">
-        <div className="flex items-center gap-2">
-          <div {...attributes} {...listeners} className="cursor-grab">
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-0 h-auto"
-            onClick={onToggleExpand}
-          >
-            {module.isExpanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-          </Button>
-          <BookOpen className="h-4 w-4 text-muted-foreground" />
-          <span className="flex-1 font-medium">{module.title}</span>
-          <div className="flex items-center gap-2">
-            {!module.is_published && (
-              <Badge variant="outline" className="text-xs">
-                {t('lms.builder.draft', 'Draft')}
-              </Badge>
-            )}
-            {module.is_optional && (
-              <Badge variant="secondary" className="text-xs">
-                {t('lms.builder.optional', 'Optional')}
-              </Badge>
-            )}
-            {module.duration_minutes && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                {module.duration_minutes}m
-              </div>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={onAddLesson}>
-                  <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {t('lms.builder.add_lesson', 'Add Lesson')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onBulkAddLessons}>
-                  <PlusCircle className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {t('lms.builder.bulk_add_lessons', 'Bulk Add Lessons')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onEdit}>
-                  <Edit2 className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {t('lms.builder.edit_module', 'Edit Module')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onDelete} className="text-destructive">
-                  <Trash2 className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {t('lms.builder.delete_module', 'Delete Module')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        {module.isExpanded && (
-          <div className="ml-10 mt-3 space-y-2 border-l-2 border-muted pl-4">
-            {module.lessons && module.lessons.length > 0 ? (
-              <SortableContext
-                items={module.lessons.map((l) => l.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {module.lessons.map((lesson) => (
-                  <SortableLesson
-                    key={lesson.id}
-                    lesson={lesson}
-                    moduleId={module.id}
-                    onEdit={onEditLesson}
-                    onDelete={onDeleteLesson}
-                    onEditContent={onEditLessonContent}
-                    onOpenZoomMeeting={onOpenZoomMeeting}
-                    onCreateZoomMeeting={onCreateZoomMeeting}
-                    creatingZoomFor={creatingZoomFor}
-                    onSyncRecording={onSyncRecording}
-                    syncingRecordingFor={syncingRecordingFor}
-                    t={t}
-                    direction={direction}
-                    isRtl={isRtl}
-                    tenantTimezone={tenantTimezone}
-                  />
-                ))}
-              </SortableContext>
-            ) : (
-              <div className="text-center py-6 text-muted-foreground">
-                <GraduationCap className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                <p className="text-sm">{t('lms.builder.no_lessons', 'No lessons yet')}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => onAddLesson()}
-                >
-                  <Plus className={isRtl ? 'ml-1 h-3 w-3' : 'mr-1 h-3 w-3'} />
-                  {t('lms.builder.add_first_lesson', 'Add First Lesson')}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Sortable Lesson Component
-function SortableLesson({
-  lesson,
-  moduleId,
-  onEdit,
-  onDelete,
-  onEditContent,
-  onOpenZoomMeeting,
-  onCreateZoomMeeting,
-  creatingZoomFor,
-  onSyncRecording,
-  syncingRecordingFor,
-  t,
-  direction,
-  isRtl,
-  tenantTimezone,
-}: {
-  lesson: Lesson;
-  moduleId: string;
-  onEdit: (lesson: Lesson) => void;
-  onDelete: (lessonId: string) => void;
-  onEditContent: (lessonId: string, lessonTitle: string) => void;
-  onOpenZoomMeeting: (lessonId: string) => void;
-  onCreateZoomMeeting: (lessonId: string, platform?: 'zoom' | 'daily') => void;
-  creatingZoomFor: string | null;
-  onSyncRecording: (lessonId: string) => void;
-  syncingRecordingFor: string | null;
-  t: (key: string, fallback: string) => string;
-  direction: 'ltr' | 'rtl';
-  isRtl: boolean;
-  /** Tenant's configured timezone — used as the fallback when a lesson
-      hasn't got its own `timezone` set (legacy records). */
-  tenantTimezone: string;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: lesson.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`group relative p-4 rounded-lg border border-border bg-card hover:shadow-md transition-all ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
-    >
-      {/* Drag Handle - Positioned on the left edge */}
-      <div
-        {...attributes}
-        {...listeners}
-        className={`absolute ${isRtl ? 'right-0' : 'left-0'} top-0 bottom-0 w-8 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none opacity-0 group-hover:opacity-100 transition-opacity`}
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
-
-      {/* Main content with left/right padding for drag handle */}
-      <div className={`flex items-start gap-4 ${isRtl ? 'pr-8' : 'pl-8'}`}>
-        {/* Icon */}
-        <div className="flex-shrink-0 mt-0.5">
-          <div className="h-8 w-8 rounded-md bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
-            <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0 space-y-2.5">
-          {/* Title Row */}
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-medium leading-tight">{lesson.title}</h4>
-              {lesson.description && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{lesson.description}</p>
-              )}
-            </div>
-
-            {/* Status Badge */}
-            <div className="flex-shrink-0">
-              {lesson.is_published ? (
-                <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
-                  {t('lms.builder.published', 'Published')}
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="text-xs">
-                  {t('lms.builder.draft', 'Draft')}
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {/* Meta Info Row - Date, Duration, Topics, Zoom */}
-          <div className="flex items-center gap-3 flex-wrap text-xs">
-            {/* Date and Time - Most Important.
-                - Pin `timeZone` to the lesson's saved tz so the time
-                  doesn't shift by the admin's browser offset.
-                - Pin the locale to the admin UI language (he-IL or en-US)
-                  so the card stays in one language instead of mixing
-                  Hebrew UI with English month names. */}
-            {lesson.start_time && (() => {
-              // Admin view: no recipient timezone, so the chain collapses
-              // to `lesson.timezone || tenantTimezone`. See the canonical
-              // rule in `src/lib/datetime/timezone.ts`.
-              const displayTz = resolveDisplayTimezone({
-                lessonTz: lesson.timezone,
-                tenantTz: tenantTimezone,
-              });
-              const locale = isRtl ? 'he-IL' : 'en-US';
-              return (
-                <div className="flex items-center gap-1 font-medium text-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>
-                    {formatInTimezone(lesson.start_time, displayTz, {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    }, locale)}
-                    {' • '}
-                    {formatInTimezone(lesson.start_time, displayTz, {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true,
-                    }, locale)}
-                  </span>
-                </div>
-              );
-            })()}
-
-            {/* Duration — translate the "m" unit so it follows the UI
-                language ('m' in English, 'דק׳' in Hebrew). */}
-            {lesson.duration && (
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <span>({lesson.duration}{t('lms.builder.minutes_short', 'm')})</span>
-              </div>
-            )}
-
-            {/* Topics */}
-            {((lesson as any).lesson_topics?.length > 0) && (
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <BookOpen className="h-3 w-3" />
-                <span>{(lesson as any).lesson_topics.length} {t('lms.builder.topics', 'Topics')}</span>
-              </div>
-            )}
-
-            {/* Video Meeting Status — labels go through `t()` so the
-                wording follows the admin UI language. The brand names
-                themselves (Zoom, Daily.co) stay constant as fallbacks. */}
-            {(lesson.zoom_meeting_id || lesson.zoom_session?.daily_room_name) && (
-              <div className="flex items-center gap-1.5">
-                <Video className={`h-3 w-3 ${lesson.zoom_session?.platform === 'daily' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`} />
-                <span className={lesson.zoom_session?.platform === 'daily' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}>
-                  {lesson.zoom_session?.platform === 'daily'
-                    ? t('lms.builder.platform_daily', 'Daily.co')
-                    : t('lms.builder.platform_zoom', 'Zoom')}
-                </span>
-                {lesson.zoom_session?.has_recording && (
-                  <span className="text-muted-foreground">• {t('lms.builder.recorded', 'Recorded')}</span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons Row - Always Visible */}
-          <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
-            {/* Video Meeting Actions */}
-            {(lesson.zoom_meeting_id || lesson.zoom_session?.daily_room_name) ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => onOpenZoomMeeting(lesson.id)}
-                >
-                  <ExternalLink className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-                  {lesson.zoom_session?.platform === 'daily'
-                    ? t('lms.builder.open_daily', 'Open Daily.co')
-                    : t('lms.builder.open_zoom', 'Open Zoom')}
-                </Button>
-                {/* Manual recording sync — only meaningful for Zoom (Daily.co
-                    recordings would need a separate handler). Shows whenever
-                    there's a zoom_meeting_id; disabled with a "Synced" label
-                    once the recording has been fetched. */}
-                {lesson.zoom_meeting_id && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => onSyncRecording(lesson.id)}
-                    disabled={
-                      syncingRecordingFor === lesson.id ||
-                      !!lesson.zoom_session?.has_recording
-                    }
-                    title={
-                      lesson.zoom_session?.has_recording
-                        ? t(
-                            'lms.builder.recording_already_synced',
-                            'Recording already synced'
-                          )
-                        : t(
-                            'lms.builder.sync_recording_tooltip',
-                            'Fetch the recording from Zoom now (use if webhook was missed)'
-                          )
-                    }
-                  >
-                    {syncingRecordingFor === lesson.id ? (
-                      <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
-                    ) : lesson.zoom_session?.has_recording ? (
-                      <CheckCircle className={isRtl ? 'h-3 w-3 ml-1.5 text-green-600' : 'h-3 w-3 mr-1.5 text-green-600'} />
-                    ) : (
-                      <RefreshCw className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-                    )}
-                    {lesson.zoom_session?.has_recording
-                      ? t('lms.builder.recording_synced_short', 'Synced')
-                      : t('lms.builder.sync_recording', 'Sync recording')}
-                  </Button>
-                )}
-              </>
-            ) : (
-              // Previously this was a single hardcoded "Add Daily.co"
-              // button — no Zoom choice. So when admins created a
-              // lesson, picked Zoom in the dialog, the (broken) Zoom
-              // endpoint silently 404'd, and they then clicked the only
-              // visible meeting button → Daily room. Now we offer both
-              // so the row matches the dialog's choice.
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => onCreateZoomMeeting(lesson.id, 'zoom')}
-                  disabled={creatingZoomFor === lesson.id}
-                >
-                  {creatingZoomFor === lesson.id ? (
-                    <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
-                  ) : (
-                    <Video className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-                  )}
-                  {t('lms.builder.add_zoom', 'Add Zoom')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => onCreateZoomMeeting(lesson.id, 'daily')}
-                  disabled={creatingZoomFor === lesson.id}
-                >
-                  {creatingZoomFor === lesson.id ? (
-                    <Loader2 className={isRtl ? 'h-3 w-3 ml-1.5 animate-spin' : 'h-3 w-3 mr-1.5 animate-spin'} />
-                  ) : (
-                    <VideoOff className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-                  )}
-                  {t('lms.builder.add_daily', 'Add Daily.co')}
-                </Button>
-              </>
-            )}
-
-            {/* Edit Content Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => onEditContent(lesson.id, lesson.title)}
-            >
-              <BookOpen className={isRtl ? 'h-3 w-3 ml-1.5' : 'h-3 w-3 mr-1.5'} />
-              {t('lms.topics.edit_content', 'Content')}
-            </Button>
-
-            {/* Spacer */}
-            <div className="flex-1" />
-
-            {/* Edit & Delete Buttons */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={() => onEdit(lesson)}
-            >
-              <Edit2 className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => onDelete(lesson.id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+type Module = BuilderModule;
+type Lesson = BuilderLesson;
 
 export default function CourseBuilderPage() {
   const params = useParams();
@@ -749,34 +221,33 @@ export default function CourseBuilderPage() {
     }
   };
 
-  // Enrollment statistics
-  const [enrollmentStats, setEnrollmentStats] = useState({
-    totalEnrollments: 0,
-    lifetimeSales: 0,
-    completedCount: 0,
-    completedPercent: 0,
-    inProgressCount: 0,
-    inProgressPercent: 0,
-    notStartedCount: 0,
-    notStartedPercent: 0,
-  });
+  // How many students are enrolled (null until loaded).
+  const [enrolledCount, setEnrolledCount] = useState<number | null>(null);
+  const [courseMissing, setCourseMissing] = useState(false);
 
-  // Course image URL
-  const [courseImageUrl, setCourseImageUrl] = useState<string | null>(null);
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  // Which wizard step opens first (?step=structure after creating; old ?tab= links still work).
+  const searchParams = useSearchParams();
+  const initialStep =
+    searchParams.get('step') ?? ({ structure: 'structure', materials: 'materials', settings: 'basics' } as Record<string, string>)[searchParams.get('tab') ?? ''] ?? 'structure';
+
+  // Course-level actions in the header.
+  const [duplicating, setDuplicating] = useState(false);
+  const [showDeleteCourseDialog, setShowDeleteCourseDialog] = useState(false);
+  const [deletingCourse, setDeletingCourse] = useState(false);
+  const [deleteBlockers, setDeleteBlockers] = useState<{ products: { id: string; title: string }[]; programs: { id: string; name: string }[] } | null>(null);
+  const [deletingItem, setDeletingItem] = useState(false);
+  const settingsCourse = useMemo(() => course as unknown as AdminCourse | null, [course]);
 
   // Dialog states
   const [showModuleDialog, setShowModuleDialog] = useState(false);
   const [showLessonDialog, setShowLessonDialog] = useState(false);
-  const [showBulkModuleDialog, setShowBulkModuleDialog] = useState(false);
   const [showBulkLessonDialog, setShowBulkLessonDialog] = useState(false);
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
   const [editingModule, setEditingModule] = useState<Module | null>(null);
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
-  const [showDeleteModuleDialog, setShowDeleteModuleDialog] = useState(false);
   const [showDeleteLessonDialog, setShowDeleteLessonDialog] = useState(false);
   const [showLessonContentDialog, setShowLessonContentDialog] = useState(false);
-  const [moduleToDelete, setModuleToDelete] = useState<string | null>(null);
+  const [moduleDeleteTarget, setModuleDeleteTarget] = useState<{ id: string; title: string; prevId: string | null } | null>(null);
   const [lessonToDelete, setLessonToDelete] = useState<{ lessonId: string; moduleId: string } | null>(null);
   const [selectedLessonForContent, setSelectedLessonForContent] = useState<{ lessonId: string; lessonTitle: string } | null>(null);
 
@@ -825,7 +296,7 @@ export default function CourseBuilderPage() {
 
   const [bulkModuleForm, setBulkModuleForm] = useState({
     count: '5',
-    titlePattern: 'Module {n}',
+    titlePattern: t('admin.courses.builder.modulePattern', 'Module {n}'),
     startingOrder: 1,
     is_published: true,
     is_optional: false,
@@ -899,6 +370,8 @@ export default function CourseBuilderPage() {
 
   // Bridge link state
   const [bridgeLink, setBridgeLink] = useState<any>(null);
+  // Bumped by the "Upload material" button on the Materials step's title row.
+  const [materialUploadSignal, setMaterialUploadSignal] = useState(0);
   const [loadingBridge, setLoadingBridge] = useState(false);
   const [creatingBridge, setCreatingBridge] = useState(false);
   const [showBridgeDialog, setShowBridgeDialog] = useState(false);
@@ -951,8 +424,8 @@ export default function CourseBuilderPage() {
     result = result.replace(/\{n\}/g, lessonNumber.toString());
 
     // Replace {series_name} with course name
-    result = result.replace(/\{series_name\}/g, course?.title || 'lesson');
-    result = result.replace(/\{course_name\}/g, course?.title || 'lesson');
+    result = result.replace(/\{series_name\}/g, course?.title || '');
+    result = result.replace(/\{course_name\}/g, course?.title || '');
 
     if (lessonDate) {
       // Format date tokens
@@ -968,18 +441,21 @@ export default function CourseBuilderPage() {
       // {date_short} - DD/MM
       result = result.replace(/\{date_short\}/g, `${day}/${month}`);
 
+      // {dd} / {mm} - day and month numbers
+      result = result.replace(/\{dd\}/g, day);
+      result = result.replace(/\{mm\}/g, month);
+
       // {date_long} - Full date with day name
-      const dayName = lessonDate.toLocaleDateString('en-US', { weekday: 'long' });
-      const monthName = lessonDate.toLocaleDateString('en-US', { month: 'long' });
-      result = result.replace(/\{date_long\}/g, `${dayName}, ${monthName} ${day}, ${year}`);
+      const tokenLocale = isRtl ? 'he-IL' : 'en-US';
+      const dayName = lessonDate.toLocaleDateString(tokenLocale, { weekday: 'long' });
+      const monthName = lessonDate.toLocaleDateString(tokenLocale, { month: 'long' });
+      result = result.replace(/\{date_long\}/g, lessonDate.toLocaleDateString(tokenLocale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
 
       // {time} - HH:MM
       result = result.replace(/\{time\}/g, `${hours}:${minutes}`);
 
       // {time_12h} - 12-hour format
-      const hours12 = lessonDate.getHours() % 12 || 12;
-      const ampm = lessonDate.getHours() >= 12 ? 'PM' : 'AM';
-      result = result.replace(/\{time_12h\}/g, `${hours12}:${minutes} ${ampm}`);
+      result = result.replace(/\{time_12h\}/g, lessonDate.toLocaleTimeString(tokenLocale, { hour: 'numeric', minute: '2-digit', hour12: true }));
 
       // {day} - Day of week
       result = result.replace(/\{day\}/g, dayName);
@@ -1015,18 +491,12 @@ export default function CourseBuilderPage() {
 
       if (courseData.success) {
         setCourse(courseData.data);
-        // Set course image URL
-        setCourseImageUrl(courseData.data.image_url || null);
+        setCourseMissing(false);
       } else {
-        // Fallback to mock data if API fails
-        setCourse({
-          id: params.id as string,
-          title: 'Course',
-          description: 'Course description',
-          program_id: '',
-          is_active: true,
-          instructor_id: null,
-        });
+        // No made-up course: the page says it wasn't found.
+        setCourse(null);
+        setCourseMissing(true);
+        return;
       }
 
       // Load modules for this course (with cache busting)
@@ -1107,22 +577,9 @@ export default function CourseBuilderPage() {
       const studentsResponse = await fetch(`/api/admin/lms/courses/${params.id}/students`);
       const studentsData = await studentsResponse.json();
 
-      if (studentsData.success && studentsData.data) {
-        const students = studentsData.data;
-        const total = students.length;
-
-        // For now, set basic stats
-        // TODO: Enhance to get actual progress/completion data from user_progress table
-        setEnrollmentStats({
-          totalEnrollments: total,
-          lifetimeSales: 0, // TODO: Calculate from enrollments/payments
-          completedCount: 0, // TODO: Get from user_progress
-          completedPercent: 0,
-          inProgressCount: total, // Assume all are in progress for now
-          inProgressPercent: 100,
-          notStartedCount: 0,
-          notStartedPercent: 0,
-        });
+      // Only the real number: how many students are enrolled.
+      if (studentsData.success && Array.isArray(studentsData.data)) {
+        setEnrolledCount(studentsData.data.length);
       }
     } catch (error) {
       console.error('Failed to load enrollment stats:', error);
@@ -1140,6 +597,13 @@ export default function CourseBuilderPage() {
       setActiveId(null);
       return;
     }
+
+    // If the server doesn't save the new order, the list goes back to it.
+    const before = modules;
+    const revert = () => {
+      setModules(before);
+      showMessage('error', t('admin.courses.builder.orderNotSaved', "The new order wasn't saved. Try again."), 5000);
+    };
 
     // Check if we're dragging a module
     const activeModuleIndex = modules.findIndex((m) => m.id === active.id);
@@ -1167,10 +631,12 @@ export default function CourseBuilderPage() {
 
         if (result.success) {
           showMessage('success', t('lms.builder.module_order_updated', 'Module order updated'));
+        } else {
+          revert();
         }
       } catch (error) {
         console.error('Failed to save module order:', error);
-        showMessage('warning', t('lms.builder.order_local_only', 'Order updated locally only'));
+        revert();
       }
     } else {
       // Check if we're dragging a lesson
@@ -1251,10 +717,12 @@ export default function CourseBuilderPage() {
 
           if (result.success) {
             showMessage('success', t('lms.builder.lesson_order_updated', 'Lesson order updated'));
+          } else {
+            revert();
           }
         } catch (error) {
           console.error('Failed to save lesson order:', error);
-          showMessage('warning', t('lms.builder.order_local_only', 'Order updated locally only'));
+          revert();
         }
       } else {
         // Cross-module move
@@ -1319,13 +787,22 @@ export default function CourseBuilderPage() {
               })
             );
 
-            await Promise.all(reorderPromises);
-
-            showMessage('success', t('lms.builder.lesson_moved', 'Lesson moved to new module'));
+            const done = await Promise.all(reorderPromises);
+            if (done.every((r) => r.ok)) {
+              showMessage('success', t('lms.builder.lesson_moved', 'Lesson moved to new module'));
+            } else {
+              // The lesson moved, but an order didn't save: show what the server has.
+              showMessage('warning', t('admin.courses.builder.orderNotSaved', "The new order wasn't saved. Try again."), 5000);
+              void loadCourse();
+            }
+          } else {
+            setModules(before);
+            showMessage('error', t('lms.builder.move_failed', 'Failed to move lesson'), 5000);
           }
         } catch (error) {
           console.error('Failed to move lesson:', error);
-          showMessage('error', t('lms.builder.move_failed', 'Failed to move lesson'));
+          setModules(before);
+          showMessage('error', t('lms.builder.move_failed', 'Failed to move lesson'), 5000);
         }
       }
     }
@@ -1408,54 +885,21 @@ export default function CourseBuilderPage() {
           is_optional: false,
         });
       } else {
-        showMessage('error', result.error || `Failed to ${isEditing ? 'update' : 'create'} module`, 5000);
+        showMessage('error', isEditing ? t('admin.courses.builder.moduleUpdateFailed', 'The module was not saved. Try again.') : t('admin.courses.builder.moduleCreateFailed', 'The module was not added. Try again.'), 5000);
       }
     } catch (error) {
       console.error(`Failed to ${editingModule ? 'update' : 'create'} module:`, error);
-      showMessage('error', `Failed to ${editingModule ? 'update' : 'create'} module. Please try again.`, 5000);
+      showMessage('error', editingModule ? t('admin.courses.builder.moduleUpdateFailed', 'The module was not saved. Try again.') : t('admin.courses.builder.moduleCreateFailed', 'The module was not added. Try again.'), 5000);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteModule = async (moduleId: string) => {
-    setModuleToDelete(moduleId);
-    setShowDeleteModuleDialog(true);
-  };
-
-  const confirmDeleteModule = async () => {
-    if (!moduleToDelete) return;
-
-    try {
-      console.log('[confirmDeleteModule] Deleting module:', moduleToDelete);
-      const response = await fetch(`/api/lms/modules/${moduleToDelete}`, {
-        method: 'DELETE',
-      });
-
-      console.log('[confirmDeleteModule] Response status:', response.status);
-      const result = await response.json();
-      console.log('[confirmDeleteModule] Response result:', result);
-
-      if (result.success) {
-        console.log('[confirmDeleteModule] Delete successful, waiting for DB commit...');
-        // Wait a moment for database transaction to fully commit
-        await new Promise(resolve => setTimeout(resolve, 100));
-        console.log('[confirmDeleteModule] Reloading course data...');
-        // Reload data from server to ensure consistency
-        await loadCourse();
-        console.log('[confirmDeleteModule] Course data reloaded');
-        showMessage('success', t('lms.module.deleted_success', 'Module deleted successfully'));
-      } else {
-        console.error('[confirmDeleteModule] Delete failed:', result.error);
-        showMessage('error', result.error || t('lms.module.delete_failed', 'Failed to delete module'), 5000);
-      }
-    } catch (error) {
-      console.error('[confirmDeleteModule] Exception:', error);
-      showMessage('error', t('lms.module.delete_failed', 'Failed to delete module'), 5000);
-    } finally {
-      setShowDeleteModuleDialog(false);
-      setModuleToDelete(null);
-    }
+  /** Opens the delete dialog, which checks the module's lessons and asks what to do with them. */
+  const handleDeleteModule = (moduleId: string) => {
+    const i = modules.findIndex((m) => m.id === moduleId);
+    if (i < 0) return;
+    setModuleDeleteTarget({ id: moduleId, title: modules[i].title, prevId: i > 0 ? modules[i - 1].id : null });
   };
 
   const handleCreateLesson = async () => {
@@ -1610,7 +1054,7 @@ export default function CourseBuilderPage() {
 
               const zoomResult = await zoomResponse.json();
               if (!zoomResult.success) {
-                showMessage('warning', t('lms.builder.lesson_created_zoom_failed', `Lesson created but Zoom meeting failed: ${zoomResult.error}`), 5000);
+                showMessage('warning', t('lms.builder.lesson_created_zoom_failed', 'The lesson was added, but the Zoom meeting was not created.'), 5000);
               } else {
                 meetingCreated = true;
               }
@@ -1650,7 +1094,7 @@ export default function CourseBuilderPage() {
 
             const zoomResult = await zoomResponse.json();
             if (!zoomResult.success) {
-              showMessage('warning', t('lms.builder.lesson_updated_zoom_failed', `Lesson updated but Zoom meeting update failed: ${zoomResult.error}`), 5000);
+              showMessage('warning', t('lms.builder.lesson_updated_zoom_failed', 'The lesson was saved, but the Zoom meeting was not updated.'), 5000);
             } else {
               showMessage('success', t('lms.builder.lesson_zoom_updated', 'Lesson and Zoom meeting updated successfully'));
             }
@@ -1733,55 +1177,28 @@ export default function CourseBuilderPage() {
     setShowDeleteLessonDialog(true);
   };
 
-  const confirmDeleteLesson = async () => {
-    console.log('[confirmDeleteLesson] Function called');
-    if (!lessonToDelete) {
-      console.log('[confirmDeleteLesson] No lesson to delete');
-      return;
-    }
-
-    console.log('[confirmDeleteLesson] Deleting lesson:', lessonToDelete.lessonId);
+  const confirmDeleteLesson = async (target: { lessonId: string; moduleId: string } | null = lessonToDelete) => {
+    // One delete at a time: a double click doesn't send it twice.
+    const lessonToDelete = target;
+    if (!lessonToDelete || deletingItem) return;
+    setDeletingItem(true);
     try {
-      const response = await fetch(`/api/lms/lessons/${lessonToDelete.lessonId}`, {
-        method: 'DELETE',
-      });
-
-      console.log('[confirmDeleteLesson] Response status:', response.status);
-      const result = await response.json();
-      console.log('[confirmDeleteLesson] Response body:', result);
-
+      const response = await fetch(`/api/lms/lessons/${lessonToDelete.lessonId}`, { method: 'DELETE' });
+      const result = await response.json().catch(() => ({}));
       if (result.success) {
-        console.log('[confirmDeleteLesson] Success! Updating modules state...');
-        console.log('[confirmDeleteLesson] Current modules:', modules);
-        console.log('[confirmDeleteLesson] Module ID to update:', lessonToDelete.moduleId);
-        console.log('[confirmDeleteLesson] Lesson ID to remove:', lessonToDelete.lessonId);
-
-        const updatedModules = modules.map(m => {
-          if (m.id === lessonToDelete.moduleId) {
-            const filteredLessons = m.lessons?.filter(l => l.id !== lessonToDelete.lessonId) || [];
-            console.log('[confirmDeleteLesson] Filtering lessons. Before:', m.lessons?.length, 'After:', filteredLessons.length);
-            return {
-              ...m,
-              lessons: filteredLessons,
-            };
-          }
-          return m;
-        });
-
-        console.log('[confirmDeleteLesson] Updated modules:', updatedModules);
-        setModules(updatedModules);
-
+        setModules((prev) =>
+          prev.map((m) => (m.id === lessonToDelete.moduleId ? { ...m, lessons: m.lessons?.filter((l) => l.id !== lessonToDelete.lessonId) || [] } : m)),
+        );
         showMessage('success', t('lms.builder.lesson_deleted', 'Lesson deleted successfully'));
-
-        // Reload course data to ensure UI is in sync with database
         await loadCourse();
       } else {
-        showMessage('error', result.error || t('lms.builder.lesson_delete_failed', 'Failed to delete lesson'), 5000);
+        showMessage('error', t('lms.builder.lesson_delete_failed', 'Failed to delete lesson'), 5000);
       }
     } catch (error) {
       console.error('Failed to delete lesson:', error);
       showMessage('error', t('lms.builder.lesson_delete_failed', 'Failed to delete lesson'), 5000);
     } finally {
+      setDeletingItem(false);
       setShowDeleteLessonDialog(false);
       setLessonToDelete(null);
     }
@@ -1793,6 +1210,7 @@ export default function CourseBuilderPage() {
     if (!module) return;
 
     // Set the editing lesson and module
+    setLessonDialogError(null);
     setEditingLesson(lesson);
     setSelectedModule(module);
 
@@ -1935,7 +1353,7 @@ export default function CourseBuilderPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             course_id: params.id,
-            title: bulkModuleForm.titlePattern.replace('{n}', i.toString()),
+            title: fillPattern(bulkModuleForm.titlePattern, i),
             description: null,
             order: startingOrder + i - 1,
             is_published: bulkModuleForm.is_published,
@@ -1952,151 +1370,124 @@ export default function CourseBuilderPage() {
             isExpanded: false,
           });
         } else {
-          showMessage('error', result.error || `Failed to create module ${i}`, 5000);
+          showMessage('error', t('admin.courses.builder.moduleNFailed', 'Module {n} was not added. The ones before it were.').replace('{n}', String(i)), 5000);
           break;
         }
       }
 
       if (createdModules.length > 0) {
         setModules([...modules, ...createdModules]);
-        setShowBulkModuleDialog(false);
+        setShowModuleDialog(false);
         setBulkModuleForm({
           count: '5',
-          titlePattern: 'Module {n}',
+          titlePattern: t('admin.courses.builder.modulePattern', 'Module {n}'),
           startingOrder: 1,
           is_published: true,
           is_optional: false,
         });
-        showMessage('success', t('lms.builder.modules_created', `${createdModules.length} modules created successfully`));
+        showMessage('success', t('admin.courses.builder.modulesCreated', '{n} modules were added').replace('{n}', String(createdModules.length)));
       }
     } catch (error) {
       console.error('Failed to create modules:', error);
-      showMessage('error', 'Failed to create modules. Please try again.', 5000);
+      showMessage('error', t('admin.courses.builder.moduleCreateFailed', 'The module was not added. Try again.'), 5000);
     } finally {
       setSaving(false);
     }
   };
 
   const handlePublishCourse = async () => {
-    if (!course) return;
+    if (!course || saving) return;
+    const publish = !course.is_published;
+    const patch = (url: string) =>
+      fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_published: publish }) })
+        .then((r) => r.ok)
+        .catch(() => false);
 
     try {
       setSaving(true);
-
-      const newPublishedState = !course.is_published;
-
-      // Update course published status
-      const courseResponse = await fetch(`/api/lms/courses/${course.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          is_published: newPublishedState,
-        }),
-      });
-
-      const courseResult = await courseResponse.json();
-
-      if (!courseResult.success) {
-        showMessage('error', courseResult.error || 'Failed to update course', 5000);
+      if (!(await patch(`/api/lms/courses/${course.id}`))) {
+        showMessage('error', t('lms.courses.error.update_failed', 'Failed to update course'), 5000);
         return;
       }
 
-      // Update all modules
-      const modulePromises = modules.map(module =>
-        fetch(`/api/lms/modules/${module.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            is_published: newPublishedState,
-          }),
-        })
-      );
-
-      await Promise.all(modulePromises);
-
-      // Update all lessons across all modules
-      const lessonPromises: Promise<Response>[] = [];
-      const topicPromises: Promise<Response>[] = [];
-
-      modules.forEach(module => {
-        if (module.lessons && module.lessons.length > 0) {
-          module.lessons.forEach(lesson => {
-            lessonPromises.push(
-              fetch(`/api/lms/lessons/${lesson.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  is_published: newPublishedState,
-                }),
-              })
-            );
-
-            // Update lesson topics if they exist
-            if (lesson.topics && lesson.topics.length > 0) {
-              lesson.topics.forEach((topic: any) => {
-                topicPromises.push(
-                  fetch(`/api/lms/lesson-topics/${topic.id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      is_published: newPublishedState,
-                    }),
-                  })
-                );
-              });
-            }
-          });
-        }
-      });
-
-      await Promise.all([...lessonPromises, ...topicPromises]);
-
-      // Update all course materials
-      try {
-        const materialsResponse = await fetch(`/api/lms/materials?course_id=${course.id}`);
-        const materialsData = await materialsResponse.json();
-
-        if (materialsData.success && materialsData.data.length > 0) {
-          const materialPromises = materialsData.data.map((material: any) =>
-            fetch(`/api/lms/materials/${material.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                is_published: newPublishedState,
-              }),
-            })
-          );
-
-          await Promise.all(materialPromises);
-        }
-      } catch (error) {
-        console.error('Failed to update materials publish status:', error);
-        // Don't fail the whole operation if materials update fails
+      // Then every module, lesson and material (lesson content has no flag
+      // of its own: it shows with its lesson).
+      const urls: string[] = [];
+      for (const m of modules) {
+        urls.push(`/api/lms/modules/${m.id}`);
+        for (const l of m.lessons || []) urls.push(`/api/lms/lessons/${l.id}`);
       }
+      try {
+        const res = await fetch(`/api/lms/materials?course_id=${course.id}`);
+        const data = await res.json();
+        for (const material of data.success ? data.data || [] : []) urls.push(`/api/lms/materials/${material.id}`);
+      } catch {
+        // Counted below as not updated.
+        urls.push('');
+      }
+      const results = await Promise.all(urls.map((u) => (u ? patch(u) : Promise.resolve(false))));
+      const failed = results.filter((ok) => !ok).length;
 
-      // Update local state
-      setCourse({ ...course, is_published: newPublishedState });
-      setModules(modules.map(m => ({
-        ...m,
-        is_published: newPublishedState,
-        lessons: m.lessons?.map(l => ({
-          ...l,
-          is_published: newPublishedState,
-          topics: l.topics?.map((t: any) => ({ ...t, is_published: newPublishedState }))
-        })),
-      })));
-
-      showMessage(
-        'success',
-        newPublishedState
-          ? t('lms.builder.course_published', 'Course and all content published successfully')
-          : t('lms.builder.course_unpublished', 'Course and all content unpublished successfully')
-      );
-    } catch (error) {
-      console.error('Failed to publish/unpublish course:', error);
-      showMessage('error', 'Failed to update course. Please try again.', 5000);
+      setCourse({ ...course, is_published: publish });
+      await loadCourse();
+      if (failed > 0) {
+        showMessage(
+          'warning',
+          t('admin.courses.builder.publishPartly', 'The course was updated, but {n} items were not. Try again.').replace('{n}', String(failed)),
+          8000,
+        );
+      } else {
+        showMessage(
+          'success',
+          publish
+            ? t('lms.builder.course_published', 'Course and all content published successfully')
+            : t('lms.builder.course_unpublished', 'Course and all content unpublished successfully'),
+        );
+      }
     } finally {
       setSaving(false);
+    }
+  };
+
+  // A full copy (modules, lessons, content) as a draft; it opens straight away.
+  const handleDuplicateCourse = async () => {
+    if (!course || duplicating) return;
+    setDuplicating(true);
+    try {
+      const res = await fetch(`/api/lms/courses/${course.id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newTitle: t('admin.courses.copyTitle', '{title} (copy)').replace('{title}', course.title) }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.success || !result.data?.id) throw new Error('duplicate failed');
+      router.push(`/admin/lms/courses/${result.data.id}?tab=settings`);
+    } catch {
+      showMessage('error', t('admin.courses.duplicateError', "The course wasn't copied. Try again."), 5000);
+      setDuplicating(false);
+    }
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!course || deletingCourse) return;
+    setDeletingCourse(true);
+    try {
+      const res = await fetch(`/api/lms/courses/${course.id}`, { method: 'DELETE' });
+      const result = await res.json().catch(() => ({}));
+      if (res.ok && result.success) {
+        router.push('/admin/lms/courses');
+        return;
+      }
+      setShowDeleteCourseDialog(false);
+      if (result.dependencies) {
+        setDeleteBlockers({ products: result.dependencies.products || [], programs: result.dependencies.programs || [] });
+      } else {
+        showMessage('error', t('lms.courses.error.delete_failed', 'Failed to delete course'), 5000);
+      }
+    } catch {
+      showMessage('error', t('lms.courses.error.delete_failed', 'Failed to delete course'), 5000);
+    } finally {
+      setDeletingCourse(false);
     }
   };
 
@@ -2198,25 +1589,21 @@ export default function CourseBuilderPage() {
 
       const lessonDateStrings: string[] = [];
 
-      if (bulkLessonForm.is_recurring && bulkLessonForm.recurrence_pattern === 'weekly') {
-        const startDate = new Date(bulkLessonForm.start_date);
-
-        for (let i = 0; i < count; i++) {
-          const lessonDate = new Date(startDate);
-          lessonDate.setDate(lessonDate.getDate() + (i * 7));
-          const dateStr = lessonDate.toISOString().slice(0, 10);
-          // Wall-clock in `bulkTimezone` → UTC ISO before sending.
-          lessonDateStrings.push(wallTimeToUTC(`${dateStr}T${bulkLessonForm.start_time}`, bulkTimezone));
-        }
-      } else {
-        const startDate = new Date(bulkLessonForm.start_date);
-
-        for (let i = 0; i < count; i++) {
-          const lessonDate = new Date(startDate);
-          lessonDate.setDate(lessonDate.getDate() + i);
-          const dateStr = lessonDate.toISOString().slice(0, 10);
-          lessonDateStrings.push(wallTimeToUTC(`${dateStr}T${bulkLessonForm.start_time}`, bulkTimezone));
-        }
+      // Calendar days are counted in UTC on the plain date, so no timezone
+      // can shift a lesson to the day before or after.
+      const startDate = new Date(`${bulkLessonForm.start_date}T00:00:00Z`);
+      const weekly = bulkLessonForm.is_recurring && bulkLessonForm.recurrence_pattern === 'weekly';
+      if (weekly) {
+        // The first lesson is on the chosen day of the week, on or after the start date.
+        const wanted = bulkLessonForm.weekly_days[0] ?? startDate.getUTCDay();
+        startDate.setUTCDate(startDate.getUTCDate() + ((wanted - startDate.getUTCDay() + 7) % 7));
+      }
+      for (let i = 0; i < count; i++) {
+        const lessonDate = new Date(startDate);
+        lessonDate.setUTCDate(lessonDate.getUTCDate() + i * (weekly ? 7 : 1));
+        const dateStr = lessonDate.toISOString().slice(0, 10);
+        // Wall-clock in `bulkTimezone` → UTC ISO before sending.
+        lessonDateStrings.push(wallTimeToUTC(`${dateStr}T${bulkLessonForm.start_time}`, bulkTimezone));
       }
 
       // Create lessons with proper Zoom integration
@@ -2318,10 +1705,9 @@ export default function CourseBuilderPage() {
           daily_room_pattern: '{series_name}-session-{n}',
         });
 
-        const zoomMsg = bulkLessonForm.create_zoom ? ' with Zoom meetings' : '';
-        showMessage('success', result.message || `${result.data.length} lessons created successfully${zoomMsg}`);
+        showMessage('success', t('admin.courses.builder.lessonsCreated', '{n} lessons were added').replace('{n}', String(result.data.length)));
       } else {
-        showMessage('error', result.error || t('lms.builder.lessons_create_failed', 'Failed to create lessons'), 5000);
+        showMessage('error', t('lms.builder.lessons_create_failed', 'Failed to create lessons'), 5000);
       }
     } catch (error) {
       console.error('Failed to create lessons:', error);
@@ -2331,1794 +1717,670 @@ export default function CourseBuilderPage() {
     }
   };
 
-  if (loading) {
+  const BackIcon = isRtl ? ChevronRight : ArrowLeft;
+  const backLink = (
+    <Link href="/admin/lms/courses" className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-primary hover:underline">
+      <BackIcon className="h-4 w-4" aria-hidden />
+      {t('admin.courses.back', 'Back to Courses')}
+    </Link>
+  );
+
+  if (loading && !course) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction} aria-busy="true">
+          <div className="h-5 w-32 animate-pulse rounded bg-muted" />
+          <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
+            <span className="h-20 w-28 animate-pulse rounded-xl bg-muted" />
+            <span className="flex flex-1 flex-col gap-2">
+              <span className="h-3 w-40 animate-pulse rounded bg-muted" />
+              <span className="h-6 w-2/3 animate-pulse rounded bg-muted" />
+            </span>
+          </div>
         </div>
       </AdminLayout>
     );
   }
 
-  return (
-    <AdminLayout>
-      <div className="max-w-6xl space-y-6" dir={direction}>
-        {/* Header */}
-        <div className="border-b pb-4" dir={direction}>
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            {/* Left Section - Back Button & Title */}
-            <div className="flex items-start gap-2 md:gap-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push('/admin/lms/courses')}
-                className="shrink-0"
-              >
-                <ArrowLeft className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                <span className="hidden sm:inline">{t('lms.builder.back', 'Back')}</span>
-              </Button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl md:text-2xl font-bold truncate">{course?.title}</h1>
-                  {course?.is_published ? (
-                    <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 flex items-center gap-1.5 shrink-0">
-                      <CheckCircle className="h-3 w-3" />
-                      <span className="hidden sm:inline">{t('lms.builder.published', 'Published')}</span>
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-muted-foreground shrink-0">
-                      <span className="hidden sm:inline">{t('lms.builder.draft', 'Draft')}</span>
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs md:text-sm text-muted-foreground hidden md:block">
-                  {t('lms.builder.title', 'Course Builder')} - {t('lms.builder.subtitle', 'Drag & Drop Canvas')}
-                </p>
-              </div>
-            </div>
-
-            {/* Right Section - Action Buttons */}
-            <div className={`flex gap-2 ${isRtl ? 'flex-row-reverse' : ''} w-full md:w-auto`}>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 md:flex-none"
-                onClick={() => router.push(`/admin/lms/courses/${params.id}/grading/categories`)}
-              >
-                <Award className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                <span className="hidden sm:inline">{t('lms.builder.grading', 'Grading')}</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 md:flex-none"
-                onClick={() => setShowBridgeDialog(true)}
-              >
-                <Link2 className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                <span className="hidden sm:inline">{t('lms.course_detail.instructor_access_title', 'Instructor Access')}</span>
-              </Button>
-              {/* Preview — opens the student-facing course page in a
-                  new tab so the admin can see exactly what an enrolled
-                  user sees, without losing place in the editor.
-                  Previously had no onClick handler at all (the button
-                  rendered but did nothing on click). */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 md:flex-none"
-                // `?preview=1` tells UserLayout to skip its
-                // admin→/admin/dashboard redirect so the admin can view
-                // the student page directly.
-                onClick={() => window.open(`/courses/${params.id}?preview=1`, '_blank', 'noopener,noreferrer')}
-                title={t('lms.builder.preview_hint', 'Open the student view in a new tab')}
-              >
-                <Eye className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                <span className="hidden sm:inline">{t('lms.builder.preview', 'Preview')}</span>
-              </Button>
-              <Button
-                size="sm"
-                onClick={handlePublishCourse}
-                disabled={saving}
-                variant={course?.is_published ? 'outline' : 'default'}
-                className="flex-1 md:flex-none"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4 animate-spin`} />
-                    <span className="hidden sm:inline">{t('common.saving', 'Saving...')}</span>
-                  </>
-                ) : course?.is_published ? (
-                  <>
-                    <EyeOff className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                    <span className="hidden sm:inline">{t('lms.builder.unpublish_course', 'Unpublish')}</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                    <span className="hidden sm:inline">{t('lms.builder.publish_course', 'Publish')}</span>
-                  </>
-                )}
-              </Button>
-            </div>
+  if (!course) {
+    return (
+      <AdminLayout>
+        <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+          {backLink}
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-card px-6 py-12 text-center">
+            <BookOpen className="h-10 w-10 text-muted-foreground" aria-hidden />
+            <h1 className="text-lg font-extrabold [font-family:inherit]">
+              {courseMissing ? t('admin.courses.notFound', 'Course not found') : t('lms.builder.load_failed', 'Failed to load course data')}
+            </h1>
+            {!courseMissing && (
+              <button type="button" onClick={() => void loadCourse()} className={kitButton.primary}>
+                {t('admin.list.retry', 'Try again')}
+              </button>
+            )}
           </div>
         </div>
+      </AdminLayout>
+    );
+  }
 
-        {/* Main Content */}
-        <div className="space-y-6">
-            {/* Course Cover Image */}
-            <CourseImageUploader
-              courseId={params.id as string}
-              currentImageUrl={courseImageUrl}
-              onImageChange={setCourseImageUrl}
-              t={t}
-              isRtl={isRtl}
-              direction={direction}
-            />
+  const full = course as unknown as AdminCourse;
+  const status = courseStatus(full);
+  const locale = isRtl ? 'he-IL' : 'en-US';
+  const typeLabel = full.course_type
+    ? t(`lms.course.type_${full.course_type}`, COURSE_TYPE_FALLBACK[full.course_type as keyof typeof COURSE_TYPE_FALLBACK] ?? String(full.course_type))
+    : '';
+  const meta = [
+    status === 'published' ? t('lms.course.published', 'Published') : status === 'draft' ? t('lms.course.draft', 'Draft') : t('lms.courses.inactive', 'Inactive'),
+    typeLabel,
+    dateRange(full.start_date, full.end_date, locale),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const subline = [
+    full.program?.name || (full.is_standalone ? t('admin.courses.standaloneChip', 'Standalone') : ''),
+    personName(full.instructor) ? `${t('lms.courses.instructor', 'Instructor')}: ${personName(full.instructor)}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const description = stripHtml(full.description);
+  const totalMinutes = modules.reduce((acc, m) => acc + (m.lessons?.reduce((s, l) => s + (l.duration || 0), 0) || 0), 0);
+  const totalLessons = modules.reduce((acc, m) => acc + (m.lessons?.length || 0), 0);
+  const draggedLesson = activeId ? modules.flatMap((m) => m.lessons || []).find((l) => l.id === activeId) : undefined;
 
-            {/* Course Description — collapsed by default with show more/less toggle */}
-            {course?.description && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className={isRtl ? 'text-right' : ''}>
-                    {t('lms.builder.course_description', 'Course Description')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="relative">
-                    <div
-                      className={`text-muted-foreground prose prose-sm max-w-none dark:prose-invert ${isRtl ? 'text-right' : 'text-left'} ${
-                        isDescriptionExpanded ? '' : 'line-clamp-3'
-                      }`}
-                      dangerouslySetInnerHTML={{ __html: course.description }}
-                    />
-                    {!isDescriptionExpanded && (
-                      <div
-                        className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent"
-                        aria-hidden="true"
-                      />
-                    )}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsDescriptionExpanded((v) => !v)}
-                    className="mt-2 ml-auto block h-auto px-2 py-1 text-xs"
-                  >
-                    {isDescriptionExpanded
-                      ? t('common.show_less', 'Show less')
-                      : t('common.show_more', 'Show more')}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+  const openNewModule = () => {
+    setEditingModule(null);
+    setBulkModuleForm((prev) => ({ ...prev, count: '4' }));
+    setModuleForm({ title: '', description: '', is_published: true, is_optional: false });
+    setShowModuleDialog(true);
+  };
 
-            {/* Instructor Information */}
-            {course?.instructor && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <GraduationCap className="h-4 w-4" />
-                    <span>{t('user.courses.instructor', 'Instructor')}: {course.instructor.first_name} {course.instructor.last_name}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+  const openMaterialUpload = () => setMaterialUploadSignal((n) => n + 1);
+  const headerIcon =
+    'grid h-11 w-11 place-items-center rounded-lg border border-border bg-card text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60';
+  const academicHours = Math.round((totalMinutes / 45) * 10) / 10;
+  const publishedModules = modules.filter((m) => m.is_published).length;
+  const summaryTiles: { icon: typeof Award; tile: string; value: string; label: string }[] = [
+    {
+      icon: Layers,
+      tile: 'bg-primary/10 text-primary',
+      value: String(modules.length),
+      label: t('admin.courses.summary.modules', 'Modules · {n} published').replace('{n}', String(publishedModules)),
+    },
+    {
+      icon: CalendarDays,
+      tile: 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300',
+      value: String(totalLessons),
+      label: t('lms.builder.total_lessons', 'Total Lessons'),
+    },
+    {
+      icon: Clock,
+      tile: 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+      value: lengthText(totalMinutes, t),
+      label: t('admin.courses.summary.academic', '{n} academic hours').replace('{n}', String(academicHours)),
+    },
+    {
+      icon: Users,
+      tile: 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300',
+      value: enrolledCount == null ? '—' : String(enrolledCount),
+      label: t('lms.builder.total_enrollments', 'Total Enrollments'),
+    },
+  ];
 
-            {/* Course Structure Section */}
-            <div className="flex flex-col lg:flex-row gap-6">
-                {/* Module Builder with Drag & Drop */}
-                <div className="flex-1 order-2 lg:order-1">
-              <Card className="h-full">
-                <CardHeader>
-                  <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
-                    <CardTitle className={isRtl ? 'text-right' : ''}>
-                      {t('lms.builder.course_structure', 'Course Structure')}
-                    </CardTitle>
-                    <div className="flex gap-2 flex-wrap">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowBulkModuleDialog(true)}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <PlusCircle className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                        <span className="hidden sm:inline">{t('lms.builder.bulk_add_modules', 'Bulk Add')}</span>
-                        <span className="sm:hidden">{t('lms.builder.bulk', 'Bulk')}</span>
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setEditingModule(null);
-                          setModuleForm({
-                            title: '',
-                            description: '',
-                            is_published: true,
-                            is_optional: false,
-                          });
-                          setShowModuleDialog(true);
-                        }}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                        <span className="hidden sm:inline">{t('lms.builder.add_module', 'Add Module')}</span>
-                        <span className="sm:hidden">{t('lms.builder.add', 'Add')}</span>
-                      </Button>
-                    </div>
-                  </div>
-                  {/* Status Message */}
-                  {statusMessage && (
-                    <div className={`mt-3 p-3 rounded-md text-sm ${
-                      statusMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' :
-                      statusMessage.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' :
-                      'bg-yellow-50 text-yellow-800 border border-yellow-200'
-                    }`}>
-                      {statusMessage.text}
-                    </div>
-                  )}
-                </CardHeader>
-                <CardContent className="overflow-y-auto">
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragStart={handleDragStart}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext
-                      items={modules.map((m) => m.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="space-y-2">
-                        {modules.length === 0 ? (
-                          <div className="text-center py-12 text-muted-foreground">
-                            <BookOpen className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                            <p className="text-lg font-medium mb-2">
-                              {t('lms.builder.no_modules', 'No modules yet')}
-                            </p>
-                            <p className="text-sm mb-4">
-                              {t('lms.builder.start_building', 'Start building your course by adding modules')}
-                            </p>
-                            <Button onClick={() => {
-                              setEditingModule(null);
-                              setModuleForm({
-                                title: '',
-                                description: '',
-                                is_published: true,
-                                is_optional: false,
-                              });
-                              setShowModuleDialog(true);
-                            }}>
-                              <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                              {t('lms.builder.create_first_module', 'Create Your First Module')}
-                            </Button>
-                          </div>
-                        ) : (
-                          modules.map((module) => (
-                            <SortableModule
-                              key={module.id}
-                              module={module}
-                              onToggleExpand={() => toggleModuleExpansion(module.id)}
-                              onAddLesson={() => {
-                                setSelectedModule(module);
-                                setEditingLesson(null);  // Clear any editing state
-                                setLessonForm({          // Reset form to defaults
-                                  title: '',
-                                  description: '',
-                                  // Next round hour in tenant tz — see
-                                  // src/lib/datetime/timezone.ts
-                                  start_time: nextRoundHourInTimezone(tenantTimezone),
-                                  duration_minutes: '60',
-                                  timezone: tenantTimezone,
-                                  is_published: true,
-                                  create_meeting: false,
-                                  // Default Zoom — see lessonForm initial state.
-                                  meeting_platform: 'zoom',
-                                  create_zoom: false,
-                                  zoom_topic: '',
-                                  zoom_agenda: '',
-                                  daily_room_name: '',
-                                  ...ZOOM_SETTINGS_DEFAULTS,
-                                });
-                                setShowLessonDialog(true);
-                              }}
-                              onBulkAddLessons={() => {
-                                setSelectedModule(module);
-                                // Initialize bulk form with date/time from single lesson form if available
-                                if (lessonForm.start_time) {
-                                  const datetime = new Date(lessonForm.start_time);
-                                  const date = datetime.toISOString().slice(0, 10);
-                                  const time = datetime.toTimeString().slice(0, 5);
-                                  setBulkLessonForm({
-                                    ...bulkLessonForm,
-                                    start_date: date,
-                                    start_time: time,
-                                    duration_minutes: lessonForm.duration_minutes || '60',
-                                    timezone: lessonForm.timezone || tenantTimezone,
-                                  });
-                                }
-                                setShowBulkLessonDialog(true);
-                              }}
-                              onEdit={() => {
-                                setEditingModule(module);
-                                setModuleForm({
-                                  title: module.title,
-                                  description: module.description || '',
-                                  is_published: module.is_published,
-                                  is_optional: module.is_optional,
-                                });
-                                setShowModuleDialog(true);
-                              }}
-                              onDelete={() => handleDeleteModule(module.id)}
-                              onEditLesson={(lesson) => handleEditLesson(lesson, module.id)}
-                              onDeleteLesson={(lessonId) => handleDeleteLesson(lessonId, module.id)}
-                              onEditLessonContent={(lessonId, lessonTitle) => {
-                                setSelectedLessonForContent({ lessonId, lessonTitle });
-                                setShowLessonContentDialog(true);
-                              }}
-                              onOpenZoomMeeting={handleOpenZoomMeeting}
-                              onCreateZoomMeeting={handleCreateZoomMeeting}
-                              creatingZoomFor={creatingZoomFor}
-                              onSyncRecording={handleSyncRecording}
-                              syncingRecordingFor={syncingRecordingFor}
-                              t={t}
-                              direction={direction}
-                              isRtl={isRtl}
-                              tenantTimezone={tenantTimezone}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </SortableContext>
-                    <DragOverlay>
-                      {activeId ? (
-                        <div className="bg-card border rounded-lg p-3 shadow-lg opacity-90">
-                          <div className="flex items-center gap-2">
-                            <BookOpen className="h-4 w-4" />
-                            {modules.find((m) => m.id === activeId)?.title}
-                          </div>
-                        </div>
-                      ) : null}
-                    </DragOverlay>
-                  </DndContext>
-                </CardContent>
-              </Card>
-            </div>
 
-            {/* Course Stats */}
-            <div className="w-full lg:w-80 order-1 lg:order-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className={isRtl ? 'text-right' : ''}>
-                    {t('lms.builder.course_overview', 'Course Overview')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className={isRtl ? 'text-right' : ''}>
-                    <div className="text-2xl font-bold">{modules.length}</div>
-                    <p className="text-sm text-muted-foreground">
-                      {t('lms.builder.total_modules', 'Total Modules')}
-                    </p>
-                  </div>
-                  <div className={isRtl ? 'text-right' : ''}>
-                    <div className="text-2xl font-bold">
-                      {modules.reduce((acc, m) => acc + (m.lessons?.length || 0), 0)}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {t('lms.builder.total_lessons', 'Total Lessons')}
-                    </p>
-                  </div>
-                  <div className={isRtl ? 'text-right' : ''}>
-                    <div className="text-2xl font-bold">
-                      {modules.reduce((acc, m) => {
-                        const moduleLessonsDuration = m.lessons?.reduce((lessonAcc, lesson) => lessonAcc + (lesson.duration || 0), 0) || 0;
-                        return acc + moduleLessonsDuration;
-                      }, 0)} {t('lms.builder.minutes_abbr', 'min')}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {t('lms.builder.total_duration', 'Total Duration')}
-                    </p>
-                  </div>
-                  <div className={isRtl ? 'text-right' : ''}>
-                    <div className="text-2xl font-bold">
-                      {(() => {
-                        const totalMinutes = modules.reduce((acc, m) => {
-                          const moduleLessonsDuration = m.lessons?.reduce((lessonAcc, lesson) => lessonAcc + (lesson.duration || 0), 0) || 0;
-                          return acc + moduleLessonsDuration;
-                        }, 0);
-                        const academicHours = Math.round((totalMinutes / 45) * 10) / 10;
-                        return academicHours;
-                      })()}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {t('lms.builder.academic_hours', 'Academic Hours')}
-                    </p>
-                  </div>
-                  <div className={isRtl ? 'text-right' : ''}>
-                    <div className="text-2xl font-bold">
-                      {modules.filter((m) => m.is_published).length}/{modules.length}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {t('lms.builder.published_modules', 'Published Modules')}
-                    </p>
-                  </div>
+  const moduleOfLesson = (lessonId: string) => modules.find((m) => m.lessons?.some((l) => l.id === lessonId)) ?? null;
 
-                  {/* Divider */}
-                  <div className="border-t pt-4 mt-4">
-                    <h3 className={`font-semibold mb-3 ${isRtl ? 'text-right' : ''}`}>
-                      {t('lms.builder.enrollment_stats', 'Enrollment Statistics')}
-                    </h3>
+  /** Add one lesson to a module: the lesson panel, with the defaults the old dialog used. */
+  const openAddLesson = (module: Module) => {
+    setSelectedModule(module);
+    setEditingLesson(null);
+    setLessonDialogError(null);
+    setLessonForm({
+      title: '',
+      description: '',
+      // Next round hour in tenant tz — see src/lib/datetime/timezone.ts
+      start_time: nextRoundHourInTimezone(tenantTimezone),
+      duration_minutes: '60',
+      timezone: tenantTimezone,
+      is_published: true,
+      create_meeting: false,
+      meeting_platform: 'zoom',
+      create_zoom: false,
+      zoom_topic: '',
+      zoom_agenda: '',
+      daily_room_name: '',
+      ...ZOOM_SETTINGS_DEFAULTS,
+    });
+    setShowBulkLessonDialog(false);
+    setShowLessonDialog(true);
+  };
 
-                    {/* Total Enrollments */}
-                    <div className={`mb-4 ${isRtl ? 'text-right' : ''}`}>
-                      <div className="text-2xl font-bold">{enrollmentStats.totalEnrollments}</div>
-                      <p className="text-sm text-muted-foreground">
-                        {t('lms.builder.total_enrollments', 'Total Enrollments')}
-                      </p>
-                    </div>
+  /** Add a series of lessons to a module, starting from the single-lesson form's date and time. */
+  const openSeries = (module: Module) => {
+    setSelectedModule(module);
+    if (lessonForm.start_time) {
+      setBulkLessonForm((prev) => ({
+        ...prev,
+        start_date: lessonForm.start_time.slice(0, 10),
+        start_time: lessonForm.start_time.slice(11, 16) || prev.start_time,
+        duration_minutes: lessonForm.duration_minutes || '60',
+        timezone: lessonForm.timezone || tenantTimezone,
+      }));
+    }
+    setShowLessonDialog(false);
+    setShowBulkLessonDialog(true);
+  };
 
-                    {/* Lifetime Sales — currency comes from tenant
-                        settings (e.g. 'USD' → $, 'ILS' → ₪, 'EUR' → €).
-                        Locale matches the admin UI language so number
-                        grouping ('1,000' vs '1.000') stays consistent. */}
-                    <div className={`mb-4 ${isRtl ? 'text-right' : ''}`}>
-                      <div className="text-2xl font-bold">
-                        {new Intl.NumberFormat(isRtl ? 'he-IL' : 'en-US', {
-                          style: 'currency',
-                          currency: tenantCurrency,
-                          maximumFractionDigits: 0,
-                        }).format(enrollmentStats.lifetimeSales)}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {t('lms.builder.lifetime_sales', 'Lifetime Sales')}
-                      </p>
-                    </div>
+  const openLessonContent = (lesson: Lesson) => {
+    setShowLessonDialog(false);
+    setSelectedLessonForContent({ lessonId: lesson.id, lessonTitle: lesson.title });
+    setShowLessonContentDialog(true);
+  };
 
-                    {/* Progress Stats */}
-                    <div className="space-y-3">
-                      <div className={isRtl ? 'text-right' : ''}>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-sm font-medium">
-                            {t('lms.builder.completed', 'Completed')}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {enrollmentStats.completedCount} {t('lms.builder.students', 'students')}
-                            </span>
-                            <span className="text-sm font-semibold text-green-600">
-                              {enrollmentStats.completedPercent}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div
-                            className="bg-green-600 h-2 rounded-full transition-all"
-                            style={{ width: `${enrollmentStats.completedPercent}%` }}
-                          />
-                        </div>
-                      </div>
+  /** Publish or unpublish one lesson from its menu. */
+  const handleToggleLessonPublish = async (lesson: Lesson) => {
+    const next = !lesson.is_published;
+    try {
+      const res = await fetch(`/api/lms/lessons/${lesson.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_published: next }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success === false) throw new Error('update failed');
+      setModules((prev) => prev.map((m) => ({ ...m, lessons: m.lessons?.map((l) => (l.id === lesson.id ? { ...l, is_published: next } : l)) })));
+      showMessage(
+        'success',
+        next ? t('admin.courses.builder.lessonPublished', 'The lesson is published. Clients can see it.') : t('admin.courses.builder.lessonHidden', 'The lesson is now a draft. Clients cannot see it.'),
+      );
+    } catch {
+      showMessage('error', t('admin.courses.builder.lessonPublishFailed', 'The change was not saved. Try again.'), 5000);
+    }
+  };
 
-                      <div className={isRtl ? 'text-right' : ''}>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-sm font-medium">
-                            {t('lms.builder.in_progress', 'In Progress')}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {enrollmentStats.inProgressCount} {t('lms.builder.students', 'students')}
-                            </span>
-                            <span className="text-sm font-semibold text-blue-600">
-                              {enrollmentStats.inProgressPercent}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all"
-                            style={{ width: `${enrollmentStats.inProgressPercent}%` }}
-                          />
-                        </div>
-                      </div>
+  const lessonActions: LessonActions = {
+    onOpen: (lesson) => {
+      const m = moduleOfLesson(lesson.id);
+      if (m) handleEditLesson(lesson, m.id);
+    },
+    onEditContent: openLessonContent,
+    onOpenMeeting: handleOpenZoomMeeting,
+    onCreateMeeting: handleCreateZoomMeeting,
+    onSyncRecording: handleSyncRecording,
+    onTogglePublish: (lesson) => void handleToggleLessonPublish(lesson),
+    onDelete: (lessonId) => {
+      const m = moduleOfLesson(lessonId);
+      if (m) handleDeleteLesson(lessonId, m.id);
+    },
+    creatingMeetingFor: creatingZoomFor,
+    syncingRecordingFor,
+    pendingDeleteLessonId: showDeleteLessonDialog ? lessonToDelete?.lessonId ?? null : null,
+    onConfirmDelete: () => void confirmDeleteLesson(),
+    onCancelDelete: () => {
+      setShowDeleteLessonDialog(false);
+      setLessonToDelete(null);
+    },
+    deleting: deletingItem,
+  };
 
-                      <div className={isRtl ? 'text-right' : ''}>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-sm font-medium">
-                            {t('lms.builder.not_started', 'Not Started')}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {enrollmentStats.notStartedCount} {t('lms.builder.students', 'students')}
-                            </span>
-                            <span className="text-sm font-semibold text-gray-600">
-                              {enrollmentStats.notStartedPercent}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div
-                            className="bg-gray-600 h-2 rounded-full transition-all"
-                            style={{ width: `${enrollmentStats.notStartedPercent}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Course Materials Section */}
-          <div className="w-full">
-            <Card>
-              <CardHeader>
-                <CardTitle className={isRtl ? 'text-right' : ''}>
-                  {t('lms.materials.tab_title', 'Course Materials')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CourseMaterials
-                  courseId={params.id as string}
-                  courseIsPublished={course?.is_active ?? false}
-                  t={t}
-                  isRtl={isRtl}
-                  direction={direction}
-                  onStatusMessage={(message) => showMessage(message.type, message.text)}
-                />
-              </CardContent>
-            </Card>
+  // The instructor's entry link lives with the instructor, on the program step.
+  const instructorAccess = (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-3.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary" aria-hidden>
+          <Link2 className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-bold">{t('lms.course_detail.instructor_access_title', 'Instructor Access')}</div>
+          <div className="text-[13px] text-muted-foreground">
+            {t('admin.courses.instructorAccessHint', 'A personal link the instructor uses to open the live lessons.')}
           </div>
         </div>
       </div>
+      <button type="button" onClick={() => setShowBridgeDialog(true)} className={kitButton.secondary}>
+        {t('admin.courses.instructorAccessOpen', 'Open the link')}
+      </button>
+    </div>
+  );
 
-      {/* Module Dialog */}
-      <Dialog open={showModuleDialog} onOpenChange={(open) => {
-        setShowModuleDialog(open);
-        if (!open) {
-          setEditingModule(null);
-          setModuleForm({
-            title: '',
-            description: '',
-            is_published: true,
-            is_optional: false,
-          });
-        }
-      }}>
-        <DialogContent className="max-w-2xl" dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {editingModule
-                ? t('lms.builder.edit_module', 'Edit Module')
-                : t('lms.builder.dialog_create_module', 'Create Module')
-              }
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {editingModule
-                ? t('lms.builder.dialog_edit_module_description', 'Update the module details')
-                : t('lms.builder.dialog_module_description', 'Add a new module to organize your course content')
-              }
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <Label className={`${isRtl ? 'text-right block' : ''} font-medium`}>
-                {t('lms.builder.module_title', 'Module Title')} <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={moduleForm.title}
-                onChange={(e) => setModuleForm({ ...moduleForm, title: e.target.value })}
-                placeholder={t('lms.builder.module_title_placeholder', 'e.g., Introduction to HTML')}
-                className={isRtl ? 'text-right' : ''}
-                dir={direction}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className={`${isRtl ? 'text-right block' : ''} font-medium`}>
-                {t('lms.builder.module_description', 'Description')}
-              </Label>
-              <RichTextEditor
-                value={moduleForm.description}
-                onChange={(value) => setModuleForm({ ...moduleForm, description: value })}
-                placeholder={t('lms.builder.module_description_placeholder', 'Brief description of the module...')}
-                dir={direction}
-              />
-            </div>
-            <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
-              <div className={`flex items-center justify-between gap-4 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                <div className={`flex-1 space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <Label htmlFor="module-published" className="text-base font-medium cursor-pointer">
-                    {t('lms.builder.published', 'Published')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('lms.builder.published_description', 'Make this module visible to students')}
-                  </p>
-                </div>
-                <Switch
-                  id="module-published"
-                  checked={moduleForm.is_published}
-                  onCheckedChange={(checked) =>
-                    setModuleForm({ ...moduleForm, is_published: checked })
-                  }
-                />
-              </div>
-              <div className={`flex items-center justify-between gap-4 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                <div className={`flex-1 space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <Label htmlFor="module-optional" className="text-base font-medium cursor-pointer">
-                    {t('lms.builder.optional', 'Optional')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('lms.builder.optional_description', 'Students can skip this module')}
-                  </p>
-                </div>
-                <Switch
-                  id="module-optional"
-                  checked={moduleForm.is_optional}
-                  onCheckedChange={(checked) =>
-                    setModuleForm({ ...moduleForm, is_optional: checked })
-                  }
-                />
-              </div>
-            </div>
+  return (
+    <AdminLayout>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        {backLink}
+
+        {/* Header */}
+        <header className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <span className="grid h-20 w-28 shrink-0 place-items-center overflow-hidden rounded-xl bg-primary/10 text-primary">
+            {full.image_url ? <img src={full.image_url} alt="" className="h-full w-full object-cover" /> : <BookOpen className="h-7 w-7" aria-hidden />}
+          </span>
+          <div className="min-w-0 flex-1 basis-56">
+            <span className="text-[13px]">
+              <StatusDot tone={status === 'published' ? 'green' : status === 'draft' ? 'orange' : 'grey'}>
+                <span className="font-semibold">{meta}</span>
+              </StatusDot>
+            </span>
+            <h1 className="mt-0.5 text-2xl font-extrabold leading-tight tracking-tight [font-family:inherit] [overflow-wrap:anywhere] sm:text-[26px]">{full.title}</h1>
+            {subline && <p className="text-sm text-muted-foreground">{subline}</p>}
+            {description && <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">{description}</p>}
           </div>
-          </DialogBody>
-          <DialogFooter className={`gap-3 flex-col-reverse sm:flex-row ${isRtl ? 'sm:flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowModuleDialog(false)} className="w-full sm:w-auto">
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleCreateModule} disabled={saving} className="w-full sm:w-auto">
-              {saving
-                ? t('common.saving', 'Saving...')
-                : editingModule
-                  ? t('lms.builder.update_module', 'Update Module')
-                  : t('lms.builder.add_module', 'Add Module')
-              }
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Lesson Dialog */}
-      <Dialog
-        open={showLessonDialog}
-        onOpenChange={(open) => {
-          // Clear any in-dialog error whenever the dialog opens or closes so
-          // a stale error doesn't carry over into the next session.
-          if (!open) setLessonDialogError(null);
-          setShowLessonDialog(open);
-        }}
-      >
-        {/* Drop `max-h-[90vh] overflow-y-auto` — DialogContent already
-            sets max-h + overflow. Header/footer stay frozen via
-            shrink-0 on those slots; DialogBody scrolls the middle. */}
-        <DialogContent className="max-w-2xl" dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-              {editingLesson
-                ? t('lms.lesson.edit_title', 'Edit Lesson')
-                : t('lms.lesson.add_to_module', 'Add Lesson to {module}').replace('{module}', selectedModule?.title || '')
-              }
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-              {editingLesson
-                ? t('lms.lesson.edit_description', 'Update lesson details')
-                : t('lms.lesson.create_description', 'Create a new lesson within this module')
-              }
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          {/* In-dialog error banner — renders validation and API errors so
-              the user sees them inline instead of behind the dialog. */}
-          {lessonDialogError && (
-            <div
-              role="alert"
-              className={`rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive ${isRtl ? 'text-right' : 'text-left'}`}
-              dir={direction}
+          {/* Icons only; each name shows on hover and is read out by screen readers */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => window.open(`/courses/${course.id}?preview=1`, '_blank', 'noopener,noreferrer')}
+              title={t('admin.courses.viewAsStudent', 'View as client')}
+              aria-label={t('admin.courses.viewAsStudent', 'View as client')}
+              className={headerIcon}
             >
-              {lessonDialogError}
+              <Eye className="h-[18px] w-[18px]" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handlePublishCourse()}
+              disabled={saving}
+              title={course.is_published ? t('lms.builder.unpublish_course', 'Unpublish') : t('lms.builder.publish_course', 'Publish')}
+              aria-label={course.is_published ? t('lms.builder.unpublish_course', 'Unpublish') : t('lms.builder.publish_course', 'Publish')}
+              className={course.is_published ? headerIcon : `${headerIcon} border-primary bg-primary text-primary-foreground hover:bg-primary/90`}
+            >
+              {saving ? (
+                <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden />
+              ) : course.is_published ? (
+                <EyeOff className="h-[18px] w-[18px]" aria-hidden />
+              ) : (
+                <CheckCircle className="h-[18px] w-[18px]" aria-hidden />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDuplicateCourse()}
+              disabled={duplicating}
+              title={t('admin.courses.duplicate', 'Duplicate')}
+              aria-label={t('admin.courses.duplicate', 'Duplicate')}
+              className={headerIcon}
+            >
+              {duplicating ? <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden /> : <Copy className="h-[18px] w-[18px]" aria-hidden />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeleteCourseDialog(true)}
+              title={t('common.delete', 'Delete')}
+              aria-label={t('common.delete', 'Delete')}
+              className={`${headerIcon} border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40`}
+            >
+              <Trash2 className="h-[18px] w-[18px]" aria-hidden />
+            </button>
+          </div>
+        </header>
+
+        {/* Delete the course: asked here, under the header */}
+        {showDeleteCourseDialog && (
+          <InlineConfirm
+            text={t('admin.courses.deleteConfirm', 'Delete "{title}" with all its modules, lessons and materials? This cannot be undone.').replace('{title}', full.title)}
+            confirmLabel={deletingCourse ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+            cancelLabel={t('common.cancel', 'Cancel')}
+            onConfirm={() => void handleDeleteCourse()}
+            onCancel={() => setShowDeleteCourseDialog(false)}
+            busy={deletingCourse}
+          />
+        )}
+        {deleteBlockers && (
+          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="text-sm font-bold text-amber-950 dark:text-amber-100">{t('admin.courses.cannotDelete', "This course can't be deleted yet")}</p>
+            <p className="mt-0.5 text-sm text-amber-900 dark:text-amber-200">
+              {deleteBlockers.products.length
+                ? t('admin.courses.cannotDeleteProducts', 'It is sold through these products. Remove it from them first:')
+                : t('admin.courses.cannotDeletePrograms', 'It is part of these programs. Remove it from them first:')}
+            </p>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {deleteBlockers.products.map((p) => (
+                <li key={p.id} className="rounded-lg bg-card px-3 py-2 font-medium">
+                  {p.title}
+                </li>
+              ))}
+              {deleteBlockers.programs.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/admin/lms/programs/${p.id}`} className="block rounded-lg bg-card px-3 py-2 font-medium text-primary hover:underline">
+                    {p.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <button type="button" onClick={() => setDeleteBlockers(null)} className={`${kitButton.secondary} mt-2.5`}>
+              {t('common.close', 'Close')}
+            </button>
+          </div>
+        )}
+
+        {/* The course at a glance */}
+        <section aria-label={t('lms.builder.course_overview', 'Course Overview')} className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {summaryTiles.map(({ icon: Icon, tile, value, label }) => (
+            <div key={label} className="flex min-w-0 items-center gap-3 rounded-2xl border border-border bg-card p-3.5">
+              <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tile}`} aria-hidden>
+                <Icon className="h-5 w-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[22px] font-extrabold leading-tight tabular-nums">{value}</span>
+                <span className="block truncate text-[13px] text-muted-foreground">{label}</span>
+              </span>
             </div>
-          )}
-          <div className="space-y-6 py-4">
-            {/* Lesson Details */}
-            <div className="space-y-4">
-              <h3 className={`text-sm font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.lesson.details_title', 'Lesson Details')}
-              </h3>
-              <div className="space-y-2">
-                <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.title_label', 'Lesson Title')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={lessonForm.title}
-                  onChange={(e) => setLessonForm({ ...lessonForm, title: e.target.value })}
-                  placeholder={t('lms.lesson.title_placeholder', 'e.g., Introduction to Parenting')}
-                  className={isRtl ? 'text-right' : 'text-left'}
-                  dir={direction}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.description_label', 'Description')}
-                </Label>
-                <Textarea
-                  value={lessonForm.description}
-                  onChange={(e) => setLessonForm({ ...lessonForm, description: e.target.value })}
-                  rows={3}
-                  placeholder={t('lms.lesson.description_placeholder', 'What will students learn in this lesson?')}
-                  className={isRtl ? 'text-right' : 'text-left'}
-                  dir={direction}
-                />
-              </div>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.start_datetime_label', 'Start Date & Time')} <span className="text-destructive">*</span>
-                      {editingLesson && editingLesson.zoom_meeting_id && (
-                        <span className="text-xs text-blue-600 dark:text-blue-400 font-normal mr-2">
-                          ({t('lms.lesson.syncs_to_zoom', 'Syncs to Zoom')})
-                        </span>
-                      )}
-                    </Label>
-                    <Input
-                      type="datetime-local"
-                      value={lessonForm.start_time}
-                      onChange={(e) => setLessonForm({ ...lessonForm, start_time: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.duration_label', 'Duration (minutes)')}
-                      {editingLesson && editingLesson.zoom_meeting_id && (
-                        <span className="text-xs text-blue-600 dark:text-blue-400 font-normal mr-2">
-                          ({t('lms.lesson.syncs_to_zoom', 'Syncs to Zoom')})
-                        </span>
-                      )}
-                    </Label>
-                    <Input
-                      type="number"
-                      value={lessonForm.duration_minutes}
-                      onChange={(e) => setLessonForm({ ...lessonForm, duration_minutes: e.target.value })}
-                      placeholder="60"
-                      className={isRtl ? 'text-right' : 'text-left'}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.lesson.timezone_label', 'Timezone')} <span className="text-destructive">*</span>
-                    {editingLesson && editingLesson.zoom_meeting_id && (
-                      <span className="text-xs text-blue-600 dark:text-blue-400 font-normal mr-2">
-                        ({t('lms.lesson.syncs_to_zoom', 'Syncs to Zoom')})
-                      </span>
-                    )}
-                  </Label>
-                  <select
-                    value={lessonForm.timezone}
-                    onChange={(e) => setLessonForm({ ...lessonForm, timezone: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="America/New_York">America/New York (EST/EDT)</option>
-                    <option value="America/Chicago">America/Chicago (CST/CDT)</option>
-                    <option value="America/Denver">America/Denver (MST/MDT)</option>
-                    <option value="America/Los_Angeles">America/Los Angeles (PST/PDT)</option>
-                    <option value="Europe/London">Europe/London (GMT/BST)</option>
-                    <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
-                    <option value="Asia/Jerusalem">Asia/Jerusalem (IST)</option>
-                    <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                    <option value="Australia/Sydney">Australia/Sydney (AEDT/AEST)</option>
-                    <option value="Pacific/Auckland">Pacific/Auckland (NZDT/NZST)</option>
-                    <option value="UTC">UTC</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {isRtl ? (
-                  <>
-                    <Label className="cursor-pointer">{t('lms.lesson.publish_immediately', 'Publish Immediately')}</Label>
-                    <Switch
-                      checked={lessonForm.is_published}
-                      onCheckedChange={(checked) =>
-                        setLessonForm({ ...lessonForm, is_published: checked })
-                      }
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Switch
-                      checked={lessonForm.is_published}
-                      onCheckedChange={(checked) =>
-                        setLessonForm({ ...lessonForm, is_published: checked })
-                      }
-                    />
-                    <Label className="cursor-pointer">{t('lms.lesson.publish_immediately', 'Publish Immediately')}</Label>
-                  </>
-                )}
-              </div>
+          ))}
+        </section>
+
+
+        <CourseSettingsForm
+          course={settingsCourse}
+          onSaved={(c) => setCourse((prev) => (prev ? ({ ...prev, ...c } as unknown as Course) : prev))}
+          initialStep={initialStep}
+          programExtra={instructorAccess}
+          extra={{
+            structure: {
+              label: `${t('admin.courses.tab.structure', 'Structure')} (${modules.length})`,
+              node: (
+
+          <section className="min-w-0">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">{t('admin.courses.builder.dragHint', 'Drag modules and lessons to change the order.')}</p>
+              <button type="button" onClick={openNewModule} className={kitButton.primary}>
+                <Plus className="h-4 w-4" aria-hidden />
+                {t('admin.courses.builder.addModules', 'Add modules')}
+              </button>
             </div>
-
-            {/* Video Meeting Integration */}
-            {!editingLesson && (
-              <div className="space-y-4 border-t pt-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className={`space-y-1 flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                    <h3 className="text-sm font-semibold">
-                      {t('lms.lesson.meeting_integration_title', 'Video Meeting Integration')}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {t('lms.lesson.meeting_integration_desc', 'Create a video meeting automatically for this lesson')}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={lessonForm.create_meeting}
-                    onCheckedChange={(checked) =>
-                      setLessonForm({
-                        ...lessonForm,
-                        create_meeting: checked,
-                        create_zoom: checked && lessonForm.meeting_platform === 'zoom',
-                        zoom_topic: checked && lessonForm.meeting_platform === 'zoom' && !lessonForm.zoom_topic ? lessonForm.title : lessonForm.zoom_topic,
-                        daily_room_name: checked && lessonForm.meeting_platform === 'daily' && !lessonForm.daily_room_name ? lessonForm.title : lessonForm.daily_room_name,
-                      })
-                    }
-                  />
-                </div>
-
-              {lessonForm.create_meeting && (
-                <>
-                  {/* Platform Selection */}
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.meeting_platform_label', 'Meeting Platform')} <span className="text-destructive">*</span>
-                    </Label>
-                    <select
-                      value={lessonForm.meeting_platform}
-                      onChange={(e) => setLessonForm({
-                        ...lessonForm,
-                        meeting_platform: e.target.value as 'zoom' | 'daily',
-                        create_zoom: e.target.value === 'zoom',
-                        daily_room_name: e.target.value === 'daily' && !lessonForm.daily_room_name ? lessonForm.title : lessonForm.daily_room_name,
-                        zoom_topic: e.target.value === 'zoom' && !lessonForm.zoom_topic ? lessonForm.title : lessonForm.zoom_topic,
-                      })}
-                      className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                      dir={direction}
-                    >
-                      {/* Zoom first — matches the default and the rest of the UI's
-                          fallback assumption. Daily.co stays selectable for schools
-                          that prefer it. */}
-                      <option value="zoom">{t('lms.lesson.platform_zoom', 'Zoom')}</option>
-                      <option value="daily">{t('lms.lesson.platform_daily', 'Daily.co')}</option>
-                    </select>
-                  </div>
-
-                  {/* Platform-specific settings */}
-                  {lessonForm.meeting_platform === 'daily' && (
-                    <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`}>
-                      <div className="space-y-2">
-                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.daily_room_name_label', 'Daily.co Room Name')} <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          value={lessonForm.daily_room_name}
-                          onChange={(e) => setLessonForm({ ...lessonForm, daily_room_name: e.target.value })}
-                          placeholder={t('lms.lesson.daily_room_name_placeholder', 'e.g., Introduction to Parenting - Session 1')}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          dir={direction}
-                        />
-                        <TokenInserter
-                          tokens={lessonTokens}
-                          onInsertToken={(token) =>
-                            insertToken(lessonForm.daily_room_name, token, (value) =>
-                              setLessonForm({ ...lessonForm, daily_room_name: value })
-                            )
-                          }
-                          direction={direction}
-                          isRtl={isRtl}
-                          t={t}
-                        />
-                        <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.daily_room_name_help', 'This will be used to identify the room (only Latin characters, numbers, and hyphens)')}
-                        </p>
-                      </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+              <SortableContext items={modules.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-3">
+                  {modules.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center">
+                      <p className="mb-1 text-lg font-bold">{t('lms.builder.no_modules', 'No modules yet')}</p>
+                      <p className="text-sm text-muted-foreground">{t('lms.builder.start_building', 'Start building your course by adding modules')}</p>
                     </div>
-                  )}
-
-                  {lessonForm.meeting_platform === 'zoom' && (
-                    <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`}>
-                      <div className="space-y-2">
-                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.zoom_topic_label', 'Zoom Meeting Topic')} <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          value={lessonForm.zoom_topic}
-                          onChange={(e) => setLessonForm({ ...lessonForm, zoom_topic: e.target.value })}
-                          placeholder={t('lms.lesson.zoom_topic_placeholder', 'e.g., Introduction to Parenting - Session 1')}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          dir={direction}
-                        />
-                        <TokenInserter
-                          tokens={zoomTokens}
-                          onInsertToken={(token) =>
-                            insertToken(lessonForm.zoom_topic, token, (value) =>
-                              setLessonForm({ ...lessonForm, zoom_topic: value })
-                            )
-                          }
-                          direction={direction}
-                          isRtl={isRtl}
-                          t={t}
-                        />
-                        <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.zoom_topic_help', 'This will be the visible meeting name in Zoom')}
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.zoom_agenda_label', 'Zoom Meeting Agenda (Optional)')}
-                        </Label>
-                        <Textarea
-                          value={lessonForm.zoom_agenda}
-                          onChange={(e) => setLessonForm({ ...lessonForm, zoom_agenda: e.target.value })}
-                          rows={2}
-                          placeholder={t('lms.lesson.zoom_agenda_placeholder', 'e.g., Today we will cover basic parenting techniques...')}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          dir={direction}
-                        />
-                      </div>
-
-                      {/* Full Zoom settings (security / video+audio /
-                          recording) — was previously only on the bulk
-                          dialog. Now single-lesson Zoom creation
-                          honours the same configuration. */}
-                      <ZoomSettingsPanel
-                        settings={lessonForm}
-                        onChange={(patch) => setLessonForm({ ...lessonForm, ...patch })}
+                  ) : (
+                    modules.map((module) => (
+                      <SortableModule
+                        key={module.id}
+                        module={module}
+                        actions={lessonActions}
+                        onToggleExpand={() => toggleModuleExpansion(module.id)}
+                        onAddLessons={() => openAddLesson(module)}
+                        onEdit={() => {
+                          setEditingModule(module);
+                          setModuleForm({
+                            title: module.title,
+                            description: module.description || '',
+                            is_published: module.is_published,
+                            is_optional: module.is_optional,
+                          });
+                          setShowModuleDialog(true);
+                        }}
+                        onDelete={() => handleDeleteModule(module.id)}
+                        confirmingDelete={false}
+                        onConfirmDelete={() => undefined}
+                        onCancelDelete={() => undefined}
+                        deleting={deletingItem}
                         t={t}
                         isRtl={isRtl}
-                        direction={direction}
+                        tenantTimezone={tenantTimezone}
                       />
-                    </div>
+                    ))
                   )}
-                </>
-              )}
-              </div>
-            )}
-
-            {/* Zoom editing when lesson has existing Zoom meeting */}
-            {editingLesson && editingLesson.zoom_meeting_id && (
-              <div className="space-y-3 border-t pt-4">
-                <div className={`p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <div className="flex items-start gap-3">
-                    <Video className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                        {t('lms.lesson.zoom_connected', 'Connected to Zoom')}
-                      </p>
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        {t('lms.lesson.zoom_auto_sync', 'Changes to date, time and duration will automatically sync to the Zoom meeting')}
-                      </p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-xs text-blue-600 dark:text-blue-400 font-mono">
-                          {t('lms.lesson.zoom_meeting_id', 'Meeting ID')}: {editingLesson.zoom_meeting_id}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
-                          onClick={() => handleOpenZoomMeeting(editingLesson.id)}
-                        >
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          {t('lms.lesson.open_zoom', 'Open in Zoom')}
-                        </Button>
-                      </div>
+                </div>
+              </SortableContext>
+              <DragOverlay>
+                {activeId ? (
+                  <div className="rounded-xl border bg-card p-3 opacity-90 shadow-lg">
+                    <div className="flex items-center gap-2">
+                      {draggedLesson ? <GraduationCap className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+                      {draggedLesson ? draggedLesson.title : modules.find((m) => m.id === activeId)?.title}
                     </div>
                   </div>
-                </div>
-              </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+            {modules.length > 0 && (
+              <button
+                type="button"
+                onClick={openNewModule}
+                className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border-[1.5px] border-dashed border-primary/30 bg-card text-sm font-semibold text-primary hover:bg-primary/[0.04]"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                {t('admin.courses.builder.addModules', 'Add modules')}
+              </button>
             )}
+          </section>
+              ),
+            },
+            materials: {
+              label: t('lms.materials.tab_title', 'Course Materials'),
+              action: (
+                <button type="button" onClick={openMaterialUpload} className={kitButton.primary}>
+                  <Upload className="h-4 w-4" aria-hidden />
+                  {t('lms.materials.upload_button', 'Upload Material')}
+                </button>
+              ),
+              node: (
+
+          <section>
+            <CourseMaterials
+              courseId={course.id}
+              courseIsPublished={course.is_published ?? false}
+              uploadSignal={materialUploadSignal}
+              t={t}
+              isRtl={isRtl}
+              direction={direction}
+              onStatusMessage={(message) => showMessage(message.type, message.text)}
+            />
+          </section>
+              ),
+            },
+            // Grades and attendance: steps of their own, only when the course uses them.
+            ...((course as any).uses_grades !== false
+              ? { grades: { label: t('admin.courses.tab.grades', 'Grades'), node: <GradesTab courseId={course.id} /> } }
+              : {}),
+            ...((course as any).uses_attendance !== false
+              ? { attendance: { label: t('admin.courses.tab.attendance', 'Attendance'), node: <AttendanceTab courseId={course.id} /> } }
+              : {}),
+          }}
+        />
+      </div>
+
+      {/* Messages float at the bottom so they're seen wherever you are */}
+      {statusMessage && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4" role="status" aria-live="polite">
+          <div
+            className={`pointer-events-auto max-w-md rounded-xl border px-4 py-3 text-sm font-medium shadow-lg ${
+              statusMessage.type === 'success'
+                ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200'
+                : statusMessage.type === 'error'
+                  ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
+                  : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'
+            }`}
+          >
+            {statusMessage.text}
           </div>
-          </DialogBody>
-          <DialogFooter className={`flex gap-3 flex-col-reverse sm:flex-row ${isRtl ? 'sm:flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowLessonDialog(false)} className="w-full sm:w-auto">
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleCreateLesson} disabled={saving} className="w-full sm:w-auto">
-              {saving
-                ? (editingLesson ? t('lms.lesson.updating', 'Updating...') : t('lms.lesson.creating', 'Creating...'))
-                : (editingLesson ? t('lms.lesson.update_lesson', 'Update Lesson') : t('lms.lesson.add_lesson', 'Add Lesson'))
-              }
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
 
-      {/* Bulk Module Dialog */}
-      <Dialog open={showBulkModuleDialog} onOpenChange={setShowBulkModuleDialog}>
-        <DialogContent className="max-w-2xl" dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {t('lms.builder.dialog_bulk_create', 'Bulk Create Modules')}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.builder.dialog_bulk_description', 'Create multiple modules at once to quickly structure your course')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <Label className={`${isRtl ? 'text-right block' : ''} font-medium`}>
-                {t('lms.builder.number_of_modules', 'Number of Modules')} <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="number"
-                min="1"
-                max="20"
-                value={bulkModuleForm.count}
-                onChange={(e) => setBulkModuleForm({ ...bulkModuleForm, count: e.target.value })}
-                className={isRtl ? 'text-right' : ''}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className={`${isRtl ? 'text-right block' : ''} font-medium`}>
-                {t('lms.builder.title_pattern', 'Title Pattern')} <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={bulkModuleForm.titlePattern}
-                onChange={(e) =>
-                  setBulkModuleForm({ ...bulkModuleForm, titlePattern: e.target.value })
-                }
-                placeholder="Module {n}"
-                className={isRtl ? 'text-right' : ''}
-              />
-              <p className={`text-sm text-muted-foreground mt-1 ${isRtl ? 'text-right' : ''}`}>
-                {t('lms.builder.use_n_for_number', 'Use {n} for the module number')}
-              </p>
-            </div>
-            <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
-              <div className={`flex items-center justify-between gap-4 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                <div className={`flex-1 space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <Label htmlFor="bulk-module-published" className="text-base font-medium cursor-pointer">
-                    {t('lms.builder.published', 'Published')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('lms.builder.published_description', 'Make this module visible to students')}
-                  </p>
-                </div>
-                <Switch
-                  id="bulk-module-published"
-                  checked={bulkModuleForm.is_published}
-                  onCheckedChange={(checked) =>
-                    setBulkModuleForm({ ...bulkModuleForm, is_published: checked })
-                  }
-                />
-              </div>
-              <div className={`flex items-center justify-between gap-4 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                <div className={`flex-1 space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <Label htmlFor="bulk-module-optional" className="text-base font-medium cursor-pointer">
-                    {t('lms.builder.optional', 'Optional')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('lms.builder.optional_description', 'Students can skip this module')}
-                  </p>
-                </div>
-                <Switch
-                  id="bulk-module-optional"
-                  checked={bulkModuleForm.is_optional}
-                  onCheckedChange={(checked) =>
-                    setBulkModuleForm({ ...bulkModuleForm, is_optional: checked })
-                  }
-                />
-              </div>
-            </div>
-            <div className="p-4 bg-muted rounded-lg space-y-3">
-              <p className={`text-sm font-semibold ${isRtl ? 'text-right' : ''}`}>
-                {t('lms.builder.preview', 'Preview')}:
-              </p>
-              <div className={`text-sm space-y-1.5 ${isRtl ? 'text-right' : ''}`}>
-                {Array.from({ length: Math.min(3, parseInt(bulkModuleForm.count) || 0) }).map(
-                  (_, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="text-muted-foreground">•</span>
-                      <span>{bulkModuleForm.titlePattern.replace('{n}', (i + 1).toString())}</span>
-                    </div>
-                  )
-                )}
-                {parseInt(bulkModuleForm.count) > 3 && (
-                  <div className="text-muted-foreground italic">
-                    {t('lms.builder.and_more', '...and more')}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          </DialogBody>
-          <DialogFooter className={`gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowBulkModuleDialog(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleBulkCreateModules}>
-              {t('lms.builder.dialog_create_count_modules', 'Create {count} Modules').replace('{count}', bulkModuleForm.count)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete a module: what happens to its lessons */}
+      <ModuleDeleteDialog
+        module={moduleDeleteTarget}
+        onClose={() => setModuleDeleteTarget(null)}
+        onDeleted={(message) => {
+          setModuleDeleteTarget(null);
+          void loadCourse();
+          showMessage('success', message);
+        }}
+        t={t}
+        direction={isRtl ? 'rtl' : 'ltr'}
+      />
 
-      {/* Bulk Lesson Dialog - Smart Scheduling */}
-      <Dialog open={showBulkLessonDialog} onOpenChange={setShowBulkLessonDialog}>
-        <DialogContent className="max-w-2xl" dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : 'text-left'}>
-              {t('lms.lesson.bulk_create_title', 'Create Series of Lessons for {module}').replace('{module}', selectedModule?.title || '')}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : 'text-left'}>
-              {t('lms.lesson.bulk_create_description', 'Set up a recurring series of lessons with smart scheduling and optional Zoom integration')}
-            </DialogDescription>
-          </DialogHeader>
+      {/* Add modules (one or several), or edit one */}
+      <AddModulesDialog
+        open={showModuleDialog}
+        onClose={() => {
+          setShowModuleDialog(false);
+          setEditingModule(null);
+          setModuleForm({ title: '', description: '', is_published: true, is_optional: false });
+        }}
+        editing={!!editingModule}
+        onAddLessons={() => {
+          if (!editingModule) return;
+          const m = editingModule;
+          setShowModuleDialog(false);
+          setEditingModule(null);
+          openAddLesson(m);
+        }}
+        onDelete={() => {
+          if (!editingModule) return;
+          const id = editingModule.id;
+          setShowModuleDialog(false);
+          setEditingModule(null);
+          handleDeleteModule(id);
+        }}
+        deleting={deletingItem}
+        form={moduleForm}
+        setForm={(patch) => setModuleForm((prev) => ({ ...prev, ...patch }))}
+        bulk={bulkModuleForm}
+        setBulk={(patch) => setBulkModuleForm((prev) => ({ ...prev, ...patch }))}
+        saving={saving}
+        onSaveOne={() => void handleCreateModule()}
+        onSaveMany={() => void handleBulkCreateModules()}
+        t={t}
+        direction={direction}
+      />
 
-          <DialogBody>
-          <div className="space-y-6 py-4">
-            {/* Series Information */}
-            <div className="space-y-4">
-              <h3 className={`text-sm font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.lesson.series_info_title', 'Series Information')}
-              </h3>
-              <div className="space-y-2">
-                <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.series_name_label', 'Series Name')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={bulkLessonForm.series_name}
-                  onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, series_name: e.target.value })}
-                  placeholder={t('lms.lesson.series_name_placeholder', 'e.g., Introduction to Parenting')}
-                  className={isRtl ? 'text-right' : 'text-left'}
-                  dir={direction}
-                />
-                <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.series_name_help', 'This will be used to name lessons and Zoom meetings')}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.title_pattern_label', 'Lesson Title Pattern')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={bulkLessonForm.titlePattern}
-                  onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, titlePattern: e.target.value })}
-                  placeholder={t('lms.lesson.title_pattern_placeholder', 'Session {n}')}
-                  className={isRtl ? 'text-right' : 'text-left'}
-                  dir={direction}
-                />
-                <TokenInserter
-                  tokens={lessonTokens}
-                  onInsertToken={(token) =>
-                    insertToken(bulkLessonForm.titlePattern, token, (value) =>
-                      setBulkLessonForm({ ...bulkLessonForm, titlePattern: value })
-                    )
-                  }
-                  direction={direction}
-                  isRtl={isRtl}
-                  t={t}
-                />
-              </div>
-            </div>
+      {/* One lesson: add or edit, in a side panel */}
+      <LessonPanel
+        open={showLessonDialog}
+        onClose={() => {
+          setShowLessonDialog(false);
+          setLessonDialogError(null);
+        }}
+        form={lessonForm as LessonFormState}
+        setForm={(patch) => setLessonForm((prev) => ({ ...prev, ...patch }))}
+        editingLesson={editingLesson ? modules.flatMap((m) => m.lessons || []).find((l) => l.id === editingLesson.id) ?? editingLesson : null}
+        moduleTitle={selectedModule?.title ?? ''}
+        error={lessonDialogError}
+        saving={saving}
+        onSave={() => void handleCreateLesson()}
+        onDelete={(lessonId) => {
+          const m = moduleOfLesson(lessonId);
+          if (!m) return;
+          setShowLessonDialog(false);
+          void confirmDeleteLesson({ lessonId, moduleId: m.id });
+        }}
+        deleting={deletingItem}
+        onOpenMeeting={handleOpenZoomMeeting}
+        onSyncRecording={handleSyncRecording}
+        onCreateMeeting={(lessonId, platform) => {
+          setShowLessonDialog(false);
+          void handleCreateZoomMeeting(lessonId, platform);
+        }}
+        creatingMeeting={!!editingLesson && creatingZoomFor === editingLesson.id}
+        syncingRecording={!!editingLesson && syncingRecordingFor === editingLesson.id}
+        onEditContent={openLessonContent}
+        onSwitchToSeries={() => selectedModule && openSeries(selectedModule)}
+        lessonTokens={lessonTokens}
+        zoomTokens={zoomTokens}
+        insertToken={insertToken}
+        tenantTimezone={tenantTimezone}
+        t={t}
+        direction={direction}
+      />
 
-            {/* Schedule Settings */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className={`text-sm font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.lesson.schedule_settings_title', 'Schedule Settings')}
-              </h3>
+      {/* A series of lessons, in three steps */}
+      <SeriesWizard
+        open={showBulkLessonDialog}
+        onClose={() => setShowBulkLessonDialog(false)}
+        form={bulkLessonForm}
+        setForm={(patch) => setBulkLessonForm((prev) => ({ ...prev, ...(patch as Partial<typeof prev>) }))}
+        moduleTitle={selectedModule?.title ?? ''}
+        saving={saving}
+        onCreate={() => void handleBulkCreateLessons()}
+        onSwitchToOne={() => selectedModule && openAddLesson(selectedModule)}
+        lessonTokens={lessonTokens}
+        zoomTokens={zoomTokens}
+        insertToken={insertToken}
+        tenantTimezone={tenantTimezone}
+        t={t}
+        direction={direction}
+      />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.lesson.start_date_label', 'Start Date')}
-                  </Label>
-                  <Input
-                    type="date"
-                    value={bulkLessonForm.start_date}
-                    onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, start_date: e.target.value })}
-                    className={isRtl ? 'text-right' : 'text-left'}
-                    dir={direction}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.lesson.time_of_day_label', 'Time of Day')}
-                  </Label>
-                  <Input
-                    type="time"
-                    value={bulkLessonForm.start_time}
-                    onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, start_time: e.target.value })}
-                    className={isRtl ? 'text-right' : 'text-left'}
-                    dir={direction}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.lesson.duration_minutes_label', 'Duration (minutes)')}
-                  </Label>
-                  <Input
-                    type="number"
-                    value={bulkLessonForm.duration_minutes}
-                    onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, duration_minutes: e.target.value })}
-                    placeholder="60"
-                    className={isRtl ? 'text-right' : 'text-left'}
-                    dir={direction}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.lesson.timezone_label', 'Timezone')}
-                  </Label>
-                  <select
-                    value={bulkLessonForm.timezone}
-                    onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, timezone: e.target.value })}
-                    className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                    dir={direction}
-                  >
-                    <optgroup label={t('lms.lesson.timezone_group_common', 'Common')}>
-                      <option value="Asia/Jerusalem">{t('lms.lesson.timezone_jerusalem', 'Jerusalem (GMT+2/+3)')}</option>
-                      <option value="America/New_York">{t('lms.lesson.timezone_newyork', 'New York (GMT-5/-4)')}</option>
-                      <option value="America/Los_Angeles">{t('lms.lesson.timezone_losangeles', 'Los Angeles (GMT-8/-7)')}</option>
-                      <option value="Europe/London">{t('lms.lesson.timezone_london', 'London (GMT+0/+1)')}</option>
-                    </optgroup>
-                    <optgroup label={t('lms.lesson.timezone_group_americas', 'Americas')}>
-                      <option value="America/New_York">New York (EST/EDT GMT-5/-4)</option>
-                      <option value="America/Chicago">Chicago (CST/CDT GMT-6/-5)</option>
-                      <option value="America/Denver">Denver (MST/MDT GMT-7/-6)</option>
-                      <option value="America/Los_Angeles">Los Angeles (PST/PDT GMT-8/-7)</option>
-                      <option value="America/Toronto">Toronto (EST/EDT GMT-5/-4)</option>
-                      <option value="America/Mexico_City">Mexico City (CST GMT-6)</option>
-                      <option value="America/Sao_Paulo">São Paulo (BRT GMT-3)</option>
-                      <option value="America/Buenos_Aires">Buenos Aires (ART GMT-3)</option>
-                    </optgroup>
-                    <optgroup label={t('lms.lesson.timezone_group_europe', 'Europe')}>
-                      <option value="Europe/London">London (GMT/BST GMT+0/+1)</option>
-                      <option value="Europe/Paris">Paris (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Berlin">Berlin (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Rome">Rome (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Madrid">Madrid (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Amsterdam">Amsterdam (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Brussels">Brussels (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Zurich">Zurich (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Vienna">Vienna (CET/CEST GMT+1/+2)</option>
-                      <option value="Europe/Athens">Athens (EET/EEST GMT+2/+3)</option>
-                      <option value="Europe/Moscow">Moscow (MSK GMT+3)</option>
-                    </optgroup>
-                    <optgroup label={t('lms.lesson.timezone_group_asia', 'Asia')}>
-                      <option value="Asia/Jerusalem">Jerusalem (IST GMT+2/+3)</option>
-                      <option value="Asia/Dubai">Dubai (GST GMT+4)</option>
-                      <option value="Asia/Kolkata">Mumbai/Kolkata (IST GMT+5:30)</option>
-                      <option value="Asia/Bangkok">Bangkok (ICT GMT+7)</option>
-                      <option value="Asia/Singapore">Singapore (SGT GMT+8)</option>
-                      <option value="Asia/Hong_Kong">Hong Kong (HKT GMT+8)</option>
-                      <option value="Asia/Shanghai">Shanghai (CST GMT+8)</option>
-                      <option value="Asia/Tokyo">Tokyo (JST GMT+9)</option>
-                      <option value="Asia/Seoul">Seoul (KST GMT+9)</option>
-                    </optgroup>
-                    <optgroup label={t('lms.lesson.timezone_group_pacific', 'Pacific')}>
-                      <option value="Australia/Sydney">Sydney (AEDT/AEST GMT+10/+11)</option>
-                      <option value="Australia/Melbourne">Melbourne (AEDT/AEST GMT+10/+11)</option>
-                      <option value="Australia/Perth">Perth (AWST GMT+8)</option>
-                      <option value="Pacific/Auckland">Auckland (NZDT/NZST GMT+12/+13)</option>
-                    </optgroup>
-                    <optgroup label={t('lms.lesson.timezone_group_africa', 'Africa')}>
-                      <option value="Africa/Cairo">Cairo (EET GMT+2)</option>
-                      <option value="Africa/Johannesburg">Johannesburg (SAST GMT+2)</option>
-                      <option value="Africa/Lagos">Lagos (WAT GMT+1)</option>
-                    </optgroup>
-                    <optgroup label={t('lms.lesson.timezone_group_other', 'Other')}>
-                      <option value="UTC">UTC (GMT+0)</option>
-                    </optgroup>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.recurrence_pattern_label', 'Recurrence Pattern')}
-                </Label>
-                <select
-                  value={bulkLessonForm.recurrence_pattern}
-                  onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, recurrence_pattern: e.target.value as any })}
-                  className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                  dir={direction}
+      {/* The lesson's content, in a side panel */}
+      <Sheet
+        open={showLessonContentDialog}
+        onOpenChange={(open) => {
+          setShowLessonContentDialog(open);
+          // The rows show how many content items each lesson has.
+          if (!open) void loadCourse();
+        }}
+      >
+        <SheetContent
+          side={isRtl ? 'left' : 'right'}
+          dir={direction}
+          className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none sm:max-w-[560px] [&>button.absolute]:hidden"
+        >
+          <header className="relative shrink-0 border-b border-border bg-primary/[0.04] px-6 pb-4 pt-5">
+            {(() => {
+              const lesson = selectedLessonForContent ? modules.flatMap((m) => m.lessons || []).find((l) => l.id === selectedLessonForContent.lessonId) : undefined;
+              return lesson ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLessonContentDialog(false);
+                    lessonActions.onOpen(lesson);
+                  }}
+                  className="inline-flex min-h-[32px] items-center gap-1 text-[13.5px] font-semibold text-primary hover:underline"
                 >
-                  <option value="weekly">{t('lms.lesson.recurrence_weekly', 'Weekly')}</option>
-                  <option value="daily">{t('lms.lesson.recurrence_daily', 'Daily')}</option>
-                </select>
-              </div>
-
-              {bulkLessonForm.recurrence_pattern === 'weekly' && (
-                <div className="space-y-2">
-                  <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t('lms.lesson.day_of_week_label', 'Day of Week')}
-                  </Label>
-                  <select
-                    value={bulkLessonForm.weekly_days[0]}
-                    onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, weekly_days: [parseInt(e.target.value)] })}
-                    className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                    dir={direction}
-                  >
-                    <option value="0">{t('lms.lesson.day_sunday', 'Sunday')}</option>
-                    <option value="1">{t('lms.lesson.day_monday', 'Monday')}</option>
-                    <option value="2">{t('lms.lesson.day_tuesday', 'Tuesday')}</option>
-                    <option value="3">{t('lms.lesson.day_wednesday', 'Wednesday')}</option>
-                    <option value="4">{t('lms.lesson.day_thursday', 'Thursday')}</option>
-                    <option value="5">{t('lms.lesson.day_friday', 'Friday')}</option>
-                    <option value="6">{t('lms.lesson.day_saturday', 'Saturday')}</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {t('lms.lesson.number_of_sessions_label', 'Number of Sessions')}
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={bulkLessonForm.end_count}
-                  onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, end_count: e.target.value })}
-                  className={isRtl ? 'text-right' : 'text-left'}
-                  dir={direction}
-                />
-              </div>
-            </div>
-
-            {/* Video Meeting Integration */}
-            <div className="space-y-4 border-t pt-4" dir={direction}>
-              <div className={`flex items-start gap-4 ${isRtl ? 'flex-row-reverse justify-start' : 'justify-between'}`} dir={direction}>
-                <div className={`space-y-1 flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <h3 className="text-sm font-semibold">
-                    {t('lms.lesson.bulk_meeting_title', 'Video Meeting Integration')}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {t('lms.lesson.bulk_meeting_desc', 'Automatically create video meetings for each lesson')}
-                  </p>
-                </div>
-                <Switch
-                  checked={bulkLessonForm.create_meeting}
-                  onCheckedChange={(checked) =>
-                    setBulkLessonForm({
-                      ...bulkLessonForm,
-                      create_meeting: checked,
-                      create_zoom: checked && bulkLessonForm.meeting_platform === 'zoom',
-                      create_daily: checked && bulkLessonForm.meeting_platform === 'daily',
-                      zoom_topic_pattern: checked && bulkLessonForm.meeting_platform === 'zoom' && !bulkLessonForm.zoom_topic_pattern
-                        ? '{series_name} - Session {n}'
-                        : bulkLessonForm.zoom_topic_pattern,
-                      daily_room_pattern: checked && bulkLessonForm.meeting_platform === 'daily' && !bulkLessonForm.daily_room_pattern
-                        ? '{series_name}-session-{n}'
-                        : bulkLessonForm.daily_room_pattern,
-                    })
-                  }
-                />
-              </div>
-
-              {bulkLessonForm.create_meeting && (
-                <>
-                  {/* Platform Selection */}
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.meeting_platform_label', 'Meeting Platform')} <span className="text-destructive">*</span>
-                    </Label>
-                    <select
-                      value={bulkLessonForm.meeting_platform}
-                      onChange={(e) => setBulkLessonForm({
-                        ...bulkLessonForm,
-                        meeting_platform: e.target.value as 'zoom' | 'daily',
-                        create_zoom: e.target.value === 'zoom',
-                        create_daily: e.target.value === 'daily',
-                      })}
-                      className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                      dir={direction}
-                    >
-                      <option value="zoom">{t('lms.lesson.platform_zoom', 'Zoom')}</option>
-                      <option value="daily">{t('lms.lesson.platform_daily', 'Daily.co')}</option>
-                    </select>
-                  </div>
-
-                  {/* Daily.co Settings */}
-                  {bulkLessonForm.meeting_platform === 'daily' && (
-                    <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`} dir={direction}>
-                      <div className="space-y-2">
-                        <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.daily_room_pattern_label', 'Daily.co Room Name Pattern')} <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          value={bulkLessonForm.daily_room_pattern}
-                          onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, daily_room_pattern: e.target.value })}
-                          placeholder={t('lms.lesson.daily_room_pattern_placeholder', '{series_name}-session-{n}')}
-                          className={isRtl ? 'text-right' : 'text-left'}
-                          dir={direction}
-                        />
-                        <TokenInserter
-                          tokens={lessonTokens}
-                          onInsertToken={(token) =>
-                            insertToken(bulkLessonForm.daily_room_pattern, token, (value) =>
-                              setBulkLessonForm({ ...bulkLessonForm, daily_room_pattern: value })
-                            )
-                          }
-                          direction={direction}
-                          isRtl={isRtl}
-                          t={t}
-                        />
-                        <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                          {t('lms.lesson.daily_room_pattern_help', 'Use tokens to create unique room names. Only Latin characters, numbers, and hyphens allowed.')}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Zoom Settings */}
-                  {bulkLessonForm.meeting_platform === 'zoom' && (
-                <div className={`space-y-4 p-4 rounded-lg bg-muted/30 ${isRtl ? 'border-r-2 border-primary/30' : 'border-l-2 border-primary/30'}`} dir={direction}>
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.zoom_name_pattern_label', 'Zoom Meeting Name Pattern')} <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      value={bulkLessonForm.zoom_topic_pattern}
-                      onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, zoom_topic_pattern: e.target.value })}
-                      placeholder={t('lms.lesson.zoom_name_pattern_placeholder', '{series_name} - Session {n}')}
-                      className={isRtl ? 'text-right' : 'text-left'}
-                      dir={direction}
-                    />
-                    <TokenInserter
-                      tokens={zoomTokens}
-                      onInsertToken={(token) =>
-                        insertToken(bulkLessonForm.zoom_topic_pattern, token, (value) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_topic_pattern: value })
-                        )
-                      }
-                      direction={direction}
-                      isRtl={isRtl}
-                      t={t}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className={`block font-medium ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.zoom_agenda_common_label', 'Zoom Meeting Agenda (Optional)')}
-                    </Label>
-                    <Textarea
-                      value={bulkLessonForm.zoom_agenda}
-                      onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, zoom_agenda: e.target.value })}
-                      rows={2}
-                      placeholder={t('lms.lesson.zoom_agenda_common_placeholder', 'Common agenda for all sessions...')}
-                      className={isRtl ? 'text-right' : 'text-left'}
-                      dir={direction}
-                    />
-                  </div>
-                  <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                    <Switch
-                      checked={bulkLessonForm.zoom_recurring}
-                      onCheckedChange={(checked) =>
-                        setBulkLessonForm({ ...bulkLessonForm, zoom_recurring: checked })
-                      }
-                    />
-                    <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.lesson.zoom_recurring_option', 'Create as recurring Zoom meeting (all sessions linked)')}
-                    </Label>
-                  </div>
-
-                  {/* Security Settings */}
-                  <div className="space-y-3 pt-3 border-t border-border/50" dir={direction}>
-                    <h4 className={`text-sm font-semibold text-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.zoom.security_settings_title', 'Security Settings')}
-                    </h4>
-
-                    <div className="space-y-2">
-                      <Label className={`block text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.passcode_label', 'Meeting Passcode (Optional)')}
-                      </Label>
-                      <Input
-                        type="text"
-                        value={bulkLessonForm.zoom_passcode}
-                        onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, zoom_passcode: e.target.value })}
-                        placeholder={t('lms.zoom.passcode_placeholder', 'Enter passcode...')}
-                        className={isRtl ? 'text-right' : 'text-left'}
-                        dir={direction}
-                        maxLength={10}
-                      />
-                      <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.passcode_help', 'Passcode to prevent unauthorized access (6-10 characters)')}
-                      </p>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_waiting_room}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_waiting_room: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.waiting_room_label', 'Waiting Room')}
-                      </Label>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_join_before_host}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_join_before_host: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.join_before_host_label', 'Allow participants to join before host')}
-                      </Label>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_mute_upon_entry}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_mute_upon_entry: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.mute_upon_entry_label', 'Mute participants upon entry')}
-                      </Label>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_require_authentication}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_require_authentication: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.require_authentication_label', 'Require authentication to join')}
-                      </Label>
-                    </div>
-                  </div>
-
-                  {/* Video/Audio Settings */}
-                  <div className="space-y-3 pt-3 border-t border-border/50" dir={direction}>
-                    <h4 className={`text-sm font-semibold text-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.zoom.video_audio_settings_title', 'Video & Audio Settings')}
-                    </h4>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_host_video}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_host_video: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.host_video_label', 'Start host video on entry')}
-                      </Label>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_participant_video}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_participant_video: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.participant_video_label', 'Start participant video on entry')}
-                      </Label>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className={`block text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.audio_options_label', 'Audio Options')}
-                      </Label>
-                      <select
-                        value={bulkLessonForm.zoom_audio}
-                        onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, zoom_audio: e.target.value as 'both' | 'telephony' | 'voip' })}
-                        className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                        dir={direction}
-                      >
-                        <option value="both">{t('lms.zoom.audio_both', 'Phone and Computer')}</option>
-                        <option value="telephony">{t('lms.zoom.audio_telephony', 'Phone Only')}</option>
-                        <option value="voip">{t('lms.zoom.audio_voip', 'Computer Only')}</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Recording Settings */}
-                  <div className="space-y-3 pt-3 border-t border-border/50" dir={direction}>
-                    <h4 className={`text-sm font-semibold text-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                      {t('lms.zoom.recording_settings_title', 'Recording Settings')}
-                    </h4>
-
-                    <div className="space-y-2">
-                      <Label className={`block text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.auto_recording_label', 'Automatic Recording')}
-                      </Label>
-                      <select
-                        value={bulkLessonForm.zoom_auto_recording}
-                        onChange={(e) => setBulkLessonForm({ ...bulkLessonForm, zoom_auto_recording: e.target.value as 'none' | 'local' | 'cloud' })}
-                        className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${isRtl ? 'text-right' : 'text-left'}`}
-                        dir={direction}
-                      >
-                        <option value="none">{t('lms.zoom.recording_none', 'No Recording')}</option>
-                        <option value="local">{t('lms.zoom.recording_local', 'Local Recording')}</option>
-                        <option value="cloud">{t('lms.zoom.recording_cloud', 'Cloud Recording')}</option>
-                      </select>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_record_speaker_view}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_record_speaker_view: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.record_speaker_view_label', 'Record active speaker with screen share')}
-                      </Label>
-                    </div>
-
-                    <div className={`flex items-center ${isRtl ? 'gap-2 flex-row-reverse' : 'gap-2'}`} dir={direction}>
-                      <Switch
-                        checked={bulkLessonForm.zoom_recording_disclaimer}
-                        onCheckedChange={(checked) =>
-                          setBulkLessonForm({ ...bulkLessonForm, zoom_recording_disclaimer: checked })
-                        }
-                      />
-                      <Label className={`cursor-pointer text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                        {t('lms.zoom.recording_disclaimer_label', 'Show recording disclaimer')}
-                      </Label>
-                    </div>
-                  </div>
-                </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Publish Settings */}
-            <div className="space-y-4 border-t pt-4" dir={direction}>
-              <div className={`flex items-start gap-4 ${isRtl ? 'flex-row-reverse justify-start' : 'justify-between'}`} dir={direction}>
-                <div className={`space-y-1 flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <h3 className="text-sm font-semibold">
-                    {t('lms.lesson.publish_title', 'Publish Lessons')}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {t('lms.lesson.publish_desc', 'Make lessons visible to students immediately')}
-                  </p>
-                </div>
-                <Switch
-                  checked={bulkLessonForm.is_published}
-                  onCheckedChange={(checked) =>
-                    setBulkLessonForm({ ...bulkLessonForm, is_published: checked })
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Preview */}
-            <div className="bg-muted/50 p-4 rounded-lg space-y-2">
-              <h4 className={`text-sm font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.lesson.preview_title', 'Preview')}
-              </h4>
-              <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.lesson.preview_text', 'This will create {count} lessons {pattern} starting from {date} at {time}{meeting}')
-                  .replace('{count}', bulkLessonForm.end_count)
-                  .replace('{pattern}', bulkLessonForm.recurrence_pattern === 'weekly'
-                    ? t('lms.lesson.preview_weekly', 'weekly')
-                    : t('lms.lesson.preview_daily', 'daily'))
-                  .replace('{date}', bulkLessonForm.start_date)
-                  .replace('{time}', bulkLessonForm.start_time)
-                  .replace('{meeting}', bulkLessonForm.create_meeting
-                    ? (bulkLessonForm.meeting_platform === 'daily'
-                        ? t('lms.lesson.preview_with_daily', ', each with a Daily.co room')
-                        : t('lms.lesson.preview_with_zoom', ', each with a Zoom meeting'))
-                    : '')}
-              </p>
-            </div>
-          </div>
-          </DialogBody>
-
-          <DialogFooter className={`gap-3 flex-col-reverse sm:flex-row ${isRtl ? 'sm:flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowBulkLessonDialog(false)} className="w-full sm:w-auto">
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleBulkCreateLessons} disabled={saving} className="w-full sm:w-auto">
-              {saving ? t('lms.lesson.bulk_creating', 'Creating...') : t('lms.lesson.bulk_create_button', 'Create {count} Lessons').replace('{count}', bulkLessonForm.end_count)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Module Confirmation Dialog */}
-      <Dialog open={showDeleteModuleDialog} onOpenChange={setShowDeleteModuleDialog}>
-        <DialogContent dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {t('lms.module.delete_title', 'Delete Module')}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.module.delete_confirmation', 'Are you sure you want to delete this module and all its lessons? This action cannot be undone.')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className={`gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowDeleteModuleDialog(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button variant="destructive" onClick={confirmDeleteModule}>
-              {t('common.delete', 'Delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Lesson Content Editor Dialog */}
-      <Dialog open={showLessonContentDialog} onOpenChange={setShowLessonContentDialog}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-5xl" dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {t('lms.topics.edit_content', 'Edit Content')}: {selectedLessonForContent?.lessonTitle}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.topics.edit_content_description', 'Add and organize content blocks for this lesson')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogBody>
+                  <BackIcon className="h-4 w-4" aria-hidden />
+                  {t('admin.courses.builder.backToLesson', 'Back to the lesson')}
+                </button>
+              ) : null;
+            })()}
+            <SheetTitle className="mt-1 pe-12 text-[22px] font-extrabold [font-family:inherit]">{t('lms.topics.lesson_content', 'Lesson Content')}</SheetTitle>
+            <SheetDescription className="pe-12 text-sm text-muted-foreground">
+              {t('admin.courses.builder.contentFor', '{title} · what clients see on the lesson page').replace('{title}', selectedLessonForContent?.lessonTitle ?? '')}
+            </SheetDescription>
+            <button
+              type="button"
+              onClick={() => {
+                setShowLessonContentDialog(false);
+                void loadCourse();
+              }}
+              aria-label={t('common.close', 'Close')}
+              className="absolute end-3 top-3 grid h-10 w-10 place-items-center rounded-full text-primary hover:bg-muted"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {selectedLessonForContent && (
               <LessonTopicsBuilder
                 lessonId={selectedLessonForContent.lessonId}
-                lessonTitle={selectedLessonForContent.lessonTitle}
                 t={t}
                 isRtl={isRtl}
                 direction={direction}
-                onClose={() => setShowLessonContentDialog(false)}
+                onTopicsChange={(items) => {
+                  const id = selectedLessonForContent.lessonId;
+                  setModules((prev) =>
+                    prev.map((m) => ({ ...m, lessons: m.lessons?.map((l) => (l.id === id ? { ...l, lesson_topics: items } : l)) })),
+                  );
+                }}
               />
             )}
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
-      {/* Delete Lesson Confirmation Dialog */}
-      <Dialog open={showDeleteLessonDialog} onOpenChange={setShowDeleteLessonDialog}>
-        <DialogContent dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {t('lms.lesson.delete_title', 'Delete Lesson')}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.lesson.delete_confirmation', 'Are you sure you want to delete this lesson? This action cannot be undone.')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className={`gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowDeleteLessonDialog(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button variant="destructive" onClick={confirmDeleteLesson}>
-              {t('common.delete', 'Delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Bridge Link Dialog */}
-      <Dialog open={showBridgeDialog} onOpenChange={setShowBridgeDialog}>
-        <DialogContent className="max-w-2xl" dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              <div className="flex items-center gap-2">
-                <Link2 className="h-5 w-5 text-primary" />
-                {t('lms.course_detail.instructor_access_title', 'Instructor Access')}
-              </div>
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.course_detail.instructor_access_description', 'Generate a permanent link for instructors to access their Zoom meetings')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogBody>
+      {/* Instructor link, in a side panel */}
+      <SidePanel
+        open={showBridgeDialog}
+        onClose={() => setShowBridgeDialog(false)}
+        title={t('lms.course_detail.instructor_access_title', 'Instructor Access')}
+        description={t('lms.course_detail.instructor_access_description', 'Generate a permanent link for instructors to access their Zoom meetings')}
+        footer={
+          <button type="button" onClick={() => setShowBridgeDialog(false)} className={panelSecondary}>
+            {t('common.close', 'Close')}
+          </button>
+        }
+      >
           {loadingBridge ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -4154,6 +2416,7 @@ export default function CourseBuilderPage() {
                     size="sm"
                     onClick={copyBridgeLink}
                     className="shrink-0"
+                    aria-label={t('admin.courses.copyLink', 'Copy the link')}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
@@ -4162,6 +2425,7 @@ export default function CourseBuilderPage() {
                     size="sm"
                     onClick={() => window.open(bridgeLink.bridge_url, '_blank')}
                     className="shrink-0"
+                    aria-label={t('admin.courses.openLink', 'Open the link')}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>
@@ -4184,11 +2448,11 @@ export default function CourseBuilderPage() {
               <div className={`flex gap-4 text-sm ${isRtl ? 'flex-row-reverse' : ''}`}>
                 <span className="text-muted-foreground">
                   {t('lms.course_detail.bridge_grace_before', 'Grace before')}:{' '}
-                  <span className="font-medium">{bridgeLink.grace_before_minutes || 15}m</span>
+                  <span className="font-medium">{t('admin.courses.builder.minutes', '{n} min').replace('{n}', String(bridgeLink.grace_before_minutes || 15))}</span>
                 </span>
                 <span className="text-muted-foreground">
                   {t('lms.course_detail.bridge_grace_after', 'Grace after')}:{' '}
-                  <span className="font-medium">{bridgeLink.grace_after_minutes || 30}m</span>
+                  <span className="font-medium">{t('admin.courses.builder.minutes', '{n} min').replace('{n}', String(bridgeLink.grace_after_minutes || 30))}</span>
                 </span>
               </div>
 
@@ -4223,15 +2487,7 @@ export default function CourseBuilderPage() {
               </Button>
             </div>
           )}
-          </DialogBody>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBridgeDialog(false)}>
-              {t('common.close', 'Close')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </SidePanel>
     </AdminLayout>
   );
 }

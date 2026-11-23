@@ -14,7 +14,8 @@ import { he, enUS } from 'date-fns/locale';
 import { useLanguage } from '@/context/AppContext';
 
 interface PaymentPlanData {
-  type: 'named_plan' | 'deposit_then_plan' | 'subscription' | 'one_time' | 'free' | 'multiple_plans';
+  type: 'named_plan' | 'deposit_then_plan' | 'subscription' | 'one_time' | 'free' | 'multiple_plans' | 'per_session';
+  session_amount?: number | null;
   name?: string;
   installments?: number;
   frequency?: string;
@@ -32,6 +33,8 @@ interface EnrollmentData {
   product_type: string;
   product_description?: string;
   total_amount: number;
+  /** A scheduled membership price: shown before paying. */
+  upcoming_price?: { amount: number; effective_date: string } | null;
   currency: string;
   payment_plan_data?: PaymentPlanData | null;
   payment_model: string;
@@ -268,6 +271,18 @@ export default function EnrollmentPage() {
       case 'free':
         return <span>{t('enrollment.paymentPlan.free', 'Free')}</span>;
 
+      case 'per_session':
+        return (
+          <span>
+            {t('enrollment.paymentPlan.perSession', 'Pay per session')}
+            {planData.session_amount ? (
+              <span className="font-semibold" dir="ltr"> {`${enrollment?.currency} ${Number(planData.session_amount).toFixed(2)}`}</span>
+            ) : null}
+            {' · '}
+            {t('enrollment.paymentPlan.perSessionNote', 'charged after each session')}
+          </span>
+        );
+
       case 'multiple_plans':
         return <span>{t('enrollment.paymentPlan.multiplePlans', 'Multiple payment plans available')}</span>;
 
@@ -337,6 +352,13 @@ export default function EnrollmentPage() {
                 <div className={`font-bold text-2xl text-foreground ${isRTL ? 'text-right' : 'text-left'}`} dir="ltr">
                   {enrollment.currency} {enrollment.total_amount.toFixed(2)}
                 </div>
+                {enrollment.upcoming_price && (
+                  <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    {t('enrollment.pricing.upcoming', 'From {date} the price will be {price}')
+                      .replace('{date}', new Date(`${enrollment.upcoming_price.effective_date}T12:00:00`).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' }))
+                      .replace('{price}', `${enrollment.currency} ${enrollment.upcoming_price.amount.toFixed(2)}`)}
+                  </div>
+                )}
                 {enrollment.payment_plan_data && (
                   <div className="text-sm text-muted-foreground mt-3 pt-3 border-t border-muted-foreground/20" style={{ textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
                     <div className="font-medium mb-2">{t('enrollment.pricing.paymentPlan', 'Payment Plan')}:</div>

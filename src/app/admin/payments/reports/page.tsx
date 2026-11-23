@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useState, useEffect } from 'react';
 import { useAdminLanguage } from '@/context/AppContext';
-import Link from 'next/link';
 import {
   TrendingUp,
   DollarSign,
@@ -28,8 +27,7 @@ import {
   Clock,
   AlertCircle,
   XCircle,
-  ArrowLeft,
-} from 'lucide-react';
+  } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 
@@ -239,12 +237,6 @@ export default function ReportsPage() {
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4 flex-wrap">
-            <Link href="/admin/payments">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
-              </Button>
-            </Link>
             <div>
               <h1 className="text-3xl font-bold" suppressHydrationWarning>{t('admin.payments.reports.title', 'Payment Reports')}</h1>
               <p className="text-muted-foreground mt-1" suppressHydrationWarning>
@@ -1465,7 +1457,7 @@ function UserAnalysisReport({ t, isRtl }: { t: TranslationFunction; isRtl: boole
 
   const translateSegment = (segment: string) => {
     const segmentMap: Record<string, string> = {
-      'students': t('admin.payments.reports.segments.students', 'Students'),
+      'students': t('admin.payments.reports.segments.students', 'Clients'),
       'instructors': t('admin.payments.reports.segments.instructors', 'Instructors'),
       'staff': t('admin.payments.reports.segments.staff', 'Staff'),
     };

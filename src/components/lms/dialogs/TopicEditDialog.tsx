@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,8 @@ interface TopicEditDialogProps {
   t: (key: string, fallback: string) => string;
   isRtl: boolean;
   direction: 'ltr' | 'rtl';
+  /** Show the editor in place (inside the content side panel) instead of a pop-up window. */
+  inline?: boolean;
 }
 
 export function TopicEditDialog({
@@ -44,6 +46,7 @@ export function TopicEditDialog({
   t,
   isRtl,
   direction,
+  inline = false,
 }: TopicEditDialogProps) {
   const [formData, setFormData] = useState<Partial<LessonTopic>>({
     title: topic?.title || '',
@@ -207,6 +210,89 @@ export function TopicEditDialog({
     return activeContentType ? typeLabels[activeContentType] : t('lms.topics.add_topic', 'Add Content Block');
   };
 
+  const fields = (
+    <div className="space-y-4">
+      {/* Title */}
+      <div className="space-y-2">
+        <Label htmlFor="topic-title">{t('lms.topics.title', 'Title')} *</Label>
+        <Input
+          id="topic-title"
+          value={formData.title}
+          onChange={(e) => updateFormData('title', e.target.value)}
+          placeholder={t('lms.topics.title_placeholder', 'Enter a title for this content')}
+          aria-invalid={!!errors.title}
+          className={errors.title ? 'border-destructive' : ''}
+        />
+        {errors.title && <p className="text-sm text-destructive">{errors.title}</p>}
+      </div>
+
+      {/* Content-specific form */}
+      {renderContentForm()}
+
+      {/* Duration */}
+      <div className="space-y-2">
+        <Label htmlFor="topic-duration">
+          {t('lms.topics.duration', 'Duration')} ({t('lms.topics.minutes', 'minutes')})
+        </Label>
+        <Input
+          id="topic-duration"
+          type="number"
+          min="0"
+          value={formData.duration_minutes || ''}
+          onChange={(e) => updateFormData('duration_minutes', e.target.value ? parseInt(e.target.value) : null)}
+          placeholder={t('lms.topics.duration_placeholder', 'Optional: Estimated time to complete')}
+        />
+      </div>
+
+      {/* Required */}
+      <div className="flex items-center gap-2">
+        <Checkbox id="topic-required" checked={formData.is_required} onCheckedChange={(checked) => updateFormData('is_required', checked)} />
+        <Label htmlFor="topic-required" className="cursor-pointer">
+          {t('lms.topics.mark_required', 'Mark as required for course completion')}
+        </Label>
+      </div>
+    </div>
+  );
+
+  if (inline) {
+    const Back = isRtl ? ChevronRight : ChevronLeft;
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4" dir={direction}>
+        <div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="inline-flex min-h-[36px] items-center gap-1 text-[13.5px] font-semibold text-primary hover:underline"
+          >
+            <Back className="h-4 w-4" aria-hidden />
+            {t('lms.topics.backToList', 'Back to the content list')}
+          </button>
+          <h3 className="mt-1 text-lg font-extrabold [font-family:inherit]">{getDialogTitle()}</h3>
+        </div>
+        {fields}
+        <div className="sticky bottom-0 -mx-6 grid grid-cols-2 gap-2 border-t border-border bg-card px-6 py-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" aria-hidden />
+            {saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
+          >
+            {t('common.cancel', 'Cancel')}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
   return (
     <Dialog open onOpenChange={onCancel}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir={direction}>
@@ -214,56 +300,7 @@ export function TopicEditDialog({
           <DialogHeader>
             <DialogTitle>{getDialogTitle()}</DialogTitle>
           </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {/* Title */}
-            <div className="space-y-2">
-              <Label htmlFor="title">
-                {t('lms.topics.title', 'Title')} *
-              </Label>
-              <Input
-                id="title"
-                value={formData.title}
-                onChange={(e) => updateFormData('title', e.target.value)}
-                placeholder={t('lms.topics.title_placeholder', 'Enter a title for this content')}
-                className={errors.title ? 'border-destructive' : ''}
-              />
-              {errors.title && (
-                <p className="text-sm text-destructive">{errors.title}</p>
-              )}
-            </div>
-
-            {/* Content-specific form */}
-            {renderContentForm()}
-
-            {/* Duration */}
-            <div className="space-y-2">
-              <Label htmlFor="duration">
-                {t('lms.topics.duration', 'Duration')} ({t('lms.topics.minutes', 'minutes')})
-              </Label>
-              <Input
-                id="duration"
-                type="number"
-                min="0"
-                value={formData.duration_minutes || ''}
-                onChange={(e) => updateFormData('duration_minutes', e.target.value ? parseInt(e.target.value) : null)}
-                placeholder={t('lms.topics.duration_placeholder', 'Optional: Estimated time to complete')}
-              />
-            </div>
-
-            {/* Required checkbox */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="required"
-                checked={formData.is_required}
-                onCheckedChange={(checked) => updateFormData('is_required', checked)}
-              />
-              <Label htmlFor="required" className="cursor-pointer">
-                {t('lms.topics.mark_required', 'Mark as required for course completion')}
-              </Label>
-            </div>
-          </div>
-
+          <div className="py-4">{fields}</div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
               <X className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />

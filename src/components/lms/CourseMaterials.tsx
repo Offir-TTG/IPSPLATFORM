@@ -16,21 +16,36 @@ import {
   FileAudio,
   FileSpreadsheet,
   FileCode,
-  Archive
+  Archive,
+  ListChecks,
+  BookOpen,
+  PenLine,
+  Bookmark,
+  Paperclip,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { InlineConfirm, SidePanel, panelPrimary, panelSecondary } from '@/components/admin/courses/builder/SidePanel';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CourseMaterial, MaterialCategory } from '@/types/lms';
 import { uploadCourseMaterial, deleteCourseMaterial, formatFileSize, getFileExtension } from '@/lib/supabase/materialStorage';
 
+/** The kinds of material, each with its picture for the choice cards. */
+const CATEGORY_CARDS: { value: MaterialCategory; icon: typeof BookOpen; fallback: string }[] = [
+  { value: 'syllabus', icon: ListChecks, fallback: 'Syllabus' },
+  { value: 'reading', icon: BookOpen, fallback: 'Reading' },
+  { value: 'assignment', icon: PenLine, fallback: 'Assignment' },
+  { value: 'reference', icon: Bookmark, fallback: 'Reference' },
+  { value: 'other', icon: Paperclip, fallback: 'Other' },
+];
+
 interface CourseMaterialsProps {
+  /** Each time this number changes, the upload panel opens (the button lives on the step's title row). */
+  uploadSignal?: number;
   courseId: string;
   courseIsPublished: boolean;
   t: (key: string, fallback: string) => string;
@@ -39,7 +54,7 @@ interface CourseMaterialsProps {
   onStatusMessage: (message: { type: 'success' | 'error'; text: string }) => void;
 }
 
-export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, direction, onStatusMessage }: CourseMaterialsProps) {
+export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, direction, onStatusMessage, uploadSignal }: CourseMaterialsProps) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -74,9 +89,16 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
       }
     } catch (error) {
       console.error('Error fetching materials:', error);
-      onStatusMessage({ type: 'error', text: 'Failed to load materials' });
+      onStatusMessage({ type: 'error', text: t('lms.materials.load_failed', 'The materials could not be loaded. Try again.') });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const [dragOver, setDragOver] = useState(false);
+  const takeFile = (file: File | undefined) => {
+    if (file) {
+      setUploadForm((f) => ({ ...f, file, title: f.title || file.name.replace(/\.[^/.]+$/, '') }));
     }
   };
 
@@ -93,12 +115,12 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
 
   const handleUpload = async () => {
     if (!uploadForm.file) {
-      onStatusMessage({ type: 'error', text: 'Please select a file' });
+      onStatusMessage({ type: 'error', text: t('lms.materials.file_required', 'Choose a file to upload.') });
       return;
     }
 
     if (!uploadForm.title.trim()) {
-      onStatusMessage({ type: 'error', text: 'Please enter a title' });
+      onStatusMessage({ type: 'error', text: t('lms.materials.title_required', 'Write a title for the file.') });
       return;
     }
 
@@ -273,6 +295,21 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
     return { Icon: File, color: 'text-gray-600', bg: 'bg-gray-50' };
   };
 
+  const firstSignal = useRef(uploadSignal);
+  useEffect(() => {
+    if (!uploadSignal || uploadSignal === firstSignal.current) return;
+    firstSignal.current = uploadSignal;
+          setUploadForm({
+            file: null,
+            title: '',
+            description: '',
+            category: 'other',
+            is_published: courseIsPublished,
+          });
+          setShowUploadDialog(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadSignal]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -284,21 +321,19 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
   return (
     <div className="space-y-4">
       {/* Upload Button */}
-      <div className={`flex ${isRtl ? 'justify-start' : 'justify-end'}`}>
-        <Button onClick={() => {
-          setUploadForm({
-            file: null,
-            title: '',
-            description: '',
-            category: 'other',
-            is_published: courseIsPublished,
-          });
-          setShowUploadDialog(true);
-        }}>
-          <Upload className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-          {t('lms.materials.upload_button', 'Upload Material')}
-        </Button>
-      </div>
+
+      {showDeleteDialog && materialToDelete && (
+        <InlineConfirm
+          text={t('lms.materials.deleteNamed', 'Delete "{title}"? This cannot be undone.').replace('{title}', materialToDelete.title)}
+          confirmLabel={t('common.delete', 'Delete')}
+          cancelLabel={t('common.cancel', 'Cancel')}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => {
+            setShowDeleteDialog(false);
+            setMaterialToDelete(null);
+          }}
+        />
+      )}
 
       {/* Materials List */}
       {materials.length === 0 ? (
@@ -307,7 +342,7 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
             <div className="text-center text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p className="text-center">
-                {t('lms.materials.no_materials', 'No materials uploaded yet. Click "Upload Material" to add course materials for students.')}
+                {t('lms.materials.no_materials', 'No materials uploaded yet. Click "Upload Material" to add course materials for clients.')}
               </p>
             </div>
           </CardContent>
@@ -486,83 +521,147 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
         </div>
       )}
 
-      {/* Upload Dialog */}
-      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent dir={direction} className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {t('lms.materials.upload_dialog_title', 'Upload Course Material')}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.materials.upload_dialog_desc', 'Upload PDFs, documents, videos, or other files for your students')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* File Input */}
-            <div className="space-y-2">
-              <Label className={isRtl ? 'text-right block' : ''}>
-                {t('lms.materials.file_label', 'File')}
-              </Label>
-              <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  onChange={handleFileSelect}
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.jpg,.jpeg,.png,.gif,.mp4,.mp3"
-                  className="hidden"
-                  id="material-file-input"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1"
-                >
-                  <Upload className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {uploadForm.file ? uploadForm.file.name : t('lms.materials.choose_file', 'Choose File')}
-                </Button>
-                {uploadForm.file && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setUploadForm({ ...uploadForm, file: null });
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                      }
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              {uploadForm.file && (
-                <p className={`text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`}>
-                  {formatFileSize(uploadForm.file.size)}
-                </p>
-              )}
-            </div>
+      {/* Upload: a side panel */}
+      <SidePanel
+        open={showUploadDialog}
+        onClose={() => setShowUploadDialog(false)}
+        busy={uploading}
+        title={t('lms.materials.upload_dialog_title', 'Upload Course Material')}
+        description={t('lms.materials.upload_dialog_desc', 'Upload PDFs, documents, videos, or other files for your clients')}
+        footer={
+          <>
+            <button type="button" onClick={handleUpload} disabled={uploading || !uploadForm.file} className={panelPrimary}>
+              {uploading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+              {uploading ? t('lms.materials.uploading', 'Uploading...') : t('common.upload', 'Upload')}
+            </button>
+            <button type="button" onClick={() => setShowUploadDialog(false)} disabled={uploading} className={panelSecondary}>
+              {t('common.cancel', 'Cancel')}
+            </button>
+          </>
+        }
+      >
+          <div className="space-y-5" dir={direction}>
+            {/* The file: a drop zone, then the chosen file as a tile */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileSelect}
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.jpg,.jpeg,.png,.gif,.mp4,.mp3"
+              className="hidden"
+              id="material-file-input"
+            />
+            {uploadForm.file ? (
+              (() => {
+                const { Icon, color, bg } = getFileIcon(uploadForm.file.name, uploadForm.file.type || '');
+                return (
+                  <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-sm">
+                    <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${bg} dark:bg-white/10`} aria-hidden>
+                      <Icon className={`h-6 w-6 ${color}`} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold" dir="auto">
+                        {uploadForm.file.name}
+                      </div>
+                      <div className="text-[13px] text-muted-foreground">
+                        {getFileExtension(uploadForm.file.name).toUpperCase()} · {formatFileSize(uploadForm.file.size)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="min-h-9 rounded-lg px-2.5 text-sm font-semibold text-primary hover:bg-primary/10"
+                    >
+                      {t('lms.materials.replace_file', 'Replace')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadForm({ ...uploadForm, file: null });
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      aria-label={t('lms.materials.remove_file', 'Remove the file')}
+                      className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted"
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </div>
+                );
+              })()
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  takeFile(e.dataTransfer.files?.[0]);
+                }}
+                className={`flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
+                  dragOver ? 'border-primary bg-primary/10' : 'border-primary/30 bg-primary/[0.03] hover:border-primary/60 hover:bg-primary/[0.06]'
+                }`}
+              >
+                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary" aria-hidden>
+                  <Upload className="h-6 w-6" />
+                </span>
+                <span className="font-semibold">{t('lms.materials.drop_title', 'Choose a file or drag it here')}</span>
+                <span className="text-[13px] text-muted-foreground">{t('lms.materials.drop_hint', 'PDF, Word, Excel, PowerPoint, images, video, audio or ZIP')}</span>
+              </button>
+            )}
 
             {/* Title */}
-            <div className="space-y-2">
-              <Label className={isRtl ? 'text-right block' : ''}>
-                {t('lms.materials.title_label', 'Title')}
+            <div className="grid gap-1.5">
+              <Label htmlFor="material-title" className="font-semibold">
+                {t('lms.materials.title_label', 'Title')} <span className="text-red-600">*</span>
               </Label>
               <Input
+                id="material-title"
                 value={uploadForm.title}
                 onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
                 placeholder={t('lms.materials.title_placeholder', 'e.g., Course Syllabus')}
                 dir={direction}
+                className="h-11"
               />
             </div>
 
+            {/* Category: picture cards */}
+            <div className="grid gap-1.5">
+              <span className="text-sm font-semibold">{t('lms.materials.category_label', 'Category')}</span>
+              <div role="radiogroup" aria-label={t('lms.materials.category_label', 'Category')} className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {CATEGORY_CARDS.map(({ value, icon: Icon, fallback }) => {
+                  const on = uploadForm.category === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setUploadForm({ ...uploadForm, category: value })}
+                      className={`flex min-h-[78px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[13px] font-semibold transition-colors ${
+                        on ? 'border-2 border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/40 hover:bg-muted/50'
+                      }`}
+                    >
+                      <span className={`grid h-9 w-9 place-items-center rounded-lg ${on ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`} aria-hidden>
+                        <Icon className="h-[18px] w-[18px]" />
+                      </span>
+                      {t(`lms.materials.category_${value}`, fallback)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Description */}
-            <div className="space-y-2">
-              <Label className={isRtl ? 'text-right block' : ''}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="material-description" className="font-semibold">
                 {t('lms.materials.description_label', 'Description (Optional)')}
               </Label>
               <Textarea
+                id="material-description"
                 value={uploadForm.description}
                 onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
                 placeholder={t('lms.materials.description_placeholder', 'Brief description of this material...')}
@@ -571,76 +670,17 @@ export function CourseMaterials({ courseId, courseIsPublished, t, isRtl, directi
               />
             </div>
 
-            {/* Category */}
-            <div className="space-y-2">
-              <Label className={isRtl ? 'text-right block' : ''}>
-                {t('lms.materials.category_label', 'Category')}
-              </Label>
-              <Select value={uploadForm.category} onValueChange={(value: MaterialCategory) => setUploadForm({ ...uploadForm, category: value })}>
-                <SelectTrigger dir={direction}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="syllabus">{t('lms.materials.category_syllabus', 'Syllabus')}</SelectItem>
-                  <SelectItem value="reading">{t('lms.materials.category_reading', 'Reading')}</SelectItem>
-                  <SelectItem value="assignment">{t('lms.materials.category_assignment', 'Assignment')}</SelectItem>
-                  <SelectItem value="reference">{t('lms.materials.category_reference', 'Reference')}</SelectItem>
-                  <SelectItem value="other">{t('lms.materials.category_other', 'Other')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Publish Toggle */}
-            <div className={`flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
-              <Switch
-                checked={uploadForm.is_published}
-                onCheckedChange={(checked) => setUploadForm({ ...uploadForm, is_published: checked })}
-              />
-              <Label className={`cursor-pointer ${isRtl ? 'text-right' : 'text-left'}`}>
-                {t('lms.materials.publish_label', 'Publish immediately')}
-              </Label>
-            </div>
+            {/* Publish */}
+            <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
+              <span>
+                <span className="block font-semibold">{t('lms.materials.publish_label', 'Publish immediately')}</span>
+                <span className="block text-[13px] text-muted-foreground">{t('lms.materials.publish_hint', 'Off = only admins see it until you publish')}</span>
+              </span>
+              <Switch checked={uploadForm.is_published} onCheckedChange={(checked) => setUploadForm({ ...uploadForm, is_published: checked })} />
+            </label>
           </div>
+      </SidePanel>
 
-          <DialogFooter className={`gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowUploadDialog(false)} disabled={uploading}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleUpload} disabled={uploading || !uploadForm.file}>
-              {uploading ? (
-                <>
-                  <Loader2 className={`${isRtl ? 'ml-2' : 'mr-2'} h-4 w-4 animate-spin`} />
-                  {t('lms.materials.uploading', 'Uploading...')}
-                </>
-              ) : (
-                t('common.upload', 'Upload')
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent dir={direction}>
-          <DialogHeader>
-            <DialogTitle className={isRtl ? 'text-right' : ''}>
-              {t('lms.materials.delete_title', 'Delete Material')}
-            </DialogTitle>
-            <DialogDescription className={isRtl ? 'text-right' : ''}>
-              {t('lms.materials.delete_confirmation', 'Are you sure you want to delete this material? This action cannot be undone.')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className={`gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              {t('common.delete', 'Delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

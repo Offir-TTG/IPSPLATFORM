@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { noStoreFetch } from '@/lib/supabase/noStoreFetch';
 
 export type EventType = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'EXPORT' | 'IMPORT' | 'ACCESS' | 'MODIFY' | 'EXECUTE' | 'SHARE' | 'CONSENT';
 export type EventCategory = 'DATA' | 'AUTH' | 'ADMIN' | 'CONFIG' | 'SECURITY' | 'COMPLIANCE' | 'SYSTEM' | 'EDUCATION' | 'STUDENT_RECORD' | 'GRADE' | 'ATTENDANCE' | 'PARENTAL_ACCESS';
@@ -37,6 +38,7 @@ let supabaseClient: ReturnType<typeof createClient> | null = null;
 function getServiceClient() {
   if (!supabaseClient) {
     supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
+      global: { fetch: noStoreFetch },
       auth: {
         autoRefreshToken: false,
         persistSession: false

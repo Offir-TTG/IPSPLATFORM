@@ -41,6 +41,7 @@ export async function POST(
         payment_start_date,
         product:products!enrollments_product_id_fkey (
           id,
+          price,
           alternative_payment_plan_ids
         )
       `)
@@ -213,11 +214,20 @@ export async function POST(
       ? new Date(enrollment.payment_start_date)
       : new Date();
 
+    // A membership pays today's price (a scheduled change may have moved it
+    // since the signup link was made); the enrollment's total follows.
+    const currentPrice = Number((enrollment.product as any)?.price);
+    const totalAmount =
+      paymentPlan.plan_type === 'subscription' && currentPrice > 0 ? currentPrice : enrollment.total_amount;
+    if (totalAmount !== enrollment.total_amount) {
+      await supabase.from('enrollments').update({ total_amount: totalAmount }).eq('id', enrollment.id);
+    }
+
     const schedules = generatePaymentSchedules(
       enrollment.id,
       enrollment.tenant_id,
       paymentPlan,
-      enrollment.total_amount,
+      totalAmount,
       paymentStartDate,
       enrollment.currency
     );

@@ -1,4 +1,5 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { deleteEnrollmentsWithCharges } from '@/lib/payments/deleteEnrollments';
 import { detectPaymentPlan, generatePaymentSchedules } from './paymentEngine';
 import { getProduct } from './productService';
 import { Product, PaymentPlan, PaymentSchedule } from '@/types/payments';
@@ -141,6 +142,22 @@ export async function processEnrollment(
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+    } else if (paymentModel === 'per_session') {
+      // Pay as you go: nothing at enrollment; each held session is charged.
+      paymentPlan = {
+        id: null as any,
+        tenant_id,
+        plan_name: 'Per session',
+        plan_type: 'per_session',
+        session_amount: paymentConfig.session_amount ?? null,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as any;
     } else if (paymentModel === 'free') {
       paymentPlan = {
         id: null as any,
@@ -276,7 +293,7 @@ export async function processEnrollment(
 
   if (schedulesError || !insertedSchedules) {
     // Rollback enrollment if schedule creation fails
-    await supabase.from('enrollments').delete().eq('id', enrollment.id);
+    await deleteEnrollmentsWithCharges(supabase as any, [enrollment.id]);
     throw new Error(`Failed to create payment schedules: ${schedulesError?.message}`);
   }
 
@@ -496,6 +513,22 @@ export async function getEnrollmentPaymentDetails(
         created_at: enrollment.created_at,
         updated_at: enrollment.created_at,
       };
+    } else if (paymentModel === 'per_session') {
+      // Pay as you go: nothing at enrollment; each held session is charged.
+      paymentPlan = {
+        id: null as any,
+        tenant_id,
+        plan_name: 'Per session',
+        plan_type: 'per_session',
+        session_amount: paymentConfig.session_amount ?? null,
+        is_active: true,
+        auto_detect_enabled: false,
+        auto_detect_rules: [],
+        priority: 0,
+        is_default: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as any;
     } else if (paymentModel === 'free') {
       paymentPlan = {
         id: null as any, // Synthetic plan - no payment_plan_id in schedules
@@ -548,11 +581,21 @@ export async function getEnrollmentPaymentDetails(
       }
 
       // Generate schedules using correct function signature: (enrollmentId, tenantId, plan, totalAmount, startDate)
+      // A membership pays today's price (a scheduled change may have moved it
+      // since the signup link was made); the enrollment's total follows.
+      const currentPrice = Number((product as any).price);
+      const firstTotal =
+        paymentPlan?.plan_type === 'subscription' && currentPrice > 0 ? currentPrice : enrollment.total_amount;
+      if (firstTotal !== enrollment.total_amount) {
+        await supabase.from('enrollments').update({ total_amount: firstTotal }).eq('id', enrollment_id);
+        enrollment.total_amount = firstTotal;
+      }
+
       const generatedSchedules = generatePaymentSchedules(
         enrollment_id,
         tenant_id,
         paymentPlan,
-        enrollment.total_amount,
+        firstTotal,
         startDate,
         enrollment.currency || product.currency
       );

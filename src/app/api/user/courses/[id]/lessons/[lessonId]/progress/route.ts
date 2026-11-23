@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
 import { logAuditEvent } from '@/lib/audit/auditService';
+import { productOpensCourse } from '@/lib/products/courseAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +55,8 @@ export const POST = withAuth(
             id,
             type,
             course_id,
-            program_id
+            program_id,
+            contains_courses
           )
         `)
         .eq('user_id', user.id)
@@ -71,7 +73,8 @@ export const POST = withAuth(
       let activeEnrollment = null;
       for (const enr of allEnrollments) {
         const product = Array.isArray(enr.products) ? enr.products[0] : enr.products;
-        if (product && product.type === 'course' && product.course_id === courseId) {
+        // Any product type that opens this course (course, lecture, bundle, ...).
+        if (productOpensCourse(product, courseId)) {
           activeEnrollment = enr;
           break;
         }

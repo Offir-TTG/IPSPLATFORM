@@ -1,43 +1,67 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAdminLanguage } from '@/context/AppContext';
-import { cn } from '@/lib/utils';
+import { HeartHandshake } from 'lucide-react';
+import { joinedBar, joinedSegment, NewButton, PageTitle } from '@/components/admin/notifications/kit';
 
-/** Tab bar shown at the top of every child-coaching admin page. */
+/**
+ * The three parts of coaching, as one joined bar: packages, requests (with
+ * the number of new ones) and intake forms.
+ */
 export function CoachingTabs() {
   const { t } = useAdminLanguage();
   const pathname = usePathname() || '';
+  const [newRequests, setNewRequests] = useState<number | null>(null);
+
+  useEffect(() => {
+    void fetch('/api/admin/coaching/requests?status=new', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setNewRequests(d?.counts?.new ?? null))
+      .catch(() => undefined);
+  }, [pathname]);
+
   const tabs = [
-    { href: '/admin/coaching/children', label: t('admin.coaching.tabs.children', 'ילדים באימון') },
-    { href: '/admin/coaching/coaches', label: t('admin.coaching.tabs.coaches', 'מטפלות ושעות') },
-    { href: '/admin/coaching/intake', label: t('admin.coaching.tabs.intake', 'טופס אינטייק') },
+    { href: '/admin/coaching', label: t('admin.coaching.tabs.packages', 'חבילות'), on: pathname === '/admin/coaching' || pathname.startsWith('/admin/coaching/new') },
+    { href: '/admin/coaching/requests', label: t('admin.coaching.tabs.requestsShort', 'בקשות'), on: pathname.startsWith('/admin/coaching/requests'), count: newRequests },
+    { href: '/admin/coaching/intake', label: t('admin.coaching.tabs.intakeForms', 'שאלוני פתיחה'), on: pathname.startsWith('/admin/coaching/intake') },
   ];
-  const otherActive = tabs.some((x) => pathname.startsWith(x.href));
-  const all = [{ href: '/admin/coaching', label: t('admin.coaching.tabs.requests', 'בקשות אימון') }, ...tabs];
 
   return (
-    <nav aria-label={t('admin.coaching.tabs.label', 'אימון ילדים')} className="-mx-1 overflow-x-auto">
-      <ul className="flex min-w-max gap-1 border-b border-border px-1">
-        {all.map((x) => {
-          const active = x.href === '/admin/coaching' ? !otherActive && pathname.startsWith('/admin/coaching') : pathname.startsWith(x.href);
-          return (
-            <li key={x.href}>
-              <Link
-                href={x.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  '-mb-px inline-flex min-h-[44px] items-center border-b-2 px-4 text-base',
-                  active ? 'border-primary font-semibold text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {x.label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+    <nav aria-label={t('admin.coaching.tabs.label2', 'ליווי')} className="max-w-full overflow-x-auto pb-0.5">
+      <div className={joinedBar}>
+        {tabs.map((x) => (
+          <Link key={x.href} href={x.href} aria-current={x.on ? 'page' : undefined} className={`${joinedSegment(x.on)} min-h-11 px-4`}>
+            {x.label}
+            {x.count ? (
+              <span className={`rounded-full px-2 text-xs font-bold tabular-nums ${x.on ? 'bg-white/20' : 'bg-amber-400 text-amber-950'}`}>{x.count}</span>
+            ) : null}
+          </Link>
+        ))}
+      </div>
     </nav>
+  );
+}
+
+/**
+ * The same top on every coaching tab: the "ליווי" title, one line about the
+ * tab, the "open a package" button, and the tabs. Switching tabs keeps it.
+ */
+export function CoachingHeader({ description }: { description: string }) {
+  const { t } = useAdminLanguage();
+  return (
+    <>
+      <PageTitle
+        icon={HeartHandshake}
+        title={t('admin.coaching.packages.title', 'ליווי')}
+        description={description}
+        actions={
+          <NewButton href="/admin/coaching/new">{t('admin.coaching.packages.new', 'פתיחת חבילה')}</NewButton>
+        }
+      />
+      <CoachingTabs />
+    </>
   );
 }

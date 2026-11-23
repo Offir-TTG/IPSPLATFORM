@@ -216,6 +216,16 @@ export default function ProgramDetailPage() {
               {product.payment_plan.installments} {t('detail.pricing.monthlyPayments', 'monthly payments available')}
             </p>
           )}
+          {(product as any).upcoming_price && (
+            <p className="inline-block rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur-sm">
+              {t('enrollment.pricing.upcoming', 'From {date} the price will be {price}')
+                .replace(
+                  '{date}',
+                  new Date(`${(product as any).upcoming_price.effective_date}T12:00:00`).toLocaleDateString(direction === 'rtl' ? 'he-IL' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' }),
+                )
+                .replace('{price}', `${product.currency} ${Number((product as any).upcoming_price.amount).toFixed(2)}`)}
+            </p>
+          )}
         </div>
       );
     }
@@ -318,7 +328,7 @@ export default function ProgramDetailPage() {
               {product.student_count > 0 && (
                 <div className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
-                  <span>{product.student_count} {t('detail.stats.students', 'Students Enrolled')}</span>
+                  <span>{product.student_count} {t('detail.stats.students', 'Clients Enrolled')}</span>
                 </div>
               )}
             </div>

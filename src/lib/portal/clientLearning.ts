@@ -1,5 +1,6 @@
 import 'server-only';
 import { createAdminClient } from '@/lib/supabase/server';
+import { directCourseIds as productCourseIds } from '@/lib/products/courseAccess';
 
 /**
  * What a client is enrolled in and every published lesson behind it, read
@@ -20,30 +21,77 @@ const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ?
 export const lessonEnd = (l: { start_time: string; duration?: number | null }) =>
   new Date(new Date(l.start_time).getTime() + (Number(l.duration) || 60) * 60 * 1000);
 
+/** The course that stands for a program sold as a club: its first course, in order. */
+export const clubCourseOfProgram = (programCourses: { program_id: string; course_id: string; order?: number | null }[], programId: string): string | null =>
+  programCourses
+    .filter((pc) => pc.program_id === programId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.course_id ?? null;
+
 export async function loadClientLearning(userId: string) {
   const admin = createAdminClient();
 
   const { data: enrollmentRows } = await admin
     .from('enrollments')
-    .select('id, status, is_parent, product:products(id, type, title, payment_model, program_id, course_id)')
+    .select(
+      'id, status, is_parent, payment_plan_id, product:products(id, type, title, payment_model, program_id, course_id, contains_courses, default_payment_plan_id, alternative_payment_plan_ids)',
+    )
     .eq('user_id', userId)
     .in('status', ['active', 'completed']);
 
   // A "parent" enrollment only records the paying guardian; it is not something they learn.
-  const enrollments = (enrollmentRows ?? [])
-    .filter((e: any) => !e.is_parent)
-    .map((e: any) => ({ id: e.id as string, product: one<any>(e.product) }))
-    .filter((e) => e.product);
+  const learningRows = (enrollmentRows ?? []).filter((e: any) => !e.is_parent && one<any>(e.product));
+
+  // A club is anything billed as a subscription. The product's own payment
+  // setting says so only when it was set by hand; a product that uses plans
+  // from the plans list keeps "one-time" there, so the enrollment's plan (or
+  // the product's only plan, or its subscription charges) decides.
+  const planIdOf = (e: any): string | null => {
+    if (e.payment_plan_id) return e.payment_plan_id;
+    const p = one<any>(e.product);
+    const listed = [...new Set([...(p.alternative_payment_plan_ids ?? []), p.default_payment_plan_id].filter(Boolean))];
+    return listed.length === 1 ? (listed[0] as string) : null;
+  };
+  const planIds = [...new Set(learningRows.map(planIdOf).filter(Boolean))] as string[];
+  const rowIds = learningRows.map((e: any) => e.id as string);
+  const [{ data: planRows }, { data: subscriptionRows }] = await Promise.all([
+    planIds.length ? admin.from('payment_plans').select('id, plan_type').in('id', planIds) : Promise.resolve({ data: [] as any[] }),
+    rowIds.length
+      ? admin.from('payment_schedules').select('enrollment_id').in('enrollment_id', rowIds).eq('payment_type', 'subscription')
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const subscriptionPlans = new Set((planRows ?? []).filter((p: any) => p.plan_type === 'subscription').map((p: any) => p.id));
+  const billedMonthly = new Set((subscriptionRows ?? []).map((s: any) => s.enrollment_id));
+  const isSubscription = (e: any) =>
+    one<any>(e.product).payment_model === 'subscription' || subscriptionPlans.has(planIdOf(e)) || billedMonthly.has(e.id);
+
+  // One entry per thing to show: a bundle becomes one course entry per
+  // course it includes (same enrollment), so it shows and opens like courses.
+  const enrollments = learningRows.flatMap((e: any) => {
+    const p = one<any>(e.product);
+    const product = { ...p, payment_model: isSubscription(e) ? 'subscription' : p.payment_model };
+    if (p.type !== 'bundle') return [{ id: e.id as string, product }];
+    return productCourseIds(p).map((courseId) => ({ id: e.id as string, product: { ...product, type: 'course', course_id: courseId, from_bundle: true } }));
+  });
 
   const programIds = [...new Set(enrollments.map((e) => e.product.program_id).filter(Boolean))] as string[];
   const directCourseIds = enrollments.map((e) => e.product.course_id).filter(Boolean) as string[];
 
   const [{ data: programs }, { data: programCourses }] = programIds.length
     ? await Promise.all([
-        admin.from('programs').select('id, name').in('id', programIds),
+        admin.from('programs').select('id, name, description, image_url').in('id', programIds),
         admin.from('program_courses').select('program_id, course_id, order, is_required').in('program_id', programIds),
       ])
     : [{ data: [] as any[] }, { data: [] as any[] }];
+
+  // A program sold as a monthly membership is a club: its first course is the club's space.
+  for (const e of enrollments) {
+    const p = e.product;
+    if (p.type !== 'program' || p.payment_model !== 'subscription' || !p.program_id) continue;
+    const clubCourse = clubCourseOfProgram(programCourses ?? [], p.program_id);
+    // The club keeps its own name (the program's), not the name of the course inside it.
+    const clubName = (programs ?? []).find((x: any) => x.id === p.program_id)?.name ?? p.title;
+    if (clubCourse) e.product = { ...p, type: 'course', course_id: clubCourse, club_name: clubName };
+  }
 
   const courseIds = [...new Set([...directCourseIds, ...(programCourses ?? []).map((pc: any) => pc.course_id as string)])];
 

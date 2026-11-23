@@ -82,6 +82,7 @@ export async function POST(request: NextRequest) {
       installment_frequency,
       subscription_frequency,
       subscription_amount,
+      session_amount,
       auto_detect_enabled,
       priority,
       is_active,
@@ -137,6 +138,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Price per period must be a positive amount' }, { status: 400 });
       }
       insertData.subscription_amount = price;
+    }
+
+    // Per session: the plan's price per session (required; a product's total is
+    // its sessions × this price). Sent only for this type.
+    if (plan_type === 'per_session') {
+      const sessionPrice = parsePlanPrice(session_amount);
+      if (sessionPrice === 'invalid' || sessionPrice == null) {
+        return NextResponse.json({ error: 'Price per session must be a positive amount' }, { status: 400 });
+      }
+      insertData.session_amount = sessionPrice;
     }
 
     // Create payment plan

@@ -1,5 +1,5 @@
 // Core entity types
-export type UserRole = 'admin' | 'instructor' | 'student';
+export type UserRole = 'admin' | 'instructor' | 'student' | 'client';
 
 export interface User {
   id: string;

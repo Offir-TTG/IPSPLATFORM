@@ -3,6 +3,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 import { renderEmailTemplate } from '@/lib/email/renderTemplate';
 import { sendEmail } from '@/lib/email/send';
+import { CLIENT_ROLES, NEW_CLIENT_ROLE, isClientRole } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
         .from('tenant_users')
         .select('*', { count: 'exact' })
         .eq('tenant_id', tenant.id);
-      if (roleFilter) query = query.eq('role', roleFilter);
+      if (roleFilter) query = isClientRole(roleFilter) ? query.in('role', [...CLIENT_ROLES]) : query.eq('role', roleFilter);
       if (withStatus && statusValue) query = query.eq('status', statusValue);
       const ascending = sortOrder === 'asc';
       return sortBy === 'role' ? query.order('role', { ascending }) : query.order('joined_at', { ascending });
@@ -300,7 +301,7 @@ export async function POST(request: NextRequest) {
       last_name,
       phone: phone || null,
       tenant_id: tenant.id,
-      role: role || 'student',
+      role: role || NEW_CLIENT_ROLE,
       status: 'active',
     });
 
@@ -319,7 +320,7 @@ export async function POST(request: NextRequest) {
     const { error: tenantUserError } = await supabase.from('tenant_users').insert({
       tenant_id: tenant.id,
       user_id: authData.user.id,
-      role: role || 'student',
+      role: role || NEW_CLIENT_ROLE,
       status: 'active',
       joined_at: new Date().toISOString(),
     });
@@ -382,7 +383,7 @@ export async function POST(request: NextRequest) {
             userName: first_name,
             userEmail: email,
             temporaryPassword: password,
-            role: role || 'student',
+            role: role || NEW_CLIENT_ROLE,
             organizationName: tenant.name,
             loginUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`,
             adminName,
@@ -416,7 +417,7 @@ export async function POST(request: NextRequest) {
       resource_type: 'users',
       resource_id: authData.user.id,
       action: 'Invited new user',
-      description: `Invited user: ${email} with role: ${role || 'student'}`,
+      description: `Invited user: ${email} with role: ${role || NEW_CLIENT_ROLE}`,
       risk_level: 'medium',
     });
 
@@ -428,7 +429,7 @@ export async function POST(request: NextRequest) {
         email,
         first_name,
         last_name,
-        role: role || 'student',
+        role: role || NEW_CLIENT_ROLE,
       },
     });
   } catch (error) {

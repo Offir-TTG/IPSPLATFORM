@@ -143,7 +143,7 @@ export interface TenantUser {
   id: string;
   tenant_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'instructor' | 'student' | 'support';
+  role: 'owner' | 'admin' | 'instructor' | 'student' | 'client' | 'support';
   status: 'active' | 'inactive' | 'invited' | 'suspended';
 
   // Dates
@@ -165,7 +165,7 @@ export interface TenantInvitation {
   id: string;
   tenant_id: string;
   email: string;
-  role: 'admin' | 'instructor' | 'student' | 'support';
+  role: 'admin' | 'instructor' | 'student' | 'client' | 'support';
   token: string;
   status: 'pending' | 'accepted' | 'expired' | 'revoked';
 

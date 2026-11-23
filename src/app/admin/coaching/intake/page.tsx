@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { CoachingTabs } from '@/components/admin/coaching/CoachingTabs';
+import { CoachingHeader } from '@/components/admin/coaching/CoachingTabs';
 import {
   api,
   Btn,
@@ -225,10 +225,10 @@ export default function IntakeEditorPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        <CoachingTabs />
-        <PageHeader
-          title={t('admin.coaching.intake.title', 'טופס האינטייק')}
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        <CoachingHeader description={t('admin.coaching.intake.subtitle2', 'שאלוני פתיחה: הלקוח ממלא אותם בסוף ההרשמה, לפני המפגש הראשון.')} />
+        <SubHeader
+          title={t('admin.coaching.intake.title2', 'שאלוני פתיחה')}
           description={t('admin.coaching.intake.subtitle', 'ההורה ממלא אותו אחרי שנפתחת חבילה, לפני המפגש הראשון. שינוי כאן לא משנה שאלונים שכבר מולאו.')}
           action={
             !loading && !error ? (
@@ -476,5 +476,18 @@ function QuestionCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** The tab's own title row under the shared coaching header. */
+function SubHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 className="text-xl font-extrabold [font-family:inherit]">{title}</h2>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {action}
+    </div>
   );
 }

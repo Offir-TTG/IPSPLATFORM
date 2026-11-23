@@ -6,6 +6,8 @@ import { getStripeClient } from '@/lib/payments/getStripeClient';
 import { verifyDuePaid } from '@/lib/payments/dueSchedules';
 import { loadIntegration } from '@/lib/integrations/store';
 import { attachPendingChild } from '@/lib/family/coachingEnrollment';
+import { clubLandingFor } from '@/lib/payments/clubLanding';
+import { NEW_CLIENT_ROLE } from '@/lib/auth/roles';
 
 // Creates the account and talks to Stripe, contacts and email in one request;
 // the short default limit could cut it off halfway at busy times.
@@ -110,10 +112,13 @@ export async function POST(
         stripe_setup_intent_id,
         stripe_customer_id,
         is_parent,
+        payment_plan_id,
         product:products!enrollments_product_id_fkey (
           id,
           title,
           type,
+          course_id,
+          program_id,
           requires_signature,
           payment_model,
           crm_tag_slugs,
@@ -282,11 +287,24 @@ export async function POST(
       }
     }
 
+    // Pay as you go (a per-session plan): nothing is charged at enrollment,
+    // the card must be saved (verified above), and each session is charged
+    // when it is held.
+    // A plan of that type, or the product's own payment setting.
+    let perSession = product.payment_model === 'per_session';
+    if (!perSession && (enrollment as any).payment_plan_id) {
+      const { data: plan } = await supabase.from('payment_plans').select('plan_type').eq('id', (enrollment as any).payment_plan_id).maybeSingle();
+      perSession = plan?.plan_type === 'per_session';
+    }
+    if (perSession && paymentRequired && !usedSetupIntent) {
+      return NextResponse.json({ error: 'Save a card to finish: each session is charged to it after it is held.' }, { status: 400 });
+    }
+
     // Everything due today or earlier must be paid. This one rule covers
     // one-time payments, deposits and a plan's first installment, and asks
     // Stripe directly when a payment isn't marked paid yet. Saving a card is
     // only enough when nothing is due yet.
-    if (paymentRequired) {
+    if (paymentRequired && !perSession) {
       let stripeClient: Stripe | null = null;
       try {
         stripeClient = (await getStripeClient(enrollment.tenant_id)).stripe;
@@ -358,7 +376,7 @@ export async function POST(
           phone: profileData.phone,
           location: profileData.address, // Store full address in location field
           tenant_id: enrollment.tenant_id,
-          role: 'student',
+          role: NEW_CLIENT_ROLE,
           status: 'active', // Set to active immediately since enrollment is verified
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -382,7 +400,7 @@ export async function POST(
         .insert({
           tenant_id: enrollment.tenant_id,
           user_id: newAuthData.user.id,
-          role: 'student',
+          role: NEW_CLIENT_ROLE,
           status: 'active',
           joined_at: new Date().toISOString(),
         });
@@ -830,15 +848,22 @@ export async function POST(
       console.error('[Enrollment Complete] person-identity attach failed:', identityError);
     }
 
+    // A club membership lands on the club's own page in the portal.
+    const clubLanding =
+      !enrollment.is_parent && shouldRedirectToDashboard
+        ? await clubLandingFor(supabase, product as any, (enrollment as any).payment_plan_id).catch(() => null)
+        : null;
+
     return NextResponse.json({
       success: true,
       enrollment_id: enrollment.id,
       user_id: userId,
       status: 'active',
-      // Child coaching lands on the child's page in the portal (intake next).
+      // Child coaching lands on the child's page in the portal (intake next);
+      // a club on the club's page.
       redirect_url: childLink.ok && childLink.child_id
         ? `/children/${childLink.child_id}?enrollment=complete`
-        : shouldRedirectToDashboard ? '/dashboard' : null,
+        : clubLanding ?? (shouldRedirectToDashboard ? '/dashboard' : null),
       show_confirmation: showConfirmation,
       session: authData?.session || null, // Return session for auto-login (only for new users)
       message: isExistingUser

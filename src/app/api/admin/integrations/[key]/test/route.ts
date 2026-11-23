@@ -5,6 +5,7 @@ import { loadIntegration } from '@/lib/integrations/store';
 // import { DocuSignClient } from '@/lib/docusign/client';
 // import { ZoomClient } from '@/lib/zoom/client';
 import Stripe from 'stripe';
+import { smtpConfigFrom, smtpTransport } from '@/lib/email/send';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,10 @@ export async function POST(
 
       case 'resend':
         testResult = await testResendConnection(credentials);
+        break;
+
+      case 'smtp':
+        testResult = await testSmtpConnection(credentials);
         break;
 
       default:
@@ -395,6 +400,29 @@ async function testZoomConnection(credentials: Record<string, any>) {
       success: false,
       message: error instanceof Error ? error.message : 'Zoom connection failed'
     };
+  }
+}
+
+// Test SMTP: connect and log in to the mail server (no email is sent).
+async function testSmtpConnection(credentials: Record<string, any>) {
+  const config = smtpConfigFrom(credentials);
+  if (!config) return { success: false, message: 'Add the SMTP server (host), then save.' };
+  if (!config.from && !config.user) return { success: false, message: 'Add the sender email, then save.' };
+  try {
+    await smtpTransport(config).verify();
+    return {
+      success: true,
+      message: `Connected to ${config.host}:${config.port}. Emails will be sent from ${config.from || config.user}.`,
+    };
+  } catch (error: any) {
+    const code = Number(error?.responseCode) || 0;
+    if (code === 535 || /auth/i.test(String(error?.message))) {
+      return { success: false, message: 'The mail server refused the username or password. For Gmail, use an app password.' };
+    }
+    if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|ESOCKET/i.test(String(error?.code ?? error?.message))) {
+      return { success: false, message: `Could not reach ${config.host}:${config.port}. Check the server, port and security.` };
+    }
+    return { success: false, message: error?.message || 'SMTP connection failed' };
   }
 }
 

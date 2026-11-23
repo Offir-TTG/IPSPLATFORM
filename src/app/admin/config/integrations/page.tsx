@@ -23,7 +23,20 @@ import {
   Shield,
   Settings,
   Plug,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+
+/** How the cards are grouped. A group without `keys` takes any integration
+ *  not listed elsewhere, so a new one still shows. */
+const CARD_GROUPS: Array<{ id: string; labelKey: string; fallback: string; keys?: string[] }> = [
+  { id: 'email', labelKey: 'admin.integrations.group.email', fallback: 'Email', keys: ['resend', 'smtp'] },
+  { id: 'payments', labelKey: 'admin.integrations.group.payments', fallback: 'Payments', keys: ['stripe'] },
+  { id: 'signatures', labelKey: 'admin.integrations.group.signatures', fallback: 'Signatures', keys: ['docusign'] },
+  { id: 'video', labelKey: 'admin.integrations.group.video', fallback: 'Video meetings', keys: ['zoom', 'daily'] },
+  { id: 'other', labelKey: 'admin.integrations.group.other', fallback: 'Other' },
+];
+const GROUPED_KEYS = new Set(CARD_GROUPS.flatMap((g) => g.keys ?? []));
 
 interface Integration {
   id: string;
@@ -66,7 +79,20 @@ export default function IntegrationsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [showCredentials, setShowCredentials] = useState<Record<string, boolean>>({});
-  const [activeTab, setActiveTab] = useState('docusign');
+  // The open integration, or null for the cards. Kept in the address (?i=)
+  // so Back in the browser returns to the cards and a link opens one.
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setActiveTab(new URLSearchParams(window.location.search).get('i'));
+    read();
+    window.addEventListener('popstate', read);
+    return () => window.removeEventListener('popstate', read);
+  }, []);
+  const openIntegration = (key: string | null) => {
+    setActiveTab(key);
+    window.history.pushState(null, '', key ? `?i=${encodeURIComponent(key)}` : window.location.pathname);
+    window.scrollTo({ top: 0 });
+  };
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
   // Responsive breakpoints
@@ -363,6 +389,67 @@ export default function IntegrationsPage() {
           placeholder: 'whsec_…'
         }
       ]
+    },
+    {
+      key: 'smtp',
+      name: 'SMTP',
+      description: t(
+        'admin.integrations.smtp.description',
+        'Sends email through your own mail server when Resend isn\'t set up or isn\'t working'
+      ),
+      icon: <Mail className="h-5 w-5" />,
+      fields: [
+        {
+          key: 'host',
+          label: t('admin.integrations.smtp.host', 'Mail server'),
+          type: 'text',
+          placeholder: 'smtp.gmail.com',
+          required: true
+        },
+        {
+          key: 'port',
+          label: t('admin.integrations.smtp.port', 'Port'),
+          type: 'text',
+          placeholder: '587',
+          required: true
+        },
+        {
+          key: 'security',
+          label: t('admin.integrations.smtp.security', 'Security'),
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'tls', label: t('admin.integrations.smtp.securityTls', 'STARTTLS (usually port 587)') },
+            { value: 'ssl', label: t('admin.integrations.smtp.securitySsl', 'SSL/TLS (usually port 465)') },
+            { value: 'none', label: t('admin.integrations.smtp.securityNone', 'None (not recommended)') }
+          ]
+        },
+        {
+          key: 'username',
+          label: t('admin.integrations.smtp.username', 'Username'),
+          type: 'text',
+          placeholder: 'you@yourdomain.com'
+        },
+        {
+          key: 'password',
+          label: t('admin.integrations.smtp.password', 'Password'),
+          type: 'password',
+          placeholder: t('admin.integrations.smtp.passwordPlaceholder', 'For Gmail, an app password')
+        },
+        {
+          key: 'from_email',
+          label: t('admin.integrations.smtp.fromEmail', 'Sender email'),
+          type: 'text',
+          placeholder: 'noreply@yourdomain.com',
+          required: true
+        },
+        {
+          key: 'from_name',
+          label: t('admin.integrations.smtp.fromName', 'Sender name'),
+          type: 'text',
+          placeholder: t('admin.integrations.resend.fromNamePlaceholder', 'Your organization')
+        }
+      ]
     }
   ];
 
@@ -560,7 +647,7 @@ export default function IntegrationsPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="max-w-6xl p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -607,47 +694,84 @@ export default function IntegrationsPage() {
           </p>
         </div>
 
-        {/* Integration Tabs */}
+        {/* Integrations as cards, like the Settings page. A card opens that
+            integration's settings in place of the cards. */}
+        {!activeTab && (
+          <div className="space-y-8">
+            {CARD_GROUPS.map((group) => {
+              const items = integrationConfigs.filter((c) =>
+                group.keys ? group.keys.includes(c.key) : !GROUPED_KEYS.has(c.key),
+              );
+              if (items.length === 0) return null;
+              return (
+                <section key={group.id}>
+                  <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                    {t(group.labelKey, group.fallback)}
+                  </h2>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {items.map((config) => {
+                      const integration = getIntegrationData(config.key);
+                      const filledIn = config.fields
+                        .filter((field) => field.required)
+                        .every((field) => integration?.credentials?.[field.key]);
+                      const state = integration?.is_enabled && filledIn ? 'on' : filledIn ? 'off' : 'missing';
+                      const Arrow = isRtl ? ChevronLeft : ChevronRight;
+                      return (
+                        <button
+                          key={config.key}
+                          type="button"
+                          onClick={() => openIntegration(config.key)}
+                          className="group flex items-start gap-4 rounded-2xl border border-border bg-card p-4 text-start transition-colors hover:border-primary/50 hover:shadow-sm"
+                        >
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                            {config.icon}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <h3 className="text-base font-semibold">{config.name}</h3>
+                            <span className="mt-0.5 block text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                              {config.description}
+                            </span>
+                            <span className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium">
+                              <span
+                                aria-hidden
+                                className={`h-2 w-2 rounded-full ${
+                                  state === 'on' ? 'bg-green-600' : state === 'off' ? 'bg-gray-400' : 'bg-orange-500'
+                                }`}
+                              />
+                              {state === 'on'
+                                ? t('admin.integrations.status.connected', 'Connected')
+                                : state === 'off'
+                                  ? t('admin.integrations.status.off', 'Off')
+                                  : t('admin.integrations.status.notSetUp', 'Not set up')}
+                            </span>
+                          </span>
+                          <Arrow className="h-4 w-4 shrink-0 self-center text-muted-foreground group-hover:text-foreground" aria-hidden />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
+
+        {activeTab && (
         <div style={{
           backgroundColor: 'hsl(var(--card))',
           borderRadius: 'calc(var(--radius) * 1.5)',
           border: '1px solid hsl(var(--border))',
           overflow: 'hidden'
         }}>
-          {/* Tab Headers */}
-          <div style={{
-            display: 'flex',
-            borderBottom: '1px solid hsl(var(--border))',
-            backgroundColor: 'hsl(var(--muted))',
-            overflowX: 'auto',
-            WebkitOverflowScrolling: 'touch'
-          }}>
-            {integrationConfigs.map(config => (
-              <button
-                key={config.key}
-                onClick={() => setActiveTab(config.key)}
-                style={{
-                  padding: isMobile ? '1rem 1.25rem' : '0.75rem 1.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  border: 'none',
-                  backgroundColor: activeTab === config.key ? 'hsl(var(--card))' : 'transparent',
-                  borderBottom: activeTab === config.key ? '2px solid hsl(var(--primary))' : 'none',
-                  marginBottom: activeTab === config.key ? '-1px' : '0',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  fontSize: isMobile ? '0.875rem' : 'var(--font-size-sm)',
-                  fontWeight: activeTab === config.key ? '600' : '400',
-                  color: activeTab === config.key ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                  whiteSpace: 'nowrap',
-                  minHeight: isMobile ? '48px' : 'auto'
-                }}
-              >
-                {config.icon}
-                <span>{config.name}</span>
-              </button>
-            ))}
+          <div className="border-b border-border px-4 py-2">
+            <button
+              type="button"
+              onClick={() => openIntegration(null)}
+              className="inline-flex min-h-9 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              {isRtl ? <ChevronRight className="h-4 w-4" aria-hidden /> : <ChevronLeft className="h-4 w-4" aria-hidden />}
+              {t('admin.integrations.allIntegrations', 'All integrations')}
+            </button>
           </div>
 
           {/* Tab Content */}
@@ -1216,6 +1340,7 @@ export default function IntegrationsPage() {
             );
           })}
         </div>
+        )}
       </div>
     </AdminLayout>
   );

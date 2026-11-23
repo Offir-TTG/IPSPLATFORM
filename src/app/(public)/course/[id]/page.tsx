@@ -239,7 +239,7 @@ export default function CourseDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                <span>{product.student_count} {t('detail.stats.students', 'Students Enrolled')}</span>
+                <span>{product.student_count} {t('detail.stats.students', 'Clients Enrolled')}</span>
               </div>
             </div>
           </div>

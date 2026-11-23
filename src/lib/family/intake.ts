@@ -41,9 +41,21 @@ export function cleanQuestions(raw: unknown): IntakeQuestion[] {
   return out;
 }
 
-/** The form for a pack: the product's own active form, else the school's general one. */
-async function formFor(tenantId: string, productId: string | null) {
+/**
+ * The form for a pack: the one chosen when the package was opened (or none),
+ * else the product's own active form, else the school's general one.
+ */
+async function formFor(tenantId: string, productId: string | null, enrollmentId?: string) {
   const supabase = createAdminClient();
+  if (enrollmentId) {
+    const { data: e } = await supabase.from('enrollments').select('payment_metadata').eq('id', enrollmentId).maybeSingle();
+    const chosen = (e?.payment_metadata as any)?.intake_form_id;
+    if (chosen === 'none') return null;
+    if (typeof chosen === 'string' && chosen) {
+      const { data } = await supabase.from('intake_forms').select('id, title, questions').eq('id', chosen).eq('tenant_id', tenantId).eq('is_active', true).maybeSingle();
+      if (data) return data;
+    }
+  }
   if (productId) {
     const { data } = await supabase
       .from('intake_forms')
@@ -70,7 +82,7 @@ async function ownPack(userId: string, enrollmentId: string) {
     .select('id, user_id, tenant_id, child_id, product_id, status')
     .eq('id', enrollmentId)
     .maybeSingle();
-  return data && data.user_id === userId && data.child_id ? data : null;
+  return data && data.user_id === userId ? data : null;
 }
 
 /** The first session has taken place (started) — answers are final from then. */
@@ -89,7 +101,7 @@ export async function intakeStatusFor(pack: { id: string; tenant_id: string; pro
   const supabase = createAdminClient();
   const { data: response } = await supabase.from('intake_responses').select('id').eq('enrollment_id', pack.id).maybeSingle();
   if (response) return (await firstSessionHappened(pack.id)) ? 'locked' : 'submitted';
-  const form = await formFor(pack.tenant_id, pack.product_id);
+  const form = await formFor(pack.tenant_id, pack.product_id, pack.id);
   return form && cleanQuestions(form.questions).length ? 'missing' : 'not_needed';
 }
 
@@ -129,7 +141,7 @@ export async function getIntake(userId: string, enrollmentId: string): Promise<I
       submitted_at: response.submitted_at,
     };
   }
-  const form = await formFor(pack.tenant_id, pack.product_id);
+  const form = await formFor(pack.tenant_id, pack.product_id, pack.id);
   const questions = cleanQuestions(form?.questions);
   if (!form || !questions.length) {
     return { ok: true, status: 'not_needed', can_edit: false, title: null, questions: [], answers: {}, submitted_at: null };
@@ -206,7 +218,7 @@ export async function submitIntake(
   const supabase = createAdminClient();
   const now = new Date().toISOString();
   if (current.status === 'missing') {
-    const form = await formFor(pack.tenant_id, pack.product_id);
+    const form = await formFor(pack.tenant_id, pack.product_id, pack.id);
     const { error } = await supabase.from('intake_responses').insert({
       tenant_id: pack.tenant_id,
       enrollment_id: pack.id,

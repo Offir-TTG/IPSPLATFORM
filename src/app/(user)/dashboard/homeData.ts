@@ -2,6 +2,7 @@ import 'server-only';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
 import { lessonEnd, loadClientLearning } from '@/lib/portal/clientLearning';
 import { money } from '@/lib/portal/membership';
+import { loadClubOffers } from '@/lib/portal/clubOffers';
 
 /**
  * Everything the client home needs, loaded on the server in one pass.
@@ -29,7 +30,7 @@ export type HomeSession = {
 
 export type HomeSpace = {
   key: string;
-  kind: 'program' | 'club';
+  kind: 'program' | 'club' | 'coaching';
   title: string;
   kicker: string;
   color: string;
@@ -69,6 +70,8 @@ export type HomeData = {
   focus: HomeFocus;
   chips: HomeChip[];
   updatesCount: number;
+  /** Lessons done across all the client's courses, in percent (null with no lessons). */
+  overall: number | null;
   notice: HomeNotice | null;
   spaces: HomeSpace[];
   items: HomeItem[];
@@ -187,9 +190,10 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
     if (p.payment_model === 'subscription') {
       const meeting = nextMeeting(p.course_id);
       spaces.push({
-        key: e.id,
+        // A bundle gives several entries for one enrollment: the course keeps keys unique.
+        key: `${e.id}:${p.course_id}`,
         kind: 'club',
-        title: course.title,
+        title: p.club_name ?? course.title,
         kicker: 'מועדון',
         color: colorOf(`course:${p.course_id}`),
         href: `/clubs/${p.course_id}`,
@@ -205,9 +209,10 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
       const meeting = nextMeeting(p.course_id);
       const rec = (lessonsByCourse.get(p.course_id) ?? []).find((l) => l.recording_url);
       items.push({
-        key: e.id,
+        key: `${e.id}:${p.course_id}`,
         kind: 'lecture',
-        title: course.title,
+        // The name the client enrolled under (a bundle's courses keep their own names).
+        title: p.from_bundle ? course.title : p.title || course.title,
         sub: meeting ? `הרצאה חיה · ${whenLabel(meeting.start_time)}` : rec ? 'הרצאה מוקלטת' : 'הרצאה',
         short: meeting ? `הרצאה חיה · ${whenLabel(meeting.start_time)}` : rec ? 'ההקלטה מוכנה' : 'הרצאה',
         href: `/courses/${p.course_id}`,
@@ -218,9 +223,9 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
       });
     } else {
       items.push({
-        key: e.id,
+        key: `${e.id}:${p.course_id}`,
         kind: 'course',
-        title: course.title,
+        title: p.from_bundle ? course.title : p.title || course.title,
         sub: prog.next ? `קורס · הבא: ${nextLabel(prog.next)}` : prog.total ? 'קורס · הושלם' : 'קורס',
         short: prog.next ? `${prog.pct}% · הבא: שיעור ${prog.next.n}` : prog.total ? 'הושלם' : 'קורס',
         href: `/courses/${p.course_id}`,
@@ -230,6 +235,21 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
         color,
       });
     }
+  }
+
+  // Clubs the client hasn't joined: opening one starts the enrollment.
+  for (const o of await loadClubOffers(userId, courseIds)) {
+    spaces.push({
+      key: `offer:${o.productId}`,
+      kind: 'club',
+      title: o.title,
+      kicker: 'מועדון',
+      color: o.color,
+      href: `/clubs/${o.courseId}`,
+      tag: o.enrollmentUrl ? 'נשאר להשלים' : 'הצטרפות',
+      line: o.enrollmentUrl ? 'נשאר להשלים את ההרשמה' : [o.priceLine, 'להצטרפות'].filter(Boolean).join(' · '),
+      progress: null,
+    });
   }
 
   // Upcoming live sessions across everything the client can enter.
@@ -271,7 +291,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
       start: soon.start,
       end: soon.end,
       joinUrl: soon.joinUrl,
-      courseHref: `/courses/${soon.courseId}`,
+      courseHref: `/courses/${soon.courseId}?lesson=${soon.lessonId}`,
       calendarUrl: googleCalendarUrl(soon.title, soon.start, soon.end, soon.courseTitle),
     };
   } else {
@@ -286,7 +306,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
         eyebrow: `הבא בתור · ${title}`,
         title: inProgress.s.next.lesson.title,
         meta: [`שיעור ${inProgress.s.next.n} מתוך ${inProgress.s.total}`],
-        href: `/courses/${inProgress.id}`,
+        href: `/courses/${inProgress.id}?lesson=${inProgress.s.next.lesson.id}`,
         progress: inProgress.s.pct,
       };
     }
@@ -306,7 +326,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
   const chips: HomeChip[] = [];
   for (const courseId of courseIds) {
     const rec = recentRecording(courseId);
-    if (rec) chips.push({ key: `rec-${rec.id}`, label: `הקלטה מוכנה: ׳${rec.title}׳`, href: `/courses/${courseId}`, icon: 'video' });
+    if (rec) chips.push({ key: `rec-${rec.id}`, label: `הקלטה מוכנה: ׳${rec.title}׳`, href: `/courses/${courseId}?lesson=${rec.id}`, icon: 'video' });
   }
   const nextDue = (schedules ?? []).find((s: any) => new Date(s.scheduled_date).getTime() - now.getTime() < 30 * DAY);
   if (nextDue) {
@@ -323,6 +343,10 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
   }
 
   const todayKey = dayKey(now);
+  const totals = courseIds.reduce((a, id) => {
+    const st = progressOf(id);
+    return { done: a.done + st.done, total: a.total + st.total };
+  }, { done: 0, total: 0 });
   return {
     firstName: (userRow as any)?.first_name || '',
     orgName: ([] as any[]).concat((userRow as any)?.tenant ?? [])[0]?.name || '',
@@ -331,6 +355,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
     focus,
     chips: chips.slice(0, 4),
     updatesCount: chips.length + (announcement ? 1 : 0),
+    overall: totals.total ? Math.round((totals.done / totals.total) * 100) : null,
     notice: announcement ? { id: announcement.id, title: announcement.title, message: announcement.message, href: announcement.action_url || null } : null,
     spaces,
     items,

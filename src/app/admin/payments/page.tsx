@@ -18,7 +18,6 @@ import {
   DollarSign,
   FileText,
   Package,
-  Receipt,
   TrendingUp,
   UserCheck,
   Wallet,
@@ -44,8 +43,7 @@ const SECTIONS = [
   { href: '/admin/enrollments', icon: UserCheck, tone: 'bg-purple-500/10 text-purple-600 dark:text-purple-400', titleKey: 'admin.payments.cards.enrollments.title', title: 'Enrollments', descKey: 'admin.payments.cards.enrollments.description', desc: 'Manage user enrollments and payments' },
   { href: '/admin/payments/pdf-template', icon: FileText, tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', titleKey: 'admin.payments.cards.pdfTemplate.title', title: 'PDF Template', descKey: 'admin.payments.cards.pdfTemplate.description', desc: 'Configure PDF branding for payment receipts' },
   { href: '/admin/payments/plans', icon: CreditCard, tone: 'bg-primary/10 text-primary', titleKey: 'admin.payments.cards.paymentPlans.title', title: 'Payment Plans', descKey: 'admin.payments.cards.paymentPlans.description', desc: 'Configure and manage payment plans' },
-  { href: '/admin/payments/schedules', icon: Calendar, tone: 'bg-blue-500/10 text-blue-600 dark:text-blue-400', titleKey: 'admin.payments.cards.schedules.title', title: 'Schedules', descKey: 'admin.payments.cards.schedules.description', desc: 'View and manage payment schedules' },
-  { href: '/admin/payments/transactions', icon: Receipt, tone: 'bg-green-500/10 text-green-600 dark:text-green-400', titleKey: 'admin.payments.cards.transactions.title', title: 'Transactions', descKey: 'admin.payments.cards.transactions.description', desc: 'View transaction history and refunds' },
+  { href: '/admin/payments/schedules', icon: Wallet, tone: 'bg-green-500/10 text-green-600 dark:text-green-400', titleKey: 'admin.payments.combined.title', title: 'Payments', descKey: 'admin.payments.combined.cardDesc', desc: 'What is planned, what was paid, and refunds' },
   { href: '/admin/payments/disputes', icon: AlertTriangle, tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400', titleKey: 'admin.payments.cards.disputes.title', title: 'Disputes', descKey: 'admin.payments.cards.disputes.description', desc: 'Handle payment disputes and chargebacks' },
   { href: '/admin/payments/reports', icon: FileText, tone: 'bg-slate-500/10 text-slate-600 dark:text-slate-300', titleKey: 'admin.payments.cards.reports.title', title: 'Reports', descKey: 'admin.payments.cards.reports.description', desc: 'View payment reports and analytics' },
 ];
@@ -116,7 +114,7 @@ export default function PaymentsPage() {
             value={stats ? usd(stats.pendingAmount) : '—'}
             subtitle={
               stats
-                ? t('admin.payments.fromPayments', `From ${stats.pendingPayments} payments`).replace('{count}', stats.pendingPayments.toString())
+                ? t('admin.payments.fromPayments', 'From {count} payments').replace('{count}', stats.pendingPayments.toString())
                 : undefined
             }
           />

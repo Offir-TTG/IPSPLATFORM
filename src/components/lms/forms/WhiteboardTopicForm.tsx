@@ -135,10 +135,10 @@ export function WhiteboardTopicForm({ content, onChange, error, t }: WhiteboardT
       <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
         <div className="space-y-0.5">
           <Label htmlFor="allow-collaboration">
-            {t('lms.topics.allow_collaboration', 'Allow Student Collaboration')}
+            {t('lms.topics.allow_collaboration', 'Allow Client Collaboration')}
           </Label>
           <p className="text-xs text-muted-foreground">
-            {t('lms.topics.allow_collaboration_desc', 'Let students draw together in real-time')}
+            {t('lms.topics.allow_collaboration_desc', 'Let clients draw together in real-time')}
           </p>
         </div>
         <Switch
@@ -166,7 +166,7 @@ export function WhiteboardTopicForm({ content, onChange, error, t }: WhiteboardT
         )}
 
         <p className="text-xs text-muted-foreground">
-          {t('lms.topics.whiteboard_description', 'Create an interactive whiteboard for students')}
+          {t('lms.topics.whiteboard_description', 'Create an interactive whiteboard for clients')}
         </p>
       </div>
 

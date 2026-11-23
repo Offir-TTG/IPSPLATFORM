@@ -180,6 +180,16 @@
     overflow-x: clip;
   }
 
+  /* Scrollbars follow the theme: in dark mode the browser draws its
+     scrollbars, date pickers and other built-in controls dark, and every
+     scrollbar uses a soft thumb on a clear track in both themes. */
+  .dark {
+    color-scheme: dark;
+  }
+  * {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+  }
+
   /* RTL scrollbar positioning */
   [dir="rtl"] * {
     /* Move scrollbar to left side in RTL */
@@ -288,14 +298,15 @@
     }
   }
 
-  /* Main content margin based on direction */
+  /* Main content margin based on direction: room for the side menu on wide
+     screens only (AdminLayout sets the width, full or collapsed). */
   @media (min-width: 1024px) {
     [dir="ltr"] .admin-main {
-      margin-left: 16rem; /* w-64 = 16rem */
+      margin-left: var(--admin-sidebar-width, 16rem);
     }
 
     [dir="rtl"] .admin-main {
-      margin-right: 16rem;
+      margin-right: var(--admin-sidebar-width, 16rem);
     }
   }
 }

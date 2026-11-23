@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
@@ -39,75 +39,58 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Verify course exists
-    const { data: course, error: courseError } = await supabase
-      .from('courses')
-      .select('id')
-      .eq('id', params.id)
-      .single();
+    // Reads with the server key (identity and role checked above): the users
+    // table refuses the signed-in read from API routes, which dropped every
+    // client's name and left the list empty.
+    const admin = createAdminClient();
 
-    if (courseError || !course) {
+    // Verify course exists (in this school)
+    const { data: course, error: courseError } = await admin
+      .from('courses')
+      .select('id, program_id, tenant_id')
+      .eq('id', params.id)
+      .maybeSingle();
+
+    if (courseError || !course || course.tenant_id !== userData.tenant_id) {
       return NextResponse.json({ error: 'Course not found' }, { status: 404 });
     }
 
-    // Get products that reference this course directly (standalone course)
-    const { data: courseProducts, error: courseProductsError } = await supabase
-      .from('products')
-      .select('id')
-      .eq('course_id', params.id)
-      .eq('tenant_id', userData.tenant_id);
-
-    if (courseProductsError) {
-      console.error('Error fetching course products:', courseProductsError);
-      return NextResponse.json({ error: 'Failed to fetch course products' }, { status: 500 });
-    }
-
-    // Get programs that contain this course
-    const { data: programs, error: programsError } = await supabase
+    // The programs this course is in: its program list entries, and its own program.
+    const { data: programs, error: programsError } = await admin
       .from('program_courses')
       .select('program_id')
       .eq('course_id', params.id);
+    if (programsError) console.error('Error fetching programs:', programsError);
+    const programIds = [...new Set([...(programs ?? []).map((p: any) => p.program_id), course.program_id].filter(Boolean))] as string[];
 
-    if (programsError) {
-      console.error('Error fetching programs:', programsError);
+    // Products that open this course: the course itself, a bundle with it, or one of those programs.
+    const { data: products, error: productsError } = await admin
+      .from('products')
+      .select('id, course_id, program_id, contains_courses')
+      .eq('tenant_id', userData.tenant_id);
+    if (productsError) {
+      console.error('Error fetching course products:', productsError);
+      return NextResponse.json({ error: 'Failed to fetch course products' }, { status: 500 });
+    }
+    const productIds = (products ?? [])
+      .filter(
+        (p: any) =>
+          p.course_id === params.id ||
+          (Array.isArray(p.contains_courses) && p.contains_courses.includes(params.id)) ||
+          (p.program_id && programIds.includes(p.program_id)),
+      )
+      .map((p: any) => p.id);
+
+    if (productIds.length === 0) {
+      return NextResponse.json({ success: true, data: [] });
     }
 
-    const programIds = programs?.map(p => p.program_id) || [];
-
-    // Get products for those programs
-    let programProducts: any[] = [];
-    if (programIds.length > 0) {
-      const { data, error: programProductsError } = await supabase
-        .from('products')
-        .select('id')
-        .in('program_id', programIds)
-        .eq('tenant_id', userData.tenant_id);
-
-      if (programProductsError) {
-        console.error('Error fetching program products:', programProductsError);
-      } else {
-        programProducts = data || [];
-      }
-    }
-
-    // Combine all product IDs
-    const allProducts = [...(courseProducts || []), ...programProducts];
-
-    // If no products reference this course, return empty list
-    if (allProducts.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: [],
-      });
-    }
-
-    const productIds = allProducts.map(p => p.id);
-
-    // Get all students enrolled in these products
-    const { data: enrollments, error: enrollmentsError } = await supabase
+    // Clients enrolled through those products (not the paying-parent records).
+    const { data: enrollments, error: enrollmentsError } = await admin
       .from('enrollments')
       .select(`
         user_id,
+        is_parent,
         users!enrollments_user_id_fkey(
           id,
           first_name,
@@ -117,7 +100,8 @@ export async function GET(
       `)
       .in('product_id', productIds)
       .eq('tenant_id', userData.tenant_id)
-      .eq('status', 'active');
+      .in('status', ['active', 'completed'])
+      .neq('is_parent', true);
 
     if (enrollmentsError) {
       console.error('Error fetching students:', enrollmentsError);

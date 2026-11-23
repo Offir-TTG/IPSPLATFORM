@@ -155,6 +155,28 @@ export class ZoomClient {
   }
 
   /**
+   * A recording file's short-lived playback link. Zoom answers the file's
+   * download address (asked with this account's token) by redirecting to a
+   * signed link for that one file; only that link ever leaves the server,
+   * never the token. Null when Zoom doesn't redirect.
+   */
+  async getRecordingFileLink(downloadUrl: string): Promise<string | null> {
+    const token = await this.getAccessToken();
+    // Zoom takes the token as a header or, for some recordings, only as ?access_token=.
+    const attempts: [string, RequestInit][] = [
+      [downloadUrl, { headers: { Authorization: `Bearer ${token}` }, redirect: 'manual' }],
+      [`${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`, { redirect: 'manual' }],
+    ];
+    for (const [url, init] of attempts) {
+      const res = await fetch(url, init);
+      const location = res.headers.get('location');
+      if (location && location.startsWith('https://')) return location;
+      console.warn('[Zoom] recording file link refused:', res.status, (await res.text().catch(() => '')).slice(0, 160));
+    }
+    return null;
+  }
+
+  /**
    * Test the connection to Zoom API
    */
   async testConnection(): Promise<{ success: boolean; message: string; userInfo?: any }> {

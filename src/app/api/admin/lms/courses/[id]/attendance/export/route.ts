@@ -39,7 +39,7 @@ export async function GET(
     }
 
     // Only instructors and admins can export attendance
-    if (!['instructor', 'admin'].includes(userData.role)) {
+    if (!['instructor', 'admin', 'super_admin'].includes(userData.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { CATEGORY_HE, CATEGORY_ICON, FallbackIcon, PORTAL_TONE, PRIORITY_HE } from '@/components/admin/notifications/notificationStyle';
 import type { NotificationCategory, NotificationPriority } from '@/types/notifications';
+import { portalBar, portalSeg } from './joined';
 
 export type AlertItem = {
   id: string;
@@ -142,19 +143,15 @@ export function AlertsList({ initial, serverNow }: { initial: AlertItem[]; serve
         )}
       </div>
 
-      <div className="mt-5 flex gap-2 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 pb-1" role="tablist" aria-label="סינון">
-        {TABS.map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={tab === k}
-            onClick={() => pick(k)}
-            className={`shrink-0 rounded-full px-4 py-1.5 text-sm ${tab === k ? 'bg-[#5b3a8e] text-white font-semibold' : 'border border-[#e9e3f1] bg-white text-[#221a2e]'}`}
-          >
-            {label} · {counts[k]}
-          </button>
-        ))}
+      <div className="mt-5 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 pb-1">
+        <div className={portalBar} role="tablist" aria-label="סינון">
+          {TABS.map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => pick(k)} className={`${portalSeg(tab === k)} px-4`}>
+              {label}
+              <span className={`text-xs tabular-nums ${tab === k ? 'rounded-full bg-white/20 px-1.5' : 'text-[#73698a]'}`}>{counts[k]}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {groups.map((g) => (

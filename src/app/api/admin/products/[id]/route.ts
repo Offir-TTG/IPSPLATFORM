@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { deleteEnrollmentsWithCharges } from '@/lib/payments/deleteEnrollments';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { getBusinessCurrency } from '@/lib/tenant/currency';
 import { ProductFormData } from '@/types/product';
 
 export const dynamic = 'force-dynamic';
@@ -84,6 +86,7 @@ export async function PUT(
         course_id: body.course_id,
         contains_courses: body.contains_courses,
         session_count: body.session_count,
+        ...(body.session_duration_minutes !== undefined ? { session_duration_minutes: body.session_duration_minutes } : {}),
         requires_signature: body.requires_signature,
         signature_template_id: body.signature_template_id,
         completion_benefit: body.completion_benefit,
@@ -93,7 +96,8 @@ export async function PUT(
         crm_tag_slugs: Array.isArray(body.crm_tag_slugs) ? body.crm_tag_slugs : [],
         payment_model: body.payment_model,
         price: body.payment_model === 'free' ? null : body.price,
-        currency: body.currency || 'USD',
+        // Always the business currency (Organization settings).
+        currency: await getBusinessCurrency(userData.tenant_id),
         payment_plan: body.payment_plan,
         payment_start_date: body.payment_start_date || null,
         default_payment_plan_id: body.default_payment_plan_id || null,
@@ -165,12 +169,16 @@ export async function DELETE(
     }
 
     // Step 2: Delete cancelled/completed enrollments (since product_id is NOT NULL, we can't just clear it)
-    const { data: deletedEnrollments, error: deleteEnrollmentsError } = await supabase
+    // With their payment schedules and payments, so no charge is left behind.
+    const { data: oldEnrollments } = await supabase
       .from('enrollments')
-      .delete()
+      .select('id')
       .eq('product_id', params.id)
-      .in('status', ['cancelled', 'completed'])
-      .select();
+      .eq('tenant_id', userData.tenant_id)
+      .in('status', ['cancelled', 'completed']);
+    const removed = await deleteEnrollmentsWithCharges(createAdminClient(), (oldEnrollments ?? []).map((e: any) => e.id));
+    const deletedEnrollments = Array.from({ length: removed.deleted });
+    const deleteEnrollmentsError = removed.error ? { message: removed.error } : null;
 
     console.log('Delete enrollments result:', { deletedEnrollments, deleteEnrollmentsError });
 

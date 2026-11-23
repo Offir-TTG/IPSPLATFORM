@@ -208,6 +208,14 @@ export function parsePlanPrice(value: unknown): number | null | 'invalid' {
 }
 
 /** A subscription plan's own price per period, or null to use the product price. */
+/** A per-session plan's own price per session, or null to use the product price. */
+export function planSessionAmount(plan: unknown): number | null {
+  const value = (plan as { plan_type?: string; session_amount?: unknown } | null);
+  if (!value || value.plan_type !== 'per_session') return null;
+  const n = Number(value.session_amount);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
 export function planSubscriptionAmount(plan: unknown): number | null {
   const value = (plan as { subscription_amount?: unknown } | null)?.subscription_amount;
   const amount = value === null || value === undefined || value === '' ? NaN : Number(value);
@@ -364,6 +372,11 @@ export function generatePaymentSchedules(
           });
         }
       }
+      break;
+
+    case 'per_session':
+      // Pay as you go: nothing upfront. The card is saved at enrollment and
+      // each session is charged when it is marked held (chargeHeldSession).
       break;
 
     case 'subscription':

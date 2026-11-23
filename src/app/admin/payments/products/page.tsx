@@ -3,11 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import {
-  ArrowLeft,
-  ArrowRight,
   CheckCircle2,
   Gift,
   Package,
@@ -48,7 +45,7 @@ import { useProductDelete } from '@/components/admin/products/useProductDelete';
 import { productPublicPath } from '@/components/admin/products/ProductWizardPage';
 
 const TYPES: ProductType[] = ['program', 'course', 'bundle', 'session_pack', 'lecture', 'workshop'];
-const MODELS: PaymentModel[] = ['one_time', 'deposit_then_plan', 'subscription', 'free'];
+const MODELS: PaymentModel[] = ['one_time', 'deposit_then_plan', 'subscription', 'per_session', 'free'];
 type StatusFilter = 'all' | 'active' | 'inactive';
 
 /**
@@ -63,7 +60,6 @@ export default function ProductsPage() {
   const { t, direction, loading: translationsLoading } = useAdminLanguage();
   const { toast } = useToast();
   const rtl = direction === 'rtl';
-  const BackArrow = rtl ? ArrowRight : ArrowLeft;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [paymentPlans, setPaymentPlans] = useState<any[]>([]);
@@ -237,11 +233,6 @@ export default function ProductsPage() {
   return (
     <AdminLayout>
       <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
-        <Link href="/admin/payments" className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-          <BackArrow className="h-4 w-4" aria-hidden />
-          {t('admin.payments.title', 'Payments')}
-        </Link>
-
         <PageTitle
           icon={Package}
           title={t('admin.payments.products.title', 'Products')}

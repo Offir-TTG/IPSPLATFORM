@@ -11,7 +11,7 @@ import { formatCurrency } from '@/lib/currency/format';
 
 // CACHE VERSION: Increment this number when you need to invalidate all translation caches
 // This forces all clients to fetch fresh translations from the API
-const TRANSLATION_CACHE_VERSION = 33;
+const TRANSLATION_CACHE_VERSION = 76;
 
 // Maximum cache age in milliseconds (1 hour)
 const MAX_CACHE_AGE = 60 * 60 * 1000;
@@ -72,6 +72,8 @@ interface AppContextType {
   tenantLoading: boolean;
   setTenant: (tenant: TenantInfo | null) => void;
   isSuperAdmin: boolean;
+  /** The business currency (Organization settings), e.g. 'USD'. Null until known. */
+  businessCurrency: string | null;
 }
 
 // ============================================================================
@@ -220,6 +222,16 @@ export function AppProvider({ children }: { children: React.ReactNode}) {
   });
   const [tenantLoading, setTenantLoading] = useState(true); // Start as true, will be set to false after initialization
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  // Every price is in the business currency (Organization settings); cached
+  // so money shows right before the settings load.
+  const [businessCurrency, setBusinessCurrency] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return localStorage.getItem('tenant_currency');
+    } catch {
+      return null;
+    }
+  });
 
   // ============================================================================
   // TENANT MANAGEMENT
@@ -284,6 +296,15 @@ export function AppProvider({ children }: { children: React.ReactNode}) {
         const tenantResponse = await fetch('/api/admin/tenant');
         if (tenantResponse.ok) {
           const tenantData = await tenantResponse.json();
+          const currency = tenantData.success ? tenantData.data?.currency : null;
+          if (typeof currency === 'string' && currency) {
+            setBusinessCurrency(currency);
+            try {
+              localStorage.setItem('tenant_currency', currency);
+            } catch {
+              /* private mode: keep it in memory only */
+            }
+          }
           if (tenantData.success && tenantData.data.default_language) {
             const newTenantDefaultLang = tenantData.data.default_language;
             const oldTenantDefaultLang = localStorage.getItem('tenant_default_language');
@@ -730,6 +751,7 @@ export function AppProvider({ children }: { children: React.ReactNode}) {
         tenantLoading,
         setTenant,
         isSuperAdmin,
+        businessCurrency,
       }}
     >
       {children}
@@ -810,11 +832,17 @@ export function useCurrency() {
     context.availableLanguages.find((l) => l.is_default) ||
     null;
 
+  // The currency is the business's (Organization settings), never the
+  // language's: a Hebrew screen still shows dollars when the business is in
+  // dollars. The language only decides number style, and its own symbol and
+  // position are used only when they belong to that same currency.
+  const business = context.businessCurrency;
+  const sameAsLanguage = !business || !lang?.currency_code || lang.currency_code === business;
   const config = lang
     ? {
-        code: lang.currency_code ?? 'ILS',
-        symbol: lang.currency_symbol ?? null,
-        position: lang.currency_position ?? null,
+        code: business ?? lang.currency_code ?? 'USD',
+        symbol: sameAsLanguage ? lang.currency_symbol ?? null : null,
+        position: sameAsLanguage ? lang.currency_position ?? null : null,
         locale:
           lang.code === 'he'
             ? 'he-IL'
@@ -822,7 +850,9 @@ export function useCurrency() {
               ? 'es-ES'
               : 'en-US',
       }
-    : undefined;
+    : business
+      ? { code: business }
+      : undefined;
 
   return {
     /** Format a number as currency using the admin-configured rules. */

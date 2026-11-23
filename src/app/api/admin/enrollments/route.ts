@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
       create_new_user,
       new_user,
       product_id,
-      payment_plan_id,
+      payment_plan_id: chosenPlanId,
       status = 'draft',
       waive_payment = false, // Admin override to waive payment requirement
       is_parent = false, // Indicates if this is a parent enrollment (no dashboard access)
@@ -324,7 +324,7 @@ export async function POST(request: NextRequest) {
     // Fetch the product to get pricing information FIRST (validate before creating user)
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('id, title, type, price, currency, payment_model, payment_plan, payment_start_date')
+      .select('id, title, type, price, currency, payment_model, payment_plan, payment_start_date, default_payment_plan_id, alternative_payment_plan_ids')
       .eq('id', product_id)
       .single();
 
@@ -334,6 +334,14 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    // The plan: the one the admin chose, else the product's own plan when it
+    // has only one (a product with several lets the client choose in the
+    // wizard). Without this a plan-template product fell back to its basic
+    // payment setting, e.g. charging a pay-per-session package in full upfront.
+    const productPlanIds = ((product as any).alternative_payment_plan_ids || []).filter(Boolean) as string[];
+    const payment_plan_id: string | null =
+      chosenPlanId || (productPlanIds.length <= 1 ? (product as any).default_payment_plan_id || productPlanIds[0] || null : null);
 
     // Determine total amount based on payment model and admin override
     let totalAmount = 0;
@@ -602,6 +610,9 @@ export async function POST(request: NextRequest) {
               installment_frequency: paymentConfig.frequency || 'monthly',
               currency: product.currency || 'USD',
             };
+          } else if (product.payment_model === 'per_session') {
+            // Pay as you go: no schedules; each held session is charged then.
+            paymentPlan = { plan_type: 'per_session', session_amount: paymentConfig.session_amount ?? null, currency: product.currency || 'USD' };
           } else if (product.payment_model === 'recurring') {
             paymentPlan = {
               plan_type: 'recurring',

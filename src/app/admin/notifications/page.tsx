@@ -171,7 +171,7 @@ export default function AdminNotificationsPage() {
 
   const scopeLabel = (s: NotificationScope) =>
     s === 'individual'
-      ? t('admin.notifications.entityType.student', 'Student')
+      ? t('admin.notifications.entityType.student', 'Client')
       : s === 'course'
         ? t('admin.notifications.entityType.course', 'Course')
         : s === 'program'
@@ -260,7 +260,7 @@ export default function AdminNotificationsPage() {
       <ListState
         icon={Bell}
         title={t('admin.notifications.noHistory', 'No notifications sent yet')}
-        text={t('admin.notifications.emptyText', 'A notification shows to students and parents in their portal, and can also go by email.')}
+        text={t('admin.notifications.emptyText', 'A notification shows to clients and parents in their portal, and can also go by email.')}
         action={<NewButton href="/admin/notifications/new">{t('admin.notifications.wizard.newTitle', 'New notification')}</NewButton>}
       />
     );
@@ -286,7 +286,7 @@ export default function AdminNotificationsPage() {
           icon={Bell}
           title={t('admin.notifications.pageTitle', 'Notifications')}
           badge={loaded ? num(stats.totalSent) : undefined}
-          description={t('admin.notifications.listDescription', 'What students and parents see in their portal, and by email when you choose.')}
+          description={t('admin.notifications.listDescription', 'What clients and parents see in their portal, and by email when you choose.')}
           actions={
             <>
               <button type="button" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp} className={kitButton.secondary}>
@@ -302,8 +302,8 @@ export default function AdminNotificationsPage() {
           <div className="rounded-xl border border-border bg-primary/10 p-4 text-sm">
             <ul className="space-y-1">
               <li>• {t('admin.notifications.help1', 'Individual: Send to a specific user')}</li>
-              <li>• {t('admin.notifications.help2', 'Course: Send to all students enrolled in a course')}</li>
-              <li>• {t('admin.notifications.help3', 'Program: Send to all students enrolled in a program')}</li>
+              <li>• {t('admin.notifications.help2', 'Course: Send to all clients enrolled in a course')}</li>
+              <li>• {t('admin.notifications.help3', 'Program: Send to all clients enrolled in a program')}</li>
               <li>• {t('admin.notifications.help4', 'Tenant: Send to all users in your organization')}</li>
               <li>• {t('admin.notifications.help5', 'Urgent/High priority notifications show toast alerts')}</li>
               <li>• {t('admin.notifications.help6', 'Users can configure their notification preferences')}</li>
@@ -380,6 +380,7 @@ export default function AdminNotificationsPage() {
           pills={
             <>
               <QuickPills
+                joined
                 label={t('admin.notifications.filterPriority', 'Filter by Priority')}
                 value={filterPriority}
                 onChange={setFilterPriority}

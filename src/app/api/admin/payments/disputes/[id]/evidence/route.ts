@@ -87,9 +87,16 @@ export async function POST(
       if (customerName) evidenceData.customer_name = customerName;
       if (customerEmail) evidenceData.customer_email_address = customerEmail;
       if (customerPurchaseIp) evidenceData.customer_purchase_ip = customerPurchaseIp;
-      if (receiptUrl) evidenceData.receipt = receiptUrl;
       if (productDescription) evidenceData.product_description = productDescription;
-      if (customerCommunication) evidenceData.customer_communication = customerCommunication;
+      // Stripe's `receipt` and `customer_communication` take an uploaded
+      // file's id, not text or a link (sending text made Stripe reject the
+      // whole submission). The receipt link and the communication go into
+      // the free-text field instead.
+      const extra = [
+        receiptUrl ? `Receipt: ${receiptUrl}` : '',
+        customerCommunication ? `Communication with the customer:\n${customerCommunication}` : '',
+      ].filter(Boolean);
+      if (extra.length) evidenceData.uncategorized_text = extra.join('\n\n');
 
       await stripe.disputes.update(dispute.stripe_dispute_id, {
         evidence: evidenceData,

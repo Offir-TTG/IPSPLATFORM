@@ -39,7 +39,7 @@ export async function GET(
     }
 
     // Only instructors and admins can export reports
-    if (!['instructor', 'admin'].includes(userData.role)) {
+    if (!['instructor', 'admin', 'super_admin'].includes(userData.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -108,7 +108,13 @@ export async function GET(
           stat.late_count.toString(),
           stat.absent_count.toString(),
           stat.excused_count.toString(),
-          stat.attendance_percentage.toFixed(2) + '%',
+          // (present + late) / (present + late + absent); excused doesn't count.
+          (() => {
+            const present = Number(stat.present_count) || 0;
+            const late = Number(stat.late_count) || 0;
+            const counted = present + late + (Number(stat.absent_count) || 0);
+            return (counted > 0 ? ((present + late) / counted) * 100 : 0).toFixed(2) + '%';
+          })(),
         ];
       }) || [];
 

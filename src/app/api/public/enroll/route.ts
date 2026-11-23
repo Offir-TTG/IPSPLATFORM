@@ -87,50 +87,73 @@ export async function POST(request: NextRequest) {
     // draft (return its token), and block re-enrollment only for
     // non-draft statuses (active / completed / etc.).
     if (userId) {
-      const { data: existingEnrollment } = await supabase
+      // A client can have several enrollments in one product (admins may add
+      // more, and a former member can rejoin), so look at all of them.
+      const { data: existingRows } = await supabase
         .from('enrollments')
-        .select('id, status, enrollment_token, token_expires_at')
+        .select('id, status, enrollment_token, token_expires_at, created_at')
         .eq('user_id', userId)
         .eq('product_id', product_id)
         .eq('tenant_id', tenant.id)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
+      const existing = existingRows ?? [];
 
-      if (existingEnrollment && existingEnrollment.status !== 'draft') {
+      // Already a member: nothing to start.
+      const current = existing.find((e: any) => e.status === 'active' || e.status === 'completed');
+      if (current) {
+        return NextResponse.json(
+          { error: 'Already enrolled', redirect: '/dashboard', enrollment_id: current.id },
+          { status: 409 }
+        );
+      }
+
+      // Suspended (e.g. payments failed): fix the payment, don't start over.
+      const suspended = existing.find((e: any) => e.status === 'suspended');
+      if (suspended) {
         return NextResponse.json(
           {
-            error: 'Already enrolled',
-            redirect: '/dashboard',
-            enrollment_id: existingEnrollment.id
+            error: 'Membership suspended',
+            code: 'suspended',
+            message: 'Your membership is on hold. Update your payment to continue.',
+            redirect: '/billing',
+            enrollment_id: suspended.id,
           },
           { status: 409 }
         );
       }
 
-      if (existingEnrollment && existingEnrollment.status === 'draft' && existingEnrollment.enrollment_token) {
-        // Resume the draft. If the wizard token has expired, refresh
-        // it so the link is usable again.
+      // An unfinished signup (not sent yet, or sent and never finished):
+      // continue it, with a fresh link if the old one expired.
+      const unfinished = existing.find((e: any) => e.status === 'draft' || e.status === 'pending');
+      if (unfinished) {
         const adminClient = createAdminClient();
-        const expiresAt = existingEnrollment.token_expires_at
-          ? new Date(existingEnrollment.token_expires_at)
-          : null;
-
-        if (!expiresAt || expiresAt < new Date()) {
+        const expiresAt = unfinished.token_expires_at ? new Date(unfinished.token_expires_at) : null;
+        const update: Record<string, string> = {};
+        let token = unfinished.enrollment_token as string | null;
+        if (!token) {
+          token = await ensureUniqueToken(adminClient, tenant.id);
+          update.enrollment_token = token;
+        }
+        if (!token || !expiresAt || expiresAt < new Date() || update.enrollment_token) {
           const newExpiry = new Date();
           newExpiry.setDate(newExpiry.getDate() + 7);
-          await adminClient
-            .from('enrollments')
-            .update({ token_expires_at: newExpiry.toISOString() })
-            .eq('id', existingEnrollment.id);
+          update.token_expires_at = newExpiry.toISOString();
+        }
+        if (Object.keys(update).length) {
+          await adminClient.from('enrollments').update(update).eq('id', unfinished.id);
         }
 
         return NextResponse.json({
           success: true,
-          enrollment_id: existingEnrollment.id,
-          enrollment_token: existingEnrollment.enrollment_token,
-          wizard_url: `/enroll/${existingEnrollment.enrollment_token}`,
+          enrollment_id: unfinished.id,
+          enrollment_token: token,
+          wizard_url: `/enroll/${token}`,
           resumed: true,
         });
       }
+
+      // Only cancelled or ended enrollments are left: a former member may
+      // join again with a new enrollment; their old one and its history stay.
     }
 
     // Determine total amount and payment status
@@ -195,8 +218,11 @@ export async function POST(request: NextRequest) {
     if (paymentStatus !== 'paid' && product.payment_model !== 'free') {
       try {
         // Fetch payment plan if specified
+        // Only an old product that stored a plan id here. Today the field holds
+        // settings (an object), and the real charges are made when the client
+        // picks a plan in the wizard (select-plan) or opens the payment step.
         let paymentPlan = null;
-        if (product.payment_plan) {
+        if (typeof product.payment_plan === 'string' && product.payment_plan) {
           const { data: plan } = await adminClient
             .from('payment_plans')
             .select('*')

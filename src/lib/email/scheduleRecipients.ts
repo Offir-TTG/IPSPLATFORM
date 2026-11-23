@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { filterEligibleRecipientIds } from '@/lib/users/communication-eligible';
+import { CLIENT_ROLES, NEW_CLIENT_ROLE, isClientRole } from '@/lib/auth/roles';
 
 export interface RecipientFilter {
   /** Match against users.role. */
@@ -77,7 +78,7 @@ export async function resolveScheduleRecipients(
       .select('id')
       .eq('tenant_id', tenantId);
 
-    if (filter.role) query = query.eq('role', filter.role);
+    if (filter.role) query = isClientRole(filter.role) ? query.in('role', [...CLIENT_ROLES]) : query.eq('role', filter.role);
     if (filter.status) query = query.eq('status', filter.status);
     if (filter.email_contains) {
       query = query.ilike('email', `%${filter.email_contains}%`);
@@ -98,7 +99,7 @@ export async function resolveScheduleRecipients(
         .from('tenant_users')
         .select('user_id')
         .eq('tenant_id', tenantId)
-        .eq('role', filter.tenant_role)
+        .in('role', isClientRole(filter.tenant_role) ? [...CLIENT_ROLES] : [filter.tenant_role])
         .in('user_id', Array.from(ids));
       const keep = new Set((tu ?? []).map((r: any) => r.user_id));
       for (const id of Array.from(ids)) {

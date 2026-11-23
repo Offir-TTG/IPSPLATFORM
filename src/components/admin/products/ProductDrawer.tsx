@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useAdminLanguage } from '@/context/AppContext';
+import { SubscriptionPriceSection } from './SubscriptionPriceSection';
 import type { Product, ProductType } from '@/types/product';
 
 /** Each kind of product: its icon and a colour, so lists and the drawer are easy to scan. */
@@ -179,6 +180,9 @@ export function ProductDrawer({
                   ))}
                 </dl>
               </Section>
+
+              {/* Memberships: the price and scheduled price changes */}
+              <SubscriptionPriceSection key={p.id} productId={p.id} />
 
               {p.description && (
                 <Section title={t('admin.products.drawer.about', 'Description')}>

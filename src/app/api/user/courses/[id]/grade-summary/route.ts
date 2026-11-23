@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { computeFinalGrade } from '@/lib/grading/finalGrade';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/middleware/auth';
 
@@ -39,78 +40,66 @@ export const GET = withAuth(
         return NextResponse.json({ error: 'Failed to fetch course' }, { status: 500 });
       }
 
-      // Get all grades for this student in this course
-      const { data: grades, error: gradesError } = await supabase
-        .from('student_grades')
-        .select(`
-          points_earned,
-          is_excused,
-          grade_item:grade_items!inner(
-            max_points,
-            course_id
-          )
-        `)
-        .eq('student_id', user.id)
-        .eq('grade_item.course_id', courseId)
-        .eq('tenant_id', tenantId);
+      // The final grade, by the same rules as the admin gradebook
+      // (lib/grading/finalGrade): weighting by groups, dropping the lowest,
+      // bonus items, and the course's pass mark.
+      const admin = createAdminClient();
+      const [{ data: items }, { data: grades, error: gradesError }, { data: categories }, { data: config }] = await Promise.all([
+        admin.from('grade_items').select('id, max_points, category_id, is_extra_credit').eq('course_id', courseId).eq('is_published', true),
+        supabase
+          .from('student_grades')
+          .select('grade_item_id, points_earned, is_excused, grade_item:grade_items!inner(course_id)')
+          .eq('student_id', user.id)
+          .eq('grade_item.course_id', courseId)
+          .eq('tenant_id', tenantId),
+        admin.from('grade_categories').select('id, weight_percentage, drop_lowest, is_active').eq('course_id', courseId),
+        admin.from('course_grading_config').select('passing_percentage, use_weighted_categories').eq('course_id', courseId).maybeSingle(),
+      ]);
 
       if (gradesError) {
         console.error('Error fetching grades for summary:', gradesError);
         return NextResponse.json({ error: 'Failed to fetch grades' }, { status: 500 });
       }
 
-      // Calculate totals
-      let totalPointsEarned = 0;
-      let totalPointsPossible = 0;
-
-      grades?.forEach((grade: any) => {
-        if (!grade.is_excused) {
-          if (grade.points_earned !== null && grade.points_earned !== undefined) {
-            totalPointsEarned += grade.points_earned;
-          }
-          const gradeItem = Array.isArray(grade.grade_item) ? grade.grade_item[0] : grade.grade_item;
-          totalPointsPossible += gradeItem.max_points;
-        }
-      });
-
-      const overallGrade = totalPointsPossible > 0
-        ? (totalPointsEarned / totalPointsPossible) * 100
-        : 0;
-
-      // Letter + color from the course's scale, with a tenant default
-      // fallback when the course has no scale assigned. All values
-      // come from grade_ranges — no hardcoded thresholds.
-      let letterGrade: string | null = null;
-      let letterColor: string | null = null;
-
-      if (totalPointsPossible > 0) {
-        let scaleId: string | null = course.grading_scale_id ?? null;
-        if (!scaleId) {
-          const { data: defaultScaleRow } = await supabase
-            .from('grading_scales')
-            .select('id')
-            .eq('tenant_id', tenantId)
-            .eq('is_active', true)
-            .order('is_default', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          scaleId = defaultScaleRow?.id ?? null;
-        }
-
-        if (scaleId) {
-          const { data: rangeRows } = await supabase
-            .from('grade_ranges')
-            .select('min_percentage, max_percentage, grade_label, color_code')
-            .eq('grading_scale_id', scaleId);
-          const hit = (rangeRows ?? []).find((r: any) =>
-            overallGrade >= Number(r.min_percentage) && overallGrade <= Number(r.max_percentage),
-          );
-          if (hit) {
-            letterGrade = (hit as any).grade_label ?? null;
-            letterColor = (hit as any).color_code ?? null;
-          }
-        }
+      // The scale's ranges (the course's own, else the school's default).
+      let ranges: any[] = [];
+      let scaleId: string | null = course.grading_scale_id ?? null;
+      if (!scaleId) {
+        const { data: defaultScaleRow } = await supabase
+          .from('grading_scales')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        scaleId = defaultScaleRow?.id ?? null;
       }
+      if (scaleId) {
+        const { data: rangeRows } = await supabase
+          .from('grade_ranges')
+          .select('min_percentage, max_percentage, grade_label, color_code, is_passing')
+          .eq('grading_scale_id', scaleId);
+        ranges = rangeRows ?? [];
+      }
+
+      const scores: Record<string, { points: number | null; excused: boolean }> = {};
+      for (const g of grades ?? []) {
+        scores[(g as any).grade_item_id] = { points: (g as any).points_earned ?? null, excused: !!(g as any).is_excused };
+      }
+      const result = computeFinalGrade({
+        items: (items ?? []).map((i: any) => ({ id: i.id, max_points: Number(i.max_points) || 0, category_id: i.category_id, is_extra_credit: i.is_extra_credit })),
+        scores,
+        categories: (categories ?? []).filter((c: any) => c.is_active !== false).map((c: any) => ({ id: c.id, weight_percentage: Number(c.weight_percentage) || 0, drop_lowest: c.drop_lowest })),
+        weighted: !!config?.use_weighted_categories,
+        passMark: config?.passing_percentage != null ? Number(config.passing_percentage) : 60,
+        ranges,
+      });
+      const overallGrade = result.percent ?? 0;
+      const totalPointsEarned = result.earned;
+      const totalPointsPossible = result.possible;
+      const letterGrade = result.letter;
+      const letterColor = result.letterColor;
 
       return NextResponse.json({
         success: true,

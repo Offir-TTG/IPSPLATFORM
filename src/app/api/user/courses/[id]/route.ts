@@ -1,8 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
+import { productOpensCourse } from '@/lib/products/courseAccess';
+import { loadCoursePlaces } from '@/lib/portal/coursePlaces';
+import { ALL_FEATURES, loadCourseFeatures } from '@/lib/lms/courseFeatures';
 
 export const dynamic = 'force-dynamic';
+
+/** A Zoom recording's video player address: the MP4 file's play_url (speaker and screen view first). */
+function zoomPlayUrl(files: unknown, field: 'play_url' | 'download_url' = 'play_url'): string | null {
+  let list: any[] = [];
+  try {
+    list = Array.isArray(files) ? files : typeof files === 'string' ? JSON.parse(files) : [];
+  } catch {
+    return null;
+  }
+  const videos = list.filter((f) => f?.[field] && String(f.file_type ?? '').toUpperCase() === 'MP4' && f.status !== 'deleted');
+  const pick = videos.find((f) => f.recording_type === 'shared_screen_with_speaker_view') ?? videos[0];
+  return pick?.[field] ?? null;
+}
 
 // GET /api/user/courses/[id] - Get course details with modules, lessons, and progress
 // `withAuth` defaults `allowedRoles = ['admin']` — wrong for this
@@ -56,7 +72,8 @@ export const GET = withAuth(
               id,
               type,
               course_id,
-              program_id
+              program_id,
+              contains_courses
             )
           `)
           .eq('user_id', user.id)
@@ -75,7 +92,8 @@ export const GET = withAuth(
         // Check for direct course enrollment
         for (const enr of allEnrollments) {
           const product = Array.isArray(enr.products) ? enr.products[0] : enr.products;
-          if (product && product.type === 'course' && product.course_id === courseId) {
+          // Any product type that opens this course (course, lecture, bundle, ...).
+          if (productOpensCourse(product, courseId)) {
             activeEnrollment = enr;
             console.log('Found direct course enrollment:', enr.id);
             break;
@@ -216,7 +234,8 @@ export const GET = withAuth(
               platform,
               daily_room_name,
               daily_room_url,
-              daily_room_id
+              daily_room_id,
+              recording_files
             ),
             lesson_topics (
               id,
@@ -263,12 +282,17 @@ export const GET = withAuth(
                 daily_room_name: zoomSession?.daily_room_name || null,
                 daily_room_url: zoomSession?.daily_room_url || null,
                 daily_room_id: zoomSession?.daily_room_id || null,
-                // recording_url stays from lesson table
+                // recording_url stays from lesson table. The video file's own
+                // Zoom player (no files list, transcript or share links around it):
+                recording_play_url: zoomPlayUrl((zoomSession as any)?.recording_files),
+                // The video file itself can play in the portal's own player (GET /api/user/lessons/[id]/recording).
+                recording_stream: zoomPlayUrl((zoomSession as any)?.recording_files, 'download_url') !== null,
                 // Remove zoom_sessions array from response
                 zoom_sessions: undefined,
-                lesson_topics: lesson.lesson_topics
-                  ?.filter(topic => topic.is_published)
-                  .sort((a, b) => a.order - b.order) || []
+                // Every item of a published lesson shows: the admin has no per-item
+                // publish switch, and new items are saved with is_published = false.
+                // What clients see is decided by the lesson, module and course flags.
+                lesson_topics: [...(lesson.lesson_topics ?? [])].sort((a, b) => a.order - b.order)
               };
             }) || []
         })) || [];
@@ -313,15 +337,17 @@ export const GET = withAuth(
       // surface the instructor's display name.
       let instructorName: string | null = null;
       let instructorAvatar: string | null = null;
+      let instructorBio: string | null = null;
       if (course.instructor_id) {
         const { data: instructorRow } = await adminClient
           .from('users')
-          .select('first_name, last_name, avatar_url')
+          .select('first_name, last_name, avatar_url, bio')
           .eq('id', course.instructor_id)
           .maybeSingle();
         if (instructorRow) {
           instructorName = `${instructorRow.first_name || ''} ${instructorRow.last_name || ''}`.trim() || null;
           instructorAvatar = instructorRow.avatar_url || null;
+          instructorBio = (instructorRow as any).bio || null;
         }
       }
 
@@ -427,6 +453,9 @@ export const GET = withAuth(
             image_url: course.image_url,
             instructor: instructorName,
             instructor_avatar: instructorAvatar,
+            instructor_bio: instructorBio,
+            // Whether this course shows grades / attendance to clients (Course → Settings).
+            features: (await loadCourseFeatures(createAdminClient(), [course.id])).get(course.id) ?? ALL_FEATURES,
           },
           enrollment: activeEnrollment || null,
           modules: processedModules,
@@ -446,6 +475,8 @@ export const GET = withAuth(
             materials_count: materials?.length || 0,
           },
           materials: materials || [],
+          // The club or programs this course belongs to for this client (header colour, back link).
+          places: isAdminPreview ? null : await loadCoursePlaces(user.id, courseId).catch(() => null),
         },
       });
     } catch (error: any) {

@@ -367,6 +367,7 @@ export default function UsersPage() {
           pills={
             <>
               <QuickPills<StatusFilter>
+                joined
                 label={t('admin.users.table.status', 'Status')}
                 value={status}
                 onChange={setStatus}

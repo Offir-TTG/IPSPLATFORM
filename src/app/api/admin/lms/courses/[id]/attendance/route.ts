@@ -39,7 +39,7 @@ export async function GET(
     }
 
     // Only instructors and admins can view attendance
-    if (!['instructor', 'admin'].includes(userData.role)) {
+    if (!['instructor', 'admin', 'super_admin'].includes(userData.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -131,7 +131,7 @@ export async function POST(
     }
 
     // Only instructors and admins can mark attendance
-    if (!['instructor', 'admin'].includes(userData.role)) {
+    if (!['instructor', 'admin', 'super_admin'].includes(userData.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

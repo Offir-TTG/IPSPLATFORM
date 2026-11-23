@@ -123,7 +123,9 @@ export async function POST(
       email: profileData.email,
       name: `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || profileData.email,
       recipientId: enrollment.id, // Use enrollment ID since no user account exists yet
-      clientUserId: enrollment.id // For embedded signing
+      clientUserId: enrollment.id, // For embedded signing
+      // DocuSign's signing screen language (Hebrew or English).
+      language: body.language === 'he' ? 'he' : 'en',
     };
 
     // Prepare email subject

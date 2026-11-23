@@ -19,6 +19,8 @@ import { PAYMENT_CONFIG } from './config';
 import { fetchAllPages, loadEnrollmentsById, runInBatches } from './batch';
 import { readSubscriptionDates, shiftPastPause } from './subscriptionState';
 import { planSubscriptionAmount } from './paymentEngine';
+import { loadPriceChanges, readMemberPrice, renewalPrice } from './subscriptionPrice';
+import { applyDuePriceChanges, sendDuePriceChangeNotices } from './priceChangeJobs';
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>;
 
@@ -435,6 +437,12 @@ export async function createDueSubscriptionRenewals(): Promise<{ created: number
     return frequency;
   }
 
+  // Scheduled price changes for these memberships, read once per run.
+  const priceChanges = await loadPriceChanges(
+    supabase,
+    [...latest.values()].map((r) => (r.enrollments as any)?.product_id),
+  );
+
   for (const last of latest.values()) {
     if (last.status !== 'paid') continue; // the current period isn't settled yet
 
@@ -454,13 +462,30 @@ export async function createDueSubscriptionRenewals(): Promise<{ created: number
     const currentPlanId = (last.enrollments as any)?.payment_plan_id ?? last.payment_plan_id;
     const currentPlan = currentPlanId ? await planFor(currentPlanId) : null;
 
+    // The member's own price: it only moves with a price change for everyone
+    // (from their first renewal on or after its date). A change for new
+    // members only never reaches them. A member who switched plan pays the
+    // new plan's price.
+    const planOwnPrice = planSubscriptionAmount(currentPlan);
+    const samePlan = (last.payment_plan_id ?? null) === (currentPlanId ?? null);
+    const productId = (last.enrollments as any)?.product_id;
+    const price = renewalPrice({
+      memberPrice: readMemberPrice((last.enrollments as any)?.subscription_price, currentPlanId ?? null),
+      fallback: samePlan ? Number(last.amount) : planOwnPrice ?? Number(last.amount),
+      previousPeriodStart: last.scheduled_date,
+      changes: priceChanges.filter((c) => c.product_id === productId),
+      planId: currentPlanId ?? null,
+      planHasOwnPrice: planOwnPrice !== null,
+      renewalDate: nextDate,
+    });
+
     const { error: insertError } = await supabase.from('payment_schedules').insert({
       tenant_id: last.tenant_id,
       enrollment_id: last.enrollment_id,
       payment_plan_id: currentPlanId,
       payment_number: (highestNumber.get(last.enrollment_id) ?? last.payment_number) + 1,
       payment_type: 'subscription',
-      amount: planSubscriptionAmount(currentPlan) ?? last.amount,
+      amount: price.amount,
       currency: last.currency,
       original_due_date: nextDate.toISOString(),
       scheduled_date: nextDate.toISOString(),
@@ -470,7 +495,14 @@ export async function createDueSubscriptionRenewals(): Promise<{ created: number
     });
     // A duplicate payment number means another run already added it.
     if (insertError && insertError.code !== '23505') errors.push(`Enrollment ${last.enrollment_id}: ${insertError.message}`);
-    else if (!insertError) created++;
+    else if (!insertError) {
+      created++;
+      // Keep the member's own price in step (it may have moved with a change).
+      const before = (last.enrollments as any)?.subscription_price;
+      if (JSON.stringify(before ?? null) !== JSON.stringify(price.memberPrice)) {
+        await supabase.from('enrollments').update({ subscription_price: price.memberPrice }).eq('id', last.enrollment_id);
+      }
+    }
   }
   return { created, errors };
 }
@@ -492,6 +524,12 @@ export async function createUpcomingInvoices(_daysAhead: number = 30): Promise<{
   // (the job runs every 15 minutes, and a renewal is due by the day).
   const hourly = new Date().getUTCMinutes() < 15;
   const ended = hourly ? await closeEndedSubscriptions() : { closed: 0, errors: [] as string[] };
+  // Scheduled price changes: tell members in time, then move the price on its date.
+  if (hourly) {
+    const notices = await sendDuePriceChangeNotices().catch((e) => ({ sent: 0, errors: [String(e)] }));
+    const applied = await applyDuePriceChanges().catch((e) => ({ applied: 0, errors: [String(e)] }));
+    ended.errors.push(...notices.errors, ...applied.errors);
+  }
   const renewals = hourly
     ? await createDueSubscriptionRenewals()
     : { created: 0, errors: [] as string[] };

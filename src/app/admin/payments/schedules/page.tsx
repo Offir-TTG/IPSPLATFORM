@@ -2,2681 +2,711 @@
 
 export const dynamic = 'force-dynamic';
 
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { AlertCircle, Calendar, CheckCircle2, Clock, RefreshCw, Search, SlidersHorizontal, WifiOff, XCircle } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { LoadingState } from '@/components/admin/LoadingState';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Checkbox } from '@/components/ui/checkbox';
-import { CardSelectionDialog } from '@/components/admin/CardSelectionDialog';
-import React, { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
 import { useToast } from '@/components/ui/use-toast';
 import {
-  Calendar,
-  ChevronDown,
-  ChevronUp,
-  Filter,
-  MoreVertical,
-  Play,
-  Pause,
-  RefreshCw,
-  X,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  XCircle,
-  DollarSign,
-  User,
-  Package,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Download,
-  ArrowLeft,
-  CreditCard,
-} from 'lucide-react';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { CardSelectionDialog } from '@/components/admin/CardSelectionDialog';
+import {
+  ClearFilters,
+  FilterSelect,
+  IconButton,
+  KpiItem,
+  KpiStrip,
+  ListCell,
+  ListFooter,
+  ListPanel,
+  ListRow,
+  ListRowMain,
+  ListSearch,
+  ListSkeleton,
+  ListState,
+  QuickPills,
+  kitButton,
+} from '@/components/admin/notifications/kit';
+import { ScheduleDrawer } from '@/components/admin/schedules/ScheduleDrawer';
+import { AdjustDateDialog, RecordManualPaymentDialog, RestructurePlanDialog } from '@/components/admin/schedules/ScheduleDialogs';
+import { PaymentsHeader } from '@/components/admin/schedules/PaymentsHeader';
+import { RefundDialog, type RefundTarget } from '@/components/admin/schedules/RefundDialog';
+import { PAYMENT_TYPES, SCHEDULE_STATUSES, SCHEDULE_TONE, type PaymentSchedule } from '@/components/admin/schedules/types';
 
-interface PaymentSchedule {
-  id: string;
-  user_id: string;
-  user_name: string;
-  user_email: string;
-  enrollment_id: string;
-  product_id: string;
-  product_name: string;
-  payment_number: number;
-  payment_type: string;
-  amount: number;
-  currency: string;
-  original_due_date: string;
-  scheduled_date: string;
-  paid_date?: string;
-  status: 'pending' | 'paid' | 'overdue' | 'paused' | 'failed' | 'cancelled' | 'adjusted' | 'processing';
-  retry_count?: number;
-  next_retry_date?: string;
-  last_error?: string;
-}
+const PAGE_SIZE = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
+type StatusFilter = 'all' | (typeof SCHEDULE_STATUSES)[number];
 
-interface ScheduleFilters {
-  status?: string;
-  paymentType?: string; // 'all' | 'deposit' | 'installment' | 'subscription' | 'full' | 'manual'
-  dateFrom?: string;
-  dateTo?: string;
-  productId?: string;
-  userSearch?: string;
-  minAmount?: string;
-  maxAmount?: string;
-  overdueOnly?: boolean;
-}
-
+/**
+ * Payment schedules, in the admin list template: the numbers (overdue,
+ * failed, this week, pending, paid; most filter the list), then one card
+ * with search, product, type, more filters (dates, amounts), status pills,
+ * the payments (paged by the server) and paging. Pressing a payment opens
+ * its drawer with why it failed, the enrollment's payments, and the
+ * actions: charge now and retry (both ask first), change card, adjust
+ * date, restructure plan, record a manual payment. "Record off-schedule
+ * payment" stays at the top. ?status=overdue opens the list filtered.
+ */
 export default function SchedulesPage() {
-  const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
+  const { t, direction, language } = useAdminLanguage();
   const { toast } = useToast();
-  const isRtl = direction === 'rtl';
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-  const isMobile = windowWidth <= 640;
-  const [schedules, setSchedules] = useState<PaymentSchedule[]>([]);
-  const [loadingSchedules, setLoadingSchedules] = useState(true);
-  const [filters, setFilters] = useState<ScheduleFilters>({});
-  // Filter card collapsed by default — most visits are "scan the list",
-  // not "narrow down a search". The header acts as the toggle and shows
-  // how many filters are currently active so it's obvious when the
-  // collapsed state is hiding a filtered view.
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const activeFilterCount =
-    (filters.userSearch ? 1 : 0) +
-    (filters.productId ? 1 : 0) +
-    (filters.status ? 1 : 0) +
-    (filters.paymentType ? 1 : 0) +
-    (filters.dateFrom ? 1 : 0) +
-    (filters.dateTo ? 1 : 0) +
-    (filters.minAmount ? 1 : 0) +
-    (filters.maxAmount ? 1 : 0);
-  const [selectedSchedules, setSelectedSchedules] = useState<Set<string>>(new Set());
-  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
-  const [manualPaymentDialogOpen, setManualPaymentDialogOpen] = useState(false);
-  const [standalonePaymentDialogOpen, setStandalonePaymentDialogOpen] = useState(false);
-  const [selectedSchedule, setSelectedSchedule] = useState<PaymentSchedule | null>(null);
-  const [bulkActionDialog, setBulkActionDialog] = useState<'delay' | 'pause' | 'cancel' | null>(null);
-  const [restructureDialogOpen, setRestructureDialogOpen] = useState(false);
-  const [selectedEnrollmentForRestructure, setSelectedEnrollmentForRestructure] = useState<string | null>(null);
-  const [cardSelectionDialogOpen, setCardSelectionDialogOpen] = useState(false);
-  const [selectedScheduleForCardChange, setSelectedScheduleForCardChange] = useState<PaymentSchedule | null>(null);
-  const [cardSelectionMode, setCardSelectionMode] = useState<'change' | 'charge'>('charge');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalSchedules, setTotalSchedules] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
-  const totalPages = Math.ceil(totalSchedules / itemsPerPage);
-  const [products, setProducts] = useState<Array<{ id: string; title: string }>>([]);
-  const [sortField, setSortField] = useState<keyof PaymentSchedule | null>('scheduled_date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [isPolling, setIsPolling] = useState(false);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const rtl = direction === 'rtl';
+  const locale = language === 'he' ? 'he-IL' : 'en-US';
+  const searchParams = useSearchParams();
 
+  const initialStatus = searchParams.get('status');
+  const [status, setStatus] = useState<StatusFilter>(
+    initialStatus && (SCHEDULE_STATUSES as readonly string[]).includes(initialStatus) ? (initialStatus as StatusFilter) : 'all',
+  );
+  const [paymentType, setPaymentType] = useState('all');
+  const [productId, setProductId] = useState('all');
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const [rows, setRows] = useState<PaymentSchedule[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [products, setProducts] = useState<{ id: string; title: string }[]>([]);
+  const [counts, setCounts] = useState<{ overdue: number; failed: number; week: number; pending: number; paid: number } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // The open payment and the dialogs (the same ones as before).
+  const [open, setOpen] = useState<PaymentSchedule | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: 'charge' | 'retry'; schedule: PaymentSchedule } | null>(null);
+  const [adjustFor, setAdjustFor] = useState<PaymentSchedule | null>(null);
+  const [manualFor, setManualFor] = useState<PaymentSchedule | null>(null);
+  const [cardFor, setCardFor] = useState<PaymentSchedule | null>(null);
+  const [restructure, setRestructure] = useState<{ enrollmentId: string; schedules: PaymentSchedule[] } | null>(null);
+  const [refundFor, setRefundFor] = useState<RefundTarget | null>(null);
+
+  // `t` and `toast` change on every render, so they're read through a ref.
+  const ui = useRef({ t, toast });
+  ui.current = { t, toast };
+
+  // Search waits a moment while typing.
   useEffect(() => {
-    fetchSchedules();
-  }, [filters, currentPage, itemsPerPage]);
+    const timer = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  // Cleanup polling interval on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
-  }, []);
+  // Back to page 1 when a filter changes.
+  const filterKey = [status, paymentType, productId, debounced, dateFrom, dateTo, minAmount, maxAmount].join('|');
+  const [lastKey, setLastKey] = useState(filterKey);
+  if (lastKey !== filterKey) {
+    setLastKey(filterKey);
+    setPage(1);
+  }
 
-  // Fetch products for the dropdown filter
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const response = await fetch('/api/admin/products', {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-
-        console.log('Products API response status:', response.status);
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Failed to fetch products:', response.status, errorData);
-          return;
-        }
-
-        const responseData = await response.json();
-        console.log('Products API response:', responseData);
-
-        // The API returns products in the 'data' field, not 'products'
-        if (responseData.success && responseData.data && Array.isArray(responseData.data)) {
-          const mappedProducts = responseData.data.map((p: any) => ({ id: p.id, title: p.title }));
-          console.log('Successfully loaded', mappedProducts.length, 'products');
-          setProducts(mappedProducts);
-        } else {
-          console.error('Products API check failed:', responseData);
-        }
-      } catch (error) {
-        console.error('Error fetching products:', error);
-      }
-    };
-    fetchProducts();
-  }, []);
-
-  // Window resize listener for mobile responsiveness
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const fetchSchedules = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoadingSchedules(true);
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
-      if (filters.paymentType) params.append('paymentType', filters.paymentType);
-      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
-      if (filters.dateTo) params.append('dateTo', filters.dateTo);
-      if (filters.productId) params.append('productId', filters.productId);
-      if (filters.userSearch) params.append('userSearch', filters.userSearch);
-      if (filters.minAmount) params.append('minAmount', filters.minAmount);
-      if (filters.maxAmount) params.append('maxAmount', filters.maxAmount);
-      if (filters.overdueOnly) params.append('overdueOnly', 'true');
-      params.append('page', currentPage.toString());
-      params.append('limit', itemsPerPage.toString());
-      // Add cache-busting timestamp
-      params.append('_t', Date.now().toString());
-
-      const response = await fetch(`/api/admin/payments/schedules?${params.toString()}`, {
-        cache: 'no-store',
-      });
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), _t: String(Date.now()) });
+      if (status !== 'all') params.set('status', status);
+      if (paymentType !== 'all') params.set('paymentType', paymentType);
+      if (productId !== 'all') params.set('productId', productId);
+      if (debounced) params.set('userSearch', debounced);
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
+      if (minAmount) params.set('minAmount', minAmount);
+      if (maxAmount) params.set('maxAmount', maxAmount);
+      const response = await fetch(`/api/admin/payments/schedules?${params}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('Failed to fetch schedules');
       const data = await response.json();
-
-
-      setSchedules(data.schedules || []);
-      setTotalSchedules(data.total || data.schedules?.length || 0);
+      const list: PaymentSchedule[] = data.schedules || [];
+      setRows(list);
+      setTotal(data.total ?? list.length);
+      setLoadError(false);
+      // Keep the open drawer in step with the fresh data.
+      setOpen((cur) => (cur ? (list.find((r) => r.id === cur.id) ?? cur) : cur));
     } catch (error) {
       console.error('Error fetching schedules:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.loadError', 'Failed to load payment schedules'),
+      setLoadError(true);
+      ui.current.toast({
+        title: ui.current.t('common.error', 'Error'),
+        description: ui.current.t('admin.payments.schedules.loadError', 'Failed to load payment schedules'),
         variant: 'destructive',
       });
     } finally {
-      setLoadingSchedules(false);
+      setLoading(false);
+      setLoaded(true);
+    }
+  }, [page, status, paymentType, productId, debounced, dateFrom, dateTo, minAmount, maxAmount]);
+
+  // The numbers: one small count per status (exact, for everything).
+  const loadCounts = useCallback(async () => {
+    try {
+      const count = async (query: string) => {
+        const res = await fetch(`/api/admin/payments/schedules?${query}&limit=1&_t=${Date.now()}`, { cache: 'no-store' });
+        const data = res.ok ? await res.json() : null;
+        return Number(data?.total ?? 0);
+      };
+      const [overdue, failed, week, pending, paid] = await Promise.all([
+        count('status=overdue'),
+        count('status=failed'),
+        count('upcoming=true&days_ahead=7'),
+        count('status=pending'),
+        count('status=paid'),
+      ]);
+      setCounts({ overdue, failed, week, pending, paid });
+    } catch (error) {
+      console.error('Error counting schedules:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => {
+    void loadCounts();
+  }, [loadCounts]);
+
+  // From the Done tab: ?enrollment=&payment= opens that payment's drawer.
+  useEffect(() => {
+    const enrollmentId = searchParams.get('enrollment');
+    const paymentId = searchParams.get('payment');
+    if (!enrollmentId || !paymentId) return;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/payments/schedules?enrollment_id=${encodeURIComponent(enrollmentId)}&limit=200&_t=${Date.now()}`, { cache: 'no-store' });
+        const data = res.ok ? await res.json() : null;
+        const found = ((data?.schedules ?? []) as PaymentSchedule[]).find((r) => r.id === paymentId);
+        if (found) setOpen(found);
+      } catch {
+        // The list still works without it.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Products for the filter, once.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin/products', { credentials: 'include', cache: 'no-store' });
+        const data = res.ok ? await res.json() : null;
+        if (data?.success && Array.isArray(data.data)) setProducts(data.data.map((p: { id: string; title: string }) => ({ id: p.id, title: p.title })));
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      }
+    })();
+  }, []);
+
+  // After charging, watch for the result for a while (as before: every second, about 20 seconds).
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const startPolling = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    let n = 0;
+    pollRef.current = setInterval(() => {
+      n += 1;
+      if (n >= 20) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        void loadCounts();
+      } else {
+        void loadRef.current();
+      }
+    }, 1000);
+  };
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [],
+  );
+
+  const changed = () => {
+    void load();
+    void loadCounts();
+    setRefreshKey((k) => k + 1);
+  };
+  const fail = (error: any, key: string, fallback: string) =>
+    toast({ title: t('common.error', 'Error'), description: error?.message || t(key, fallback), variant: 'destructive' });
+  const done = (key: string, fallback: string) => toast({ title: t('common.success', 'Success'), description: t(key, fallback) });
+
+  // ── Actions (same requests as before) ──
+  const chargeNow = async (s: PaymentSchedule) => {
+    try {
+      const response = await fetch(`/api/admin/payments/schedules/${s.id}/charge-now`, { method: 'POST' });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to charge payment');
+      }
+      done('admin.payments.schedules.chargeNowSuccess', 'Payment initiated successfully. Invoice will be charged automatically.');
+      changed();
+      startPolling();
+    } catch (error: any) {
+      fail(error, 'admin.payments.schedules.chargeNowError', 'Failed to charge payment');
     }
   };
 
-  const handleAdjustDate = async (scheduleId: string, newDate: string, reason: string) => {
+  const retry = async (s: PaymentSchedule) => {
+    try {
+      const response = await fetch(`/api/admin/payments/schedules/${s.id}/retry`, { method: 'POST' });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to retry payment');
+      }
+      done('admin.payments.schedules.retrySuccess', 'Payment retry initiated');
+      changed();
+      startPolling();
+    } catch (error: any) {
+      fail(error, 'admin.payments.schedules.retryError', 'Failed to retry payment');
+    }
+  };
+
+  const adjustDate = async (scheduleId: string, newDate: string, reason: string) => {
     try {
       const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/adjust`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_date: newDate, reason }),
       });
-
-      if (!response.ok) throw new Error('Failed to adjust date');
-
-      await response.json();
-
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.adjustSuccess', 'Payment date adjusted successfully'),
-      });
-      setAdjustDialogOpen(false);
-
-      // Refresh schedules to show updated date
-      fetchSchedules();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to adjust date');
+      }
+      done('admin.payments.schedules.adjustSuccess', 'Payment date adjusted successfully');
+      setAdjustFor(null);
+      changed();
     } catch (error: any) {
-      console.error('Error adjusting date:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.adjustError', 'Failed to adjust payment date'),
-        variant: 'destructive',
-      });
+      fail(error, 'admin.payments.schedules.adjustError', 'Failed to adjust payment date');
     }
   };
 
-  /**
-   * Record a manual (offline) payment against a schedule row. Used when
-   * the customer paid via ACH / bank wire / cash / check — anything that
-   * doesn't flow through Stripe. The backend (`recordManualPayment` in
-   * src/lib/payments/enrollmentService.ts) inserts a `payments` row,
-   * flips the schedule to 'paid', and bumps enrollment.paid_amount.
-   */
-  const handleRecordManualPayment = async (
-    scheduleId: string,
-    payload: { payment_method: string; transaction_reference?: string; notes?: string },
-  ) => {
+  const recordManual = async (scheduleId: string, payload: { payment_method: string; transaction_reference?: string; notes?: string }) => {
     try {
-      const response = await fetch(
-        `/api/admin/payments/schedules/${scheduleId}/record-payment`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        },
-      );
+      const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/record-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.error || `Failed (HTTP ${response.status})`);
       }
-      toast({
-        title: t('common.success', 'Success'),
-        description: t(
-          'admin.payments.schedules.recordManualSuccess',
-          'Manual payment recorded; schedule marked as paid.',
-        ),
-      });
-      setManualPaymentDialogOpen(false);
-      setSelectedSchedule(null);
-      fetchSchedules();
+      done('admin.payments.schedules.recordManualSuccess', 'Manual payment recorded; schedule marked as paid.');
+      setManualFor(null);
+      changed();
     } catch (error: any) {
-      console.error('Error recording manual payment:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description:
-          error.message ||
-          t(
-            'admin.payments.schedules.recordManualError',
-            'Failed to record manual payment',
-          ),
-        variant: 'destructive',
-      });
+      fail(error, 'admin.payments.schedules.recordManualError', 'Failed to record manual payment');
     }
   };
 
-  const handleRetryPayment = async (scheduleId: string) => {
-    try {
-      const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/retry`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) throw new Error('Failed to retry payment');
-
-      const data = await response.json();
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.retrySuccess', 'Payment retry initiated'),
-      });
-
-      // Immediately refresh to show "processing" status
-      fetchSchedules();
-
-      // Start polling to catch when payment completes
-      startPolling();
-    } catch (error: any) {
-      console.error('Error retrying payment:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.retryError', 'Failed to retry payment'),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handlePausePayment = async (scheduleId: string, reason: string) => {
-    try {
-      const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/pause`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
-      });
-
-      if (!response.ok) throw new Error('Failed to pause payment');
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.pauseSuccess', 'Payment paused successfully'),
-      });
-      fetchSchedules();
-    } catch (error: any) {
-      console.error('Error pausing payment:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.pauseError', 'Failed to pause payment'),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleResumePayment = async (scheduleId: string) => {
-    try {
-      const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/resume`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) throw new Error('Failed to resume payment');
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.resumeSuccess', 'Payment resumed successfully'),
-      });
-      fetchSchedules();
-    } catch (error: any) {
-      console.error('Error resuming payment:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.resumeError', 'Failed to resume payment'),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleChargeNow = async (scheduleId: string) => {
-    try {
-      const response = await fetch(`/api/admin/payments/schedules/${scheduleId}/charge-now`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to charge payment');
-      }
-
-      const data = await response.json();
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.chargeNowSuccess', 'Payment initiated successfully. Invoice will be charged automatically.'),
-      });
-
-      // Immediately refresh to show "processing" status
-      fetchSchedules();
-
-      // Start polling to catch when payment completes
-      startPolling();
-    } catch (error: any) {
-      console.error('Error charging payment:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.chargeNowError', 'Failed to charge payment'),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleRestructurePlan = async (enrollmentId: string, newInstallmentCount: number, startDate: string, reason: string) => {
+  const restructurePlan = async (enrollmentId: string, newInstallmentCount: number, startDate: string, reason: string) => {
     try {
       const response = await fetch(`/api/admin/payments/schedules/${enrollmentId}/restructure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          new_installment_count: newInstallmentCount,
-          start_date: startDate,
-          reason,
-        }),
+        body: JSON.stringify({ new_installment_count: newInstallmentCount, start_date: startDate, reason }),
       });
-
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to restructure plan');
       }
-
-      const data = await response.json();
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.restructureSuccess', 'Payment plan restructured successfully'),
-      });
-
-      setRestructureDialogOpen(false);
-      fetchSchedules();
+      done('admin.payments.schedules.restructureSuccess', 'Payment plan restructured successfully');
+      setRestructure(null);
+      changed();
     } catch (error: any) {
-      console.error('Error restructuring plan:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.restructureError', 'Failed to restructure payment plan'),
-        variant: 'destructive',
-      });
+      fail(error, 'admin.payments.schedules.restructureError', 'Failed to restructure payment plan');
     }
   };
 
-  // Start polling for schedule updates (e.g., after charging)
-  const startPolling = () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-    }
-
-    setIsPolling(true);
-    let pollCount = 0;
-    const maxPolls = 20; // Poll for 20 seconds (20 polls * 1 second)
-
-    pollingIntervalRef.current = setInterval(() => {
-      pollCount++;
-
-      if (pollCount >= maxPolls) {
-        // Stop polling after 20 seconds
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-        setIsPolling(false);
-      } else {
-        // Refresh schedules to check for status updates
-        fetchSchedules();
-      }
-    }, 1000); // Poll every 1 second
-  };
-
-  const handleBulkDelay = async (days: number, reason: string) => {
+  // ── Rows ──
+  const money = (amount: number, currency?: string) => {
     try {
-      const scheduleIds = Array.from(selectedSchedules);
-      const response = await fetch('/api/admin/payments/schedules/bulk-delay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule_ids: scheduleIds, days, reason }),
-      });
-
-      if (!response.ok) throw new Error('Failed to delay payments');
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.schedules.bulkDelaySuccess', '{count} payments delayed successfully').replace('{count}', scheduleIds.length.toString()),
-      });
-      setBulkActionDialog(null);
-      setSelectedSchedules(new Set());
-      fetchSchedules();
-    } catch (error: any) {
-      console.error('Error delaying payments:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.schedules.bulkDelayError', 'Failed to delay payments'),
-        variant: 'destructive',
-      });
+      return new Intl.NumberFormat(locale, { style: 'currency', currency: currency || 'USD' }).format(amount || 0);
+    } catch {
+      return `${amount}`;
     }
   };
-
-  const toggleScheduleSelection = (scheduleId: string) => {
-    const newSelection = new Set(selectedSchedules);
-    if (newSelection.has(scheduleId)) {
-      newSelection.delete(scheduleId);
-    } else {
-      newSelection.add(scheduleId);
-    }
-    setSelectedSchedules(newSelection);
+  const date = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+  const dayOnly = (iso?: string | null) => (iso ? iso.split('T')[0] : '');
+  const statusLabel = (s: string) => t(`common.${s}`, s);
+  const typeLabel = (type: string) => t(`admin.payments.schedules.paymentType.${type}`, type);
+  const num = (n: number) => n.toLocaleString();
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const moreCount = [dateFrom, dateTo, minAmount, maxAmount].filter(Boolean).length;
+  const filtersOn = status !== 'all' || paymentType !== 'all' || productId !== 'all' || !!search || moreCount > 0;
+  const clearFilters = () => {
+    setStatus('all');
+    setPaymentType('all');
+    setProductId('all');
+    setSearch('');
+    setDateFrom('');
+    setDateTo('');
+    setMinAmount('');
+    setMaxAmount('');
   };
+  const toggleStatus = (s: StatusFilter) => setStatus((cur) => (cur === s ? 'all' : s));
+  const filteredNow = t('admin.list.filteredNow', 'Filtered now');
+  const COLS = 'minmax(0,1.1fr) minmax(0,1.2fr) 110px 150px 190px';
+  const initials = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase() || '?';
+  const field = 'h-11 w-full rounded-lg border border-border bg-card px-3 text-foreground outline-none focus:border-primary dark:[color-scheme:dark]';
 
-  const toggleAllSchedules = () => {
-    if (selectedSchedules.size === schedules.length) {
-      setSelectedSchedules(new Set());
-    } else {
-      setSelectedSchedules(new Set(schedules.map(s => s.id)));
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'paid':
-        return <CheckCircle2 className="h-4 w-4" style={{ color: 'hsl(var(--success))' }} />;
-      case 'pending':
-        return <Clock className="h-4 w-4" style={{ color: 'hsl(var(--warning))' }} />;
-      case 'processing':
-        return <RefreshCw className="h-4 w-4" style={{ color: 'hsl(var(--primary))' }} />;
-      case 'adjusted':
-        return <Calendar className="h-4 w-4" style={{ color: 'hsl(var(--primary))' }} />;
-      case 'overdue':
-        return <AlertCircle className="h-4 w-4" style={{ color: 'hsl(var(--destructive))' }} />;
-      case 'failed':
-        return <XCircle className="h-4 w-4" style={{ color: 'hsl(var(--destructive))' }} />;
-      case 'paused':
-        return <Pause className="h-4 w-4 text-muted-foreground" />;
-      case 'cancelled':
-        return <X className="h-4 w-4 text-muted-foreground" />;
-      default:
-        return <Clock className="h-4 w-4 text-muted-foreground" />;
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, any> = {
-      paid: 'default',
-      pending: 'secondary',
-      processing: 'secondary',
-      adjusted: 'secondary',
-      overdue: 'destructive',
-      failed: 'destructive',
-      paused: 'outline',
-      cancelled: 'outline',
-    };
-    return (
-      <Badge variant={variants[status] || 'outline'} suppressHydrationWarning>
-        {t(`common.${status}`, status)}
-      </Badge>
+  let state: ReactNode = undefined;
+  if (!loaded || (loading && rows.length === 0)) state = <ListSkeleton />;
+  else if (loadError && rows.length === 0)
+    state = (
+      <ListState
+        icon={WifiOff}
+        tone="red"
+        title={t('admin.list.loadError', "We couldn't load the list")}
+        text={t('admin.list.loadErrorText', 'The internet connection may have dropped. Nothing was deleted.')}
+        action={
+          <button type="button" onClick={changed} className={kitButton.primary}>
+            {t('admin.list.retry', 'Try again')}
+          </button>
+        }
+      />
     );
-  };
-
-  const formatDate = (dateString: string) => {
-    // Use UTC to avoid timezone conversion issues
-    const date = new Date(dateString);
-    return date.toLocaleDateString(
-      language === 'he' ? 'he-IL' : 'en-US',
-      {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC', // Important: prevents timezone conversion
-      }
+  else if (rows.length === 0)
+    state = (
+      <ListState
+        icon={filtersOn ? Search : Calendar}
+        tone={filtersOn ? 'grey' : 'primary'}
+        title={t('admin.payments.schedules.noSchedulesFound', 'No Schedules Found')}
+        text={filtersOn ? t('admin.list.noMatchText', 'Clear the search and filters to see the whole list.') : undefined}
+        action={
+          filtersOn ? (
+            <button type="button" onClick={clearFilters} className={kitButton.secondary}>
+              {t('common.clearFilters', 'Clear filters')}
+            </button>
+          ) : undefined
+        }
+      />
     );
-  };
-
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat(
-      language === 'he' ? 'he-IL' : 'en-US',
-      {
-        style: 'currency',
-        currency: currency || 'USD',
-      }
-    ).format(amount);
-  };
-
-  const handleSort = (field: keyof PaymentSchedule) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
-  const getSortIcon = (field: keyof PaymentSchedule) => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="h-4 w-4 opacity-50" />;
-    }
-    return sortDirection === 'asc'
-      ? <ArrowUp className="h-4 w-4" />
-      : <ArrowDown className="h-4 w-4" />;
-  };
-
-  const sortedSchedules = React.useMemo(() => {
-    if (!sortField) return schedules;
-
-    return [...schedules].sort((a, b) => {
-      let aValue = a[sortField];
-      let bValue = b[sortField];
-
-      // Handle null/undefined values
-      if (aValue === null || aValue === undefined) return 1;
-      if (bValue === null || bValue === undefined) return -1;
-
-      // Convert to comparable values
-      if (typeof aValue === 'string') aValue = aValue.toLowerCase();
-      if (typeof bValue === 'string') bValue = bValue.toLowerCase();
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [schedules, sortField, sortDirection]);
-
-  // Show loading state while translations are loading
-  if (translationsLoading) {
-    return <LoadingState variant="page" withLayout={true} />;
-  }
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
-          <div className="flex items-center gap-4 flex-wrap">
-            <Link href="/admin/payments">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
-              </Button>
-            </Link>
-            <div>
-              <h1 suppressHydrationWarning style={{
-                fontSize: 'var(--font-size-3xl)',
-                fontFamily: 'var(--font-family-heading)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'hsl(var(--text-heading))'
-              }}>{t('admin.payments.schedules.title', 'Payment Schedules')}</h1>
-              <p className="text-muted-foreground mt-1" suppressHydrationWarning>
-                {t('admin.payments.schedules.description', 'Manage all payment schedules across all enrollments')}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button onClick={() => setStandalonePaymentDialogOpen(true)}>
-              <DollarSign className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-              <span suppressHydrationWarning>
-                {t('admin.payments.schedules.recordStandalone', 'Record off-schedule payment')}
-              </span>
-            </Button>
-            <Button variant="outline" onClick={() => fetchSchedules()}>
-              <RefreshCw className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-              <span suppressHydrationWarning>{t('common.refresh', 'Refresh')}</span>
-            </Button>
-          </div>
-        </div>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        <PaymentsHeader active="planned" badge={loaded ? num(total) : undefined} onRecorded={changed} />
 
-        {/* Filters — collapsible. Header is also the toggle so the page
-            stays scan-friendly when filters aren't in use, with an
-            active-count badge so a hidden filtered state is never a
-            surprise. */}
-        <Card>
-          <button
-            type="button"
-            onClick={() => setFiltersOpen((v) => !v)}
-            className="w-full text-start"
-            aria-expanded={filtersOpen}
-            aria-controls="filters-body"
-          >
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('common.filters', 'Filters')}</span>
-                {activeFilterCount > 0 && (
-                  <span className="ms-2 inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 rounded-full bg-primary/15 text-primary text-xs font-semibold tabular-nums">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </CardTitle>
-              {filtersOpen ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              )}
-            </CardHeader>
-          </button>
-          {filtersOpen && (
-          <CardContent id="filters-body">
-            <div className="space-y-4" dir={direction}>
-              {/* Filters in two 4-up mega-rows on lg (1-up phone,
-                  2-up tablet). Row 1 — identity + categorical
-                  (search, product, status, type). Row 2 — ranges
-                  (date from/to, min/max amount). Cuts the card
-                  height to 2 rows instead of 4-5. */}
-
-              {/* Row 1: Search · Product · Status · Type */}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <Label suppressHydrationWarning>{t('admin.payments.schedules.searchUser', 'Search User')}</Label>
-                  <Input
-                    type="text"
-                    placeholder={t('admin.payments.schedules.searchUserPlaceholder', 'Name or email...')}
-                    value={filters.userSearch || ''}
-                    onChange={(e) => {
-                      setFilters({ ...filters, userSearch: e.target.value });
-                      setCurrentPage(1);
-                    }}
-                  />
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>
-                    {t('admin.payments.schedules.product', 'Product')}
-                    {products.length > 0 && (
-                      <span
-                        className="text-xs text-muted-foreground"
-                        style={{ marginLeft: isRtl ? '0' : '0.5rem', marginRight: isRtl ? '0.5rem' : '0' }}
-                      >
-                        ({products.length})
-                      </span>
-                    )}
-                  </Label>
-                  <Select
-                    value={filters.productId || 'all'}
-                    onValueChange={(value) => {
-                      setFilters({ ...filters, productId: value === 'all' ? undefined : value });
-                      setCurrentPage(1);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t('common.allProducts', 'All Products')} />
-                    </SelectTrigger>
-                    <SelectContent dir={direction}>
-                      <SelectItem value="all" suppressHydrationWarning>{t('common.allProducts', 'All Products')}</SelectItem>
-                      {products.length === 0 ? (
-                        <SelectItem value="loading" disabled>
-                          {t('common.loading', 'Loading...')}
-                        </SelectItem>
-                      ) : (
-                        products.map((product) => (
-                          <SelectItem key={product.id} value={product.id}>
-                            {product.title}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>{t('common.status', 'Status')}</Label>
-                  <Select
-                    value={filters.status || 'all'}
-                    onValueChange={(value) => {
-                      setFilters({ ...filters, status: value === 'all' ? undefined : value });
-                      setCurrentPage(1);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent dir={direction}>
-                      <SelectItem value="all" suppressHydrationWarning>{t('common.allStatuses', 'All Statuses')}</SelectItem>
-                      <SelectItem value="pending" suppressHydrationWarning>{t('common.pending', 'Pending')}</SelectItem>
-                      <SelectItem value="processing" suppressHydrationWarning>{t('common.processing', 'Processing')}</SelectItem>
-                      <SelectItem value="adjusted" suppressHydrationWarning>{t('common.adjusted', 'Adjusted')}</SelectItem>
-                      <SelectItem value="paid" suppressHydrationWarning>{t('common.paid', 'Paid')}</SelectItem>
-                      <SelectItem value="overdue" suppressHydrationWarning>{t('common.overdue', 'Overdue')}</SelectItem>
-                      <SelectItem value="failed" suppressHydrationWarning>{t('common.failed', 'Failed')}</SelectItem>
-                      <SelectItem value="paused" suppressHydrationWarning>{t('common.paused', 'Paused')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>
-                    {t('admin.payments.schedules.type', 'Type')}
-                  </Label>
-                  <Select
-                    value={filters.paymentType || 'all'}
-                    onValueChange={(value) => {
-                      setFilters({ ...filters, paymentType: value === 'all' ? undefined : value });
-                      setCurrentPage(1);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent dir={direction}>
-                      <SelectItem value="all" suppressHydrationWarning>
-                        {t('admin.payments.schedules.typeAll', 'All Types')}
-                      </SelectItem>
-                      <SelectItem value="deposit" suppressHydrationWarning>
-                        {t('admin.payments.schedules.paymentType.deposit', 'Deposit')}
-                      </SelectItem>
-                      <SelectItem value="installment" suppressHydrationWarning>
-                        {t('admin.payments.schedules.paymentType.installment', 'Installment')}
-                      </SelectItem>
-                      <SelectItem value="subscription" suppressHydrationWarning>
-                        {t('admin.payments.schedules.paymentType.subscription', 'Subscription')}
-                      </SelectItem>
-                      <SelectItem value="full" suppressHydrationWarning>
-                        {t('admin.payments.schedules.paymentType.full', 'Full')}
-                      </SelectItem>
-                      <SelectItem value="manual" suppressHydrationWarning>
-                        {t('admin.payments.schedules.paymentType.manual', 'Manual')}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Row 2: Date From · Date To · Min Amount · Max Amount */}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <Label suppressHydrationWarning>{t('common.dateFrom', 'Date From')}</Label>
-                  <Input
-                    type="date"
-                    value={filters.dateFrom || ''}
-                    onChange={(e) => {
-                      setFilters({ ...filters, dateFrom: e.target.value });
-                      setCurrentPage(1);
-                    }}
-                  />
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>{t('common.dateTo', 'Date To')}</Label>
-                  <Input
-                    type="date"
-                    value={filters.dateTo || ''}
-                    onChange={(e) => {
-                      setFilters({ ...filters, dateTo: e.target.value });
-                      setCurrentPage(1);
-                    }}
-                  />
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>{t('admin.payments.schedules.minAmount', 'Min Amount')}</Label>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    min="0"
-                    step="0.01"
-                    value={filters.minAmount || ''}
-                    onChange={(e) => {
-                      setFilters({ ...filters, minAmount: e.target.value });
-                      setCurrentPage(1);
-                    }}
-                  />
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>{t('admin.payments.schedules.maxAmount', 'Max Amount')}</Label>
-                  <Input
-                    type="number"
-                    placeholder="999999"
-                    min="0"
-                    step="0.01"
-                    value={filters.maxAmount || ''}
-                    onChange={(e) => {
-                      setFilters({ ...filters, maxAmount: e.target.value });
-                      setCurrentPage(1);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Clear-filters action — single button, end-aligned so it
-                  doesn't fight for attention with the input grid above. */}
-              <div className="flex justify-end pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setFilters({});
-                    setCurrentPage(1);
-                  }}
-                >
-                  <X className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                  <span suppressHydrationWarning>{t('common.clearFilters', 'Clear Filters')}</span>
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-          )}
-        </Card>
-
-        {/* Bulk Actions */}
-        {selectedSchedules.size > 0 && (() => {
-          // Check if any selected schedules are paid or cancelled
-          const hasNonEditableSchedules = Array.from(selectedSchedules).some(id => {
-            const schedule = schedules.find(s => s.id === id);
-            return schedule?.status === 'paid' || schedule?.status === 'cancelled';
-          });
-
-          return (
-            <Alert>
-              <AlertDescription className="flex items-center justify-between flex-wrap gap-2" dir={direction}>
-                <span suppressHydrationWarning>{t('admin.payments.schedules.schedulesSelected', '{count} schedule(s) selected').replace('{count}', selectedSchedules.size.toString())}</span>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBulkActionDialog('delay')}
-                    disabled={hasNonEditableSchedules}
-                  >
-                    <span suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBulkActionDialog('pause')}
-                    disabled={hasNonEditableSchedules}
-                  >
-                    <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayments', 'Pause Payments')}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBulkActionDialog('cancel')}
-                    disabled={hasNonEditableSchedules}
-                  >
-                    <span suppressHydrationWarning>{t('admin.payments.schedules.cancelPayments', 'Cancel Payments')}</span>
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setSelectedSchedules(new Set())}>
-                    <span suppressHydrationWarning>{t('common.clear', 'Clear')}</span>
-                  </Button>
-                </div>
-              </AlertDescription>
-            </Alert>
-          );
-        })()}
-
-        {/* Schedules Table */}
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto overflow-y-visible" dir={direction}>
-              <table className="w-full">
-                <thead className="border-b">
-                  <tr className={isRtl ? 'text-right' : 'text-left'}>
-                    <th className="p-3">
-                      <Checkbox
-                        checked={selectedSchedules.size === schedules.length && schedules.length > 0}
-                        onCheckedChange={toggleAllSchedules}
-                      />
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('user_name')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('common.user', 'User')}</span>
-                        {getSortIcon('user_name')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('product_name')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('common.product', 'Product')}</span>
-                        {getSortIcon('product_name')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('payment_number')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('admin.payments.schedules.paymentNumber', 'Payment #')}</span>
-                        {getSortIcon('payment_number')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('amount')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('common.amount', 'Amount')}</span>
-                        {getSortIcon('amount')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('scheduled_date')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('admin.payments.schedules.scheduledDate', 'Scheduled Date')}</span>
-                        {getSortIcon('scheduled_date')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('paid_date')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('admin.payments.schedules.paidDate', 'Paid Date')}</span>
-                        {getSortIcon('paid_date')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm">
-                      <button
-                        onClick={() => handleSort('status')}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        <span suppressHydrationWarning>{t('common.status', 'Status')}</span>
-                        {getSortIcon('status')}
-                      </button>
-                    </th>
-                    <th className="p-3 font-medium text-sm" suppressHydrationWarning>{t('common.actions', 'Actions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedSchedules.map((schedule) => (
-                    <tr
-                      key={schedule.id}
-                      className="border-b transition-colors hover:bg-muted/50"
-                      style={{ borderColor: 'hsl(var(--border))' }}
-                    >
-                      <td className="p-3">
-                        <Checkbox
-                          checked={selectedSchedules.has(schedule.id)}
-                          onCheckedChange={() => toggleScheduleSelection(schedule.id)}
-                        />
-                      </td>
-                      <td className="p-3">
-                        <div>
-                          <div style={{
-                            fontSize: 'var(--font-size-sm)',
-                            fontWeight: 'var(--font-weight-medium)',
-                            color: 'hsl(var(--text-primary))'
-                          }}>{schedule.user_name}</div>
-                          <div style={{
-                            fontSize: 'var(--font-size-xs)',
-                            color: 'hsl(var(--text-muted))'
-                          }}>{schedule.user_email}</div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div style={{
-                          fontSize: 'var(--font-size-sm)',
-                          fontWeight: 'var(--font-weight-medium)',
-                          color: 'hsl(var(--text-primary))'
-                        }}>{schedule.product_name}</div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <span style={{
-                            fontSize: 'var(--font-size-sm)',
-                            color: 'hsl(var(--text-primary))'
-                          }}>#{schedule.payment_number}</span>
-                          <Badge variant="outline" className="text-xs" suppressHydrationWarning>
-                            {t(`admin.payments.schedules.paymentType.${schedule.payment_type}`, schedule.payment_type)}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <span style={{
-                          fontSize: 'var(--font-size-sm)',
-                          fontWeight: 'var(--font-weight-semibold)',
-                          color: 'hsl(var(--text-primary))'
-                        }}>
-                          {formatCurrency(schedule.amount, schedule.currency)}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <div>
-                          <div style={{
-                            fontSize: 'var(--font-size-sm)',
-                            color: 'hsl(var(--text-primary))'
-                          }}>
-                            {formatDate(schedule.scheduled_date)}
-                          </div>
-                          {/* Show original date if it differs from scheduled date (comparing UTC date strings) */}
-                          {schedule.scheduled_date !== schedule.original_due_date && (
-                            <div style={{
-                              fontSize: 'var(--font-size-xs)',
-                              color: 'hsl(var(--text-muted))'
-                            }} suppressHydrationWarning>
-                              {t('admin.payments.schedules.original', 'Original')}: {formatDate(schedule.original_due_date)}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div>
-                          {schedule.paid_date ? (
-                            <div className="flex items-center gap-2">
-                              <div style={{
-                                fontSize: 'var(--font-size-sm)',
-                                color: 'hsl(var(--success))',
-                                fontWeight: 'var(--font-weight-medium)'
-                              }}>
-                                {formatDate(schedule.paid_date)}
-                              </div>
-                              {(() => {
-                                // Compare dates only (ignore time)
-                                const paidDate = new Date(schedule.paid_date).toISOString().split('T')[0];
-                                const scheduledDate = new Date(schedule.scheduled_date).toISOString().split('T')[0];
-
-                                if (paidDate === scheduledDate) {
-                                  // Same day - show "On Time" with icon
-                                  return (
-                                    <CheckCircle2 className="h-3 w-3" style={{ color: 'hsl(var(--success))' }} />
-                                  );
-                                } else {
-                                  // Different days - calculate difference and show icon with days
-                                  const paidTime = new Date(paidDate).getTime();
-                                  const scheduledTime = new Date(scheduledDate).getTime();
-                                  const daysDiff = Math.abs(Math.round((paidTime - scheduledTime) / (1000 * 60 * 60 * 24)));
-
-                                  return (
-                                    <div className="flex items-center gap-1" style={{
-                                      fontSize: 'var(--font-size-xs)',
-                                      color: 'hsl(var(--text-muted))'
-                                    }} suppressHydrationWarning>
-                                      {paidTime > scheduledTime ? (
-                                        <>
-                                          <AlertCircle className="h-3 w-3" style={{ color: 'hsl(var(--warning))' }} />
-                                          <span>{daysDiff}{t('common.days', 'd')}</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Clock className="h-3 w-3" style={{ color: 'hsl(var(--success))' }} />
-                                          <span>{daysDiff}{t('common.days', 'd')}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  );
-                                }
-                              })()}
-                            </div>
-                          ) : (
-                            <span style={{
-                              color: 'hsl(var(--text-muted))',
-                              fontSize: 'var(--font-size-xs)'
-                            }}>
-                              -
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(schedule.status)}
-                          {getStatusBadge(schedule.status)}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <ScheduleActionsMenu
-                          schedule={schedule}
-                          onAdjust={() => {
-                            setSelectedSchedule(schedule);
-                            setAdjustDialogOpen(true);
-                          }}
-                          onRetry={() => handleRetryPayment(schedule.id)}
-                          onPause={() => handlePausePayment(schedule.id, 'Admin action')}
-                          onResume={() => handleResumePayment(schedule.id)}
-                          onChargeNow={() => handleChargeNow(schedule.id)}
-                          onChangeCard={() => {
-                            setSelectedScheduleForCardChange(schedule);
-                            setCardSelectionMode('change');
-                            setCardSelectionDialogOpen(true);
-                          }}
-                          onRestructure={() => {
-                            setSelectedEnrollmentForRestructure(schedule.enrollment_id);
-                            setRestructureDialogOpen(true);
-                          }}
-                          onRecordManual={() => {
-                            setSelectedSchedule(schedule);
-                            setManualPaymentDialogOpen(true);
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {schedules.length === 0 && !loadingSchedules && (
-              <div className="py-12 text-center">
-                <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('admin.payments.schedules.noSchedulesFound', 'No Schedules Found')}</h3>
-                <p className="text-muted-foreground" suppressHydrationWarning>
-                  {t('admin.payments.schedules.noSchedulesMatch', 'No payment schedules match your current filters')}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Pagination */}
-        {totalSchedules > 0 && (
-          <Card>
-            <div className={`p-4 flex items-center justify-between ${isRtl ? 'flex-row-reverse' : ''}`}>
-              <div className="flex items-center gap-2">
-                <Label suppressHydrationWarning>{t('admin.payments.transactions.pagination.rowsPerPage', 'Rows per page:')}</Label>
-                <Select
-                  value={itemsPerPage.toString()}
-                  onValueChange={(value) => {
-                    setItemsPerPage(Number(value));
-                    setCurrentPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-20">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction}>
-                    <SelectItem value="5">5</SelectItem>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground" suppressHydrationWarning>
-                  {t('admin.payments.transactions.pagination.showing', `Showing ${((currentPage - 1) * itemsPerPage) + 1}-${Math.min(currentPage * itemsPerPage, totalSchedules)} of ${totalSchedules}`)}
-                </span>
-              </div>
-
-              <div className={`flex items-center gap-1 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                >
-                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.first', 'First')}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.previous', 'Previous')}</span>
-                </Button>
-                <span className="text-sm px-4" suppressHydrationWarning>
-                  {t('admin.payments.transactions.pagination.page', `Page ${currentPage} of ${totalPages}`)}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.next', 'Next')}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                >
-                  <span suppressHydrationWarning>{t('admin.payments.transactions.pagination.last', 'Last')}</span>
-                </Button>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Adjust Date Dialog */}
-        <AdjustDateDialog
-          open={adjustDialogOpen}
-          schedule={selectedSchedule}
-          onClose={() => setAdjustDialogOpen(false)}
-          onAdjust={handleAdjustDate}
-          direction={direction}
-        />
-
-        {/* Manual Payment Dialog */}
-        <RecordManualPaymentDialog
-          open={manualPaymentDialogOpen}
-          schedule={selectedSchedule}
-          onClose={() => {
-            setManualPaymentDialogOpen(false);
-            setSelectedSchedule(null);
-          }}
-          onRecord={handleRecordManualPayment}
-        />
-
-        {/* Standalone (off-schedule) Payment Dialog */}
-        <RecordStandalonePaymentDialog
-          open={standalonePaymentDialogOpen}
-          onClose={() => setStandalonePaymentDialogOpen(false)}
-          onRecorded={() => {
-            setStandalonePaymentDialogOpen(false);
-            fetchSchedules();
-            toast({
-              title: t('common.success', 'Success'),
-              description: t(
-                'admin.payments.schedules.recordStandaloneSuccess',
-                'Off-schedule payment recorded.',
-              ),
-            });
-          }}
-        />
-
-        {/* Restructure Plan Dialog */}
-        <RestructurePlanDialog
-          open={restructureDialogOpen}
-          enrollmentId={selectedEnrollmentForRestructure}
-          schedules={schedules.filter(s => s.enrollment_id === selectedEnrollmentForRestructure)}
-          onClose={() => {
-            setRestructureDialogOpen(false);
-            setSelectedEnrollmentForRestructure(null);
-          }}
-          onRestructure={handleRestructurePlan}
-          direction={direction}
-        />
-
-        {/* Bulk Delay Dialog */}
-        <BulkDelayDialog
-          open={bulkActionDialog === 'delay'}
-          count={selectedSchedules.size}
-          onClose={() => setBulkActionDialog(null)}
-          onDelay={handleBulkDelay}
-          direction={direction}
-        />
-
-        {/* Card Selection Dialog */}
-        <CardSelectionDialog
-          open={cardSelectionDialogOpen}
-          scheduleId={selectedScheduleForCardChange?.id || null}
-          scheduleName={selectedScheduleForCardChange?.user_name}
-          mode={cardSelectionMode}
-          onClose={() => {
-            setCardSelectionDialogOpen(false);
-            setSelectedScheduleForCardChange(null);
-          }}
-          onCharged={() => {
-            fetchSchedules();
-            startPolling();
-          }}
-          direction={direction}
-        />
-      </div>
-    </AdminLayout>
-  );
-}
-
-// Schedule Actions Menu Component
-function ScheduleActionsMenu({
-  schedule,
-  onAdjust,
-  onRetry,
-  onPause,
-  onResume,
-  onChargeNow,
-  onChangeCard,
-  onRestructure,
-  onRecordManual,
-}: {
-  schedule: PaymentSchedule;
-  onAdjust: () => void;
-  onRetry: () => void;
-  onPause: () => void;
-  onResume: () => void;
-  onChargeNow: () => void;
-  onChangeCard: () => void;
-  onRestructure: () => void;
-  onRecordManual: () => void;
-}) {
-  const { t, direction } = useAdminLanguage();
-  const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, right: 0 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const isRtl = direction === 'rtl';
-
-  const handleToggle = () => {
-    if (!open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const menuWidth = 192; // 192px = w-48
-      const menuHeight = 200; // Approximate menu height
-      const viewportHeight = window.innerHeight;
-
-      // Check if menu would go off bottom of screen
-      const spaceBelow = viewportHeight - rect.bottom;
-      const openUpward = spaceBelow < menuHeight && rect.top > menuHeight;
-
-      setMenuPosition({
-        top: openUpward ? rect.top - menuHeight - 8 : rect.bottom + 8,
-        left: rect.right - menuWidth,
-        right: rect.right,
-      });
-    }
-    setOpen(!open);
-  };
-
-  return (
-    <div className="relative">
-      <Button
-        ref={buttonRef}
-        variant="ghost"
-        size="icon"
-        onClick={handleToggle}
-      >
-        <MoreVertical className="h-4 w-4" />
-      </Button>
-
-      {open && (
-        <>
-          {/* Backdrop to close menu when clicking outside */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
+        <KpiStrip label={t('admin.list.numbers', 'Numbers')}>
+          <KpiItem
+            icon={<AlertCircle />}
+            tone={counts && counts.overdue > 0 ? 'amber' : 'grey'}
+            label={t('common.overdue', 'Overdue')}
+            value={counts ? num(counts.overdue) : '—'}
+            onClick={() => toggleStatus('overdue')}
+            active={status === 'overdue'}
+            activeNote={filteredNow}
           />
-          {/* Dropdown menu - fixed position relative to viewport */}
-          <div
-            className="fixed w-48 bg-white dark:bg-gray-800 border rounded-md shadow-lg z-50"
-            style={{
-              top: `${menuPosition.top}px`,
-              left: `${menuPosition.left}px`,
-            }}
-          >
-            <div className="py-1">
-            {(schedule.status === 'pending' || schedule.status === 'overdue' || schedule.status === 'adjusted') && (
-              <>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onChargeNow();
-                    setOpen(false);
-                  }}
-                >
-                  <DollarSign className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.chargeNow', 'Charge Now')}</span>
-                </button>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onChangeCard();
-                    setOpen(false);
-                  }}
-                >
-                  <CreditCard className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.changeCard', 'Change Card')}</span>
-                </button>
-                <div className="border-t my-1"></div>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onAdjust();
-                    setOpen(false);
-                  }}
-                >
-                  <Calendar className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</span>
-                </button>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onPause();
-                    setOpen(false);
-                  }}
-                >
-                  <Pause className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.pausePayment', 'Pause Payment')}</span>
-                </button>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onRestructure();
-                    setOpen(false);
-                  }}
-                >
-                  <ArrowUpDown className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.restructurePlan', 'Restructure Plan')}</span>
-                </button>
-                <div className="border-t my-1"></div>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onRecordManual();
-                    setOpen(false);
-                  }}
-                >
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.recordManual', 'Record manual payment')}</span>
-                </button>
-              </>
-            )}
-            {schedule.status === 'processing' && (
-              <div className="px-4 py-3 text-sm text-muted-foreground text-center" suppressHydrationWarning>
-                {t('admin.payments.schedules.processingPayment', 'Payment is being processed...')}
-              </div>
-            )}
-            {schedule.status === 'failed' && (
-              <>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onRetry();
-                    setOpen(false);
-                  }}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.retryPayment', 'Retry Payment')}</span>
-                </button>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onChangeCard();
-                    setOpen(false);
-                  }}
-                >
-                  <CreditCard className="h-4 w-4" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.changeCard', 'Change Card')}</span>
-                </button>
-                <div className="border-t my-1"></div>
-                <button
-                  className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                  onClick={() => {
-                    onRecordManual();
-                    setOpen(false);
-                  }}
-                >
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.recordManual', 'Record manual payment')}</span>
-                </button>
-              </>
-            )}
-            {schedule.status === 'paused' && (
+          <KpiItem
+            icon={<XCircle />}
+            tone={counts && counts.failed > 0 ? 'amber' : 'grey'}
+            label={t('common.failed', 'Failed')}
+            value={counts ? num(counts.failed) : '—'}
+            onClick={() => toggleStatus('failed')}
+            active={status === 'failed'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<Calendar />}
+            tone="blue"
+            label={t('admin.payments.schedules.kpi.week', 'This week')}
+            value={counts ? num(counts.week) : '—'}
+            subtitle={t('admin.payments.schedules.kpi.weekSub', 'Due in the next 7 days')}
+          />
+          <KpiItem
+            icon={<Clock />}
+            tone="grey"
+            label={t('common.pending', 'Pending')}
+            value={counts ? num(counts.pending) : '—'}
+            onClick={() => toggleStatus('pending')}
+            active={status === 'pending'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<CheckCircle2 />}
+            tone="green"
+            label={t('common.paid', 'Paid')}
+            value={counts ? num(counts.paid) : '—'}
+            onClick={() => toggleStatus('paid')}
+            active={status === 'paid'}
+            activeNote={filteredNow}
+          />
+        </KpiStrip>
+
+        <ListPanel
+          label={t('admin.payments.schedules.title', 'Payment Schedules')}
+          toolbar={
+            <>
+              <ListSearch
+                value={search}
+                onChange={setSearch}
+                placeholder={t('admin.payments.schedules.searchUserPlaceholder', 'Name or email...')}
+                clearLabel={t('admin.users.list.clearSearch', 'Clear search')}
+              />
+              <FilterSelect
+                label={t('admin.payments.schedules.product', 'Product')}
+                value={productId}
+                onChange={setProductId}
+                dir={direction}
+                options={[{ value: 'all', label: t('common.allProducts', 'All products') }, ...products.map((p) => ({ value: p.id, label: p.title }))]}
+              />
+              <FilterSelect
+                label={t('admin.payments.schedules.type', 'Type')}
+                value={paymentType}
+                onChange={setPaymentType}
+                dir={direction}
+                options={[{ value: 'all', label: t('admin.payments.schedules.typeAll', 'All Types') }, ...PAYMENT_TYPES.map((p) => ({ value: p, label: typeLabel(p) }))]}
+              />
               <button
-                className="w-full text-left px-4 py-2 hover:bg-muted flex items-center gap-2"
-                onClick={() => {
-                  onResume();
-                  setOpen(false);
-                }}
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-expanded={moreOpen}
+                className={`inline-flex h-11 items-center gap-2 rounded-lg border px-3.5 text-sm font-medium ${
+                  moreOpen || moreCount > 0 ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-card text-foreground hover:bg-muted'
+                }`}
               >
-                <Play className="h-4 w-4" />
-                <span suppressHydrationWarning>{t('admin.payments.schedules.resumePayment', 'Resume Payment')}</span>
+                <SlidersHorizontal className="h-4 w-4" aria-hidden />
+                {t('admin.audit.moreFilters', 'More filters')}
+                {moreCount > 0 && (
+                  <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-xs font-semibold text-primary-foreground">{moreCount}</span>
+                )}
               </button>
-            )}
-            {(schedule.status === 'paid' || schedule.status === 'cancelled') && (
-              <div className="px-4 py-3 text-sm text-muted-foreground text-center" suppressHydrationWarning>
-                {t('admin.payments.schedules.noActionsAvailable', 'Paid payment cannot be changed')}
-              </div>
-            )}
-          </div>
-        </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// Adjust Date Dialog Component
-function AdjustDateDialog({
-  open,
-  schedule,
-  onClose,
-  onAdjust,
-  direction,
-}: {
-  open: boolean;
-  schedule: PaymentSchedule | null;
-  onClose: () => void;
-  onAdjust: (scheduleId: string, newDate: string, reason: string) => void;
-  direction: 'ltr' | 'rtl';
-}) {
-  const { t } = useAdminLanguage();
-  const { toast } = useToast();
-  const [newDate, setNewDate] = useState('');
-  const [reason, setReason] = useState('');
-  const [errors, setErrors] = useState<{ date?: string; reason?: string }>({});
-
-  useEffect(() => {
-    if (schedule) {
-      setNewDate(schedule.scheduled_date.split('T')[0]);
-      setReason('');
-      setErrors({});
-    }
-  }, [schedule]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrors({});
-
-    // Validate date
-    if (!newDate) {
-      setErrors({ date: t('admin.payments.schedules.errorDateRequired', 'Please select a new date') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorDateRequired', 'Please select a new date'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const selectedDate = new Date(newDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (selectedDate < today) {
-      setErrors({ date: t('admin.payments.schedules.errorDatePast', 'Date cannot be in the past') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorDatePast', 'Date cannot be in the past'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Validate reason
-    if (!reason || reason.trim().length === 0) {
-      setErrors({ reason: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for adjustment') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for adjustment'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (reason.trim().length < 5) {
-      setErrors({ reason: t('admin.payments.schedules.errorReasonTooShortAdjust', 'Reason must be at least 5 characters') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorReasonTooShortAdjust', 'Reason must be at least 5 characters'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (schedule) {
-      onAdjust(schedule.id, newDate, reason);
-    }
-  };
-
-  if (!schedule) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction}>
-        <DialogHeader>
-          <DialogTitle suppressHydrationWarning>{t('admin.payments.schedules.adjustPaymentDate', 'Adjust Payment Date')}</DialogTitle>
-          <DialogDescription suppressHydrationWarning>
-            {t('admin.payments.schedules.changeScheduledDate', "Change the scheduled date for {name}'s payment #{number}")
-              .replace('{name}', schedule.user_name)
-              .replace('{number}', schedule.payment_number.toString())}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label suppressHydrationWarning>{t('admin.payments.schedules.newDate', 'New Date')}</Label>
-            <Input
-              type="date"
-              value={newDate}
-              onChange={(e) => {
-                setNewDate(e.target.value);
-                if (errors.date) setErrors({ ...errors, date: undefined });
-              }}
-              className={errors.date ? 'border-destructive' : ''}
-            />
-            {errors.date && (
-              <p className="text-xs text-destructive mt-1">{errors.date}</p>
-            )}
-          </div>
-          <div>
-            <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
-            <Input
-              value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
-                if (errors.reason) setErrors({ ...errors, reason: undefined });
-              }}
-              placeholder={t('admin.payments.schedules.reasonPlaceholder', 'e.g., User requested extension')}
-              className={errors.reason ? 'border-destructive' : ''}
-            />
-            {errors.reason && (
-              <p className="text-xs text-destructive mt-1">{errors.reason}</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
-            </Button>
-            <Button type="submit">
-              <span suppressHydrationWarning>{t('admin.payments.schedules.adjustDate', 'Adjust Date')}</span>
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Bulk Delay Dialog Component
-function BulkDelayDialog({
-  open,
-  count,
-  onClose,
-  onDelay,
-  direction,
-}: {
-  open: boolean;
-  count: number;
-  onClose: () => void;
-  onDelay: (days: number, reason: string) => void;
-  direction: 'ltr' | 'rtl';
-}) {
-  const { t } = useAdminLanguage();
-  const [days, setDays] = useState(30);
-  const [reason, setReason] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onDelay(days, reason);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction}>
-        <DialogHeader>
-          <DialogTitle suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</DialogTitle>
-          <DialogDescription suppressHydrationWarning>
-            {t('admin.payments.schedules.delaySelectedPayments', 'Delay {count} selected payment(s) by a specified number of days')
-              .replace('{count}', count.toString())}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label suppressHydrationWarning>{t('admin.payments.schedules.daysToDelay', 'Days to Delay')}</Label>
-            <Input
-              type="number"
-              min="1"
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              required
-            />
-          </div>
-          <div>
-            <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
-            <Input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={t('admin.payments.schedules.delayReasonPlaceholder', 'e.g., Program start date delayed')}
-              required
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
-            </Button>
-            <Button type="submit">
-              <span suppressHydrationWarning>{t('admin.payments.schedules.delayPayments', 'Delay Payments')}</span>
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Restructure Plan Dialog Component
-function RestructurePlanDialog({
-  open,
-  enrollmentId,
-  schedules,
-  onClose,
-  onRestructure,
-  direction,
-}: {
-  open: boolean;
-  enrollmentId: string | null;
-  schedules: PaymentSchedule[];
-  onClose: () => void;
-  onRestructure: (enrollmentId: string, newInstallmentCount: number, startDate: string, reason: string) => void;
-  direction: 'ltr' | 'rtl';
-}) {
-  const { t, language } = useAdminLanguage();
-  const { toast } = useToast();
-  const [newInstallmentCount, setNewInstallmentCount] = useState(12);
-  const [startDate, setStartDate] = useState('');
-  const [reason, setReason] = useState('');
-  const [errors, setErrors] = useState<{ installments?: string; startDate?: string; reason?: string }>({});
-  const [previewData, setPreviewData] = useState<{
-    currentPaid: number;
-    currentPending: number;
-    currentTotal: number;
-    remainingBalance: number;
-    newInstallmentAmount: number;
-    willCreate: number;
-    willCancel: number;
-  } | null>(null);
-
-  // Set default start date when dialog opens
-  useEffect(() => {
-    if (open && schedules.length > 0) {
-      const paidSchedules = schedules.filter(s => s.status === 'paid');
-      let defaultDate: Date;
-
-      if (paidSchedules.length > 0) {
-        // Start from one month after the last paid date
-        const lastPaidSchedule = paidSchedules[paidSchedules.length - 1];
-        defaultDate = new Date(lastPaidSchedule.scheduled_date);
-        defaultDate.setMonth(defaultDate.getMonth() + 1);
-      } else {
-        // Start from next month
-        defaultDate = new Date();
-        defaultDate.setMonth(defaultDate.getMonth() + 1);
-        defaultDate.setDate(1); // First day of next month
-      }
-
-      setStartDate(defaultDate.toISOString().split('T')[0]);
-      setErrors({});
-    }
-  }, [open, schedules]);
-
-  useEffect(() => {
-    if (!enrollmentId || schedules.length === 0) return;
-
-    const paidSchedules = schedules.filter(s => s.status === 'paid');
-    const pendingSchedules = schedules.filter(s => ['pending', 'overdue', 'adjusted'].includes(s.status));
-
-    const currentPaid = paidSchedules.length;
-    const currentPending = pendingSchedules.length;
-    const currentTotal = schedules.length;
-
-    // Calculate remaining balance
-    const paidAmount = paidSchedules.reduce((sum, s) => sum + s.amount, 0);
-    const totalAmount = schedules.reduce((sum, s) => sum + s.amount, 0);
-    const remainingBalance = totalAmount - paidAmount;
-
-    // Calculate new installment amount
-    const newInstallmentAmount = remainingBalance / newInstallmentCount;
-
-    // Determine what will happen
-    const willCreate = Math.max(0, newInstallmentCount - currentPending);
-    const willCancel = Math.max(0, currentPending - newInstallmentCount);
-
-    setPreviewData({
-      currentPaid,
-      currentPending,
-      currentTotal,
-      remainingBalance,
-      newInstallmentAmount,
-      willCreate,
-      willCancel,
-    });
-  }, [enrollmentId, schedules, newInstallmentCount]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Clear previous errors
-    setErrors({});
-
-    // Validate installment count
-    if (!newInstallmentCount || newInstallmentCount < 1) {
-      setErrors({ installments: t('admin.payments.schedules.errorInstallmentRequired', 'Please enter a valid number of installments') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorInstallmentRequired', 'Please enter a valid number of installments'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (newInstallmentCount > 100) {
-      setErrors({ installments: t('admin.payments.schedules.errorInstallmentMax', 'Maximum 100 installments allowed') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorInstallmentMax', 'Maximum 100 installments allowed'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Validate start date
-    if (!startDate) {
-      setErrors({ startDate: t('admin.payments.schedules.errorStartDateRequired', 'Please select a start date') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorStartDateRequired', 'Please select a start date'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const selectedDate = new Date(startDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (selectedDate < today) {
-      setErrors({ startDate: t('admin.payments.schedules.errorStartDatePast', 'Start date cannot be in the past') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorStartDatePast', 'Start date cannot be in the past'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Validate reason
-    if (!reason || reason.trim().length === 0) {
-      setErrors({ reason: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for restructuring') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorReasonRequired', 'Please provide a reason for restructuring'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (reason.trim().length < 10) {
-      setErrors({ reason: t('admin.payments.schedules.errorReasonTooShort', 'Reason must be at least 10 characters') });
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.schedules.errorReasonTooShort', 'Reason must be at least 10 characters'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (enrollmentId && previewData) {
-      onRestructure(enrollmentId, newInstallmentCount, startDate, reason);
-    }
-  };
-
-  if (!enrollmentId || schedules.length === 0) return null;
-
-  const formatCurrency = (amount: number) => {
-    const currency = schedules[0]?.currency || 'USD';
-    return new Intl.NumberFormat(
-      language === 'he' ? 'he-IL' : 'en-US',
-      {
-        style: 'currency',
-        currency,
-      }
-    ).format(amount);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent dir={direction} className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle suppressHydrationWarning>
-            {t('admin.payments.schedules.restructurePaymentPlan', 'Restructure Payment Plan')}
-          </DialogTitle>
-          <DialogDescription suppressHydrationWarning>
-            {t('admin.payments.schedules.restructureDescription', 'Change the number of installments for this enrollment')}
-          </DialogDescription>
-        </DialogHeader>
-
-        {previewData && (
-          <div className="space-y-4">
-            {/* Current Status */}
-            <div className="bg-muted p-4 rounded-lg">
-              <h3 className="font-semibold mb-3" suppressHydrationWarning>
-                {t('admin.payments.schedules.currentStatus', 'Current Status')}
-              </h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.payments.schedules.totalPayments', 'Total Payments')}:
-                  </span>
-                  <span className="font-semibold ml-2">{previewData.currentTotal}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.payments.schedules.paidPayments', 'Paid')}:
-                  </span>
-                  <span className="font-semibold ml-2 text-green-600">{previewData.currentPaid}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.payments.schedules.pendingPayments', 'Pending')}:
-                  </span>
-                  <span className="font-semibold ml-2 text-yellow-600">{previewData.currentPending}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground" suppressHydrationWarning>
-                    {t('admin.payments.schedules.remainingBalance', 'Remaining Balance')}:
-                  </span>
-                  <span className="font-semibold ml-2">{formatCurrency(previewData.remainingBalance)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* New Plan Input */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label suppressHydrationWarning>
-                  {t('admin.payments.schedules.newNumberOfInstallments', 'New Number of Installments')}
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={newInstallmentCount}
-                  onChange={(e) => {
-                    setNewInstallmentCount(Number(e.target.value));
-                    if (errors.installments) setErrors({ ...errors, installments: undefined });
-                  }}
-                  className={errors.installments ? 'border-destructive' : ''}
-                />
-                {errors.installments && (
-                  <p className="text-xs text-destructive mt-1">{errors.installments}</p>
-                )}
-                {!errors.installments && (
-                  <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('admin.payments.schedules.currentInstallments', 'Current: {count} installments').replace('{count}', previewData.currentPending.toString())}
-                  </p>
-                )}
-              </div>
-
-              {/* Start Date Input */}
-              <div>
-                <Label suppressHydrationWarning>
-                  {t('admin.payments.schedules.paymentStartDate', 'Payment Start Date')}
-                </Label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => {
-                    setStartDate(e.target.value);
-                    if (errors.startDate) setErrors({ ...errors, startDate: undefined });
-                  }}
-                  className={errors.startDate ? 'border-destructive' : ''}
-                />
-                {errors.startDate && (
-                  <p className="text-xs text-destructive mt-1">{errors.startDate}</p>
-                )}
-                {!errors.startDate && (
-                  <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('admin.payments.schedules.firstPaymentWillBe', 'First payment will be scheduled for this date')}
-                  </p>
-                )}
-              </div>
-
-              {/* Preview of Changes */}
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <p className="font-semibold" suppressHydrationWarning>
-                      {t('admin.payments.schedules.whatWillHappen', 'What will happen:')}
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-sm">
-                      <li suppressHydrationWarning>
-                        {t('admin.payments.schedules.newInstallmentAmount', 'Each new installment: {amount}')
-                          .replace('{amount}', formatCurrency(previewData.newInstallmentAmount))}
-                      </li>
-                      {previewData.willCancel > 0 && (
-                        <li className="text-orange-600" suppressHydrationWarning>
-                          {t('admin.payments.schedules.willCancelSchedules', 'Will cancel {count} pending schedule(s)')
-                            .replace('{count}', previewData.willCancel.toString())}
-                        </li>
-                      )}
-                      {previewData.willCreate > 0 && (
-                        <li className="text-green-600" suppressHydrationWarning>
-                          {t('admin.payments.schedules.willCreateSchedules', 'Will create {count} new schedule(s)')
-                            .replace('{count}', previewData.willCreate.toString())}
-                        </li>
-                      )}
-                      <li suppressHydrationWarning>
-                        {t('admin.payments.schedules.paidPaymentsUntouched', 'Paid payments will not be affected')}
-                      </li>
-                    </ul>
-                  </div>
-                </AlertDescription>
-              </Alert>
-
-              <div>
-                <Label suppressHydrationWarning>{t('common.reason', 'Reason')}</Label>
-                <Input
-                  value={reason}
-                  onChange={(e) => {
-                    setReason(e.target.value);
-                    if (errors.reason) setErrors({ ...errors, reason: undefined });
-                  }}
-                  placeholder={t('admin.payments.schedules.restructureReasonPlaceholder', 'e.g., User requested payment plan adjustment')}
-                  className={errors.reason ? 'border-destructive' : ''}
-                />
-                {errors.reason && (
-                  <p className="text-xs text-destructive mt-1">{errors.reason}</p>
-                )}
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={onClose}>
-                  <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
-                </Button>
-                <Button type="submit">
-                  <span suppressHydrationWarning>{t('admin.payments.schedules.applyRestructure', 'Apply Restructure')}</span>
-                </Button>
-              </DialogFooter>
-            </form>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Record Manual Payment Dialog — wires the existing recordManualPayment
-// backend (POST /api/admin/payments/schedules/:id/record-payment) to a
-// per-row action on the schedules page. Used when a customer paid via
-// ACH / wire / cash / check — anything that didn't flow through Stripe.
-// Backend already does the reconciliation (flips schedule to 'paid',
-// bumps enrollment.paid_amount, updates payment_status).
-function RecordManualPaymentDialog({
-  open,
-  schedule,
-  onClose,
-  onRecord,
-}: {
-  open: boolean;
-  schedule: PaymentSchedule | null;
-  onClose: () => void;
-  onRecord: (
-    scheduleId: string,
-    payload: { payment_method: string; transaction_reference?: string; notes?: string },
-  ) => Promise<void>;
-}) {
-  const { t } = useAdminLanguage();
-  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
-  const [transactionReference, setTransactionReference] = useState('');
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  // Reset form whenever the dialog closes so the next open starts clean.
-  useEffect(() => {
-    if (!open) {
-      setPaymentMethod('bank_transfer');
-      setTransactionReference('');
-      setNotes('');
-      setSubmitting(false);
-    }
-  }, [open]);
-
-  if (!schedule) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      await onRecord(schedule.id, {
-        payment_method: paymentMethod,
-        transaction_reference: transactionReference.trim() || undefined,
-        notes: notes.trim() || undefined,
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle suppressHydrationWarning>
-            {t('admin.payments.schedules.recordManualTitle', 'Record manual payment')}
-          </DialogTitle>
-          <DialogDescription suppressHydrationWarning>
-            {t(
-              'admin.payments.schedules.recordManualDescription',
-              'Mark this scheduled payment as received via an offline method (ACH, wire, cash, check). The schedule will be set to paid and the enrollment balance updated.',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          {/* Read-only summary */}
-          <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.schedules.recordManualAmount', 'Amount')}
+              <IconButton label={t('common.refresh', 'Refresh')} onClick={changed} disabled={loading}>
+                <RefreshCw className={`h-[18px] w-[18px] ${loading ? 'animate-spin' : ''}`} aria-hidden />
+              </IconButton>
+            </>
+          }
+          pills={
+            <>
+              <QuickPills<StatusFilter>
+                label={t('common.status', 'Status')}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: 'all', label: t('common.allStatuses', 'All') },
+                  ...SCHEDULE_STATUSES.map((s) => ({
+                    value: s,
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${SCHEDULE_TONE[s].dot}`} aria-hidden />
+                        {statusLabel(s)}
+                      </span>
+                    ),
+                  })),
+                ]}
+              />
+              <span className="shrink-0">
+                <ClearFilters show={filtersOn} label={t('common.clearFilters', 'Clear filters')} onClear={clearFilters} />
               </span>
-              <span className="font-semibold tabular-nums">
-                {schedule.currency} {Number(schedule.amount).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.schedules.recordManualCustomer', 'Customer')}
-              </span>
-              <span>{schedule.user_name || schedule.user_email}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.schedules.recordManualProduct', 'Product')}
-              </span>
-              <span className="truncate ms-2">{schedule.product_name}</span>
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="manual-method" suppressHydrationWarning>
-              {t('admin.payments.schedules.recordManualMethod', 'Payment method')}
-            </Label>
-            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-              <SelectTrigger id="manual-method">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bank_transfer" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodBank', 'Bank transfer / ACH')}
-                </SelectItem>
-                <SelectItem value="cash" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodCash', 'Cash')}
-                </SelectItem>
-                <SelectItem value="check" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodCheck', 'Check')}
-                </SelectItem>
-                <SelectItem value="other" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodOther', 'Other')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="manual-ref" suppressHydrationWarning>
-              {t('admin.payments.schedules.recordManualRef', 'Reference (transaction / check #)')}
-            </Label>
-            <Input
-              id="manual-ref"
-              value={transactionReference}
-              onChange={(e) => setTransactionReference(e.target.value)}
-              placeholder={t('admin.payments.schedules.recordManualRefPlaceholder', 'e.g. WIRE-2026-04-12-89321') as string}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="manual-notes" suppressHydrationWarning>
-              {t('admin.payments.schedules.recordManualNotes', 'Notes (optional)')}
-            </Label>
-            <Input
-              id="manual-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={t('admin.payments.schedules.recordManualNotesPlaceholder', 'Internal context for this payment') as string}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              <span suppressHydrationWarning>
-                {submitting
-                  ? t('admin.payments.schedules.recordManualSubmitting', 'Recording…')
-                  : t('admin.payments.schedules.recordManualSubmit', 'Record payment')}
-              </span>
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/**
- * Record an off-schedule (standalone) manual payment.
- *
- * Workflow:
- *   1. Admin searches a customer by email (/api/admin/users/search).
- *   2. After picking a customer, recent enrollments load via
- *      /api/admin/payments/enrollments-by-user. Picking one links the
- *      payment to that enrollment (paid_amount rolls up). Leaving the
- *      picker blank logs a contact-only payment.
- *   3. Amount / currency / method / reference / notes.
- *   4. Submit → POST /api/admin/payments/record-standalone.
- *
- * No payment_schedules row is touched.
- */
-type CustomerHit = {
-  id: string;
-  email: string;
-  first_name: string | null;
-  last_name: string | null;
-};
-type EnrollmentHit = {
-  id: string;
-  product_name: string;
-  status: string;
-  paid_amount: number;
-  total_amount: number;
-  currency: string;
-  payment_status: string | null;
-};
-function RecordStandalonePaymentDialog({
-  open,
-  onClose,
-  onRecorded,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onRecorded: () => void;
-}) {
-  const { t } = useAdminLanguage();
-  const { toast } = useToast();
-
-  const [customerQuery, setCustomerQuery] = useState('');
-  const [customerHits, setCustomerHits] = useState<CustomerHit[]>([]);
-  const [customer, setCustomer] = useState<CustomerHit | null>(null);
-  const [searchingCustomer, setSearchingCustomer] = useState(false);
-
-  const [enrollments, setEnrollments] = useState<EnrollmentHit[]>([]);
-  // Sentinel for "no enrollment" — Radix Select rejects empty-string
-  // values (reserved for clearing). We translate sentinel → null at
-  // submit time.
-  const NO_ENROLLMENT = '__none';
-  const [enrollmentId, setEnrollmentId] = useState<string>(NO_ENROLLMENT);
-  const [loadingEnrollments, setLoadingEnrollments] = useState(false);
-
-  const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('USD');
-  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
-  const [transactionReference, setTransactionReference] = useState('');
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!open) {
-      setCustomerQuery('');
-      setCustomerHits([]);
-      setCustomer(null);
-      setEnrollments([]);
-      setEnrollmentId(NO_ENROLLMENT);
-      setAmount('');
-      setCurrency('USD');
-      setPaymentMethod('bank_transfer');
-      setTransactionReference('');
-      setNotes('');
-      setSubmitting(false);
-    }
-  }, [open]);
-
-  // Debounced customer search — 350ms is the sweet spot for type-then-pause.
-  useEffect(() => {
-    if (customer || customerQuery.trim().length < 3) {
-      setCustomerHits([]);
-      return;
-    }
-    const ctrl = new AbortController();
-    const timer = setTimeout(async () => {
-      setSearchingCustomer(true);
-      try {
-        const res = await fetch(
-          `/api/admin/users/search?email=${encodeURIComponent(customerQuery.trim())}`,
-          { signal: ctrl.signal },
-        );
-        const j = await res.json();
-        setCustomerHits((j.users as CustomerHit[]) ?? []);
-      } catch (e) {
-        if ((e as any)?.name !== 'AbortError') console.error(e);
-      } finally {
-        setSearchingCustomer(false);
-      }
-    }, 350);
-    return () => {
-      ctrl.abort();
-      clearTimeout(timer);
-    };
-  }, [customerQuery, customer]);
-
-  useEffect(() => {
-    if (!customer) {
-      setEnrollments([]);
-      setEnrollmentId(NO_ENROLLMENT);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      setLoadingEnrollments(true);
-      try {
-        const res = await fetch(
-          `/api/admin/payments/enrollments-by-user?user_id=${encodeURIComponent(customer.id)}`,
-        );
-        const j = await res.json();
-        if (!cancelled) setEnrollments((j.enrollments as EnrollmentHit[]) ?? []);
-      } catch (e) {
-        if (!cancelled) console.error(e);
-      } finally {
-        if (!cancelled) setLoadingEnrollments(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [customer]);
-
-  const displayName = (u: CustomerHit) =>
-    [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customer) return;
-    const amt = parseFloat(amount);
-    if (!(amt > 0)) {
-      toast({
-        title: t('common.error', 'Error'),
-        description: t(
-          'admin.payments.schedules.recordStandaloneAmountError',
-          'Amount must be greater than zero.',
-        ),
-        variant: 'destructive',
-      });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/admin/payments/record-standalone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: customer.id,
-          enrollment_id: enrollmentId === NO_ENROLLMENT ? null : enrollmentId,
-          amount: amt,
-          currency,
-          payment_method: paymentMethod,
-          transaction_reference: transactionReference.trim() || undefined,
-          notes: notes.trim() || undefined,
-        }),
-      });
-      const j = await res.json();
-      if (!res.ok || !j.success) throw new Error(j.error || `HTTP ${res.status}`);
-      onRecorded();
-    } catch (err: any) {
-      toast({
-        title: t('common.error', 'Error'),
-        description:
-          err?.message ||
-          t('admin.payments.schedules.recordStandaloneError', 'Failed to record payment'),
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle suppressHydrationWarning>
-            {t('admin.payments.schedules.recordStandaloneTitle', 'Record off-schedule payment')}
-          </DialogTitle>
-          <DialogDescription suppressHydrationWarning>
-            {t(
-              'admin.payments.schedules.recordStandaloneDescription',
-              'Log a payment that did not flow through Stripe and is not tied to a scheduled installment. Optionally link it to a specific enrollment so its paid balance updates.',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          {/* Customer picker */}
-          <div>
-            <Label suppressHydrationWarning>
-              {t('admin.payments.schedules.recordStandaloneCustomer', 'Customer')}
-            </Label>
-            {customer ? (
-              <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
-                <div>
-                  <div className="text-sm font-medium">{displayName(customer)}</div>
-                  <div className="text-xs text-muted-foreground">{customer.email}</div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setCustomer(null);
-                    setCustomerQuery('');
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+            </>
+          }
+          extra={
+            moreOpen ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-muted-foreground">{t('common.dateFrom', 'From date')}</span>
+                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={field} />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-muted-foreground">{t('common.dateTo', 'To date')}</span>
+                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={field} />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-muted-foreground">{t('admin.payments.schedules.minAmount', 'Min Amount')}</span>
+                  <input type="number" min={0} step="0.01" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} placeholder="0" className={field} />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-muted-foreground">{t('admin.payments.schedules.maxAmount', 'Max Amount')}</span>
+                  <input type="number" min={0} step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} placeholder="999999" className={field} />
+                </label>
               </div>
-            ) : (
-              <>
-                <Input
-                  value={customerQuery}
-                  onChange={(e) => setCustomerQuery(e.target.value)}
-                  placeholder={
-                    t(
-                      'admin.payments.schedules.recordStandaloneCustomerPlaceholder',
-                      'Search by email (min 3 chars)…',
-                    ) as string
+            ) : undefined
+          }
+          columns={COLS}
+          head={[
+            t('common.user', 'User'),
+            t('admin.payments.schedules.table.productPayment', 'Product and payment'),
+            t('common.amount', 'Amount'),
+            t('admin.payments.schedules.table.due', 'Due date'),
+            t('common.status', 'Status'),
+          ]}
+          state={state}
+          footer={
+            loaded && total > 0 ? (
+              <ListFooter
+                showingText={t('admin.users.list.showingRange', 'Showing {from}–{to} of {total}')
+                  .replace('{from}', num((page - 1) * PAGE_SIZE + 1))
+                  .replace('{to}', num((page - 1) * PAGE_SIZE + rows.length))
+                  .replace('{total}', num(total))}
+                pageText={t('admin.users.list.pageOf', 'Page {page} of {pages}').replace('{page}', String(page)).replace('{pages}', String(totalPages))}
+                page={page}
+                totalPages={totalPages}
+                onPage={setPage}
+                prevLabel={t('admin.users.list.prevPage', 'Previous page')}
+                nextLabel={t('admin.users.list.nextPage', 'Next page')}
+                rtl={rtl}
+              />
+            ) : undefined
+          }
+        >
+          {rows.map((s) => {
+            const tone = SCHEDULE_TONE[s.status] ?? SCHEDULE_TONE.pending;
+            const moved = dayOnly(s.original_due_date) && dayOnly(s.original_due_date) !== dayOnly(s.scheduled_date);
+            const lateDays = s.status === 'overdue' ? Math.max(1, Math.floor((Date.now() - new Date(s.scheduled_date).getTime()) / DAY_MS)) : 0;
+            const paidDiff = s.paid_date ? Math.round((new Date(dayOnly(s.paid_date)).getTime() - new Date(dayOnly(s.scheduled_date)).getTime()) / DAY_MS) : 0;
+            return (
+              <ListRow key={s.id} columns={COLS} onOpen={() => setOpen(s)} label={`${s.user_name} · ${s.product_name}`} selected={open?.id === s.id} rtl={rtl}>
+                <ListRowMain
+                  lead={
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary" aria-hidden>
+                      {initials(s.user_name)}
+                    </span>
                   }
+                  title={<bdi className="font-semibold">{s.user_name}</bdi>}
+                  sub={<span dir="ltr">{s.user_email}</span>}
                 />
-                {searchingCustomer && (
-                  <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('common.searching', 'Searching…')}
-                  </p>
-                )}
-                {!searchingCustomer && customerHits.length > 0 && (
-                  <div className="mt-1 border rounded-md max-h-48 overflow-y-auto">
-                    {customerHits.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-muted text-sm"
-                        onClick={() => setCustomer(c)}
-                      >
-                        <div className="font-medium">{displayName(c)}</div>
-                        <div className="text-xs text-muted-foreground">{c.email}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Enrollment picker (optional) */}
-          {customer && (
-            <div>
-              <Label suppressHydrationWarning>
-                {t(
-                  'admin.payments.schedules.recordStandaloneEnrollment',
-                  'Apply to enrollment (optional)',
-                )}
-              </Label>
-              <Select value={enrollmentId} onValueChange={setEnrollmentId}>
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      t(
-                        'admin.payments.schedules.recordStandaloneNoEnrollment',
-                        'No enrollment (contact-level payment)',
-                      ) as string
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_ENROLLMENT} suppressHydrationWarning>
-                    {t(
-                      'admin.payments.schedules.recordStandaloneNoEnrollment',
-                      'No enrollment (contact-level payment)',
-                    )}
-                  </SelectItem>
-                  {loadingEnrollments && (
-                    <SelectItem value="__loading" disabled>
-                      {t('common.loading', 'Loading…')}
-                    </SelectItem>
+                <ListCell label={t('admin.payments.schedules.product', 'Product')}>
+                  <bdi className="block truncate font-medium">{s.product_name}</bdi>
+                  <span className="block text-[13px] text-muted-foreground">
+                    #{s.payment_number} · {typeLabel(s.payment_type)}
+                  </span>
+                </ListCell>
+                <ListCell label={t('common.amount', 'Amount')}>
+                  <span className="font-bold tabular-nums">{money(Number(s.amount), s.currency)}</span>
+                </ListCell>
+                <ListCell label={t('admin.payments.schedules.table.due', 'Due date')}>
+                  <span className="block">{date(s.scheduled_date)}</span>
+                  {moved ? (
+                    <span className="block text-[12.5px] text-violet-700 dark:text-violet-300">
+                      {t('admin.payments.schedules.movedFrom', 'Moved from {date}').replace('{date}', date(s.original_due_date))}
+                    </span>
+                  ) : lateDays > 0 ? (
+                    <span className="block text-[12.5px] text-red-700 dark:text-red-300">
+                      {t('admin.payments.schedules.daysAgo', '{n} days ago').replace('{n}', String(lateDays))}
+                    </span>
+                  ) : null}
+                </ListCell>
+                <ListCell label={t('common.status', 'Status')}>
+                  <span className={`inline-flex items-center gap-2 font-semibold ${tone.text}`}>
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot} ${s.status === 'processing' ? 'animate-pulse' : ''}`} aria-hidden />
+                    {statusLabel(s.status)}
+                  </span>
+                  {s.status === 'failed' && s.last_error && (
+                    <span className="block truncate text-[12.5px] text-red-700 dark:text-red-300" title={s.last_error}>
+                      {s.last_error}
+                    </span>
                   )}
-                  {enrollments.map((e) => {
-                    // payment_status is the more specific signal (paid /
-                    // partial / pending / overdue). Falls back to the
-                    // enrollment-level status when null. Both are raw
-                    // enum values from the DB; the existing convention
-                    // (getStatusBadge above) is to translate via
-                    // common.<status>.
-                    const statusKey = (e.payment_status ?? e.status) as string;
-                    return (
-                      <SelectItem key={e.id} value={e.id}>
-                        {e.product_name} · {e.currency} {e.paid_amount.toFixed(2)}/
-                        {e.total_amount.toFixed(2)} · {t(`common.${statusKey}`, statusKey)}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {!loadingEnrollments && enrollments.length === 0 && (
-                <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                  {t(
-                    'admin.payments.schedules.recordStandaloneNoEnrollments',
-                    'This customer has no enrollments yet.',
+                  {s.status === 'paid' && paidDiff !== 0 && (
+                    <span className={`block text-[12.5px] ${paidDiff > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-green-700 dark:text-green-400'}`}>
+                      {paidDiff > 0
+                        ? t('admin.payments.schedules.drawer.paidLate', '{n} days late').replace('{n}', String(paidDiff))
+                        : t('admin.payments.schedules.drawer.paidEarly', '{n} days early').replace('{n}', String(-paidDiff))}
+                    </span>
                   )}
-                </p>
-              )}
-            </div>
-          )}
+                </ListCell>
+              </ListRow>
+            );
+          })}
+        </ListPanel>
+      </div>
 
-          {/* Amount + currency */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-2">
-              <Label htmlFor="standalone-amount" suppressHydrationWarning>
-                {t('admin.payments.schedules.recordStandaloneAmount', 'Amount')}
-              </Label>
-              <Input
-                id="standalone-amount"
-                type="number"
-                step="0.01"
-                min="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <Label htmlFor="standalone-currency" suppressHydrationWarning>
-                {t('admin.payments.schedules.recordStandaloneCurrency', 'Currency')}
-              </Label>
-              <Input
-                id="standalone-currency"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value.toUpperCase().slice(0, 3))}
-                maxLength={3}
-              />
-            </div>
-          </div>
+      <ScheduleDrawer
+        schedule={open}
+        refreshKey={refreshKey}
+        onClose={() => setOpen(null)}
+        onChargeNow={(s) => setConfirm({ kind: 'charge', schedule: s })}
+        onRetry={(s) => setConfirm({ kind: 'retry', schedule: s })}
+        onChangeCard={setCardFor}
+        onAdjust={setAdjustFor}
+        onRestructure={(enrollmentId, all) => setRestructure({ enrollmentId, schedules: all })}
+        onRecordManual={setManualFor}
+        onRefund={(s) =>
+          setRefundFor({ id: s.id, user_name: s.user_name, product_name: s.product_name, amount: Number(s.amount), currency: s.currency, payment_number: s.payment_number })
+        }
+      />
 
-          {/* Payment method */}
-          <div>
-            <Label suppressHydrationWarning>
-              {t('admin.payments.schedules.recordManualMethod', 'Payment method')}
-            </Label>
-            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bank_transfer" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodBank', 'Bank transfer / ACH')}
-                </SelectItem>
-                <SelectItem value="cash" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodCash', 'Cash')}
-                </SelectItem>
-                <SelectItem value="check" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodCheck', 'Check')}
-                </SelectItem>
-                <SelectItem value="other" suppressHydrationWarning>
-                  {t('admin.payments.schedules.recordManualMethodOther', 'Other')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Charging asks first (new: it used to charge on one click) */}
+      <AlertDialog open={!!confirm} onOpenChange={(v) => !v && setConfirm(null)}>
+        <AlertDialogContent dir={direction}>
+          <AlertDialogHeader className="text-start">
+            <AlertDialogTitle>
+              {confirm?.kind === 'retry'
+                ? t('admin.payments.schedules.confirm.retryTitle', 'Try charging {amount} again?').replace('{amount}', money(Number(confirm?.schedule.amount ?? 0), confirm?.schedule.currency))
+                : t('admin.payments.schedules.confirm.chargeTitle', 'Charge {amount} now?').replace('{amount}', money(Number(confirm?.schedule.amount ?? 0), confirm?.schedule.currency))}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('admin.payments.schedules.confirm.text', 'The saved card of {name} will be charged right away for payment {n} of {product}.')
+                .replace('{name}', confirm?.schedule.user_name ?? '')
+                .replace('{n}', String(confirm?.schedule.payment_number ?? ''))
+                .replace('{product}', confirm?.schedule.product_name ?? '')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel>{t('admin.payments.schedules.confirm.notNow', 'Not now')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const c = confirm;
+                setConfirm(null);
+                if (!c) return;
+                if (c.kind === 'retry') void retry(c.schedule);
+                else void chargeNow(c.schedule);
+              }}
+            >
+              {confirm?.kind === 'retry' ? t('admin.payments.schedules.retryPayment', 'Retry Payment') : t('admin.payments.schedules.chargeNow', 'Charge Now')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-          <div>
-            <Label htmlFor="standalone-ref" suppressHydrationWarning>
-              {t('admin.payments.schedules.recordManualRef', 'Reference (transaction / check #)')}
-            </Label>
-            <Input
-              id="standalone-ref"
-              value={transactionReference}
-              onChange={(e) => setTransactionReference(e.target.value)}
-              placeholder={
-                t(
-                  'admin.payments.schedules.recordManualRefPlaceholder',
-                  'e.g. WIRE-2026-04-12-89321',
-                ) as string
-              }
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="standalone-notes" suppressHydrationWarning>
-              {t('admin.payments.schedules.recordManualNotes', 'Notes (optional)')}
-            </Label>
-            <Input
-              id="standalone-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={
-                t(
-                  'admin.payments.schedules.recordManualNotesPlaceholder',
-                  'Internal context for this payment',
-                ) as string
-              }
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              <span suppressHydrationWarning>{t('common.cancel', 'Cancel')}</span>
-            </Button>
-            <Button type="submit" disabled={submitting || !customer || !amount}>
-              <span suppressHydrationWarning>
-                {submitting
-                  ? t('admin.payments.schedules.recordManualSubmitting', 'Recording…')
-                  : t('admin.payments.schedules.recordManualSubmit', 'Record payment')}
-              </span>
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      {/* The same dialogs as before */}
+      <AdjustDateDialog open={!!adjustFor} schedule={adjustFor} onClose={() => setAdjustFor(null)} onAdjust={adjustDate} direction={direction} />
+      <RecordManualPaymentDialog open={!!manualFor} schedule={manualFor} onClose={() => setManualFor(null)} onRecord={recordManual} />
+      <RefundDialog
+        target={refundFor}
+        onClose={() => setRefundFor(null)}
+        onDone={() => {
+          setRefundFor(null);
+          changed();
+        }}
+      />
+      <RestructurePlanDialog
+        open={!!restructure}
+        enrollmentId={restructure?.enrollmentId ?? null}
+        schedules={restructure?.schedules ?? []}
+        onClose={() => setRestructure(null)}
+        onRestructure={restructurePlan}
+        direction={direction}
+      />
+      <CardSelectionDialog
+        open={!!cardFor}
+        scheduleId={cardFor?.id || null}
+        scheduleName={cardFor?.user_name}
+        mode="change"
+        onClose={() => setCardFor(null)}
+        onCharged={changed}
+        direction={direction}
+      />
+    </AdminLayout>
   );
 }

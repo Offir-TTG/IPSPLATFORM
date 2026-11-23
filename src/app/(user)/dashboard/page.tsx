@@ -5,6 +5,9 @@ import { HomeHero } from '@/components/user/portal/HomeHero';
 import { KidsSection } from '@/components/user/portal/KidsSection';
 import { loadFamily } from '@/lib/portal/family';
 import { loadHomeData, type HomeItem, type HomeSpace } from './homeData';
+import { ToComplete } from '@/components/user/portal/ToComplete';
+import { loadEnrollmentsToComplete } from '@/lib/payments/enrollmentsToComplete';
+import { loadParentCoaching } from '@/lib/portal/parentCoaching';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +18,12 @@ const CapIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" aria-hidden="true">
     <path d="M2 9l10-5 10 5-10 5z" />
     <path d="M6 11v5c3 2 9 2 12 0v-5" />
+  </svg>
+);
+const PersonIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" aria-hidden="true">
+    <circle cx="12" cy="8" r="3.5" />
+    <path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6" />
   </svg>
 );
 const SparkIcon = () => (
@@ -60,7 +69,7 @@ function SpaceCard({ s }: { s: HomeSpace }) {
         style={{ background: cover(s.color) }}
       >
         <span className="hidden lg:grid w-[42px] h-[42px] rounded-[13px] bg-white/[.18] place-items-center">
-          {s.kind === 'program' ? <CapIcon /> : <SparkIcon />}
+          {s.kind === 'program' ? <CapIcon /> : s.kind === 'coaching' ? <PersonIcon /> : <SparkIcon />}
         </span>
         {s.tag && (
           <span className="hidden lg:inline font-semibold text-xs px-2.5 py-[5px] rounded-full bg-white/[.16] border border-white/25">{s.tag}</span>
@@ -130,7 +139,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const [data, kids] = await Promise.all([loadHomeData(user.id), loadFamily(user.id)]);
+  const [data, kids, toComplete, myCoaching] = await Promise.all([
+    loadHomeData(user.id),
+    loadFamily(user.id),
+    loadEnrollmentsToComplete(user.id),
+    loadParentCoaching(user.id).catch(() => []),
+  ]);
+  // The client's own coaching shows first among the spaces (approved mockup: "הליווי שלי").
+  const coachingSpaces: HomeSpace[] = myCoaching.map((c) => {
+    const left = Math.max(0, c.total - c.used);
+    return {
+      key: `coaching-${c.id}`,
+      kind: 'coaching',
+      title: 'הליווי שלי',
+      kicker: c.coach ? `ליווי הורי · עם ${c.coach.name}` : 'ליווי הורי',
+      color: '#6b4bb5',
+      href: `/coaching/${c.id}`,
+      tag: 'ליווי',
+      line: c.total ? `${c.used} מתוך ${c.total} מפגשים · נשאר ${left}` : `${c.used} מפגשים`,
+      progress: c.total ? Math.round((c.used / c.total) * 100) : null,
+    };
+  });
+  data.spaces = [...coachingSpaces, ...data.spaces];
   const week = data.week.slice(0, 5);
   const nothingYet = !data.spaces.length && !data.items.length && !kids.length;
 
@@ -149,13 +179,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         focus={data.focus}
         chips={data.chips}
         updatesCount={data.updatesCount}
+        overall={data.overall}
         notice={data.notice}
         serverNow={Date.now()}
       />
 
+      {/* Enrollments the team opened for the client, and added sessions to approve, to finish here. */}
+      <ToComplete
+        items={toComplete}
+        approvals={myCoaching
+          .filter((c) => c.offer)
+          .map((c) => ({
+            offerId: c.offer!.id,
+            sessions: c.offer!.sessions,
+            title: `${c.offer!.sessions} מפגשים נוספים לליווי שלך`,
+            sub: `${c.title} · החבילה תגדל מ-${c.offer!.from} ל-${c.offer!.to} · ${c.offer!.price} למפגש, רק כשהוא מתקיים · לא נגבה כלום עכשיו · בלי לחתום שוב`,
+            href: `/coaching/${c.id}?tab=package`,
+          }))}
+      />
+
       {data.spaces.length > 0 && (
         <section aria-label="ההורות שלי" className="flex flex-col gap-3 lg:gap-3.5">
-          <SectionHead title="ההורות שלי" note="תוכניות ומועדונים להורים, כל אחד עם עולם משלו" />
+          <SectionHead title="ההורות שלי" note={myCoaching.length ? 'תוכניות, מועדונים וליווי, כל אחד עם עולם משלו' : 'תוכניות ומועדונים להורים, כל אחד עם עולם משלו'} />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 lg:gap-4">
             {data.spaces.map((s) => (
               <SpaceCard key={s.key} s={s} />
@@ -164,7 +209,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         </section>
       )}
 
-      {kids.length > 0 && <KidsSection kids={kids} />}
+      {/* Children: anyone with a child, and a parent-coaching client (so they can add a child). */}
+      {(kids.length > 0 || myCoaching.length > 0) && <KidsSection kids={kids} />}
 
       {data.items.length > 0 && (
         <section aria-label="קורסים והרצאות" className="flex flex-col gap-3 lg:gap-3.5">
@@ -194,7 +240,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
             <div className="hidden lg:grid relative grid-cols-5 gap-3 pt-2">
               <div className="absolute top-[15px] inset-x-2 h-0.5 bg-[#e9e3f1]" />
               {week.map((w) => (
-                <Link key={w.lessonId} href={`/courses/${w.courseId}`} className="relative pt-[22px] no-underline text-[#221a2e] hover:text-[#5b3a8e]">
+                <Link key={w.lessonId} href={`/courses/${w.courseId}?lesson=${w.lessonId}`} className="relative pt-[22px] no-underline text-[#221a2e] hover:text-[#5b3a8e]">
                   <i
                     className="absolute top-0 start-0.5 w-3.5 h-3.5 rounded-full box-border"
                     style={
@@ -214,7 +260,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
               {week.map((w, i) => (
                 <Link
                   key={w.lessonId}
-                  href={`/courses/${w.courseId}`}
+                  href={`/courses/${w.courseId}?lesson=${w.lessonId}`}
                   className={`relative no-underline text-[#221a2e] ${i < week.length - 1 ? 'pb-3.5' : ''}`}
                 >
                   <i

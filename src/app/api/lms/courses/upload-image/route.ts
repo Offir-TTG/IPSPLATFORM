@@ -129,7 +129,7 @@ export const POST = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin', 'instructor']);
+}, ['admin', 'super_admin']);
 
 // DELETE /api/lms/courses/upload-image - Delete a course image
 export const DELETE = withAuth(async (
@@ -202,4 +202,4 @@ export const DELETE = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin']);
+}, ['admin', 'super_admin']);

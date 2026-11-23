@@ -1321,29 +1321,37 @@ async function handleDisputeCreated(supabase: any, event: Stripe.Event) {
     status: dispute.status,
   });
 
-  // Find the payment record by charge ID
-  const { data: payment } = await supabase
-    .from('payments')
-    .select('id, tenant_id, enrollment_id, user_id')
-    .eq('metadata->charge_id', dispute.charge)
-    .maybeSingle();
+  // Find the payment record by charge ID. `->>` compares the JSON value as
+  // text (`->` compared it as JSON and failed with "invalid input syntax").
+  const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge?.id;
+  const { data: paymentByCharge } = chargeId
+    ? await supabase
+        .from('payments')
+        .select('id, tenant_id, enrollment_id, user_id')
+        .eq('metadata->>charge_id', chargeId)
+        .maybeSingle()
+    : { data: null };
 
+  let payment = paymentByCharge;
   if (!payment) {
-    console.log('[Webhook] No payment found for charge:', dispute.charge);
+    console.log('[Webhook] No payment found for charge:', chargeId);
     // Try to find by payment intent
-    const { data: paymentByIntent } = await supabase
-      .from('payments')
-      .select('id, tenant_id, enrollment_id, user_id')
-      .eq('stripe_payment_intent_id', dispute.payment_intent)
-      .maybeSingle();
+    const intentId = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : dispute.payment_intent?.id;
+    const { data: paymentByIntent } = intentId
+      ? await supabase
+          .from('payments')
+          .select('id, tenant_id, enrollment_id, user_id')
+          .eq('stripe_payment_intent_id', intentId)
+          .maybeSingle()
+      : { data: null };
 
     if (!paymentByIntent) {
-      console.log('[Webhook] No payment found for payment intent:', dispute.payment_intent);
+      console.log('[Webhook] No payment found for payment intent:', intentId);
       return;
     }
 
-    // Use payment found by intent
-    Object.assign(payment, paymentByIntent);
+    // Use the payment found by intent (it used to copy into a null and crash).
+    payment = paymentByIntent;
   }
 
   // Get enrollment to find user_id if not in payment
@@ -1381,7 +1389,7 @@ async function handleDisputeCreated(supabase: any, event: Stripe.Event) {
       enrollment_id: payment.enrollment_id,
       user_id: userId,
       stripe_dispute_id: dispute.id,
-      stripe_charge_id: dispute.charge as string,
+      stripe_charge_id: chargeId as string,
       amount: dispute.amount / 100,
       currency: dispute.currency.toUpperCase(),
       reason: dispute.reason,

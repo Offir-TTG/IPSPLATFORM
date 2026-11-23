@@ -8,6 +8,7 @@ import {
   emitPersonEnrolled,
   emitPersonEnrollmentPending,
 } from '@/lib/persons/outbox';
+import { NEW_CLIENT_ROLE } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
       .insert({
         id: authData.user.id,
         email,
-        role: 'student',
+        role: NEW_CLIENT_ROLE,
         first_name,
         last_name,
         phone: phone || null,
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
       .insert({
         tenant_id: tenant.id,
         user_id: authData.user.id,
-        role: 'student',
+        role: NEW_CLIENT_ROLE,
         status: 'active',
         joined_at: new Date().toISOString(),
       });
@@ -219,7 +220,7 @@ export async function POST(request: NextRequest) {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
-          role: 'student',
+          role: NEW_CLIENT_ROLE,
         },
       },
       message: 'Account created successfully',

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { PAYMENT_CONFIG } from './config';
 import { isOwed } from './dueSchedules';
 import { hasEnded, isPausedAt, readSubscriptionDates } from './subscriptionState';
+import { productOpensCourse } from '@/lib/products/courseAccess';
 
 export interface AccessCheckResult {
   hasAccess: boolean;
@@ -50,7 +51,8 @@ export async function checkCourseAccess(
         id,
         type,
         course_id,
-        program_id
+        program_id,
+        contains_courses
       )
     `)
     .eq('user_id', userId)
@@ -66,7 +68,8 @@ export async function checkCourseAccess(
   for (const enr of enrollments) {
     const product: any = Array.isArray(enr.products) ? enr.products[0] : enr.products;
     if (!product) continue;
-    if (product.type === 'course' && product.course_id === courseId) {
+    // Any product type that opens this course (course, lecture, bundle, ...).
+    if (productOpensCourse(product, courseId)) {
       enrollment = enr;
       break;
     }

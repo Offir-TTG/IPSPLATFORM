@@ -40,6 +40,8 @@ export async function GET(request: NextRequest) {
     const productId = searchParams.get('productId');
     const minAmount = searchParams.get('minAmount');
     const maxAmount = searchParams.get('maxAmount');
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
 
     let schedules;
     let total = 0;
@@ -85,17 +87,40 @@ export async function GET(request: NextRequest) {
         countQuery = countQuery.eq('payment_type', paymentType);
       }
 
-      // CRITICAL: Need to filter by productId at database level, not post-enrichment
-      // But productId is on enrollments table, not payment_schedules
-      // We need to fetch enrollment IDs that match the product filter first
+      // Date range on the charge date ("to" includes the whole day).
+      const dateFromIso = dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : null;
+      const dateToIso = dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : null;
+      if (dateFromIso) countQuery = countQuery.gte('scheduled_date', dateFromIso);
+      if (dateToIso) countQuery = countQuery.lte('scheduled_date', dateToIso);
+
+      // Product and client-name filters live on enrollments/users, not on
+      // payment_schedules, so they become a list of enrollment ids applied
+      // in the database before counting and paging (never after the page).
       let enrollmentIdsToFilter: string[] | null = null;
 
-      if (productId) {
-        const { data: filteredEnrollments } = await supabase
+      let matchingUserIds: string[] | null = null;
+      const search = userSearch?.trim();
+      if (search) {
+        // Strip characters that would break PostgREST's or() syntax.
+        const term = search.replace(/[,()*%\\]/g, ' ').trim();
+        const words = term.split(/\s+/).filter(Boolean);
+        let usersQuery = supabase.from('users').select('id').eq('tenant_id', userData.tenant_id);
+        // Every word must match a first name, last name or email ("Dana Cohen").
+        for (const w of words) {
+          usersQuery = usersQuery.or(`first_name.ilike.%${w}%,last_name.ilike.%${w}%,email.ilike.%${w}%`);
+        }
+        const { data: matchedUsers } = words.length ? await usersQuery.limit(1000) : { data: [] as any[] };
+        matchingUserIds = (matchedUsers ?? []).map((u: any) => u.id);
+      }
+
+      if (productId || matchingUserIds) {
+        let enrollmentsQuery = supabase
           .from('enrollments')
           .select('id')
-          .eq('product_id', productId)
           .eq('tenant_id', userData.tenant_id);
+        if (productId) enrollmentsQuery = enrollmentsQuery.eq('product_id', productId);
+        if (matchingUserIds) enrollmentsQuery = enrollmentsQuery.in('user_id', matchingUserIds.length ? matchingUserIds : ['00000000-0000-0000-0000-000000000000']);
+        const { data: filteredEnrollments } = await enrollmentsQuery;
 
         enrollmentIdsToFilter = filteredEnrollments?.map(e => e.id) || [];
 
@@ -157,6 +182,9 @@ export async function GET(request: NextRequest) {
       if (paymentType) {
         query = query.eq('payment_type', paymentType);
       }
+
+      if (dateFromIso) query = query.gte('scheduled_date', dateFromIso);
+      if (dateToIso) query = query.lte('scheduled_date', dateToIso);
 
       query = query
         .order('scheduled_date', { ascending: true })
@@ -247,21 +275,8 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      // Apply post-enrichment filters
-      let filteredSchedules = enrichedSchedules;
-
-      if (userSearch) {
-        const searchLower = userSearch.toLowerCase();
-        filteredSchedules = filteredSchedules.filter(s =>
-          s.user_name.toLowerCase().includes(searchLower) ||
-          s.user_email.toLowerCase().includes(searchLower)
-        );
-      }
-
-      // Note: productId filter is now applied at database level (above)
-      // No need to filter again here
-
-      schedules = filteredSchedules;
+      // Product, client search and dates are all filtered in the database above.
+      schedules = enrichedSchedules;
     }
 
     // Calculate summary statistics

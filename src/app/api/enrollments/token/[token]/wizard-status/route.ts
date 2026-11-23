@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { upcomingForBuyers } from '@/lib/payments/subscriptionPrice';
+import { getStripeClient } from '@/lib/payments/getStripeClient';
 
 // Reads request-scoped APIs (cookies / searchParams / dynamic params) —
 // must run per-request, never pre-rendered.
@@ -46,7 +48,7 @@ export async function GET(
 
     const { data: freshEnrollmentDataArray, error: enrollmentError } = await supabase
       .from('enrollments')
-      .select('id, tenant_id, user_id, product_id, payment_plan_id, total_amount, paid_amount, currency, status, payment_status, signature_status, docusign_envelope_id, token_expires_at, wizard_profile_data, updated_at')
+      .select('id, tenant_id, user_id, product_id, payment_plan_id, total_amount, paid_amount, currency, status, payment_status, signature_status, docusign_envelope_id, token_expires_at, wizard_profile_data, updated_at, stripe_setup_intent_id')
       .eq('enrollment_token', params.token)
       .gte('updated_at', veryOldDate) // Dynamic value - forces new query each time
       .limit(1);
@@ -64,7 +66,7 @@ export async function GET(
     // Get product data separately
     const { data: productData, error: productError } = await supabase
       .from('products')
-      .select('id, title, type, requires_signature, signature_template_id, payment_model, alternative_payment_plan_ids')
+      .select('id, title, type, requires_signature, signature_template_id, payment_model, default_payment_plan_id, alternative_payment_plan_ids')
       .eq('id', freshEnrollmentData.product_id)
       .single();
 
@@ -165,8 +167,27 @@ export async function GET(
     // Determine if payment is required
     const paymentRequired = product.payment_model !== 'free' && enrollment.total_amount > 0;
 
-    // Check if payment is complete
-    const paymentComplete = enrollment.paid_amount >= enrollment.total_amount;
+    // Check if payment is complete. Pay as you go (a per-session plan): done
+    // once the card is saved; nothing is charged at enrollment.
+    let paymentComplete = enrollment.paid_amount >= enrollment.total_amount;
+    // A plan of that type, or the product's own payment setting.
+    let perSession = product.payment_model === 'per_session';
+    if (!perSession && enrollment.payment_plan_id) {
+      const { data: plan } = await supabase.from('payment_plans').select('plan_type').eq('id', enrollment.payment_plan_id).maybeSingle();
+      perSession = plan?.plan_type === 'per_session';
+    }
+    if (perSession) {
+      paymentComplete = false;
+      const setupId = (enrollment as any).stripe_setup_intent_id as string | null;
+      if (setupId) {
+        try {
+          const { stripe } = await getStripeClient(enrollment.tenant_id);
+          paymentComplete = (await stripe.setupIntents.retrieve(setupId)).status === 'succeeded';
+        } catch {
+          paymentComplete = false;
+        }
+      }
+    }
 
     return NextResponse.json({
       id: enrollment.id,
@@ -183,11 +204,15 @@ export async function GET(
       user_profile_complete: userProfileComplete,
       payment_required: paymentRequired,
       payment_complete: paymentComplete,
+      /** Pay as you go: the payment step only saves the card. */
+      per_session: perSession,
       enrollment_status: enrollment.status,
       payment_status: enrollment.payment_status,
       wizard_profile_data: profileData,
       alternative_payment_plan_ids: product.alternative_payment_plan_ids || [], // Added for multi-plan support
-      payment_plan_id: enrollment.payment_plan_id // Added to track selected plan
+      payment_plan_id: enrollment.payment_plan_id, // Added to track selected plan
+      // A scheduled membership price, shown before paying.
+      upcoming_price: (await upcomingForBuyers(supabase, [product as any])).get(product.id) ?? null,
     });
 
   } catch (error: any) {

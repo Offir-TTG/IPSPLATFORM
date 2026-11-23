@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     // Get user's tenant_id
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('tenant_id')
+      .select('tenant_id, role')
       .eq('id', user.id)
       .single();
 
@@ -115,6 +115,11 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'User not found' },
         { status: 404 }
       );
+    }
+
+    // Managing courses is for admins only (it was open to any signed-in user).
+    if (!['admin', 'super_admin'].includes(userData.role)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
     // Get request body

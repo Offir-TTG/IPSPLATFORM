@@ -2,32 +2,10 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, BookOpen, Users, Plus, Trash2, GripVertical, Check, X, Loader2, Search, UserX, Link2, Copy, ExternalLink } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { AdminLayout } from '@/components/admin/AdminLayout';
-import { useToast } from '@/components/ui/use-toast';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { BookOpen, ChevronLeft, ChevronRight, Eye, ImageIcon, Loader2, Settings2, Trash2, Users } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,928 +16,289 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { AdminLayout } from '@/components/admin/AdminLayout';
+import { useToast } from '@/components/ui/use-toast';
 import { useAdminLanguage } from '@/context/AppContext';
+import { ListState, StatusDot, kitButton } from '@/components/admin/notifications/kit';
+import { ProgramCoursesTab } from '@/components/admin/programs/ProgramCoursesTab';
+import { ProgramStudentsTab } from '@/components/admin/programs/ProgramStudentsTab';
+import { ProgramSettingsForm } from '@/components/admin/programs/ProgramSettingsForm';
+import { ProgramDeleteDialog } from '@/components/admin/programs/ProgramDeleteDialog';
+import { stripHtml, type Course, type Program, type ProgramCourse, type Student } from '@/components/admin/programs/types';
 
-interface Program {
-  id: string;
-  name: string;
-  description: string;
-  is_active: boolean;
-  price: number;
-  currency: string;
-}
 
-interface Course {
-  id: string;
-  title: string;
-  description: string;
-  is_active: boolean;
-}
-
-interface ProgramCourse {
-  id: string;
-  order: number;
-  is_required: boolean;
-  created_at: string;
-  course: Course;
-}
-
-interface Student {
-  id: string;
-  user_id: string;
-  user_name: string;
-  user_email: string;
-  status: string;
-  enrolled_at: string;
-}
-
-interface User {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  role: string;
-}
-
+/**
+ * One program: a header with its picture, status, "View page" and Delete,
+ * then three tabs — Courses (order by dragging, required/optional, add,
+ * remove), Students (enroll, open an enrollment) and Settings (the
+ * program's details, saved with the floating bar). The tab is in the
+ * address (?tab=), so a reload or a shared link opens the same tab.
+ */
 export default function ProgramDetailPage() {
   const params = useParams();
-  const router = useRouter();
-  const { toast } = useToast();
-  const { t, direction } = useAdminLanguage();
-  const isRtl = direction === 'rtl';
   const programId = params.id as string;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { t, direction } = useAdminLanguage();
+  const { toast } = useToast();
+  const rtl = direction === 'rtl';
 
-  const [activeTab, setActiveTab] = useState<'courses' | 'students'>('courses');
+  // Which step opens first (?step=courses after creating; old ?tab= links still work).
+  const initialStep = searchParams.get('step') ?? ({ courses: 'courses', students: 'students', settings: 'basics' } as Record<string, string>)[searchParams.get('tab') ?? ''] ?? null;
+
   const [program, setProgram] = useState<Program | null>(null);
-  const [programCourses, setProgramCourses] = useState<ProgramCourse[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [allCourses, setAllCourses] = useState<Course[]>([]);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
-  const [showEnrollStudentDialog, setShowEnrollStudentDialog] = useState(false);
-  const [showRemoveCourseDialog, setShowRemoveCourseDialog] = useState(false);
-  const [showUnenrollDialog, setShowUnenrollDialog] = useState(false);
-  const [selectedCourse, setSelectedCourse] = useState<string>('');
-  const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set());
-  const [courseSearchTerm, setCourseSearchTerm] = useState('');
-  const [selectedUser, setSelectedUser] = useState<string>('');
-  const [userSearchTerm, setUserSearchTerm] = useState('');
-  const [courseToRemove, setCourseToRemove] = useState<ProgramCourse | null>(null);
-  const [studentToUnenroll, setStudentToUnenroll] = useState<Student | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [courses, setCourses] = useState<ProgramCourse[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(true);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(true);
+  const [productId, setProductId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  // Helper function to strip HTML tags
-  const stripHtml = (html: string) => {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || '';
-  };
+  // `t` and `toast` change on every render, so they're read through a ref.
+  const ui = useRef({ t, toast });
+  ui.current = { t, toast };
 
-  // Load program data
-  useEffect(() => {
-    loadProgramData();
-  }, [programId]);
-
-  // Load courses when Courses tab is active
-  useEffect(() => {
-    if (activeTab === 'courses') {
-      loadProgramCourses();
-      loadAllCourses();
-    }
-  }, [activeTab]);
-
-  // Load students when Students tab is active
-  useEffect(() => {
-    if (activeTab === 'students') {
-      loadStudents();
-      loadAllUsers();
-    }
-  }, [activeTab]);
-
-  // Filter users based on search term
-  useEffect(() => {
-    if (!userSearchTerm) {
-      setFilteredUsers(allUsers);
-      return;
-    }
-
-    const search = userSearchTerm.toLowerCase();
-    const filtered = allUsers.filter(user => {
-      const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
-      const email = user.email.toLowerCase();
-      return fullName.includes(search) || email.includes(search);
-    });
-    setFilteredUsers(filtered);
-  }, [userSearchTerm, allUsers]);
-
-
-  const loadProgramData = async () => {
+  const loadProgram = useCallback(async () => {
     try {
       const res = await fetch(`/api/admin/programs/${programId}`);
-      if (!res.ok) throw new Error('Failed to load program');
-      const data = await res.json();
-      setProgram(data);
-    } catch (error) {
-      console.error('Error loading program:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.load_error', 'Failed to load program'),
-        variant: 'destructive'
+      if (res.status === 404) {
+        setNotFound(true);
+        return;
+      }
+      if (!res.ok) throw new Error('load failed');
+      setProgram(await res.json());
+    } catch {
+      ui.current.toast({
+        title: ui.current.t('lms.program_detail.toast_error', 'Error'),
+        description: ui.current.t('lms.program_detail.load_error', 'Failed to load program'),
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [programId]);
 
-  const loadProgramCourses = async () => {
+  const loadCourses = useCallback(async () => {
+    setCoursesLoading(true);
     try {
       const res = await fetch(`/api/admin/programs/${programId}/courses`);
-      if (!res.ok) throw new Error('Failed to load courses');
+      if (!res.ok) throw new Error('load failed');
       const data = await res.json();
-      setProgramCourses(data);
-    } catch (error) {
-      console.error('Error loading program courses:', error);
+      setCourses(Array.isArray(data) ? data.filter((pc: ProgramCourse) => pc.course) : []);
+    } catch {
+      ui.current.toast({ title: ui.current.t('common.error', 'Error'), description: ui.current.t('admin.programs.courses.loadError', "We couldn't load the courses"), variant: 'destructive' });
+    } finally {
+      setCoursesLoading(false);
     }
-  };
+  }, [programId]);
 
-  const loadAllCourses = async () => {
-    try {
-      const res = await fetch('/api/lms/courses');
-      if (!res.ok) throw new Error('Failed to load courses');
-      const data = await res.json();
-      setAllCourses(data.success ? data.data : []);
-    } catch (error) {
-      console.error('Error loading all courses:', error);
-    }
-  };
-
-  const loadStudents = async () => {
+  const loadStudents = useCallback(async () => {
+    setStudentsLoading(true);
     try {
       const res = await fetch(`/api/admin/enrollments?program_id=${programId}`);
-      if (!res.ok) throw new Error('Failed to load students');
+      if (!res.ok) throw new Error('load failed');
       const data = await res.json();
-      console.log('Enrollments response:', data);
-      // API returns { enrollments: [...] }, not a plain array
       setStudents(data.enrollments || []);
-      console.log('Students set to:', data.enrollments || []);
-    } catch (error) {
-      console.error('Error loading students:', error);
-      setStudents([]); // Set empty array on error to prevent .map crash
+    } catch {
+      setStudents([]);
+      ui.current.toast({ title: ui.current.t('common.error', 'Error'), description: ui.current.t('admin.programs.students.loadError', "We couldn't load the clients"), variant: 'destructive' });
+    } finally {
+      setStudentsLoading(false);
     }
-  };
+  }, [programId]);
 
-  const loadAllUsers = async () => {
-    try {
-      const res = await fetch('/api/admin/users');
-      if (!res.ok) throw new Error('Failed to load users');
-      const data = await res.json();
-      // Filter to only show students and instructors (not admins)
-      const nonAdminUsers = data.filter((u: User) => u.role === 'student' || u.role === 'instructor');
-      setAllUsers(nonAdminUsers);
-      setFilteredUsers(nonAdminUsers);
-    } catch (error) {
-      console.error('Error loading users:', error);
-    }
-  };
-
-  const handleAddCourses = async () => {
-    if (selectedCourses.size === 0) return;
-
-    setSaving(true);
-    try {
-      // Add courses sequentially to maintain order
-      for (const courseId of selectedCourses) {
-        const res = await fetch(`/api/admin/programs/${programId}/courses`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            course_id: courseId,
-            is_required: true
-          })
-        });
-
-        if (!res.ok) throw new Error('Failed to add course');
+  // Everything loads at once, so both tab counts are right straight away.
+  useEffect(() => {
+    void loadProgram();
+    void loadCourses();
+    void loadStudents();
+    void (async () => {
+      try {
+        const res = await fetch('/api/lms/courses');
+        const data = await res.json();
+        setAllCourses(data.success ? data.data || [] : []);
+      } catch {
+        setAllCourses([]);
       }
-
-      toast({
-        title: t('lms.program_detail.toast_success', 'Success'),
-        description: t('lms.program_detail.courses_added', '{count} course(s) added to program').replace('{count}', selectedCourses.size.toString())
-      });
-
-      setShowAddCourseDialog(false);
-      setSelectedCourses(new Set());
-      setCourseSearchTerm('');
-      loadProgramCourses();
-    } catch (error) {
-      console.error('Error adding courses:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.course_add_error', 'Failed to add courses'),
-        variant: 'destructive'
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleCourseSelection = (courseId: string) => {
-    const newSelection = new Set(selectedCourses);
-    if (newSelection.has(courseId)) {
-      newSelection.delete(courseId);
-    } else {
-      newSelection.add(courseId);
-    }
-    setSelectedCourses(newSelection);
-  };
-
-  const selectAllCourses = () => {
-    const filteredAvailableCourses = availableCourses.filter(course =>
-      course.title.toLowerCase().includes(courseSearchTerm.toLowerCase())
-    );
-    setSelectedCourses(new Set(filteredAvailableCourses.map(c => c.id)));
-  };
-
-  const deselectAllCourses = () => {
-    setSelectedCourses(new Set());
-  };
-
-  const handleRemoveCourse = async () => {
-    if (!courseToRemove) return;
-
-    setSaving(true);
-    try {
-      const res = await fetch(
-        `/api/admin/programs/${programId}/courses/${courseToRemove.course.id}`,
-        { method: 'DELETE' }
-      );
-
-      if (!res.ok) throw new Error('Failed to remove course');
-
-      toast({
-        title: t('lms.program_detail.toast_success', 'Success'),
-        description: t('lms.program_detail.course_removed', 'Course removed from program')
-      });
-
-      setShowRemoveCourseDialog(false);
-      setCourseToRemove(null);
-      loadProgramCourses();
-    } catch (error) {
-      console.error('Error removing course:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.course_remove_error', 'Failed to remove course'),
-        variant: 'destructive'
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleCourseRequired = async (programCourseId: string, courseId: string, currentValue: boolean) => {
-    try {
-      const res = await fetch(
-        `/api/admin/programs/${programId}/courses/${courseId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ is_required: !currentValue })
-        }
-      );
-
-      if (!res.ok) throw new Error('Failed to update course');
-
-      loadProgramCourses();
-    } catch (error) {
-      console.error('Error updating course:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.course_update_error', 'Failed to update course'),
-        variant: 'destructive'
-      });
-    }
-  };
-
-  const handleEnrollStudent = async () => {
-    if (!selectedUser) return;
-
-    setSaving(true);
-    try {
-      // First, find or create a product for this program
-      const productsRes = await fetch(`/api/admin/products?type=program`);
-      const productsData = await productsRes.json();
-      const products = productsData.success ? productsData.data : [];
-
-      // Find existing product for this program
-      let programProduct = products.find((p: any) => p.program_id === programId);
-
-      if (!programProduct) {
-        // Create a product for this program if it doesn't exist
-        const createProductRes = await fetch('/api/admin/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'program',
-            title: program?.name || 'Program',
-            program_id: programId,
-            payment_model: 'free', // Default to free, admin can change later
-            price: program?.price || 0,
-            currency: program?.currency || 'USD'
-          })
-        });
-
-        if (!createProductRes.ok) {
-          throw new Error('Failed to create product for program');
-        }
-
-        const createProductData = await createProductRes.json();
-        programProduct = createProductData.success ? createProductData.data : createProductData;
+    })();
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin/products?type=program');
+        const data = await res.json();
+        const product = (data.success ? data.data || [] : []).find((p: any) => p.program_id === programId);
+        setProductId(product?.id ?? null);
+      } catch {
+        setProductId(null);
       }
+    })();
+  }, [programId, loadProgram, loadCourses, loadStudents]);
 
-      // Now enroll the student in the product
-      const res = await fetch('/api/admin/enrollments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: selectedUser,
-          product_id: programProduct.id,
-          status: 'active'
-        })
-      });
+  // Enrollments still running (active or pending) stop a delete.
+  const running = students.filter((s) => s.status === 'active' || s.status === 'pending').length;
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to enroll student');
+  const remove = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/programs/${programId}`, { method: 'DELETE' });
+      const result = await res.json().catch(() => ({}));
+      if (res.status === 409 && result.error === 'has_active_enrollments') {
+        // Someone enrolled meanwhile: show the up-to-date list and the reason.
+        setConfirmDelete(false);
+        void loadStudents();
+        throw new Error(
+          t('admin.programs.delete.blocked', "Can't be deleted while {n} clients are enrolled (active or waiting). Cancel their enrollments first.").replace('{n}', String(result.active_count)),
+        );
       }
-
-      toast({
-        title: t('lms.program_detail.toast_success', 'Success'),
-        description: t('lms.program_detail.student_enrolled_success', 'Student enrolled successfully')
-      });
-
-      setShowEnrollStudentDialog(false);
-      setSelectedUser('');
-      setUserSearchTerm('');
-      loadStudents();
-    } catch (error: any) {
-      console.error('Error enrolling student:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: error.message || t('lms.program_detail.student_enroll_error', 'Failed to enroll student'),
-        variant: 'destructive'
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleUpdateEnrollmentStatus = async (enrollmentId: string, newStatus: string) => {
-    // TODO: Implement status update endpoint
-    toast({
-      title: t('lms.program_detail.toast_error', 'Error'),
-      description: 'Status update functionality is not yet implemented',
-      variant: 'destructive'
-    });
-    /*
-    try {
-      const res = await fetch(`/api/admin/enrollments/${enrollmentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-
-      if (!res.ok) throw new Error('Failed to update enrollment status');
-
-      toast({
-        title: t('lms.program_detail.toast_success', 'Success'),
-        description: t('lms.program_detail.enrollment_status_updated', 'Enrollment status updated')
-      });
-
-      loadStudents();
+      if (!res.ok || !result.success) throw new Error(result.error || t('lms.programs.delete_error', 'Failed to delete program'));
+      toast({ title: t('common.success', 'Success'), description: t('lms.programs.deleted', 'Program deleted successfully') });
+      router.push('/admin/lms/programs');
     } catch (error) {
-      console.error('Error updating enrollment status:', error);
       toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.enrollment_status_error', 'Failed to update enrollment status'),
-        variant: 'destructive'
+        title: t('common.error', 'Error'),
+        description: error instanceof Error ? error.message : t('lms.programs.delete_error', 'Failed to delete program'),
+        variant: 'destructive',
       });
-    }
-    */
-  };
-
-  const handleUnenrollStudent = async () => {
-    if (!studentToUnenroll) return;
-
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/admin/enrollments/${studentToUnenroll.id}`, {
-        method: 'DELETE'
-      });
-
-      if (!res.ok) throw new Error('Failed to unenroll student');
-
-      toast({
-        title: t('lms.program_detail.toast_success', 'Success'),
-        description: t('lms.program_detail.student_unenrolled', 'Student unenrolled from program')
-      });
-
-      setShowUnenrollDialog(false);
-      setStudentToUnenroll(null);
-      loadStudents();
-    } catch (error) {
-      console.error('Error unenrolling student:', error);
-      toast({
-        title: t('lms.program_detail.toast_error', 'Error'),
-        description: t('lms.program_detail.student_unenroll_error', 'Failed to unenroll student'),
-        variant: 'destructive'
-      });
-    } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   };
 
+  const Back = rtl ? ChevronRight : ChevronLeft;
+  const backLink = (
+    <Link href="/admin/lms/programs" className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-primary hover:underline">
+      <Back className="h-4 w-4" aria-hidden />
+      {t('lms.program_detail.back_to_programs', 'Back to Programs')}
+    </Link>
+  );
 
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction} aria-busy="true">
+          <div className="h-5 w-32 animate-pulse rounded bg-muted" />
+          <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
+            <span className="h-20 w-28 animate-pulse rounded-xl bg-muted" />
+            <span className="flex flex-1 flex-col gap-2">
+              <span className="h-3 w-24 animate-pulse rounded bg-muted" />
+              <span className="h-6 w-2/3 animate-pulse rounded bg-muted" />
+            </span>
+          </div>
         </div>
       </AdminLayout>
     );
   }
 
-  if (!program) {
+  if (notFound || !program) {
     return (
       <AdminLayout>
-        <div className="p-6">
-          <p className={isRtl ? 'text-right' : 'text-left'}>
-            {t('lms.program_detail.program_not_found', 'Program not found')}
-          </p>
+        <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+          {backLink}
+          <div className="rounded-2xl border border-border bg-card">
+            <ListState
+              icon={BookOpen}
+              tone="grey"
+              title={t('lms.program_detail.program_not_found', 'Program not found')}
+              action={
+                notFound ? undefined : (
+                  <button type="button" onClick={() => void loadProgram()} className={kitButton.primary}>
+                    {t('admin.list.retry', 'Try again')}
+                  </button>
+                )
+              }
+            />
+          </div>
         </div>
       </AdminLayout>
     );
   }
 
-  // Get courses not already in program
-  const availableCourses = allCourses.filter(
-    course => !programCourses.some(pc => pc.course.id === course.id)
-  );
-
-  // Filter available courses by search term
-  const filteredAvailableCourses = availableCourses.filter(course =>
-    course.title.toLowerCase().includes(courseSearchTerm.toLowerCase()) ||
-    (course.description && course.description.toLowerCase().includes(courseSearchTerm.toLowerCase()))
-  );
+  const description = stripHtml(program.description);
+  const meta = [
+    program.is_active ? t('lms.programs.active', 'Active') : t('lms.programs.inactive', 'Inactive'),
+    program.duration_weeks ? `${program.duration_weeks} ${t('lms.programs.weeks', 'weeks')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <AdminLayout>
-      <div className="p-4 md:p-6 space-y-6" dir={direction}>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        {backLink}
+
         {/* Header */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3 md:gap-4 min-w-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push('/admin/lms/programs')}
-            >
-              <ArrowLeft className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-              {t('lms.program_detail.back_to_programs', 'Back to Programs')}
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-xl md:text-2xl font-bold truncate">
-                {program?.name || t('lms.program_detail.untitled_program', 'Untitled Program')}
-              </h1>
-              {program?.description && stripHtml(program.description).trim() !== '' && (
-                <div
-                  className="text-sm text-muted-foreground prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: program.description }}
-                />
-              )}
-            </div>
+        <header className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <span className="grid h-20 w-28 shrink-0 place-items-center overflow-hidden rounded-xl bg-primary/10 text-primary">
+            {program.image_url ? (
+              <img src={program.image_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <ImageIcon className="h-7 w-7" aria-hidden />
+            )}
+          </span>
+          <div className="min-w-0 flex-1 basis-56">
+            <span className="text-[13px]">
+              <StatusDot tone={program.is_active ? 'green' : 'grey'}>
+                <span className={program.is_active ? 'font-semibold text-green-700 dark:text-green-400' : 'text-muted-foreground'}>{meta}</span>
+              </StatusDot>
+            </span>
+            <h1 className="mt-0.5 text-2xl font-extrabold leading-tight tracking-tight [font-family:inherit] [overflow-wrap:anywhere] sm:text-[26px]">{program.name}</h1>
+            {description && <p className="mt-0.5 line-clamp-2 text-muted-foreground">{description}</p>}
           </div>
-          <Badge variant={program?.is_active ? 'default' : 'secondary'}>
-            {program?.is_active
-              ? t('lms.program_detail.status_active', 'Active')
-              : t('lms.program_detail.status_inactive', 'Inactive')
-            }
-          </Badge>
-        </div>
+          <div className="flex flex-wrap gap-2">
+            {productId && (
+              <a href={`/program/${productId}`} target="_blank" rel="noopener noreferrer" className={kitButton.secondary}>
+                <Eye className="h-4 w-4" aria-hidden />
+                {t('admin.programs.viewPage', 'View page')}
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-red-200 bg-card px-4 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+              {t('common.delete', 'Delete')}
+            </button>
+          </div>
+        </header>
 
-        {/* Tabs */}
-        <div className="flex gap-2 border-b">
-          <Button
-            variant={activeTab === 'courses' ? 'default' : 'ghost'}
-            onClick={() => setActiveTab('courses')}
-            className="gap-2"
-          >
-            <BookOpen className="h-4 w-4" />
-            <span>{t('lms.program_detail.tab_courses', 'Courses')}</span>
-            <Badge variant="secondary" className="ms-1">{programCourses.length}</Badge>
-          </Button>
-          <Button
-            variant={activeTab === 'students' ? 'default' : 'ghost'}
-            onClick={() => setActiveTab('students')}
-            className="gap-2"
-          >
-            <Users className="h-4 w-4" />
-            <span>{t('lms.program_detail.tab_students', 'Students')}</span>
-            <Badge variant="secondary" className="ms-1">{students.length}</Badge>
-          </Button>
-        </div>
-
-        {/* Courses Tab */}
-        {activeTab === 'courses' && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>{t('lms.program_detail.courses_title', 'Program Courses')}</CardTitle>
-                  <CardDescription>
-                    {t('lms.program_detail.courses_description', 'Manage which courses are included in this program')}
-                  </CardDescription>
-                </div>
-                <Button onClick={() => setShowAddCourseDialog(true)}>
-                  <Plus className={isRtl ? 'ml-2 h-4 w-4' : 'mr-2 h-4 w-4'} />
-                  {t('lms.program_detail.courses_add', 'Add Course')}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {programCourses.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                  <p>{t('lms.program_detail.courses_empty', 'No courses added to this program yet')}</p>
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    onClick={() => setShowAddCourseDialog(true)}
-                  >
-                    {t('lms.program_detail.courses_add_first', 'Add First Course')}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {programCourses.map((pc, index) => (
-                    <div
-                      key={pc.id}
-                      className="flex items-center gap-4 p-4 border rounded-lg hover:bg-accent"
-                    >
-                      <GripVertical className="h-5 w-5 text-muted-foreground cursor-move" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{index + 1}.</span>
-                          <span className="font-medium">{pc.course.title}</span>
-                          <Badge variant={pc.is_required ? 'default' : 'secondary'}>
-                            {pc.is_required
-                              ? t('lms.program_detail.course_required', 'Required')
-                              : t('lms.program_detail.course_optional', 'Optional')
-                            }
-                          </Badge>
-                        </div>
-                        {pc.course.description && (
-                          <div
-                            className="text-sm text-muted-foreground mt-1 prose prose-sm max-w-none"
-                            dangerouslySetInnerHTML={{ __html: pc.course.description }}
-                          />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleCourseRequired(pc.id, pc.course.id, pc.is_required)}
-                        >
-                          {pc.is_required
-                            ? t('lms.program_detail.course_make_optional', 'Make Optional')
-                            : t('lms.program_detail.course_make_required', 'Make Required')
-                          }
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setCourseToRemove(pc);
-                            setShowRemoveCourseDialog(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Students Tab */}
-        {activeTab === 'students' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('lms.program_detail.students_title', 'Enrolled Students')}</CardTitle>
-              <CardDescription>
-                {t('lms.program_detail.students_description', 'View student enrollments in this program')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {students.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                  <p>{t('lms.program_detail.students_empty', 'No students enrolled in this program yet')}</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {students.map((student) => (
-                    <div
-                      key={student.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {student.user_name}
-                        </p>
-                        <p className="text-sm text-muted-foreground">{student.user_email}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {t('lms.program_detail.student_enrolled', 'Enrolled')}: {new Date(student.enrolled_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Badge variant={student.status === 'active' ? 'default' : 'secondary'}>
-                        {student.status === 'active' && t('lms.program_detail.enrollment_active', 'Active')}
-                        {student.status === 'pending' && t('lms.program_detail.enrollment_pending', 'Pending')}
-                        {student.status === 'suspended' && t('lms.program_detail.enrollment_suspended', 'Suspended')}
-                        {student.status === 'completed' && t('lms.program_detail.enrollment_completed', 'Completed')}
-                        {student.status === 'dropped' && t('lms.program_detail.enrollment_dropped', 'Dropped')}
-                        {!['active', 'pending', 'suspended', 'completed', 'dropped'].includes(student.status) && student.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-
-        {/* Add Course Dialog */}
-        <Dialog open={showAddCourseDialog} onOpenChange={(open) => {
-          setShowAddCourseDialog(open);
-          if (!open) {
-            setSelectedCourses(new Set());
-            setCourseSearchTerm('');
-          }
-        }}>
-          <DialogContent className="max-w-3xl" dir={direction}>
-            <DialogHeader>
-              <DialogTitle>{t('lms.program_detail.add_courses_title', 'Add Courses to Program')}</DialogTitle>
-              <DialogDescription>
-                {t('lms.program_detail.add_courses_description', 'Select one or more courses to add to this program')}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              {/* Search and Bulk Actions */}
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className={`absolute top-3 h-4 w-4 text-muted-foreground ${isRtl ? 'right-3' : 'left-3'}`} />
-                  <Input
-                    placeholder={t('lms.program_detail.search_courses', 'Search courses...')}
-                    value={courseSearchTerm}
-                    onChange={(e) => setCourseSearchTerm(e.target.value)}
-                    className={isRtl ? 'pr-9' : 'pl-9'}
-                  />
-                </div>
-                {selectedCourses.size > 0 ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={deselectAllCourses}
-                  >
-                    {t('lms.program_detail.deselect_all', 'Deselect All')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={selectAllCourses}
-                    disabled={filteredAvailableCourses.length === 0}
-                  >
-                    {t('lms.program_detail.select_all', 'Select All')}
-                  </Button>
-                )}
-              </div>
-
-              {/* Selected Count */}
-              {selectedCourses.size > 0 && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg">
-                  <Check className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">
-                    {t('lms.program_detail.courses_selected', '{count} course(s) selected').replace('{count}', selectedCourses.size.toString())}
-                  </span>
-                </div>
-              )}
-
-              {/* Course List */}
-              <div className="border rounded-lg max-h-[400px] overflow-y-auto">
-                {filteredAvailableCourses.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                    <p>
-                      {courseSearchTerm
-                        ? t('lms.program_detail.no_courses_found', 'No courses found matching your search')
-                        : t('lms.program_detail.no_available_courses', 'No available courses to add')
-                      }
-                    </p>
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {filteredAvailableCourses.map((course) => {
-                      const isSelected = selectedCourses.has(course.id);
-                      return (
-                        <div
-                          key={course.id}
-                          className={`p-4 cursor-pointer hover:bg-accent transition-colors ${isSelected ? 'bg-primary/5' : ''}`}
-                          onClick={() => toggleCourseSelection(course.id)}
-                        >
-                          <div className="flex items-start gap-3">
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleCourseSelection(course.id)}
-                              className="mt-1"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-sm mb-1">{course.title}</h4>
-                              {course.description && (
-                                <div
-                                  className="text-xs text-muted-foreground line-clamp-2 prose prose-xs max-w-none"
-                                  dangerouslySetInnerHTML={{ __html: course.description }}
-                                />
-                              )}
-                            </div>
-                            {isSelected && (
-                              <Check className="h-5 w-5 text-primary flex-shrink-0" />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddCourseDialog(false);
-                  setSelectedCourses(new Set());
-                  setCourseSearchTerm('');
-                }}
-              >
-                {t('lms.program_detail.cancel', 'Cancel')}
-              </Button>
-              <Button onClick={handleAddCourses} disabled={selectedCourses.size === 0 || saving}>
-                {saving ? (
-                  <Loader2 className={isRtl ? 'ml-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4 animate-spin'} />
-                ) : null}
-                {selectedCourses.size > 0
-                  ? t('lms.program_detail.add_courses_count', 'Add {count} Course(s)').replace('{count}', selectedCourses.size.toString())
-                  : t('lms.program_detail.add_courses_button', 'Add Courses')
-                }
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Remove Course Dialog */}
-        <AlertDialog open={showRemoveCourseDialog} onOpenChange={setShowRemoveCourseDialog}>
-          <AlertDialogContent dir={direction}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('lms.program_detail.remove_course_title', 'Remove Course?')}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('lms.program_detail.remove_course_description', 'Are you sure you want to remove "{title}" from this program? The course itself will not be deleted.').replace('{title}', courseToRemove?.course.title || '')}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('lms.program_detail.cancel', 'Cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleRemoveCourse} disabled={saving}>
-                {saving ? <Loader2 className={isRtl ? 'ml-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4 animate-spin'} /> : null}
-                {t('lms.program_detail.remove_course_button', 'Remove')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Enroll Student Dialog */}
-        <Dialog open={showEnrollStudentDialog} onOpenChange={setShowEnrollStudentDialog}>
-          <DialogContent className="max-w-2xl" dir={direction}>
-            <DialogHeader>
-              <DialogTitle>{t('lms.program_detail.enroll_student_title', 'Enroll Student in Program')}</DialogTitle>
-              <DialogDescription>
-                {t('lms.program_detail.enroll_student_description', 'Search and select a student to enroll in {name}').replace('{name}', program?.name || '')}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="user-search">{t('lms.program_detail.enroll_search_label', 'Search Students')}</Label>
-                <div className="relative">
-                  <Search className={`absolute top-3 h-4 w-4 text-muted-foreground ${isRtl ? 'right-3' : 'left-3'}`} />
-                  <Input
-                    id="user-search"
-                    placeholder={t('lms.program_detail.enroll_search_placeholder', 'Search by name or email...')}
-                    value={userSearchTerm}
-                    onChange={(e) => setUserSearchTerm(e.target.value)}
-                    className={isRtl ? 'pr-9' : 'pl-9'}
-                  />
-                </div>
-              </div>
-
-              {/* User List */}
-              <div className="border rounded-lg max-h-[400px] overflow-y-auto">
-                {filteredUsers.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <Users className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                    <p>{t('lms.program_detail.enroll_no_users', 'No users found')}</p>
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {filteredUsers
-                      .filter(user => !students.some(s => s.user_id === user.id))
-                      .map((user) => (
-                        <div
-                          key={user.id}
-                          className={`p-4 cursor-pointer hover:bg-accent transition-colors ${
-                            selectedUser === user.id ? 'bg-accent' : ''
-                          }`}
-                          onClick={() => setSelectedUser(user.id)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">
-                                {user.first_name} {user.last_name}
-                              </p>
-                              <p className="text-sm text-muted-foreground">{user.email}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">
-                                {user.role === 'student'
-                                  ? t('lms.program_detail.enroll_role_student', 'Student')
-                                  : t('lms.program_detail.enroll_role_instructor', 'Instructor')
-                                }
-                              </Badge>
-                              {selectedUser === user.id && (
-                                <Check className="h-5 w-5 text-primary" />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowEnrollStudentDialog(false);
-                  setSelectedUser('');
-                  setUserSearchTerm('');
-                }}
-              >
-                {t('lms.program_detail.cancel', 'Cancel')}
-              </Button>
-              <Button onClick={handleEnrollStudent} disabled={!selectedUser || saving}>
-                {saving ? <Loader2 className={isRtl ? 'ml-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4 animate-spin'} /> : null}
-                {t('lms.program_detail.enroll_button', 'Enroll Student')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Unenroll Student Dialog */}
-        <AlertDialog open={showUnenrollDialog} onOpenChange={setShowUnenrollDialog}>
-          <AlertDialogContent dir={direction}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('lms.program_detail.unenroll_student_title', 'Unenroll Student?')}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('lms.program_detail.unenroll_student_description', 'Are you sure you want to unenroll {name} from this program? Their enrollment status will be changed to "dropped".')
-                  .replace('{name}', studentToUnenroll?.user_name || '')}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('lms.program_detail.cancel', 'Cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleUnenrollStudent} disabled={saving}>
-                {saving ? <Loader2 className={isRtl ? 'ml-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4 animate-spin'} /> : null}
-                {t('lms.program_detail.unenroll_button', 'Unenroll')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ProgramSettingsForm
+          program={program}
+          onSaved={setProgram}
+          initialStep={initialStep}
+          extra={{
+            courses: {
+              label: `${t('lms.program_detail.tab_courses', 'Courses')}${coursesLoading ? '' : ` (${courses.length})`}`,
+              node: (
+                <ProgramCoursesTab
+                  programId={programId}
+                  courses={courses}
+                  loading={coursesLoading}
+                  allCourses={allCourses}
+                  onChange={setCourses}
+                  reload={loadCourses}
+                />
+              ),
+            },
+            students: {
+              label: `${t('lms.program_detail.tab_students', 'Clients')}${studentsLoading ? '' : ` (${students.length})`}`,
+              node: <ProgramStudentsTab program={program} students={students} loading={studentsLoading} reload={loadStudents} />,
+            },
+          }}
+        />
       </div>
+
+      <ProgramDeleteDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        programId={program.id}
+        programName={program.name}
+        blockedCount={running}
+        deleting={deleting}
+        onConfirm={() => void remove()}
+      />
     </AdminLayout>
   );
 }

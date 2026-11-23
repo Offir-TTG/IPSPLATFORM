@@ -5,6 +5,15 @@ import { createClient } from '@/lib/supabase/server';
 // must run per-request, never pre-rendered.
 export const dynamic = 'force-dynamic';
 
+/** Attendance % = (present + late) / (present + late + absent); excused doesn't count. Two decimals, 0 when nothing counts. */
+function attendancePercentage(stat: { present_count?: unknown; late_count?: unknown; absent_count?: unknown }) {
+  const present = Number(stat.present_count) || 0;
+  const late = Number(stat.late_count) || 0;
+  const absent = Number(stat.absent_count) || 0;
+  const counted = present + late + absent;
+  return counted > 0 ? Math.round(((present + late) / counted) * 10000) / 100 : 0;
+}
+
 /**
  * GET /api/admin/lms/courses/[id]/attendance/reports
  * Retrieves attendance statistics for all students in a course
@@ -38,7 +47,7 @@ export async function GET(
     }
 
     // Only instructors and admins can view reports
-    if (!['instructor', 'admin'].includes(userData.role)) {
+    if (!['instructor', 'admin', 'super_admin'].includes(userData.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -84,11 +93,14 @@ export async function GET(
       );
     }
 
-    // Merge student info with stats
+    // Merge student info with stats. The view divides present by every
+    // record; the rule is (present + late) / (present + late + absent),
+    // with excused left out, so the percentage is worked out here.
     const reports = stats?.map((stat) => {
       const student = students?.find((s) => s.id === stat.student_id);
       return {
         ...stat,
+        attendance_percentage: attendancePercentage(stat),
         student_name: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : 'Unknown',
         student_email: student?.email || '',
       };

@@ -1,5 +1,6 @@
 'use client';
 
+import { HeroProgress } from './course/HeroProgress';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -45,7 +46,10 @@ export function HomeHero({
   updatesCount,
   notice,
   serverNow,
+  overall = null,
 }: {
+  /** Lessons done across all courses, in percent: the graph when nothing more specific is on. */
+  overall?: number | null;
   greeting: string;
   orgName: string;
   dateLabel: string;
@@ -88,9 +92,14 @@ export function HomeHero({
     else if (now <= end) orb = { big: 'עכשיו', small: 'המפגש בשידור' };
     else orb = { big: 'הסתיים', small: 'ההקלטה תעלה בקרוב' };
     joinLabel = joinOpen ? 'הצטרפות למפגש' : now > end ? 'לעמוד המפגש' : `הצטרפות · נפתח ב-${timeOf(new Date(opensAt).toISOString())}`;
-  } else if (focus?.type === 'continue') {
-    orb = { big: `${focus.progress}%`, small: 'מהקורס הושלם' };
   }
+  // Progress as a round graph: the course being continued, or everything when nothing is on.
+  const ring = focus?.type === 'continue' ? focus.progress : !focus ? overall : null;
+  const ringGraph = ring !== null && (
+    <div className="hidden lg:block shrink-0">
+      <HeroProgress pct={ring} size={176} label={focus ? 'מהקורס הושלם' : 'מכל השיעורים הושלמו'} />
+    </div>
+  );
 
   return (
     <section
@@ -180,6 +189,7 @@ export function HomeHero({
               )}
             </div>
           </div>
+          {ringGraph}
           {orb && (
             <div
               className="hidden lg:grid relative shrink-0 w-44 h-44 rounded-full place-items-center text-center bg-white/10 border border-white/[.18]"
@@ -193,10 +203,13 @@ export function HomeHero({
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {orgName && <div className="text-[#e9b44c] font-semibold text-[13px] lg:text-sm">{orgName}</div>}
-          <h1 className="m-0 text-white font-rubik font-bold text-[32px] leading-[1.1] lg:text-[52px] lg:leading-[1.05]">טוב לראות אותך</h1>
-          <div className="text-sm lg:text-base opacity-85">אין מפגש קרוב כרגע. כל מה שלך מחכה כאן למטה.</div>
+        <div className="flex gap-8 items-center justify-between">
+          <div className="flex flex-col gap-2.5">
+            {orgName && <div className="text-[#e9b44c] font-semibold text-[13px] lg:text-sm">{orgName}</div>}
+            <h1 className="m-0 text-white font-rubik font-bold text-[32px] leading-[1.1] lg:text-[52px] lg:leading-[1.05]">טוב לראות אותך</h1>
+            <div className="text-sm lg:text-base opacity-85">אין מפגש קרוב כרגע. כל מה שלך מחכה כאן למטה.</div>
+          </div>
+          {ringGraph}
         </div>
       )}
 

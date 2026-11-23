@@ -475,7 +475,7 @@ export default function EmailTemplatesPage() {
                   <div className="flex-1">
                     <p className="font-medium text-sm">parent.progress_report</p>
                     <p className="text-xs text-muted-foreground">
-                      {t('email_template.parent_progress_report.description', 'Sent to parents with student progress updates')}
+                      {t('email_template.parent_progress_report.description', 'Sent to parents with client progress updates')}
                     </p>
                   </div>
                 </div>

@@ -5,6 +5,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import type { Product, RegisterProductRequest } from '@/types/payments';
+import { getBusinessCurrency } from '@/lib/tenant/currency';
 import { logAuditEvent } from '@/lib/audit/logger';
 
 /**
@@ -22,7 +23,6 @@ export async function registerProduct(
     product_id,
     product_name,
     price,
-    currency = 'USD',
     auto_assign_payment_plan = true,
     default_payment_plan_id,
     forced_payment_plan_id,
@@ -60,7 +60,8 @@ export async function registerProduct(
       product_id,
       product_name,
       price,
-      currency,
+      // Always the business currency (Organization settings).
+      currency: await getBusinessCurrency(tenant_id),
       auto_assign_payment_plan,
       default_payment_plan_id,
       forced_payment_plan_id,

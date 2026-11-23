@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { withClientAlias } from '@/lib/auth/roles';
 
 // `super_admin` was missing from this union — `users.role` does carry
 // that value (see UserLayout.tsx's redirect check). Without it,
 // withAuth's role-match fails for super-admin users and returns 403
 // "Insufficient permissions" even on routes that should let them in.
-type UserRole = 'admin' | 'super_admin' | 'instructor' | 'student';
+type UserRole = 'admin' | 'super_admin' | 'instructor' | 'student' | 'client';
 
 interface AuthUser {
   id: string;
@@ -60,8 +61,9 @@ export function withAuth(
         );
       }
 
-      // Check if user has the required role
-      if (!allowedRoles.includes(userData.role as UserRole)) {
+      // Check if user has the required role ('student' and 'client' are the
+      // same role while the stored value moves to 'client').
+      if (!withClientAlias(allowedRoles).includes(userData.role as UserRole)) {
         return NextResponse.json(
           { success: false, error: 'Insufficient permissions' },
           { status: 403 }

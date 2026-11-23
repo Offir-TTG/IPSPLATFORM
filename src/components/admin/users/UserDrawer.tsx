@@ -413,7 +413,7 @@ export function UserDrawer({
                     <SectionLabel tab="profile">{t('admin.users.activity.editProfile', 'Edit profile')}</SectionLabel>
                   </AccordionTrigger>
                   <AccordionContent className={sectionBodyClass}>
-                    <UserProfileForm userId={userId as string} onSaved={changed} onDirtyChange={setProfileDirty} actionsSlot={actionsSlot} />
+                    {userId && <UserProfileForm userId={userId} onSaved={changed} onDirtyChange={setProfileDirty} actionsSlot={actionsSlot} />}
                   </AccordionContent>
                 </AccordionItem>
                 {ACTIVITY_SECTIONS.map(([key, Section]) => (
@@ -422,7 +422,8 @@ export function UserDrawer({
                       <SectionLabel tab={key}>{tabLabel(key)}</SectionLabel>
                     </AccordionTrigger>
                     <AccordionContent className={sectionBodyClass}>
-                      <Section userId={userId as string} />
+                      {/* While the drawer closes the user is already cleared: nothing loads for "null". */}
+                      {userId && <Section userId={userId} />}
                     </AccordionContent>
                   </AccordionItem>
                 ))}

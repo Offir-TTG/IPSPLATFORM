@@ -545,7 +545,7 @@ export function CreateTriggerDialog({
                     <SelectValue placeholder={t('triggers.field.recipient_role_placeholder', 'Select role')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="student">{t('triggers.role.student', 'Student')}</SelectItem>
+                    <SelectItem value="student">{t('triggers.role.student', 'Client')}</SelectItem>
                     <SelectItem value="instructor">{t('triggers.role.instructor', 'Instructor')}</SelectItem>
                     <SelectItem value="admin">{t('triggers.role.admin', 'Admin')}</SelectItem>
                   </SelectContent>

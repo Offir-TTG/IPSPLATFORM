@@ -158,7 +158,7 @@ export function DocuSignConfig({
                 {t('products.docusign.require_signature', 'Require Signature')}
               </Label>
               <p className="text-xs text-muted-foreground">
-                {t('products.docusign.require_signature_desc', 'Students must sign a document via DocuSign to complete enrollment')}
+                {t('products.docusign.require_signature_desc', 'Clients must sign a document via DocuSign to complete enrollment')}
               </p>
             </div>
             <Switch

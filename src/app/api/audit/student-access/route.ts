@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { isClientRole } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
     const userRole = user.user_metadata?.role || 'user';
     const isAdmin = ['admin', 'auditor', 'compliance_officer'].includes(userRole);
     const isParent = userRole === 'parent';
-    const isStudent = userRole === 'student' && user.id === studentId;
+    const isStudent = isClientRole(userRole) && user.id === studentId;
 
     // Only admin, parent, or the student themselves can view
     if (!isAdmin && !isParent && !isStudent) {

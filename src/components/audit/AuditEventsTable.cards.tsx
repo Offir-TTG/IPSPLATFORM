@@ -568,7 +568,7 @@ export function AuditEventsTable({ events, isAdmin = false, onEventClick, t = (_
                             gap: '0.375rem'
                           }}>
                             <AlertTriangle className="h-3 w-3" />
-                            {t('admin.audit.details.studentRecord', 'Student Record (FERPA Protected)')}
+                            {t('admin.audit.details.studentRecord', 'Client Record (FERPA Protected)')}
                           </div>
                         )}
                         {event.is_minor_data && (

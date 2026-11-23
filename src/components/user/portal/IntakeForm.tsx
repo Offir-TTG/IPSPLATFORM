@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { IntakeQuestion, IntakeView } from '@/lib/family/intake';
+import { portalBar, portalSeg, portalSegStyle } from './joined';
 
 const input = 'min-h-11 rounded-xl border bg-[#f9f7fc] px-3 text-[15px] text-[#221a2e] focus:outline-none focus:border-[#5b3a8e] focus:bg-white';
 const isEmpty = (v: unknown) => v == null || v === '' || (Array.isArray(v) && v.length === 0);
@@ -11,7 +12,7 @@ const isEmpty = (v: unknown) => v == null || v === '' || (Array.isArray(v) && v.
  * The intake form the team set for this coaching. The parent fills it in
  * after the pack is set up, and can change it until the first session.
  */
-export function IntakeForm({ enrollmentId, childName, accent }: { enrollmentId: string; childName: string; accent: string }) {
+export function IntakeForm({ enrollmentId, childName, accent, forParent = false }: { enrollmentId: string; childName: string; accent: string; /** The client's own coaching (no child). */ forParent?: boolean }) {
   const router = useRouter();
   const [view, setView] = useState<IntakeView | null>(null);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
@@ -86,14 +87,14 @@ export function IntakeForm({ enrollmentId, childName, accent }: { enrollmentId: 
         return <input disabled={readOnly} type="date" value={(v as string) ?? ''} onChange={(e) => set(q.id, e.target.value)} className={`${input} ${border} max-w-[200px]`} style={{ direction: 'ltr' }} aria-invalid={!!err} />;
       case 'yes_no':
         return (
-          <div className="flex gap-2" role="radiogroup">
+          <div className={`${portalBar} w-fit`} role="radiogroup">
             {[
               [true, 'כן'],
               [false, 'לא'],
             ].map(([val, label]) => {
               const on = v === val || (val === true && v === 'yes') || (val === false && v === 'no');
               return (
-                <button key={String(val)} type="button" role="radio" aria-checked={on} disabled={readOnly} onClick={() => set(q.id, val)} className={`border rounded-xl px-5 py-2 font-semibold text-sm ${on ? 'text-white border-transparent' : `bg-white ${border}`}`} style={on ? { background: accent } : undefined}>
+                <button key={String(val)} type="button" role="radio" aria-checked={on} disabled={readOnly} onClick={() => set(q.id, val)} className={`${portalSeg(on)} px-5 font-semibold`} style={portalSegStyle(on, accent)}>
                   {label as string}
                 </button>
               );
@@ -135,12 +136,14 @@ export function IntakeForm({ enrollmentId, childName, accent }: { enrollmentId: 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="m-0 text-[#221a2e] font-rubik font-semibold text-lg">{view.title || `שאלון פתיחה: ${childName}`}</h2>
+        <h2 className="m-0 text-[#221a2e] font-rubik font-semibold text-lg">{view.title || (forParent ? 'שאלון פתיחה' : `שאלון פתיחה: ${childName}`)}</h2>
         <p className="m-0 mt-1 text-sm text-[#73698a]">
           {readOnly
             ? 'השאלון נשלח. אחרי המפגש הראשון כבר אי אפשר לשנות אותו.'
             : view.status === 'submitted'
             ? 'השאלון נשלח. אפשר לעדכן אותו עד המפגש הראשון.'
+            : forParent
+            ? 'כמה שאלות שיעזרו למאמן/ת להכיר אותך לפני המפגש הראשון.'
             : 'כמה שאלות שיעזרו למטפלת להכיר את ' + childName + ' לפני המפגש הראשון. אחרי השליחה אפשר לקבוע מפגש.'}
         </p>
       </div>

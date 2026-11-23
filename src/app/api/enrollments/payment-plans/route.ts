@@ -99,8 +99,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log('[Payment Plans API] Returning plans:', plans);
-    return NextResponse.json({ plans: plans || [] });
+    // In the product's own order: its main plan is saved first, so clients see it first.
+    const ordered = [...(plans || [])].sort((a: any, b: any) => productPlanIds.indexOf(a.id) - productPlanIds.indexOf(b.id));
+    console.log('[Payment Plans API] Returning plans:', ordered);
+    return NextResponse.json({ plans: ordered });
 
   } catch (error) {
     console.error('Error in GET /api/enrollments/payment-plans:', error);

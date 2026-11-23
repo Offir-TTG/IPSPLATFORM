@@ -128,7 +128,7 @@ export const POST = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin', 'instructor']);
+}, ['admin', 'super_admin', 'instructor']);
 
 // DELETE /api/programs/upload-image - Delete a program image
 export const DELETE = withAuth(async (
@@ -201,4 +201,4 @@ export const DELETE = withAuth(async (
       { status: 500 }
     );
   }
-}, ['admin']);
+}, ['admin', 'super_admin']);

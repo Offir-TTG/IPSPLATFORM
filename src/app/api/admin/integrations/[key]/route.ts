@@ -7,6 +7,7 @@ import {
   mergeSubmittedCredentials,
   saveIntegration,
 } from '@/lib/integrations/store';
+import { clearEmailConfigCache } from '@/lib/email/send';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,6 +94,9 @@ export async function PUT(
       console.error('Error updating integration:', error);
       return NextResponse.json({ error: 'Failed to update integration' }, { status: 500 });
     }
+
+    // New email settings apply to the next email, not after the 5-minute cache.
+    if (params.key === 'resend' || params.key === 'smtp') clearEmailConfigCache(auth.tenant.id);
 
     return NextResponse.json({
       ...data,

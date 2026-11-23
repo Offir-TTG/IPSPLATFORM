@@ -224,7 +224,7 @@ export default function AdminAuditPage() {
       CONFIG: t('admin.audit.filters.category.config', 'Configuration'),
       DATA: t('admin.audit.filters.category.data', 'Data'),
       ADMIN: t('admin.audit.filters.category.admin', 'Admin'),
-      STUDENT_RECORD: t('admin.audit.filters.category.studentRecord', 'Student Records'),
+      STUDENT_RECORD: t('admin.audit.filters.category.studentRecord', 'Client Records'),
       GRADE: t('admin.audit.filters.category.grade', 'Grades'),
       ATTENDANCE: t('admin.audit.filters.category.attendance', 'Attendance'),
     })[c] ?? c;
@@ -281,9 +281,10 @@ export default function AdminAuditPage() {
     );
   else if (events.length === 0) state = <ListState icon={Shield} title={t('admin.audit.table.noEvents', 'No audit events found')} />;
 
+  // One segment of a joined bar (ChipGroup draws the bar and the dividers).
   const chip = (on: boolean) =>
-    `inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-sm ${
-      on ? 'border-primary bg-primary font-semibold text-primary-foreground' : 'border-border bg-card text-foreground hover:bg-muted'
+    `inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap px-3.5 text-sm transition-colors focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+      on ? 'bg-primary font-semibold text-primary-foreground' : 'text-foreground hover:bg-muted'
     }`;
 
   return (
@@ -359,6 +360,7 @@ export default function AdminAuditPage() {
           pills={
             <>
               <QuickPills
+                joined
                 label={t('admin.audit.filters.category', 'Category')}
                 value={filters.category ?? 'ALL'}
                 onChange={(c) => setFilter('category', c === 'ALL' ? undefined : c)}
@@ -380,8 +382,9 @@ export default function AdminAuditPage() {
           ]}
           extra={
             moreOpen ? (
-                <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
+                // Side by side, wrapping only when the row is full.
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+                  <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[13.5rem_13.5rem]">
                     <label className="text-sm">
                       <span className="mb-1 block font-medium text-muted-foreground">{t('admin.audit.filters.dateFrom', 'From')}</span>
                       <input
@@ -401,16 +404,6 @@ export default function AdminAuditPage() {
                       />
                     </label>
                   </div>
-                  <ChipGroup label={t('admin.audit.filters.eventTypes', 'Types')}>
-                    {EVENT_TYPES.map((type) => {
-                      const on = !!filters.eventTypes?.includes(type);
-                      return (
-                        <button key={type} type="button" aria-pressed={on} onClick={() => toggleIn('eventTypes', type)} className={chip(on)}>
-                          {t(`admin.audit.filters.eventType.${type.toLowerCase()}`, typeLabel(type))}
-                        </button>
-                      );
-                    })}
-                  </ChipGroup>
                   <ChipGroup label={t('admin.audit.filters.riskLevels', 'Risk')}>
                     {RISK_LEVELS.map((r) => {
                       const on = !!filters.riskLevels?.includes(r);
@@ -429,6 +422,16 @@ export default function AdminAuditPage() {
                         <button key={s} type="button" aria-pressed={on} onClick={() => toggleIn('status', s)} className={chip(on)}>
                           <span className={`h-2 w-2 rounded-full ${STATUS_TONE[s].dot}`} aria-hidden />
                           {statusLabel(s)}
+                        </button>
+                      );
+                    })}
+                  </ChipGroup>
+                  <ChipGroup label={t('admin.audit.filters.eventTypes', 'Types')}>
+                    {EVENT_TYPES.map((type) => {
+                      const on = !!filters.eventTypes?.includes(type);
+                      return (
+                        <button key={type} type="button" aria-pressed={on} onClick={() => toggleIn('eventTypes', type)} className={chip(on)}>
+                          {t(`admin.audit.filters.eventType.${type.toLowerCase()}`, typeLabel(type))}
                         </button>
                       );
                     })}
@@ -580,9 +583,11 @@ export default function AdminAuditPage() {
 
 function ChipGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div role="group" aria-label={label}>
-      <div className="mb-1.5 text-sm font-medium text-muted-foreground">{label}</div>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+    <div role="group" aria-label={label} className="min-w-0 max-w-full">
+      <div className="mb-1 text-sm font-medium text-muted-foreground">{label}</div>
+      <div className="max-w-full overflow-x-auto pb-0.5">
+        <div className="inline-flex overflow-hidden rounded-full border border-border bg-card [&>*+*]:border-s [&>*+*]:border-border">{children}</div>
+      </div>
     </div>
   );
 }

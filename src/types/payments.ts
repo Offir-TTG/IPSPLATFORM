@@ -22,7 +22,9 @@ export interface PaymentPlan {
   tenant_id: string;
   plan_name: string;
   plan_description?: string;
-  plan_type: 'one_time' | 'deposit' | 'installments' | 'subscription';
+  plan_type: 'one_time' | 'deposit' | 'installments' | 'subscription' | 'per_session';
+  /** Per-session plans: price per session; empty = the product price. */
+  session_amount?: number | null;
 
   // Deposit fields
   deposit_type?: 'percentage' | 'fixed';

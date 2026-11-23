@@ -7,6 +7,8 @@ export interface RecipientInfo {
   name: string;
   recipientId: string;
   routingOrder?: string;
+  /** Language of DocuSign's signing screen, e.g. 'he' or 'en'. */
+  language?: string;
 }
 
 export interface EnvelopeResponse {
@@ -106,37 +108,68 @@ export class DocuSignClient {
     try {
       const envelopesApi = new docusign.EnvelopesApi(this.apiClient);
 
-      // Create template role for recipient
-      const templateRole = docusign.TemplateRole.constructFromObject({
-        email: recipient.email,
-        name: recipient.name,
-        roleName: 'Student', // This should match the role in your template
-        clientUserId: recipient.recipientId,
-      });
+      // The signer goes into the template's own signer slot (the one holding
+      // the signature fields). A role name that doesn't match the template
+      // adds a second signer with no fields, and DocuSign then asks the signer
+      // to "add a field" instead of showing where to sign.
+      const templatesApi = new (docusign as any).TemplatesApi(this.apiClient);
+      const templateRecipients = await templatesApi.listRecipients(this.accountId, templateId);
+      const slot = [...(templateRecipients.signers || [])].sort(
+        (a: any, b: any) => Number(a.routingOrder || 1) - Number(b.routingOrder || 1)
+      )[0];
 
-      // Create envelope definition
       const envelopeDefinition = new docusign.EnvelopeDefinition();
       envelopeDefinition.templateId = templateId;
-      envelopeDefinition.templateRoles = [templateRole];
-      envelopeDefinition.status = 'sent';
       envelopeDefinition.emailSubject = emailSubject;
-
-      // Add custom fields if provided
       if (customFields) {
         const textCustomFields = Object.entries(customFields).map(
           ([name, value]) =>
             docusign.TextCustomField.constructFromObject({ name, value })
         );
-        envelopeDefinition.customFields = {
-          textCustomFields,
+        envelopeDefinition.customFields = { textCustomFields };
+      }
+
+      const signer: Record<string, unknown> = {
+        email: recipient.email,
+        name: recipient.name,
+        clientUserId: recipient.recipientId,
+      };
+      // The signer's language sets the language of DocuSign's signing screen.
+      if (recipient.language) {
+        signer.emailNotification = {
+          supportedLanguage: recipient.language,
+          emailSubject,
+          emailBody: emailSubject,
         };
       }
 
-      // Send the envelope
-      const results = await envelopesApi.createEnvelope(
-        this.accountId,
-        { envelopeDefinition }
-      );
+      let results: any;
+      if (!slot || slot.roleName) {
+        // Usual case: the template's signer has a role name.
+        envelopeDefinition.templateRoles = [
+          docusign.TemplateRole.constructFromObject({ ...signer, roleName: slot?.roleName || 'Student' }),
+        ];
+        envelopeDefinition.status = 'sent';
+        results = await envelopesApi.createEnvelope(this.accountId, { envelopeDefinition });
+      } else {
+        // The template's signer has no role name: create a draft, put the
+        // signer into that slot by its id, then send.
+        envelopeDefinition.status = 'created';
+        const draft = await envelopesApi.createEnvelope(this.accountId, { envelopeDefinition });
+        // The slot's id on the new envelope (it can differ from the template's).
+        const draftRecipients = await (envelopesApi as any).listRecipients(this.accountId, draft.envelopeId);
+        const draftSlot = [...(draftRecipients.signers || [])].sort(
+          (a: any, b: any) => Number(a.routingOrder || 1) - Number(b.routingOrder || 1)
+        )[0];
+        // (missing from our local type file for docusign-esign)
+        await (envelopesApi as any).updateRecipients(this.accountId, draft.envelopeId, {
+          recipients: {
+            signers: [{ ...signer, recipientId: draftSlot?.recipientId ?? slot.recipientId, recipientIdGuid: draftSlot?.recipientIdGuid }],
+          },
+        });
+        await envelopesApi.update(this.accountId, draft.envelopeId, { envelope: { status: 'sent' } });
+        results = { ...draft, status: 'sent' };
+      }
 
       return {
         envelopeId: results.envelopeId || '',

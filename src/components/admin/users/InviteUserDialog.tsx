@@ -300,7 +300,7 @@ export function InviteUserDialog({ open, onOpenChange, onSuccess }: InviteUserDi
                 <SelectValue />
               </SelectTrigger>
               <SelectContent dir={direction}>
-                <SelectItem value="student">{t('admin.users.role_student', 'Student')}</SelectItem>
+                <SelectItem value="student">{t('admin.users.role_student', 'Client')}</SelectItem>
                 <SelectItem value="instructor">{t('admin.users.role_instructor', 'Instructor')}</SelectItem>
                 <SelectItem value="admin">{t('admin.users.role_admin', 'Admin')}</SelectItem>
               </SelectContent>

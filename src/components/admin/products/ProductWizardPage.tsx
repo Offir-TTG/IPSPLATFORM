@@ -59,11 +59,13 @@ export function ProductWizardPage({ productId }: { productId?: string }) {
   }, [productId]);
 
   const save = async (data: ProductFormData): Promise<boolean> => {
+    // A future membership price chosen in the wizard is scheduled after the product exists.
+    const { __future_price: futurePrice, ...productData } = data as ProductFormData & { __future_price?: Record<string, unknown> };
     try {
       const response = await fetch(productId ? `/api/admin/products/${productId}` : '/api/admin/products', {
         method: productId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(productData),
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
@@ -78,6 +80,22 @@ export function ProductWizardPage({ productId }: { productId?: string }) {
       });
       if (!productId) {
         const created = (result.success ? result.data : result) as Product | undefined;
+        if (created?.id && futurePrice) {
+          const scheduled = await fetch(`/api/admin/products/${created.id}/price-changes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(futurePrice),
+          })
+            .then((r) => r.ok)
+            .catch(() => false);
+          if (!scheduled) {
+            toast({
+              title: t('common.error', 'Error'),
+              description: t('admin.priceChange.futureNotScheduled', 'The product was created, but the future price was not scheduled. Add it from the product with "Change price".'),
+              variant: 'destructive',
+            });
+          }
+        }
         router.replace(created?.id ? `/admin/payments/products/${created.id}` : '/admin/payments/products');
       }
       return true;

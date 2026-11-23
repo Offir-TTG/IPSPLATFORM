@@ -18,7 +18,10 @@ export default function SigningReturnPage() {
     const message = { source: 'ips-docusign', event };
     const origin = window.location.origin;
     try {
-      if (window.parent && window.parent !== window) window.parent.postMessage(message, origin);
+      // This page may load inside DocuSign's own frames: tell the top page
+      // (the wizard) and the direct parent; only our own origin receives it.
+      if (window.top && window.top !== window) window.top.postMessage(message, origin);
+      if (window.parent && window.parent !== window && window.parent !== window.top) window.parent.postMessage(message, origin);
       if (window.opener) {
         window.opener.postMessage(message, origin);
         window.close();

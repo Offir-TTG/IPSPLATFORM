@@ -36,8 +36,7 @@ import {
   Activity,
   PanelLeftClose,
   PanelLeft,
-  Baby,
-} from 'lucide-react';
+  Baby, HeartHandshake } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -53,6 +52,7 @@ import { supabase } from '@/lib/supabase/client';
 import { SETTINGS_HOME, settingsPageFor } from '@/lib/admin/settings-pages';
 import { HelpButton } from '@/components/admin/help/HelpButton';
 import { HelpDrawer } from '@/components/admin/help/HelpDrawer';
+import { useAdminEmbedded } from '@/components/admin/AdminEmbed';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -79,7 +79,17 @@ interface NavSection {
   order?: number;
 }
 
+/**
+ * The admin frame (side menu, top bar). Inside <AdminEmbed> (a page shown in
+ * another page's tab) only the content is drawn.
+ */
 export function AdminLayout({ children }: AdminLayoutProps) {
+  const embedded = useAdminEmbedded();
+  if (embedded) return <>{children}</>;
+  return <AdminFrame>{children}</AdminFrame>;
+}
+
+function AdminFrame({ children }: AdminLayoutProps) {
   const { t, language, direction, loading: translationsLoading } = useAdminLanguage();
   const { isSuperAdmin } = useTenant();
   const pathname = usePathname();
@@ -266,6 +276,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     'payments': CreditCard,
     'audit': Shield,
     'notifications': Bell,
+    'coaching': HeartHandshake,
   };
 
   // Translation key mapping for navigation items
@@ -784,17 +795,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       {/* Main content */}
       <main
         className="admin-main min-h-screen transition-all duration-300"
-        style={
-          direction === 'rtl'
-            ? {
-                marginRight: sidebarCollapsed ? '4rem' : '16rem',
-                marginLeft: 0,
-              }
-            : {
-                marginLeft: sidebarCollapsed ? '4rem' : '16rem',
-                marginRight: 0,
-              }
-        }
+        // The room kept for the side menu, full or collapsed. globals.css uses
+        // it on wide screens only: on a phone the menu slides over the page,
+        // so the header and the page take the full width.
+        style={{ ['--admin-sidebar-width' as string]: sidebarCollapsed ? '4rem' : '16rem' }}
       >
         {/* Desktop header */}
         {/* Now carries the org identity (logo + tenant name) — was
@@ -802,7 +806,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             the sidebar so the org identity reads against the main
             content area. The whole block is a link to the dashboard
             so the org-mark stays clickable, same as it was before. */}
-        <div className="hidden lg:flex sticky top-0 z-20 bg-card/80 backdrop-blur-sm border-b border-border px-6 py-4 items-center justify-between">
+        {/* Full-width bar; its contents line up with the pages (max-w-6xl,
+            same padding), so the logo and buttons sit above the page edges. */}
+        <div className="hidden lg:block sticky top-0 z-20 bg-card/80 backdrop-blur-sm border-b border-border lg:px-8">
+          <div className="max-w-6xl px-6 py-4 flex items-center justify-between gap-4">
           <Link href="/admin/dashboard" className="flex items-center gap-3 min-w-0">
             {tenantLogo ? (
               <div className="h-10 w-10 flex items-center justify-center flex-shrink-0">
@@ -945,6 +952,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
           </div>
         </div>
 

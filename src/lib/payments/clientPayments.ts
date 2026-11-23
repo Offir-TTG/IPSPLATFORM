@@ -8,6 +8,7 @@ import { getStripeClient } from './getStripeClient';
 import { nextChargeable, refreshEnrollmentTotals, type ScheduleRow } from './dueSchedules';
 import { addPeriod, createScheduledInvoice } from './invoiceService';
 import { planSubscriptionAmount } from './paymentEngine';
+import { loadPriceChanges, readMemberPrice, upcomingForMember } from './subscriptionPrice';
 import { closeUnpaidInvoice } from './refunds';
 import { hasEnded, isPausedAt, readSubscriptionDates, shiftPastPause } from './subscriptionState';
 
@@ -107,6 +108,12 @@ export type SubscriptionSummary = {
   current_plan_id: string | null;
   /** The product's membership plans the client can choose between. */
   plans: { plan_id: string; name: string; amount: number; interval: string; current: boolean }[];
+  /**
+   * A scheduled price change that will reach this member: the new price and
+   * the date it takes effect (from their first renewal on or after it).
+   * Null when nothing changes for them.
+   */
+  upcoming_price: { amount: number; effective_date: string } | null;
 };
 
 /**
@@ -192,7 +199,24 @@ export async function getSubscriptionSummary(userId: string, enrollmentId: strin
   const currentPlanId: string | null = enrollment.payment_plan_id ?? latest.payment_plan_id ?? null;
   const productPlans = await subscriptionPlansFor(enrollment.product_id);
   const currentPlan = productPlans.find((p) => p.plan_id === currentPlanId);
-  const nextAmount = currentPlan?.amount ?? Number(latest.amount);
+  // The member's own price (a change for new members only never reaches
+  // them); after a plan switch, the new plan's price.
+  const memberPrice = readMemberPrice((enrollment as any).subscription_price, currentPlanId);
+  const samePlan = (latest.payment_plan_id ?? null) === currentPlanId;
+  const nextAmount = memberPrice?.amount ?? (samePlan ? Number(latest.amount) : currentPlan?.amount ?? Number(latest.amount));
+
+  // A scheduled change for everyone that hasn't reached them yet.
+  const { data: planRow } = currentPlanId
+    ? await supabase.from('payment_plans').select('subscription_amount').eq('id', currentPlanId).maybeSingle()
+    : { data: null };
+  const upcoming = cancelled || dates.endsAt
+    ? null
+    : upcomingForMember(
+        memberPrice ?? { amount: nextAmount, plan_id: currentPlanId, set_at: String(latest.scheduled_date).slice(0, 10) },
+        await loadPriceChanges(supabase, [enrollment.product_id]),
+        currentPlanId,
+        planSubscriptionAmount(planRow) !== null,
+      );
 
   return {
     ok: true,
@@ -211,6 +235,7 @@ export async function getSubscriptionSummary(userId: string, enrollmentId: strin
     can_switch: (state === 'active' || state === 'pause_scheduled') && productPlans.length > 1,
     current_plan_id: currentPlanId,
     plans: productPlans.map((p) => ({ ...p, current: p.plan_id === currentPlanId })),
+    upcoming_price: upcoming ? { amount: Number(upcoming.new_amount), effective_date: upcoming.effective_date } : null,
   };
 }
 

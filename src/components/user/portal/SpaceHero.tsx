@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { heroBar, heroSeg } from './joined';
 
 /** The coloured header every space opens with: back link, title, a side slot and the tabs. */
 export function SpaceHero({
@@ -8,6 +9,8 @@ export function SpaceHero({
   sub,
   side,
   tabs,
+  back = { label: 'הבית שלי', href: '/dashboard' },
+  extra,
 }: {
   color: string;
   kicker: string;
@@ -15,6 +18,10 @@ export function SpaceHero({
   sub?: string | null;
   side?: React.ReactNode;
   tabs?: React.ReactNode;
+  /** Where the back link goes: home, unless the page was opened from a club or program. */
+  back?: { label: string; href: string };
+  /** A line above the tabs (a course's previous and next course in its program). */
+  extra?: React.ReactNode;
 }) {
   return (
     <section
@@ -23,8 +30,8 @@ export function SpaceHero({
         background: `radial-gradient(60% 120% at 100% 0%, rgba(255,255,255,.22), transparent 60%), radial-gradient(50% 90% at 0% 100%, rgba(0,0,0,.3), transparent 60%), ${color}`,
       }}
     >
-      <Link href="/dashboard" className="self-start text-white no-underline font-semibold text-[13px] px-[13px] py-[7px] rounded-full bg-white/[.18] hover:bg-white/25">
-        → הבית שלי
+      <Link href={back.href} className="self-start text-white no-underline font-semibold text-[13px] px-[13px] py-[7px] rounded-full bg-white/[.18] hover:bg-white/25">
+        → {back.label}
       </Link>
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4 lg:gap-5">
         <div className="min-w-0">
@@ -34,7 +41,12 @@ export function SpaceHero({
         </div>
         {side}
       </div>
-      {tabs && <nav className="flex gap-1.5 overflow-x-auto -mx-[18px] px-[18px] lg:mx-0 lg:px-0 pb-0.5">{tabs}</nav>}
+      {extra}
+      {tabs && (
+        <nav className="overflow-x-auto -mx-[18px] px-[18px] lg:mx-0 lg:px-0 pb-0.5">
+          <div className={heroBar}>{tabs}</div>
+        </nav>
+      )}
     </section>
   );
 }
@@ -45,7 +57,7 @@ export function SpaceTab({ on, onClick, children }: { on: boolean; onClick: () =
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`shrink-0 border-0 px-4 py-[9px] rounded-full font-semibold text-[14.5px] ${on ? 'bg-white text-[#2a1846]' : 'bg-white/[.14] text-white hover:bg-white/[.22]'}`}
+      className={heroSeg(on)}
     >
       {children}
     </button>

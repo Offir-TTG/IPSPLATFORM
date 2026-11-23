@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { withAuth } from '@/lib/middleware/auth';
+import { directCourseIds } from '@/lib/products/courseAccess';
 export const dynamic = 'force-dynamic';
 
 // OPTIMIZED VERSION - Fixes N+1 query problem
@@ -33,7 +34,8 @@ export const GET = withAuth(
             title,
             description,
             course_id,
-            program_id
+            program_id,
+            contains_courses
           )
         `)
         .eq('user_id', user.id)
@@ -76,9 +78,9 @@ export const GET = withAuth(
         const product = Array.isArray(enrollment.products) ? enrollment.products[0] : enrollment.products;
         if (!product) continue;
 
-        if (product.type === 'course' && product.course_id) {
-          courseIds.add(product.course_id);
-        } else if (product.type === 'program' && product.program_id) {
+        // Courses the product opens directly (course, lecture, bundle, ...).
+        for (const id of directCourseIds(product)) courseIds.add(id);
+        if (product.type === 'program' && product.program_id) {
           programIds.add(product.program_id);
         }
       }
@@ -245,9 +247,13 @@ export const GET = withAuth(
 
         const enrollmentProgress = progressByEnrollment.get(enrollment.id) || [];
 
-        // Handle standalone courses
-        if (product.type === 'course' && product.course_id) {
-          const course = courseMap.get(product.course_id);
+        // Courses the product opens directly: one for a course, lecture,
+        // workshop, webinar, session or custom product; each ticked course
+        // for a bundle.
+        const directIds = directCourseIds(product);
+        if (directIds.length > 0) {
+          for (const directId of directIds) {
+          const course = courseMap.get(directId);
           if (!course) continue;
 
           const lessons = lessonsByCourse.get((course as any).id) || [];
@@ -262,7 +268,7 @@ export const GET = withAuth(
           // Check payment-based access
           let accessCheck: { hasAccess: boolean; reason?: string; overdueAmount?: number; overdueDays?: number } = { hasAccess: true };
           if (tenantId) {
-            accessCheck = await checkCourseAccess(user.id, product.course_id, tenantId);
+            accessCheck = await checkCourseAccess(user.id, directId, tenantId);
           }
 
           result.push({
@@ -291,6 +297,7 @@ export const GET = withAuth(
             overdueAmount: accessCheck.overdueAmount,
             overdueDays: accessCheck.overdueDays,
           });
+          }
         }
 
         // Handle program enrollments

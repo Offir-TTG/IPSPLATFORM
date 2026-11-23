@@ -84,6 +84,8 @@ export function decryptCredentials(credentials: Record<string, any> | null | und
 const NOT_SECRET = new Set([
   'publishable_key', 'client_id', 'account_id', 'integration_key', 'user_id', 'oauth_base_path',
   'base_path', 'base_url', 'api_url', 'domain', 'from_email', 'from_name', 'sdk_key', 'region', 'mode',
+  // SMTP: the server, its port and security, and the login name (the password stays secret).
+  'host', 'port', 'security', 'username',
 ]);
 
 const MASK = '••••••••';

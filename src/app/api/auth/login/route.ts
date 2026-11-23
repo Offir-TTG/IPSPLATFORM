@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { noStoreFetch } from '@/lib/supabase/noStoreFetch';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant, validateUserTenantAccess, getUserTenantRole } from '@/lib/tenant/detection';
 import { canUserLogIn } from '@/lib/users/communication-eligible';
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        global: { fetch: noStoreFetch },
         cookies: {
           get(name: string) {
             return request.cookies.get(name)?.value;

@@ -11,13 +11,19 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useAdminLanguage } from '@/context/AppContext';
+import { useAdminLanguage, useCurrency } from '@/context/AppContext';
 import { Product, ProductFormData, PaymentModel, ProductType, PaymentPlanConfig } from '@/types/product';
 import { ContentSelector } from '@/components/products/ContentSelector';
 import { PaymentPlanConfig as PaymentPlanConfigComponent } from '@/components/products/PaymentPlanConfig';
 import { DocuSignConfig } from '@/components/products/DocuSignConfig';
 import { PaymentPlanSelector } from '@/components/products/PaymentPlanSelector';
 import { EmailTemplateSelector } from '@/components/products/EmailTemplateSelector';
+import { SaveBar, saveBarText, useLeaveGuard } from '@/components/admin/notifications/kit';
+import { SubscriptionPriceSection } from './SubscriptionPriceSection';
+import { CoachingServiceFields } from './CoachingServiceFields';
+import { TypePicture } from '@/components/admin/plans/TypePicture';
+import { PLAN_TONE } from '@/components/admin/plans/planFormat';
+import { EMPTY_FUTURE_PRICE, FuturePriceFields, checkFuturePrice, type FuturePriceDraft } from './FuturePriceFields';
 import {
   Plus,
   Edit,
@@ -40,11 +46,23 @@ import {
   Info,
   Check,
   X,
+  PenLine,
+  ListChecks,
 } from 'lucide-react';
 
 
-const STEP_IDS = ['basic', 'content', 'pricing', 'emails', 'integrations'] as const;
+// Name and description first; completion, access and on/off have their own step.
+const STEP_IDS = ['basic', 'details', 'content', 'pricing', 'emails', 'integrations'] as const;
 type StepId = (typeof STEP_IDS)[number];
+
+/** The custom payment types, as cards: picture, name, one line on how it charges. */
+const CUSTOM_MODELS: { model: PaymentModel; picture: 'one_time' | 'deposit' | 'subscription' | 'per_session' | 'free'; name: [string, string]; text: [string, string] }[] = [
+  { model: 'one_time', picture: 'one_time', name: ['products.pricing.one_time', 'One-time Payment'], text: ['products.pricing.cards.oneTimeText', 'The full price at enrollment.'] },
+  { model: 'deposit_then_plan', picture: 'deposit', name: ['products.pricing.deposit_installments', 'Deposit + Installments'], text: ['products.pricing.cards.depositText', 'A deposit at enrollment, the rest in installments.'] },
+  { model: 'subscription', picture: 'subscription', name: ['products.pricing.subscription', 'Subscription'], text: ['products.pricing.cards.subscriptionText', 'Charged again every period until cancelled.'] },
+  { model: 'per_session', picture: 'per_session', name: ['admin.payments.plans.form.perSession', 'Pay per session'], text: ['admin.payments.plans.wizard.perSessionText', 'Nothing upfront: the card is saved, and each session is charged when it is held.'] },
+  { model: 'free', picture: 'free', name: ['products.payment_model.free', 'Free'], text: ['products.pricing.cards.freeText', 'No payment.'] },
+];
 
 /** Which step each check belongs to, so Save can open the step with the problem. */
 const ERROR_STEP: Record<string, StepId> = {
@@ -54,11 +72,16 @@ const ERROR_STEP: Record<string, StepId> = {
   contains_courses: 'content',
   session_count: 'content',
   price: 'pricing',
+  session_amount: 'pricing',
   deposit_type: 'pricing',
   deposit_percentage: 'pricing',
   deposit_amount: 'pricing',
   installments: 'pricing',
   subscription_interval: 'pricing',
+  payment_plans: 'pricing',
+  future_amount: 'pricing',
+  future_date: 'pricing',
+  future_applies: 'pricing',
   signature_template_id: 'integrations',
 };
 
@@ -77,6 +100,8 @@ export function ProductWizard({ product, onSave, t }: {
 }) {
   const { direction } = useAdminLanguage();
   const isRtl = direction === 'rtl';
+  // Every price is in the business currency (Organization settings); the server sets it on save.
+  const businessCurrency = useCurrency().config?.code ?? product?.currency ?? 'USD';
   const [formData, setFormData] = useState<ProductFormData>({
     type: 'course',
     title: '',
@@ -98,6 +123,24 @@ export function ProductWizard({ product, onSave, t }: {
 
   // Payment configuration mode: 'custom' or 'template'
   const [configMode, setConfigMode] = useState<'custom' | 'template'>('custom');
+  // A future membership price for a new product (scheduled once it is created).
+  const [futurePrice, setFuturePrice] = useState<FuturePriceDraft>(EMPTY_FUTURE_PRICE);
+  // Subscription plans (id -> own price or null, and how often), to know when the product is a membership.
+  const [subscriptionPlans, setSubscriptionPlans] = useState<Map<string, { amount: number | null; frequency: string }>>(new Map());
+  // Per-session plans (id -> price per session): a product on one costs its sessions × that price.
+  const [sessionPlans, setSessionPlans] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    void fetch('/api/admin/payments/plans')
+      .then((r) => r.json())
+      .then((plans: any[]) => {
+        const list = Array.isArray(plans) ? plans : [];
+        setSubscriptionPlans(
+          new Map(list.filter((p) => p.plan_type === 'subscription').map((p) => [p.id, { amount: Number(p.subscription_amount) > 0 ? Number(p.subscription_amount) : null, frequency: p.subscription_frequency || 'monthly' }])),
+        );
+        setSessionPlans(new Map(list.filter((p) => p.plan_type === 'per_session' && Number(p.session_amount) > 0).map((p) => [p.id, Number(p.session_amount)])));
+      })
+      .catch(() => undefined);
+  }, []);
 
   // Error states for inline display
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -170,7 +213,7 @@ export function ProductWizard({ product, onSave, t }: {
 
       // Payment plan validation
       if (currentFormData.payment_model === 'deposit_then_plan') {
-        if (!currentFormData.payment_plan?.deposit_type) {
+        if (!currentFormData.payment_plan?.deposit_type || currentFormData.payment_plan.deposit_type === 'none') {
           errors.deposit_type = t('products.validation.deposit_type_required', 'Please select a deposit type');
         }
         if (currentFormData.payment_plan?.deposit_type === 'percentage' && (!currentFormData.payment_plan?.deposit_percentage || currentFormData.payment_plan.deposit_percentage <= 0)) {
@@ -185,9 +228,17 @@ export function ProductWizard({ product, onSave, t }: {
         // Note: payment_start_date moved to product level and is optional
       }
 
+      if (configMode === 'template' && !(currentFormData.alternative_payment_plan_ids || []).length) {
+        errors.payment_plans = t('products.validation.plan_required', 'Tick at least one payment plan.');
+      }
+      if (currentFormData.payment_model === 'per_session' && !(Number(currentFormData.payment_plan?.session_amount) > 0)) {
+        errors.session_amount = t('products.validation.session_amount_required', 'Write the price of one session');
+      }
       if (currentFormData.payment_model === 'subscription' && !currentFormData.payment_plan?.subscription_interval) {
         errors.subscription_interval = t('products.validation.subscription_interval_required', 'Please select billing interval');
       }
+      // A future price on a new membership is checked before moving on, like any field.
+      Object.assign(errors, futureCheck.current());
     } else if (activeTab === 'integrations') {
       // Integrations validation
       if (currentFormData.requires_signature && !currentFormData.signature_template_id) {
@@ -205,7 +256,7 @@ export function ProductWizard({ product, onSave, t }: {
     setActiveTab(newTab);
     setValidationErrors({});
     setFormError(null);
-  }, [activeTab, t]);
+  }, [activeTab, t, configMode]);
 
   const [initialData, setInitialData] = useState<ProductFormData | null>(null);
   const [initialConfigMode, setInitialConfigMode] = useState<'custom' | 'template'>('custom');
@@ -220,13 +271,18 @@ export function ProductWizard({ product, onSave, t }: {
         course_id: product.course_id,
         contains_courses: product.contains_courses,
         session_count: product.session_count,
+        session_duration_minutes: product.session_duration_minutes ?? null,
         payment_model: product.payment_model,
         price: product.price,
         currency: product.currency || 'USD',
         payment_plan: product.payment_plan || {},
         payment_start_date: product.payment_start_date ? product.payment_start_date.split('T')[0] : undefined,
         default_payment_plan_id: product.default_payment_plan_id,
-        alternative_payment_plan_ids: product.alternative_payment_plan_ids || [],
+        // The plan list holds every plan the client can choose, the main one first.
+        alternative_payment_plan_ids:
+          product.default_payment_plan_id && !(product.alternative_payment_plan_ids || []).includes(product.default_payment_plan_id)
+            ? [product.default_payment_plan_id, ...(product.alternative_payment_plan_ids || [])]
+            : product.alternative_payment_plan_ids || [],
         allow_plan_selection: product.allow_plan_selection ?? true,
         requires_signature: product.requires_signature,
         signature_template_id: product.signature_template_id,
@@ -272,18 +328,9 @@ export function ProductWizard({ product, onSave, t }: {
   }, [product]);
 
   const dirty = !!initialData && (JSON.stringify(formData) !== JSON.stringify(initialData) || configMode !== initialConfigMode);
-  const showBar = dirty || !product;
-
-  // Leaving the page with unsaved changes asks first.
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
+  const saveWords = saveBarText(t);
+  // Leaving with unsaved changes asks first (inside the admin, and on closing the tab).
+  const { dialog: leaveDialog } = useLeaveGuard(dirty, saveWords.leave);
 
   const discard = () => {
     if (!initialData) return;
@@ -293,6 +340,35 @@ export function ProductWizard({ product, onSave, t }: {
     setValidationErrors({});
     setFormError(null);
   };
+
+  // Is this product a membership? Its own payment type, or a subscription plan template.
+  const templatePlanIds = [formData.default_payment_plan_id, ...(formData.alternative_payment_plan_ids || [])].filter(Boolean) as string[];
+  const isSubscription =
+    (configMode === 'custom' && formData.payment_model === 'subscription') ||
+    (configMode === 'template' && templatePlanIds.some((id) => subscriptionPlans.has(id)));
+  // A default subscription plan with its own price is the price that changes; otherwise the product price.
+  const ownPricePlanId =
+    configMode === 'template' && formData.default_payment_plan_id && subscriptionPlans.get(formData.default_payment_plan_id)?.amount != null ? formData.default_payment_plan_id : null;
+  const membershipPrice = ownPricePlanId ? (subscriptionPlans.get(ownPricePlanId)?.amount as number) : Number(formData.price) || 0;
+
+  // Pay per session: the price comes from the plan. Total = sessions × price per session.
+  const mainPlanId = configMode === 'template' ? formData.default_payment_plan_id || templatePlanIds[0] : undefined;
+  const customSessionPrice = configMode === 'custom' && formData.payment_model === 'per_session' && Number(formData.payment_plan?.session_amount) > 0 ? Number(formData.payment_plan?.session_amount) : null;
+  const perSessionPrice = customSessionPrice ?? (mainPlanId ? sessionPlans.get(mainPlanId) ?? null : null);
+  const sessionTotal =
+    perSessionPrice != null && formData.type === 'session_pack' && Number(formData.session_count) > 0
+      ? Math.round(perSessionPrice * Number(formData.session_count) * 100) / 100
+      : null;
+  useEffect(() => {
+    if (sessionTotal != null && formData.price !== sessionTotal) {
+      setFormData((prev) => ({ ...prev, price: sessionTotal }));
+      setValidationErrors((prev) => (prev.price ? { ...prev, price: '' } : prev));
+    }
+  }, [sessionTotal, formData.price]);
+
+  // Read through a ref so the step check always sees the latest values.
+  const futureCheck = useRef<() => Record<string, string>>(() => ({}));
+  futureCheck.current = () => (!product && isSubscription ? checkFuturePrice(futurePrice, membershipPrice, t) : {});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -352,9 +428,18 @@ export function ProductWizard({ product, onSave, t }: {
       // Note: payment_start_date moved to product level and is optional
     }
 
+    if (configMode === 'template' && !(formData.alternative_payment_plan_ids || []).length) {
+      errors.payment_plans = t('products.validation.plan_required', 'Tick at least one payment plan.');
+    }
+    if (formData.payment_model === 'per_session' && !(Number(formData.payment_plan?.session_amount) > 0)) {
+      errors.session_amount = t('products.validation.session_amount_required', 'Write the price of one session');
+    }
     if (formData.payment_model === 'subscription' && !formData.payment_plan.subscription_interval) {
       errors.subscription_interval = t('products.validation.subscription_interval_required', 'Please select billing interval');
     }
+
+    // Validation - Future price (new subscription products)
+    if (!product && isSubscription) Object.assign(errors, checkFuturePrice(futurePrice, membershipPrice, t));
 
     // Validation - Integrations
     if (formData.requires_signature && !formData.signature_template_id) {
@@ -375,6 +460,34 @@ export function ProductWizard({ product, onSave, t }: {
     const cleanedData = { ...formData };
     if (formData.payment_model === 'free') {
       cleanedData.price = undefined;
+    }
+    // With plan templates, the product must say how it is paid: the first
+    // chosen plan is the default when none is set, and a subscription default
+    // makes the product a subscription (enrollment links and checkout read
+    // payment_model, not the plan list).
+    if (configMode === 'template') {
+      const chosen = (formData.alternative_payment_plan_ids || []).filter(Boolean) as string[];
+      const defaultId = formData.default_payment_plan_id && chosen.includes(formData.default_payment_plan_id) ? formData.default_payment_plan_id : chosen[0];
+      if (defaultId) cleanedData.default_payment_plan_id = defaultId;
+      const defaultSub = defaultId ? subscriptionPlans.get(defaultId) : undefined;
+      if (defaultSub) {
+        cleanedData.payment_model = 'subscription';
+        cleanedData.payment_plan = { ...(formData.payment_plan || {}), subscription_interval: defaultSub.frequency as any };
+      } else if (defaultId && sessionPlans.has(defaultId)) {
+        // A per-session plan makes the product pay as you go.
+        cleanedData.payment_model = 'per_session';
+        cleanedData.payment_plan = { session_amount: sessionPlans.get(defaultId) };
+      }
+    }
+    // Scheduled by the page right after the product is created.
+    if (!product && isSubscription && futurePrice.enabled) {
+      (cleanedData as any).__future_price = {
+        payment_plan_id: ownPricePlanId,
+        new_amount: Number(futurePrice.amount),
+        effective_date: futurePrice.date,
+        applies_to: futurePrice.appliesTo,
+        notice_days: futurePrice.noticeDays,
+      };
     }
 
     // Set submitting state
@@ -434,7 +547,8 @@ export function ProductWizard({ product, onSave, t }: {
   const index = STEP_IDS.indexOf(activeTab as StepId);
   const stepLabel = (id: StepId) =>
     ({
-      basic: t('products.tabs.basic', 'Basic Info'),
+      basic: t('products.tabs.nameDescription', 'Name and description'),
+      details: t('products.tabs.benefitAccess', 'Benefit and access'),
       content: t('products.tabs.content', 'Content'),
       pricing: t('products.tabs.pricing', 'Pricing'),
       emails: t('products.tabs.emails', 'Email Templates'),
@@ -446,7 +560,7 @@ export function ProductWizard({ product, onSave, t }: {
       {/* Steps */}
       <header className="mb-4 rounded-md border border-border bg-card px-4 py-2.5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+          <span className="text-sm font-medium text-primary">
             {t('admin.notifications.wizard.stepOf', 'Step {n} of {total}')
               .replace('{n}', String(index + 1))
               .replace('{total}', String(STEP_IDS.length))}
@@ -455,7 +569,7 @@ export function ProductWizard({ product, onSave, t }: {
         </div>
         <div className="mt-1.5 flex gap-[3px]" aria-hidden>
           {STEP_IDS.map((id, i) => (
-            <i key={id} className={`h-1.5 flex-1 rounded ${i <= index ? 'bg-blue-600' : 'bg-blue-100 dark:bg-blue-900/50'}`} />
+            <i key={id} className={`h-1.5 flex-1 rounded ${i <= index ? 'bg-primary' : 'bg-primary/15'}`} />
           ))}
         </div>
         <ol className="mt-2.5 flex gap-1.5 overflow-x-auto pb-0.5">
@@ -467,10 +581,10 @@ export function ProductWizard({ product, onSave, t }: {
                 aria-current={id === activeTab ? 'step' : undefined}
                 className={`inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition-colors ${
                   id === activeTab
-                    ? 'border-blue-600 bg-blue-600 text-white'
+                    ? 'border-primary bg-primary text-primary-foreground'
                     : i < index
-                      ? 'border-blue-200 bg-blue-50 text-blue-800 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200'
-                      : 'border-border text-muted-foreground hover:border-blue-300'
+                      ? 'border-primary/30 bg-primary/10 text-primary hover:border-primary/60'
+                      : 'border-border text-muted-foreground hover:border-primary/40'
                 }`}
               >
                 <span className="opacity-70">{i + 1}</span>
@@ -525,7 +639,10 @@ export function ProductWizard({ product, onSave, t }: {
               dir={direction}
             />
           </div>
+        </TabsContent>
 
+        {/* Benefit, access and on/off */}
+        <TabsContent value="details" className="space-y-4 mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="completion_benefit" suppressHydrationWarning>
@@ -626,6 +743,16 @@ export function ProductWizard({ product, onSave, t }: {
             validationErrors={validationErrors}
             t={t}
           />
+          {/* Session packs: parent or child coaching, and the session length. */}
+          {formData.type === 'session_pack' && (
+            <CoachingServiceFields
+              kind={formData.metadata?.coaching_kind === 'parent' || formData.metadata?.coaching_kind === 'child' ? formData.metadata.coaching_kind : null}
+              onKindChange={(kind) => setFormData((prev) => ({ ...prev, metadata: { ...(prev.metadata || {}), coaching_kind: kind } }))}
+              minutes={formData.session_duration_minutes ?? null}
+              onMinutesChange={(m) => setFormData((prev) => ({ ...prev, session_duration_minutes: m }))}
+              t={t}
+            />
+          )}
         </TabsContent>
 
         {/* Pricing Tab */}
@@ -640,237 +767,284 @@ export function ProductWizard({ product, onSave, t }: {
                 min="0"
                 step="0.01"
                 value={formData.price || ''}
+                readOnly={sessionTotal != null}
+                aria-readonly={sessionTotal != null}
                 onChange={(e) => {
+                  if (sessionTotal != null) return;
                   setFormData({ ...formData, price: parseFloat(e.target.value) || 0 });
                   if (validationErrors.price) {
                     setValidationErrors({ ...validationErrors, price: '' });
                   }
                 }}
-                className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.price ? 'border-destructive' : ''}`}
+                className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.price ? 'border-destructive' : ''} ${sessionTotal != null ? 'bg-muted/50 font-semibold' : ''}`}
               />
               {validationErrors.price && (
                 <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
                   {validationErrors.price}
                 </p>
               )}
+              {/* Pay per session: the total follows the plan and the number of sessions. */}
+              {perSessionPrice != null && !validationErrors.price && (
+                <p className={`mt-1 text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
+                  {sessionTotal != null
+                    ? t('products.pricing.perSessionTotal', '{count} sessions × {price} per session, from the payment plan')
+                        .replace('{count}', String(formData.session_count))
+                        .replace('{price}', `${perSessionPrice.toLocaleString()} ${businessCurrency}`)
+                    : t('products.pricing.perSessionNeedsCount', 'Set the number of sessions in Content, and the total is worked out from the payment plan.')}
+                </p>
+              )}
             </div>
             <div>
-              <Label htmlFor="currency" suppressHydrationWarning>{t('products.currency', 'Currency')} *</Label>
-              <Select
-                value={formData.currency}
-                onValueChange={(value) => setFormData({ ...formData, currency: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                  <SelectItem value="USD"><span suppressHydrationWarning>USD</span></SelectItem>
-                  <SelectItem value="EUR"><span suppressHydrationWarning>EUR</span></SelectItem>
-                  <SelectItem value="GBP"><span suppressHydrationWarning>GBP</span></SelectItem>
-                  <SelectItem value="ILS"><span suppressHydrationWarning>ILS</span></SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Every price is in the business currency (Organization settings). */}
+              <Label htmlFor="currency" suppressHydrationWarning>{t('products.currency', 'Currency')}</Label>
+              <div id="currency" dir="ltr" className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm font-semibold">
+                {businessCurrency}
+              </div>
+              <p className={`mt-1 text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
+                {t('products.currencyFromSettings', 'Set for the whole business in Organization settings')}
+              </p>
             </div>
           </div>
 
-          {/* Payment Configuration Mode - Radio Buttons */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base" suppressHydrationWarning>
-                {t('products.pricing.configuration_title', 'Payment Configuration')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Custom Plan Option */}
-              <div
-                className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  configMode === 'custom' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                }`}
-                onClick={() => {
-                  setConfigMode('custom');
-                  setUseTemplates(false);
-                  setFormData({
-                    ...formData,
-                    default_payment_plan_id: undefined,
-                    alternative_payment_plan_ids: [],
-                  });
-                }}
-              >
-                <input
-                  type="radio"
-                  name="config_mode"
-                  value="custom"
-                  checked={configMode === 'custom'}
-                  onChange={() => {}}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <Label className="text-base font-medium cursor-pointer" suppressHydrationWarning>
-                    {t('products.pricing.create_custom', 'Create Custom Plan')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('products.pricing.create_custom_desc', 'Define payment terms directly for this product')}
-                  </p>
-                </div>
-              </div>
-
-              {/* Template Plan Option */}
-              <div
-                className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  configMode === 'template' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                }`}
-                onClick={() => {
-                  setConfigMode('template');
-                  setUseTemplates(true);
-                  // Clear custom payment configuration when switching to templates
-                  setFormData({
-                    ...formData,
-                    payment_model: 'one_time', // Set to one_time as default
-                    payment_plan: {}, // Clear custom plan config
-                  });
-                }}
-              >
-                <input
-                  type="radio"
-                  name="config_mode"
-                  value="template"
-                  checked={configMode === 'template'}
-                  onChange={() => {}}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <Label className="text-base font-medium cursor-pointer" suppressHydrationWarning>
-                    {t('products.pricing.use_template', 'Use Existing Payment Plan Template')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('products.pricing.use_template_desc', 'Select from pre-configured payment plans')}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* How the product is paid: set here, or existing plans. Two cards side by side. */}
+          <div>
+            <Label suppressHydrationWarning>{t('products.pricing.howPaid', 'How is this product paid?')}</Label>
+            <div className="mt-2 grid gap-2.5 sm:grid-cols-2" role="radiogroup">
+              {(
+                [
+                  ['custom', PenLine, t('products.pricing.create_custom', 'Create Custom Plan'), t('products.pricing.create_custom_desc', 'Define payment terms directly for this product')],
+                  ['template', ListChecks, t('products.pricing.use_template', 'Use Existing Payment Plan Template'), t('products.pricing.use_template_desc', 'Select from pre-configured payment plans')],
+                ] as const
+              ).map(([mode, Icon, title, text]) => {
+                const on = configMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => {
+                      if (on) return;
+                      setConfigMode(mode);
+                      setUseTemplates(mode === 'template');
+                      setValidationErrors({});
+                      // Switching clears the other way's settings.
+                      setFormData(
+                        mode === 'custom'
+                          ? { ...formData, default_payment_plan_id: undefined, alternative_payment_plan_ids: [] }
+                          : { ...formData, payment_model: 'one_time', payment_plan: {} },
+                      );
+                    }}
+                    className={`relative flex items-center gap-3 rounded-[14px] border p-3.5 text-start transition-colors ${
+                      on ? 'border-primary bg-primary/5 shadow-[inset_0_0_0_1px_hsl(var(--primary))]' : 'border-border hover:border-primary/40'
+                    }`}
+                  >
+                    <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${on ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`} aria-hidden>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1 pe-6">
+                      <span className="block font-bold" suppressHydrationWarning>{title}</span>
+                      <span className="block text-[13px] text-muted-foreground" suppressHydrationWarning>{text}</span>
+                    </span>
+                    {on && (
+                      <span className="absolute end-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-primary text-primary-foreground" aria-hidden>
+                        <Check className="h-4 w-4" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Custom Plan Configuration */}
           {configMode === 'custom' && (
             <>
-              {/* Payment Type */}
+              {/* Payment Type: cards with a small picture of how the payments spread. */}
               <div>
                 <Label suppressHydrationWarning>{t('products.pricing.payment_type', 'Payment Type')} *</Label>
-                <Select
-                  value={formData.payment_model}
-                  onValueChange={(value: PaymentModel) => setFormData({ ...formData, payment_model: value, payment_plan: {} })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-                    <SelectItem value="one_time"><span suppressHydrationWarning>{t('products.pricing.one_time', 'One-time Payment')}</span></SelectItem>
-                    <SelectItem value="deposit_then_plan"><span suppressHydrationWarning>{t('products.pricing.deposit_installments', 'Deposit + Installments')}</span></SelectItem>
-                    <SelectItem value="subscription"><span suppressHydrationWarning>{t('products.pricing.subscription', 'Subscription')}</span></SelectItem>
-                    <SelectItem value="free"><span suppressHydrationWarning>{t('products.payment_model.free', 'Free')}</span></SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="mt-2 grid gap-2.5 sm:grid-cols-2" role="radiogroup">
+                  {CUSTOM_MODELS.map(({ model, picture, name, text }) => {
+                    const on = formData.payment_model === model;
+                    return (
+                      <button
+                        key={model}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => {
+                          if (on) return;
+                          setFormData({ ...formData, payment_model: model, payment_plan: {} });
+                          setValidationErrors({});
+                        }}
+                        className={`relative flex items-center gap-4 rounded-[14px] border p-3.5 text-start transition-colors ${
+                          on ? 'border-primary bg-primary/5 shadow-[inset_0_0_0_1px_hsl(var(--primary))]' : 'border-border hover:border-primary/40'
+                        }`}
+                      >
+                        <span className={`grid h-14 w-20 shrink-0 place-items-center rounded-xl ${PLAN_TONE[picture]?.tile ?? 'bg-muted text-muted-foreground'}`}>
+                          <TypePicture type={picture} />
+                        </span>
+                        <span className="min-w-0 flex-1 pe-6">
+                          <span className="block font-bold" suppressHydrationWarning>{t(name[0], name[1])}</span>
+                          <span className="block text-[13px] text-muted-foreground" suppressHydrationWarning>{t(text[0], text[1])}</span>
+                        </span>
+                        {on && (
+                          <span className="absolute end-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-primary text-primary-foreground" aria-hidden>
+                            <Check className="h-4 w-4" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
+              {/* Pay as you go: the price of one session; the product total is sessions x this. */}
+              {formData.payment_model === 'per_session' && (
+                <div className="max-w-xs">
+                  <Label htmlFor="session_amount" suppressHydrationWarning>{t('admin.payments.plans.form.pricePerSession', 'Price per session')} *</Label>
+                  <Input
+                    id="session_amount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={formData.payment_plan?.session_amount ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value === '' ? undefined : Number(e.target.value);
+                      setFormData({ ...formData, payment_plan: { ...(formData.payment_plan || {}), session_amount: v } });
+                      if (validationErrors.session_amount) setValidationErrors({ ...validationErrors, session_amount: '' });
+                    }}
+                    placeholder="175"
+                    className={`${isRtl ? 'text-right' : 'text-left'} ${validationErrors.session_amount ? 'border-destructive' : ''}`}
+                  />
+                  {validationErrors.session_amount ? (
+                    <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>{validationErrors.session_amount}</p>
+                  ) : (
+                    <p className={`mt-1 text-xs text-muted-foreground ${isRtl ? 'text-right' : 'text-left'}`} suppressHydrationWarning>
+                      {t('products.pricing.perSessionHelp', 'Nothing is charged at enrollment: the card is saved, and each session is charged after it is held.')}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Payment Plan Configuration Component */}
-              {formData.payment_model !== 'free' && formData.payment_model !== 'one_time' && (
+              {formData.payment_model !== 'free' && formData.payment_model !== 'one_time' && formData.payment_model !== 'per_session' && (
                 <PaymentPlanConfigComponent
                   value={formData.payment_plan}
                   onChange={(config) => setFormData({ ...formData, payment_plan: config })}
                   paymentModel={formData.payment_model}
                   productPrice={formData.price || 0}
-                  currency={formData.currency || 'USD'}
+                  currency={businessCurrency}
+                  startDate={formData.payment_start_date}
+                  errors={validationErrors}
                   t={t}
                 />
               )}
 
-              {/* Payment Start Date - Only for installments and subscription */}
+              {/* First payment date (payments and memberships): optional, same as with existing plans. */}
               {(formData.payment_model === 'deposit_then_plan' || formData.payment_model === 'subscription') && (
-                <div>
+                <div className="space-y-1.5">
                   <Label htmlFor="payment_start_date" suppressHydrationWarning>
-                    {t('admin.products.payment_start_date', 'Payment Start Date')}
+                    {t('products.planCards.firstDate', 'First payment date')}{' '}
+                    <span className="text-xs font-medium text-muted-foreground">· {t('common.optional', 'Optional')}</span>
                   </Label>
                   <Input
                     type="date"
                     id="payment_start_date"
                     value={formData.payment_start_date || ''}
-                    onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value || undefined })}
                     min={new Date().toISOString().split('T')[0]}
+                    className={`max-w-[220px] ${isRtl ? 'text-right' : 'text-left'}`}
                   />
-                  <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                    {t('admin.products.payment_start_date_help', 'Default date when first payment is due for new enrollments. Works for all payment models.')}
+                  <p className="text-[13px] text-muted-foreground" suppressHydrationWarning>
+                    {formData.payment_model === 'deposit_then_plan'
+                      ? t('products.customPlan.firstDateHelp', 'With a date, the first payment of every new enrollment is on it, and the preview dates follow it. Without one, the first payment is on the day the client enrolls.')
+                      : t('products.customPlan.firstDateHelpSub', 'With a date, the first charge of every new enrollment is on it. Without one, it is on the day the client enrolls.')}
                   </p>
                 </div>
               )}
             </>
           )}
 
-          {/* Template Mode - Payment Plan Selector */}
+          {/* Existing plans: cards with what the client pays, one of them the main plan. */}
           {configMode === 'template' && (
             <>
-              {/* Warning Alert - Only show when editing existing product with enrollments */}
               {product && enrollmentStats && enrollmentStats.total > 0 && (
-                <Alert variant="default" className="border-amber-500 bg-amber-50 dark:bg-amber-950">
-                  <Info className="h-4 w-4 text-amber-600" />
-                  <AlertTitle className="text-amber-900 dark:text-amber-100" suppressHydrationWarning>
-                    {t('products.payment_plans.change_warning_title', 'Note: Payment Plan Changes')}
-                  </AlertTitle>
-                  <AlertDescription className="text-amber-800 dark:text-amber-200">
-                    <p className="mb-2" suppressHydrationWarning>
-                      {t('products.payment_plans.change_warning_desc',
-                        'Changes to payment plans only affect NEW enrollments. Existing enrollments (including pending invitations) will keep their original payment terms.')}
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-sm">
-                      {enrollmentStats.active_enrollments > 0 && (
-                        <li suppressHydrationWarning>
-                          {t('products.payment_plans.active_enrollments_using_plans',
-                            'Active enrollments using current plans: {count}')
-                            .replace('{count}', enrollmentStats.active_enrollments.toString())}
-                        </li>
-                      )}
-                      {enrollmentStats.pending_invitations > 0 && (
-                        <li suppressHydrationWarning>
-                          {t('products.payment_plans.pending_invitations',
-                            'Pending invitations: {count}')
-                            .replace('{count}', enrollmentStats.pending_invitations.toString())}
-                        </li>
-                      )}
-                    </ul>
-                  </AlertDescription>
-                </Alert>
+                <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span>
+                    <span className="block font-bold" suppressHydrationWarning>
+                      {t('products.planCards.onlyNew', 'Changes here apply only to new enrollments')}
+                    </span>
+                    <span suppressHydrationWarning>
+                      {[
+                        enrollmentStats.active_enrollments > 0
+                          ? t('products.payment_plans.active_enrollments_using_plans', 'Active enrollments using current plans: {count}').replace('{count}', String(enrollmentStats.active_enrollments))
+                          : '',
+                        enrollmentStats.pending_invitations > 0
+                          ? t('products.payment_plans.pending_invitations', 'Pending invitations: {count}').replace('{count}', String(enrollmentStats.pending_invitations))
+                          : '',
+                        t('products.planCards.keepTerms', 'They keep their own terms.'),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                </div>
               )}
 
               <PaymentPlanSelector
-                useTemplates={true}
-                onUseTemplatesChange={() => {}}
                 defaultPlanId={formData.default_payment_plan_id}
-                onDefaultPlanIdChange={(planId) => setFormData({ ...formData, default_payment_plan_id: planId })}
+                onDefaultPlanIdChange={(planId) => setFormData((f) => ({ ...f, default_payment_plan_id: planId }))}
                 alternativePlanIds={formData.alternative_payment_plan_ids}
-                onAlternativePlanIdsChange={(planIds) => setFormData({ ...formData, alternative_payment_plan_ids: planIds })}
-                allowPlanSelection={true}
-                onAllowPlanSelectionChange={() => {}}
+                onAlternativePlanIdsChange={(planIds) => {
+                  setFormData((f) => ({ ...f, alternative_payment_plan_ids: planIds }));
+                  if (planIds.length && validationErrors.payment_plans) setValidationErrors((x) => ({ ...x, payment_plans: '' }));
+                }}
+                productPrice={formData.price}
+                currency={businessCurrency}
+                error={validationErrors.payment_plans}
                 t={t}
               />
 
-              {/* Payment Start Date - For Template Mode */}
-              <div>
+              {/* First payment date: optional; without it the first payment is on the day of enrolling. */}
+              <div className="space-y-1.5">
                 <Label htmlFor="template_payment_start_date" suppressHydrationWarning>
-                  {t('admin.products.payment_start_date', 'תאריך תחילת תשלום')}
+                  {t('products.planCards.firstDate', 'First payment date')}{' '}
+                  <span className="text-xs font-medium text-muted-foreground">· {t('common.optional', 'Optional')}</span>
                 </Label>
                 <Input
                   type="date"
                   id="template_payment_start_date"
                   value={formData.payment_start_date || ''}
-                  onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, payment_start_date: e.target.value || undefined })}
                   min={new Date().toISOString().split('T')[0]}
-                  className={isRtl ? 'text-right' : 'text-left'}
+                  className={`max-w-[220px] ${isRtl ? 'text-right' : 'text-left'}`}
                 />
-                <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-                  {t('admin.products.payment_start_date_help', 'תאריך ברירת מחדל למועד תשלום ראשון עבור הרשמות חדשות. עובד עבור כל תבניות התשלום.')}
+                <p className="text-[13px] text-muted-foreground" suppressHydrationWarning>
+                  {t(
+                    'products.planCards.firstDateHelp',
+                    'With a date, the first payment of every new enrollment is on it. Without one, the first payment is on the day the client enrolls. Not used by per-session plans.',
+                  )}
                 </p>
               </div>
             </>
           )}
+
+          {/* Memberships: a future price (new product) or the scheduled changes (existing product) */}
+          {isSubscription &&
+            (product ? (
+              <SubscriptionPriceSection productId={product.id} />
+            ) : (
+              <FuturePriceFields
+                draft={futurePrice}
+                onChange={setFuturePrice}
+                currentPrice={membershipPrice}
+                currency={businessCurrency}
+                errors={validationErrors}
+                clearError={(k) => validationErrors[k] && setValidationErrors((x) => ({ ...x, [k]: '' }))}
+              />
+            ))}
         </TabsContent>
 
         {/* Email Templates Tab */}
@@ -905,7 +1079,7 @@ export function ProductWizard({ product, onSave, t }: {
         {/* Back / Continue */}
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
           {index > 0 ? (
-            <button type="button" onClick={() => handleTabChange(STEP_IDS[index - 1])} className="min-h-10 px-2 text-sm font-medium text-blue-700 hover:underline dark:text-blue-300">
+            <button type="button" onClick={() => handleTabChange(STEP_IDS[index - 1])} className="min-h-10 px-2 text-sm font-medium text-primary hover:underline">
               {t('admin.notifications.wizard.back', 'Back')}
             </button>
           ) : (
@@ -915,7 +1089,7 @@ export function ProductWizard({ product, onSave, t }: {
             <button
               type="button"
               onClick={() => handleTabChange(STEP_IDS[index + 1])}
-              className="min-h-10 rounded-md bg-blue-600 px-5 text-sm font-medium text-white hover:bg-blue-700"
+              className="min-h-10 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
               {t('admin.notifications.wizard.continueTo', 'Continue to {step}').replace('{step}', stepLabel(STEP_IDS[index + 1]))}
             </button>
@@ -923,32 +1097,18 @@ export function ProductWizard({ product, onSave, t }: {
         </div>
       </div>
 
-      {/* Save / Discard, floating at the bottom once something changes (always there for a new product) */}
-      {showBar && (
-        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="flex w-full max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/95 px-4 py-3 shadow-2xl backdrop-blur">
-            <span className="text-sm text-muted-foreground">
-              {product ? t('admin.products.wizard.unsaved', 'You have unsaved changes') : t('admin.products.wizard.newNote', 'New product, not saved yet')}
-            </span>
-            <div className="flex gap-2">
-              {dirty && (
-                <Button type="button" variant="outline" onClick={discard} disabled={isSubmitting}>
-                  {t('admin.products.wizard.discard', 'Discard')}
-                </Button>
-              )}
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting
-                  ? product
-                    ? t('common.saving', 'Saving...')
-                    : t('common.creating', 'Creating...')
-                  : product
-                    ? t('common.save', 'Save Changes')
-                    : t('common.create', 'Create Product')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* The one save bar: always here */}
+      <SaveBar
+        isNew={!product}
+        dirty={dirty}
+        saving={isSubmitting}
+        onSave={() => (document.getElementById('product-wizard') as HTMLFormElement | null)?.requestSubmit()}
+        onDiscard={discard}
+        cancelHref="/admin/payments/products"
+        saveLabel={product ? t('common.save', 'Save Changes') : t('common.create', 'Create Product')}
+        text={saveWords.bar}
+      />
+      {leaveDialog}
     </form>
   );
 }

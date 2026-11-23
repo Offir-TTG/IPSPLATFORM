@@ -127,6 +127,8 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    // No user yet (or the drawer is closing): nothing to load.
+    if (!userId || userId === 'null') return;
     loadUserData();
     loadAccessData();
     loadAllCourses();
@@ -253,7 +255,7 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
       }
 
       toast({
-        title: t('admin.users.activity.access.toasts.hideSuccess', 'Course hidden from student'),
+        title: t('admin.users.activity.access.toasts.hideSuccess', 'Course hidden from client'),
       });
 
       setShowHideDialog(false);
@@ -633,7 +635,7 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
             </Button>
           </CardTitle>
           <CardDescription>
-            {t('admin.users.activity.access.hidden.description', "Courses hidden from this student's program(s)")}
+            {t('admin.users.activity.access.hidden.description', "Courses hidden from this client's program(s)")}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0 sm:p-6 sm:pt-0">
@@ -728,7 +730,7 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
             </span>
           </CardTitle>
           <CardDescription>
-            {t('admin.users.activity.access.visible.description', 'Courses this student can actually see (after applying all rules)')}
+            {t('admin.users.activity.access.visible.description', 'Courses this client can actually see (after applying all rules)')}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0 sm:p-6 sm:pt-0">
@@ -843,7 +845,7 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
           <DialogHeader>
             <DialogTitle>{t('admin.users.activity.access.dialogs.grantTitle', 'Grant course access')}</DialogTitle>
             <DialogDescription>
-              {t('admin.users.activity.access.dialogs.grantSubtitle', 'Give this student access to a course outside their program')}
+              {t('admin.users.activity.access.dialogs.grantSubtitle', 'Give this client access to a course outside their program')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -896,7 +898,7 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
           <DialogHeader>
             <DialogTitle>{t('admin.users.activity.access.dialogs.hideTitle', 'Hide course')}</DialogTitle>
             <DialogDescription>
-              {t('admin.users.activity.access.dialogs.hideSubtitle', 'Hide a course that this student would normally see from their program')}
+              {t('admin.users.activity.access.dialogs.hideSubtitle', 'Hide a course that this client would normally see from their program')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -950,8 +952,8 @@ export function UserAccessManagement({ userId, embedded = false }: UserAccessMan
             <AlertDialogTitle>{t('admin.users.activity.access.dialogs.removeTitle', 'Remove override?')}</AlertDialogTitle>
             <AlertDialogDescription>
               {overrideToRemove?.access_type === 'grant'
-                ? t('admin.users.activity.access.dialogs.removeGrantBody', 'The student will lose access to this course.')
-                : t('admin.users.activity.access.dialogs.removeHideBody', 'The student will be able to see this course again.')}
+                ? t('admin.users.activity.access.dialogs.removeGrantBody', 'The client will lose access to this course.')
+                : t('admin.users.activity.access.dialogs.removeHideBody', 'The client will be able to see this course again.')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

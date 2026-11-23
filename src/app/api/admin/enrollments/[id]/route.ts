@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { deleteEnrollmentsWithCharges } from '@/lib/payments/deleteEnrollments';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { cancelEnrollment, CancelEnrollmentError } from '@/lib/payments/enrollmentService';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +21,7 @@ export async function GET(
 
     const { data: userData } = await supabase
       .from('users')
-      .select('role')
+      .select('role, tenant_id')
       .eq('id', user.id)
       .single();
 
@@ -27,16 +29,20 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Enrollments live in the enrollments table (user_programs is retired).
     const { data, error } = await supabase
-      .from('user_programs')
+      .from('enrollments')
       .select(`
         id,
-        enrollment_status,
+        status,
+        payment_status,
         enrolled_at,
         completed_at,
         expires_at,
         payment_plan_id,
-        contract_id,
+        total_amount,
+        paid_amount,
+        currency,
         created_at,
         updated_at,
         user:users (
@@ -46,15 +52,17 @@ export async function GET(
           email,
           phone
         ),
-        program:programs (
+        product:products (
           id,
-          name,
-          description,
+          title,
+          type,
           price,
-          payment_plan
+          currency,
+          payment_model
         )
       `)
       .eq('id', params.id)
+      .eq('tenant_id', userData.tenant_id)
       .single();
 
     if (error) {
@@ -92,7 +100,7 @@ export async function PATCH(
 
     const { data: userData } = await supabase
       .from('users')
-      .select('role')
+      .select('role, tenant_id')
       .eq('id', user.id)
       .single();
 
@@ -109,6 +117,7 @@ export async function PATCH(
       .from('enrollments')
       .select('status')
       .eq('id', enrollmentId)
+      .eq('tenant_id', userData.tenant_id)
       .single();
 
     if (fetchError || !currentEnrollment) {
@@ -131,6 +140,7 @@ export async function PATCH(
       .from('products')
       .select('id, price, currency, payment_model')
       .eq('id', product_id)
+      .eq('tenant_id', userData.tenant_id)
       .single();
 
     if (productError || !product) {
@@ -165,6 +175,7 @@ export async function PATCH(
       .from('enrollments')
       .update(updateData)
       .eq('id', enrollmentId)
+      .eq('tenant_id', userData.tenant_id)
       .select()
       .single();
 
@@ -187,7 +198,7 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/admin/enrollments/[id] - Unenroll user (soft delete by changing status)
+// DELETE /api/admin/enrollments/[id] - Unenroll (cancel); ?hard=true erases a draft
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -203,7 +214,7 @@ export async function DELETE(
 
     const { data: userData } = await supabase
       .from('users')
-      .select('role')
+      .select('role, tenant_id')
       .eq('id', user.id)
       .single();
 
@@ -211,43 +222,55 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Check if hard delete is requested
+    const { data: enrollment } = await supabase
+      .from('enrollments')
+      .select('id, status')
+      .eq('id', params.id)
+      .eq('tenant_id', userData.tenant_id)
+      .maybeSingle();
+
+    if (!enrollment) {
+      return NextResponse.json({ error: 'Enrollment not found' }, { status: 404 });
+    }
+
     const { searchParams } = new URL(request.url);
     const hardDelete = searchParams.get('hard') === 'true';
 
     if (hardDelete) {
-      // Permanent deletion
-      const { error } = await supabase
-        .from('user_programs')
-        .delete()
-        .eq('id', params.id);
+      // Only a draft (never sent, nothing paid or signed) may be erased;
+      // anything further along is cancelled so its history stays.
+      if (enrollment.status !== 'draft') {
+        return NextResponse.json(
+          { error: 'Only a draft enrollment can be deleted. Cancel it instead.' },
+          { status: 400 }
+        );
+      }
+      // With its payment schedules and payments, so no charge is left behind.
+      const { error } = await deleteEnrollmentsWithCharges(createAdminClient(), [enrollment.id]);
 
       if (error) {
         console.error('Error deleting enrollment:', error);
-        return NextResponse.json(
-          { error: 'Failed to delete enrollment' },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to delete enrollment' }, { status: 500 });
       }
-    } else {
-      // Soft delete (change status to dropped)
-      const { error } = await supabase
-        .from('user_programs')
-        .update({ enrollment_status: 'dropped' })
-        .eq('id', params.id);
-
-      if (error) {
-        console.error('Error updating enrollment status:', error);
-        return NextResponse.json(
-          { error: 'Failed to unenroll user' },
-          { status: 500 }
-        );
-      }
+      return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ success: true });
+    // Unenroll = the normal cancel (stops future charges, no refund).
+    const result = await cancelEnrollment(
+      params.id,
+      userData.tenant_id,
+      'Removed by admin',
+      user.id,
+      undefined,
+      user.email,
+    );
 
-  } catch (error) {
+    return NextResponse.json({ success: true, ...result });
+
+  } catch (error: any) {
+    if (error instanceof CancelEnrollmentError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error in DELETE /api/admin/enrollments/[id]:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

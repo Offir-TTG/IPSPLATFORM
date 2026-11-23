@@ -2,774 +2,390 @@
 
 export const dynamic = 'force-dynamic';
 
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { CheckCircle2, CreditCard, Info, PauseCircle, RefreshCw, Search, TrendingUp, Users, WifiOff } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useAdminLanguage } from '@/context/AppContext';
 import { useToast } from '@/components/ui/use-toast';
 import {
-  Plus,
-  Edit,
-  Trash2,
-  Check,
-  X,
-  DollarSign,
-  Calendar,
-  TrendingUp,
-  AlertCircle,
-  Settings,
-  TestTube,
-  ArrowLeft,
-} from 'lucide-react';
+  ClearFilters,
+  FilterSelect,
+  IconButton,
+  KpiItem,
+  KpiStrip,
+  ListCell,
+  ListFooter,
+  ListPanel,
+  ListRow,
+  ListRowMain,
+  ListSearch,
+  ListSkeleton,
+  ListState,
+  NewButton,
+  PageTitle,
+  QuickPills,
+  StatusDot,
+  kitButton,
+  usePagedList,
+} from '@/components/admin/notifications/kit';
+import { PlanDrawer } from '@/components/admin/plans/PlanDrawer';
+import { PLAN_TONE, PLAN_TYPES, usePlanFormat, type PaymentPlan } from '@/components/admin/plans/planFormat';
 
-interface PaymentPlan {
-  id: string;
-  plan_name: string;
-  plan_description: string;
-  plan_type: 'one_time' | 'deposit' | 'installments' | 'subscription';
-  deposit_type?: 'percentage' | 'fixed';
-  deposit_percentage?: number;
-  deposit_amount?: number;
-  installment_count?: number;
-  installment_frequency?: string;
-  subscription_frequency?: string;
-  /** Membership plans: price per period; empty = the product price. */
-  subscription_amount?: number | null;
-  auto_detect_enabled: boolean;
-  priority: number;
-  is_active: boolean;
-  is_default: boolean;
-  usage_count?: number;
-}
+type StatusFilter = 'all' | 'active' | 'inactive';
 
+/**
+ * Payment plans, in the admin list template: the numbers (each filters the
+ * list), the auto-detection note, then one card with search, type, status
+ * pills, the plans (highest priority first, as before) and paging. A row
+ * opens a short summary in a drawer; creating and editing happen on their
+ * own step-by-step page. Delete works as before.
+ */
 export default function PaymentPlansPage() {
-  const { t, direction, language, loading: translationsLoading } = useAdminLanguage();
+  const { t, direction } = useAdminLanguage();
   const { toast } = useToast();
-  const isRtl = direction === 'rtl';
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-  const isMobile = windowWidth <= 640;
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingPlan, setEditingPlan] = useState<PaymentPlan | null>(null);
-  const [plans, setPlans] = useState<PaymentPlan[]>([]);
-  const [loadingPlans, setLoadingPlans] = useState(true);
+  const f = usePlanFormat();
+  const rtl = direction === 'rtl';
 
-  // Fetch payment plans from API
-  const fetchPlans = async () => {
+  const [plans, setPlans] = useState<PaymentPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [search, setSearch] = useState('');
+  const [type, setType] = useState<string>('all');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [autoOnly, setAutoOnly] = useState(false);
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const openId = searchParams.get('plan');
+  const setOpenId = (id: string | null) => {
+    const qs = new URLSearchParams(searchParams.toString());
+    if (id) qs.set('plan', id);
+    else qs.delete('plan');
+    const query = qs.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
+  // `t` and `toast` change on every render, so they're read through a ref.
+  const tRef = useRef({ t, toast });
+  tRef.current = { t, toast };
+
+  const load = async () => {
+    setLoading(true);
     try {
-      setLoadingPlans(true);
       const response = await fetch('/api/admin/payments/plans');
       if (!response.ok) throw new Error('Failed to fetch plans');
       const data = await response.json();
-      setPlans(data);
+      setPlans(Array.isArray(data) ? data : []);
+      setLoadError(false);
     } catch (error) {
       console.error('Error fetching payment plans:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('admin.payments.plans.loadError', 'Failed to load payment plans'),
+      setLoadError(true);
+      tRef.current.toast({
+        title: tRef.current.t('common.error', 'Error'),
+        description: tRef.current.t('admin.payments.plans.loadError', 'Failed to load payment plans'),
         variant: 'destructive',
       });
     } finally {
-      setLoadingPlans(false);
+      setLoading(false);
+      setLoaded(true);
     }
   };
 
-  // Load plans on mount
   useEffect(() => {
-    fetchPlans();
+    void load();
   }, []);
 
-  // Window resize listener for mobile responsiveness
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const handleCreatePlan = () => {
-    setEditingPlan(null);
-    setIsDialogOpen(true);
-  };
-
-  const handleEditPlan = (plan: PaymentPlan) => {
-    setEditingPlan(plan);
-    setIsDialogOpen(true);
-  };
-
-  const handleDeletePlan = async (planId: string) => {
+  const remove = async (plan: PaymentPlan) => {
     if (!confirm(t('admin.payments.plans.deleteConfirm', 'Are you sure you want to delete this payment plan?'))) return;
-
     try {
-      const response = await fetch(`/api/admin/payments/plans/${planId}`, {
-        method: 'DELETE',
-      });
-
+      const response = await fetch(`/api/admin/payments/plans/${plan.id}`, { method: 'DELETE' });
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.error || 'Failed to delete plan');
       }
-
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('admin.payments.plans.deleteSuccess', 'Payment plan deleted successfully'),
-      });
-      fetchPlans();
+      toast({ title: t('common.success', 'Success'), description: t('admin.payments.plans.deleteSuccess', 'Payment plan deleted successfully') });
+      if (openId === plan.id) setOpenId(null);
+      void load();
     } catch (error: any) {
       console.error('Error deleting payment plan:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.plans.deleteError', 'Failed to delete payment plan'),
-        variant: 'destructive',
-      });
+      toast({ title: t('common.error', 'Error'), description: error.message || t('admin.payments.plans.deleteError', 'Failed to delete payment plan'), variant: 'destructive' });
     }
   };
 
-  const handleSavePlan = async (plan: Partial<PaymentPlan>) => {
-    try {
-      const isEditing = !!plan.id;
-      const url = isEditing
-        ? `/api/admin/payments/plans/${plan.id}`
-        : '/api/admin/payments/plans';
+  const counts = useMemo(
+    () => ({
+      all: plans.length,
+      active: plans.filter((p) => p.is_active).length,
+      inactive: plans.filter((p) => !p.is_active).length,
+      auto: plans.filter((p) => p.auto_detect_enabled).length,
+      used: plans.reduce((s, p) => s + (p.usage_count ?? 0), 0),
+    }),
+    [plans],
+  );
 
-      const response = await fetch(url, {
-        method: isEditing ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(plan),
-      });
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return plans
+      .filter(
+        (p) =>
+          (type === 'all' || p.plan_type === type) &&
+          (status === 'all' || (status === 'active' ? p.is_active : !p.is_active)) &&
+          (!autoOnly || p.auto_detect_enabled) &&
+          (!q || `${p.plan_name} ${p.plan_description ?? ''}`.toLowerCase().includes(q)),
+      )
+      .sort((a, b) => b.priority - a.priority);
+  }, [plans, search, type, status, autoOnly]);
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || `Failed to ${isEditing ? 'update' : 'create'} plan`);
-      }
-
-      toast({
-        title: t('common.success', 'Success'),
-        description: isEditing
-          ? t('admin.payments.plans.updateSuccess', 'Payment plan updated successfully')
-          : t('admin.payments.plans.createSuccess', 'Payment plan created successfully'),
-      });
-      setIsDialogOpen(false);
-      fetchPlans();
-    } catch (error: any) {
-      console.error('Error saving payment plan:', error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error.message || t('admin.payments.plans.saveError', 'Failed to save payment plan'),
-        variant: 'destructive',
-      });
-    }
+  const paged = usePagedList(shown, `${search}|${type}|${status}|${autoOnly}`);
+  const filtersOn = !!search || type !== 'all' || status !== 'all' || autoOnly;
+  const clearFilters = () => {
+    setSearch('');
+    setType('all');
+    setStatus('all');
+    setAutoOnly(false);
   };
+  const toggleStatus = (s: StatusFilter) => setStatus((cur) => (cur === s ? 'all' : s));
+  const filteredNow = t('admin.list.filteredNow', 'Filtered now');
+  const num = (n: number) => n.toLocaleString();
+  const openPlan = plans.find((p) => p.id === openId) ?? null;
+  const COLS = 'minmax(0,1.1fr) 130px minmax(0,1.2fr) 80px 110px';
+  const createButton = <NewButton href="/admin/payments/plans/new">{t('admin.payments.plans.createPlan', 'Create Plan')}</NewButton>;
 
-  const getPlanTypeColor = (type: string) => {
-    switch (type) {
-      case 'one_time': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      case 'deposit': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
-      case 'installments': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-      case 'subscription': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
-    }
-  };
-
-  const getPlanTypeLabel = (type: string) => {
-    switch (type) {
-      case 'one_time': return t('admin.payments.plans.types.oneTime', 'One-Time');
-      case 'deposit': return t('admin.payments.plans.types.deposit', 'Deposit');
-      case 'installments': return t('admin.payments.plans.types.installments', 'Installments');
-      case 'subscription': return t('admin.payments.plans.types.subscription', 'Subscription');
-      default: return type;
-    }
-  };
-
-  const getPlanDetails = (plan: PaymentPlan) => {
-    // Helper function to translate frequency
-    const translateFrequency = (freq: string | undefined) => {
-      if (!freq) return '';
-      return t(`admin.payments.plans.frequency.${freq.toLowerCase()}`, freq);
-    };
-
-    switch (plan.plan_type) {
-      case 'deposit':
-        const depositTemplate = plan.deposit_type === 'fixed'
-          ? t('admin.payments.plans.details.fixedDeposit', `$${plan.deposit_amount} deposit`)
-          : t('admin.payments.plans.details.percentDeposit', `${plan.deposit_percentage}% deposit`);
-        const depositText = depositTemplate
-          .replace('{amount}', String(plan.deposit_amount))
-          .replace('{percentage}', String(plan.deposit_percentage));
-
-        const translatedFrequency = translateFrequency(plan.installment_frequency);
-        const paymentsTemplate = t('admin.payments.plans.details.payments', `${plan.installment_count} ${plan.installment_frequency} payments`);
-        const paymentsText = paymentsTemplate
-          .replace('{count}', String(plan.installment_count))
-          .replace('{frequency}', translatedFrequency);
-
-        return `${depositText}, ${paymentsText}`;
-      case 'installments':
-        const installmentsFrequency = translateFrequency(plan.installment_frequency);
-        const installmentsTemplate = t('admin.payments.plans.details.installments', `${plan.installment_count} ${plan.installment_frequency} payments`);
-        return installmentsTemplate
-          .replace('{count}', String(plan.installment_count))
-          .replace('{frequency}', installmentsFrequency);
-      case 'subscription':
-        const subscriptionFrequency = translateFrequency(plan.subscription_frequency);
-        const subscriptionTemplate = t('admin.payments.plans.details.subscription', `${plan.subscription_frequency} recurring billing`);
-        const subscriptionText = subscriptionTemplate
-          .replace('{frequency}', subscriptionFrequency);
-        // Show the plan's own price; without one the product price is charged.
-        return plan.subscription_amount
-          ? `${subscriptionText} · ${Number(plan.subscription_amount).toLocaleString()}`
-          : `${subscriptionText} · ${t('admin.payments.plans.details.productPrice', 'product price')}`;
-      default:
-        return t('admin.payments.plans.details.fullPayment', 'Pay full amount upfront');
-    }
-  };
-
-  // Show loading state while translations are loading
-  if (translationsLoading) {
-    return (
-      <AdminLayout>
-        <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '400px'
-          }}>
-            <div style={{ textAlign: 'center' }}>
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-              <p style={{ color: 'hsl(var(--muted-foreground))' }}>Loading...</p>
-            </div>
-          </div>
-        </div>
-      </AdminLayout>
+  let state: ReactNode = undefined;
+  if (!loaded || (loading && plans.length === 0)) state = <ListSkeleton />;
+  else if (loadError && plans.length === 0)
+    state = (
+      <ListState
+        icon={WifiOff}
+        tone="red"
+        title={t('admin.list.loadError', "We couldn't load the list")}
+        text={t('admin.list.loadErrorText', 'The internet connection may have dropped. Nothing was deleted.')}
+        action={
+          <button type="button" onClick={() => void load()} className={kitButton.primary}>
+            {t('admin.list.retry', 'Try again')}
+          </button>
+        }
+      />
     );
-  }
+  else if (plans.length === 0)
+    state = (
+      <ListState
+        icon={CreditCard}
+        title={t('admin.payments.plans.noPlans', 'No Payment Plans')}
+        text={t('admin.payments.plans.noPlansDesc', 'Get started by creating your first payment plan.')}
+        action={createButton}
+      />
+    );
+  else if (shown.length === 0)
+    state = (
+      <ListState
+        icon={Search}
+        tone="grey"
+        title={t('admin.payments.plans.noMatch', 'No plans match')}
+        text={t('admin.list.noMatchText', 'Clear the search and filters to see the whole list.')}
+        action={
+          <button type="button" onClick={clearFilters} className={kitButton.secondary}>
+            {t('admin.users.filters.clear', 'Clear Filters')}
+          </button>
+        }
+      />
+    );
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl p-6 space-y-6" dir={direction}>
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
-          <div className="flex items-center gap-4 flex-wrap">
-            <Link href="/admin/payments">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('common.back', 'Back')}</span>
-              </Button>
-            </Link>
-            <div>
-              <h1 suppressHydrationWarning style={{
-                fontSize: 'var(--font-size-3xl)',
-                fontFamily: 'var(--font-family-heading)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'hsl(var(--text-heading))'
-              }}>
-                {t('admin.payments.plans.title', 'Payment Plans')}
-              </h1>
-              <p suppressHydrationWarning style={{
-                color: 'hsl(var(--muted-foreground))',
-                fontSize: 'var(--font-size-sm)',
-                marginTop: '0.25rem'
-              }}>
-                {t('admin.payments.plans.description', 'Configure and manage payment plans')}
-              </p>
-            </div>
-          </div>
-          <Button onClick={handleCreatePlan} style={{
-            width: isMobile ? '100%' : 'auto'
-          }}>
-            <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-            <span suppressHydrationWarning>{t('admin.payments.plans.createPlan', 'Create Plan')}</span>
-          </Button>
-        </div>
+      <div className="max-w-6xl space-y-5 p-4 md:p-6" dir={direction}>
+        <PageTitle
+          icon={CreditCard}
+          title={t('admin.payments.plans.title', 'Payment Plans')}
+          badge={loaded ? num(counts.all) : undefined}
+          description={t('admin.payments.plans.description', 'Configure and manage payment plans')}
+          actions={createButton}
+        />
 
-        {/* Info Alert */}
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle suppressHydrationWarning>{t('admin.payments.plans.autoDetection', 'Auto-Detection')}</AlertTitle>
-          <AlertDescription suppressHydrationWarning>
+        <KpiStrip label={t('admin.list.numbers', 'Numbers')}>
+          <KpiItem icon={<CreditCard />} label={t('admin.payments.plans.kpi.all', 'All plans')} value={loaded ? num(counts.all) : '—'} onClick={clearFilters} />
+          <KpiItem
+            icon={<CheckCircle2 />}
+            tone="green"
+            label={t('admin.payments.products.active', 'Active')}
+            value={loaded ? num(counts.active) : '—'}
+            onClick={() => toggleStatus('active')}
+            active={status === 'active'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<PauseCircle />}
+            tone="grey"
+            label={t('admin.payments.plans.inactive', 'Inactive')}
+            value={loaded ? num(counts.inactive) : '—'}
+            onClick={() => toggleStatus('inactive')}
+            active={status === 'inactive'}
+            activeNote={filteredNow}
+          />
+          <KpiItem
+            icon={<TrendingUp />}
+            tone="blue"
+            label={t('admin.payments.plans.autoDetect', 'Auto-Detect')}
+            value={loaded ? num(counts.auto) : '—'}
+            subtitle={t('admin.payments.plans.kpi.autoSub', 'Assigned automatically')}
+            onClick={() => setAutoOnly((v) => !v)}
+            active={autoOnly}
+            activeNote={filteredNow}
+          />
+        </KpiStrip>
+
+        {/* What auto-detection does, as before */}
+        <p className="flex items-start gap-2.5 rounded-xl border border-border bg-primary/5 px-4 py-3 text-sm">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+          <span>
+            <b>{t('admin.payments.plans.autoDetection', 'Auto-Detection')}: </b>
             {t('admin.payments.plans.autoDetectionDesc', 'Payment plans with auto-detection enabled will be automatically assigned to enrollments based on priority.')}
-          </AlertDescription>
-        </Alert>
+          </span>
+        </p>
 
-        {/* Plans List */}
-        <div className="grid gap-4">
-          {plans
-            .sort((a, b) => b.priority - a.priority)
-            .map((plan) => (
-            <Card key={plan.id} className={!plan.is_active ? 'opacity-60' : ''}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <CardTitle suppressHydrationWarning>{plan.plan_name}</CardTitle>
-                      <Badge className={getPlanTypeColor(plan.plan_type)} suppressHydrationWarning>
-                        {getPlanTypeLabel(plan.plan_type)}
-                      </Badge>
-                      {plan.is_default && (
-                        <Badge variant="outline" className="border-primary text-primary" suppressHydrationWarning>
-                          {t('admin.payments.plans.default', 'Default')}
-                        </Badge>
+        <ListPanel
+          label={t('admin.payments.plans.title', 'Payment Plans')}
+          toolbar={
+            <>
+              <ListSearch
+                value={search}
+                onChange={setSearch}
+                placeholder={t('admin.payments.plans.searchPlaceholder', 'Search by name or description')}
+                clearLabel={t('admin.users.list.clearSearch', 'Clear search')}
+              />
+              <FilterSelect
+                label={t('admin.payments.plans.form.planType', 'Payment Type')}
+                value={type}
+                onChange={setType}
+                dir={direction}
+                options={[{ value: 'all', label: t('admin.payments.plans.allTypes', 'All types') }, ...PLAN_TYPES.map((p) => ({ value: p, label: f.typeLabel(p) }))]}
+              />
+              <IconButton label={t('common.refresh', 'Refresh')} onClick={() => void load()} disabled={loading}>
+                <RefreshCw className={`h-[18px] w-[18px] ${loading ? 'animate-spin' : ''}`} aria-hidden />
+              </IconButton>
+            </>
+          }
+          pills={
+            <>
+              <QuickPills<StatusFilter>
+                label={t('admin.payments.products.status', 'Status')}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: 'all', label: t('admin.payments.products.all', 'All'), count: counts.all },
+                  {
+                    value: 'active',
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
+                        {t('admin.payments.products.active', 'Active')}
+                      </span>
+                    ),
+                    count: counts.active,
+                  },
+                  {
+                    value: 'inactive',
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden />
+                        {t('admin.payments.plans.inactive', 'Inactive')}
+                      </span>
+                    ),
+                    count: counts.inactive,
+                  },
+                ]}
+              />
+              <span className="shrink-0">
+                <ClearFilters show={filtersOn} label={t('admin.users.filters.clear', 'Clear Filters')} onClear={clearFilters} />
+              </span>
+            </>
+          }
+          columns={COLS}
+          head={[
+            t('admin.payments.plans.table.plan', 'Plan'),
+            t('admin.payments.plans.form.planType', 'Payment Type'),
+            t('admin.payments.plans.drawer.howCharged', 'How it charges'),
+            t('admin.payments.plans.priority', 'Priority'),
+            t('admin.payments.products.status', 'Status'),
+          ]}
+          state={state}
+          footer={
+            loaded && shown.length > 0 ? (
+              <ListFooter
+                showingText={t('admin.users.list.showingRange', 'Showing {from}–{to} of {total}')
+                  .replace('{from}', num(paged.start + 1))
+                  .replace('{to}', num(paged.start + paged.pageItems.length))
+                  .replace('{total}', num(shown.length))}
+                pageText={t('admin.users.list.pageOf', 'Page {page} of {pages}').replace('{page}', String(paged.page)).replace('{pages}', String(paged.totalPages))}
+                page={paged.page}
+                totalPages={paged.totalPages}
+                onPage={paged.setPage}
+                prevLabel={t('admin.users.list.prevPage', 'Previous page')}
+                nextLabel={t('admin.users.list.nextPage', 'Next page')}
+                rtl={rtl}
+              />
+            ) : undefined
+          }
+        >
+          {paged.pageItems.map((p) => {
+            const tone = PLAN_TONE[p.plan_type] ?? PLAN_TONE.one_time;
+            return (
+              <ListRow key={p.id} columns={COLS} onOpen={() => setOpenId(p.id)} label={p.plan_name} selected={openId === p.id} rtl={rtl}>
+                <ListRowMain
+                  lead={
+                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tone.tile}`}>
+                      <CreditCard className="h-[18px] w-[18px]" aria-hidden />
+                    </span>
+                  }
+                  title={<bdi className="font-semibold">{p.plan_name}</bdi>}
+                  extra={
+                    <>
+                      {p.is_default && (
+                        <span className="rounded-full border border-primary/40 px-2 py-0.5 text-[11.5px] font-semibold text-primary">{t('admin.payments.plans.default', 'Default')}</span>
                       )}
-                      {plan.auto_detect_enabled && (
-                        <Badge variant="outline">
-                          <TrendingUp className={`h-3 w-3 ${isRtl ? 'ml-1' : 'mr-1'}`} />
-                          <span suppressHydrationWarning>{t('admin.payments.plans.autoDetect', 'Auto-Detect')}</span>
-                        </Badge>
+                      {p.auto_detect_enabled && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11.5px] font-medium text-foreground/80">
+                          <TrendingUp className="h-3 w-3" aria-hidden />
+                          {t('admin.payments.plans.autoDetect', 'Auto-Detect')}
+                        </span>
                       )}
-                      {!plan.is_active && (
-                        <Badge variant="outline" className="border-gray-400 text-gray-600" suppressHydrationWarning>
-                          {t('admin.payments.plans.inactive', 'Inactive')}
-                        </Badge>
-                      )}
-                    </div>
-                    <CardDescription suppressHydrationWarning>{plan.plan_description}</CardDescription>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                      <span suppressHydrationWarning>{t('admin.payments.plans.priority', 'Priority')}: {plan.priority}</span>
-                      <span>•</span>
-                      <span suppressHydrationWarning>{getPlanDetails(plan)}</span>
-                      {plan.usage_count !== undefined && (
-                        <>
-                          <span>•</span>
-                          <span suppressHydrationWarning>{plan.usage_count} {t('admin.payments.plans.enrollments', 'enrollments')}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleEditPlan(plan)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleDeletePlan(plan.id)}
-                      disabled={plan.usage_count! > 0}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
-
-        {/* Empty State */}
-        {plans.length === 0 && !loadingPlans && (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-semibold mb-2" suppressHydrationWarning>{t('admin.payments.plans.noPlans', 'No Payment Plans')}</h3>
-              <p className="text-muted-foreground mb-4" suppressHydrationWarning>
-                {t('admin.payments.plans.noPlansDesc', 'Get started by creating your first payment plan.')}
-              </p>
-              <Button onClick={handleCreatePlan}>
-                <Plus className={`h-4 w-4 ${isRtl ? 'ml-2' : 'mr-2'}`} />
-                <span suppressHydrationWarning>{t('admin.payments.plans.createPlan', 'Create Plan')}</span>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Create/Edit Dialog */}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          {/* `max-h-[90vh] overflow-y-auto` removed — DialogContent now
-              defaults to a frozen-header/scrollable-body layout via
-              DialogBody inside PaymentPlanForm. */}
-          <DialogContent className="max-w-2xl" dir={direction}>
-            <DialogHeader>
-              <DialogTitle suppressHydrationWarning>
-                {editingPlan ? t('admin.payments.plans.form.editTitle', 'Edit Payment Plan') : t('admin.payments.plans.form.createTitle', 'Create Payment Plan')}
-              </DialogTitle>
-              <DialogDescription suppressHydrationWarning>
-                {t('admin.payments.plans.form.description', 'Configure payment plan details and settings.')}
-              </DialogDescription>
-            </DialogHeader>
-            <PaymentPlanForm
-              plan={editingPlan}
-              onSave={handleSavePlan}
-              onCancel={() => setIsDialogOpen(false)}
-              t={t}
-              direction={direction}
-              isRtl={isRtl}
-            />
-          </DialogContent>
-        </Dialog>
+                    </>
+                  }
+                  sub={p.plan_description ? <span className="line-clamp-1" dir="auto">{p.plan_description}</span> : undefined}
+                />
+                <ListCell label={t('admin.payments.plans.form.planType', 'Payment Type')}>
+                  <span className={`inline-flex items-center gap-2 font-semibold ${tone.text}`}>
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden />
+                    {f.typeLabel(p.plan_type)}
+                  </span>
+                </ListCell>
+                <ListCell label={t('admin.payments.plans.drawer.howCharged', 'How it charges')}>
+                  <span className="block">{f.details(p)}</span>
+                  {p.usage_count !== undefined && (
+                    <span className="mt-0.5 inline-flex items-center gap-1 text-[13px] text-muted-foreground">
+                      <Users className="h-3.5 w-3.5" aria-hidden />
+                      {p.usage_count} {t('admin.payments.plans.enrollments', 'enrollments')}
+                    </span>
+                  )}
+                </ListCell>
+                <ListCell label={t('admin.payments.plans.priority', 'Priority')}>
+                  <span className="font-semibold tabular-nums">{p.priority}</span>
+                </ListCell>
+                <ListCell label={t('admin.payments.products.status', 'Status')}>
+                  <StatusDot tone={p.is_active ? 'green' : 'grey'}>
+                    {p.is_active ? t('admin.payments.products.active', 'Active') : t('admin.payments.plans.inactive', 'Inactive')}
+                  </StatusDot>
+                </ListCell>
+              </ListRow>
+            );
+          })}
+        </ListPanel>
       </div>
+
+      <PlanDrawer plan={openPlan} onClose={() => setOpenId(null)} onDelete={remove} />
     </AdminLayout>
-  );
-}
-
-// Payment Plan Form Component
-function PaymentPlanForm({ plan, onSave, onCancel, t, direction, isRtl }: {
-  plan: PaymentPlan | null;
-  onSave: (plan: PaymentPlan) => void;
-  onCancel: () => void;
-  t: (key: string, fallback?: string) => string;
-  direction: 'ltr' | 'rtl';
-  isRtl: boolean;
-}) {
-  const [formData, setFormData] = useState<Partial<PaymentPlan>>({
-    plan_name: '',
-    plan_description: '',
-    plan_type: 'one_time',
-    auto_detect_enabled: true,
-    priority: 10,
-    is_active: true,
-    is_default: false,
-  });
-
-  // Update form data when plan prop changes
-  useEffect(() => {
-    if (plan) {
-      setFormData(plan);
-    } else {
-      setFormData({
-        plan_name: '',
-        plan_description: '',
-        plan_type: 'one_time',
-        auto_detect_enabled: true,
-        priority: 10,
-        is_active: true,
-        is_default: false,
-      });
-    }
-  }, [plan]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(formData as PaymentPlan);
-  };
-
-  return (
-    // `flex flex-col flex-1 min-h-0` so the form fills the remaining
-    // DialogContent height, letting DialogBody scroll while DialogFooter
-    // stays pinned at the bottom.
-    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 gap-6">
-      <DialogBody className="space-y-6">
-      {/* Basic Info */}
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="plan_name" suppressHydrationWarning>{t('admin.payments.plans.form.planName', 'Plan Name')} *</Label>
-          <Input
-            id="plan_name"
-            value={formData.plan_name}
-            onChange={(e) => setFormData({ ...formData, plan_name: e.target.value })}
-            placeholder={t('admin.payments.plans.form.planNamePlaceholder', 'e.g., Monthly Installments')}
-            required
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="plan_description" suppressHydrationWarning>{t('admin.payments.plans.form.planDescription', 'Description')}</Label>
-          <Textarea
-            id="plan_description"
-            value={formData.plan_description}
-            onChange={(e) => setFormData({ ...formData, plan_description: e.target.value })}
-            placeholder={t('admin.payments.plans.form.planDescriptionPlaceholder', 'Describe this payment plan...')}
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="plan_type" suppressHydrationWarning>{t('admin.payments.plans.form.planType', 'Payment Type')} *</Label>
-          <Select
-            key={`plan-type-${plan?.id || 'new'}-${formData.plan_type || 'one_time'}`}
-            value={formData.plan_type || 'one_time'}
-            onValueChange={(value: any) => setFormData({ ...formData, plan_type: value })}
-          >
-            <SelectTrigger>
-              <SelectValue>
-                <span suppressHydrationWarning>
-                  {formData.plan_type === 'one_time' && t('admin.payments.plans.form.oneTimePayment', 'One-Time Payment')}
-                  {formData.plan_type === 'deposit' && t('admin.payments.plans.form.depositInstallments', 'Deposit + Installments')}
-                  {formData.plan_type === 'installments' && t('admin.payments.plans.form.installmentsOnly', 'Installments Only')}
-                  {formData.plan_type === 'subscription' && t('admin.payments.plans.form.subscription', 'Subscription')}
-                </span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent dir={direction}>
-              <SelectItem value="one_time" suppressHydrationWarning>{t('admin.payments.plans.form.oneTimePayment', 'One-Time Payment')}</SelectItem>
-              <SelectItem value="deposit" suppressHydrationWarning>{t('admin.payments.plans.form.depositInstallments', 'Deposit + Installments')}</SelectItem>
-              <SelectItem value="installments" suppressHydrationWarning>{t('admin.payments.plans.form.installmentsOnly', 'Installments Only')}</SelectItem>
-              <SelectItem value="subscription" suppressHydrationWarning>{t('admin.payments.plans.form.subscription', 'Subscription')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Deposit Configuration */}
-      {formData.plan_type === 'deposit' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.depositConfig', 'Deposit Configuration')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="deposit_type" suppressHydrationWarning>{t('admin.payments.plans.form.depositType', 'Deposit Type')} *</Label>
-              <Select
-                key={`deposit-type-${formData.deposit_type || 'percentage'}`}
-                value={formData.deposit_type || 'percentage'}
-                onValueChange={(value: 'percentage' | 'fixed') => setFormData({
-                  ...formData,
-                  deposit_type: value,
-                  // Clear the other field when switching types
-                  deposit_percentage: value === 'percentage' ? formData.deposit_percentage : undefined,
-                  deposit_amount: value === 'fixed' ? formData.deposit_amount : undefined
-                })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.percentage', 'Percentage')} />
-                </SelectTrigger>
-                <SelectContent dir={direction}>
-                  <SelectItem value="percentage" suppressHydrationWarning>{t('admin.payments.plans.form.percentage', 'Percentage')}</SelectItem>
-                  <SelectItem value="fixed" suppressHydrationWarning>{t('admin.payments.plans.form.fixedAmount', 'Fixed Amount')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {formData.deposit_type === 'percentage' ? (
-              <div>
-                <Label htmlFor="deposit_percentage" suppressHydrationWarning>{t('admin.payments.plans.form.depositPercentage', 'Deposit Percentage')} *</Label>
-                <Input
-                  id="deposit_percentage"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={formData.deposit_percentage || ''}
-                  onChange={(e) => setFormData({ ...formData, deposit_percentage: Number(e.target.value) })}
-                  placeholder="30"
-                  required
-                />
-              </div>
-            ) : (
-              <div>
-                <Label htmlFor="deposit_amount" suppressHydrationWarning>{t('admin.payments.plans.form.depositAmount', 'Deposit Amount')} *</Label>
-                <Input
-                  id="deposit_amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.deposit_amount || ''}
-                  onChange={(e) => setFormData({ ...formData, deposit_amount: Number(e.target.value) })}
-                  placeholder="1000"
-                  required
-                />
-              </div>
-            )}
-            <div>
-              <Label htmlFor="installment_count" suppressHydrationWarning>{t('admin.payments.plans.form.numberOfInstallments', 'Number of Installments')} *</Label>
-              <Input
-                id="installment_count"
-                type="number"
-                min="1"
-                value={formData.installment_count || ''}
-                onChange={(e) => setFormData({ ...formData, installment_count: Number(e.target.value) })}
-                placeholder="6"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="installment_frequency" suppressHydrationWarning>{t('admin.payments.plans.form.frequency', 'Frequency')} *</Label>
-              <Select
-                value={formData.installment_frequency}
-                onValueChange={(value) => setFormData({ ...formData, installment_frequency: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency', 'Select frequency')} />
-                </SelectTrigger>
-                <SelectContent dir={direction}>
-                  <SelectItem value="weekly" suppressHydrationWarning>{t('admin.payments.plans.form.weekly', 'Weekly')}</SelectItem>
-                  <SelectItem value="biweekly" suppressHydrationWarning>{t('admin.payments.plans.form.biweekly', 'Bi-weekly')}</SelectItem>
-                  <SelectItem value="monthly" suppressHydrationWarning>{t('admin.payments.plans.form.monthly', 'Monthly')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Installments Configuration */}
-      {formData.plan_type === 'installments' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.installmentsConfig', 'Installments Configuration')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="installment_count" suppressHydrationWarning>{t('admin.payments.plans.form.numberOfInstallments', 'Number of Installments')} *</Label>
-              <Input
-                id="installment_count"
-                type="number"
-                min="1"
-                value={formData.installment_count || ''}
-                onChange={(e) => setFormData({ ...formData, installment_count: Number(e.target.value) })}
-                placeholder="12"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="installment_frequency" suppressHydrationWarning>{t('admin.payments.plans.form.frequency', 'Frequency')} *</Label>
-              <Select
-                value={formData.installment_frequency}
-                onValueChange={(value) => setFormData({ ...formData, installment_frequency: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency', 'Select frequency')} />
-                </SelectTrigger>
-                <SelectContent dir={direction}>
-                  <SelectItem value="weekly" suppressHydrationWarning>{t('admin.payments.plans.form.weekly', 'Weekly')}</SelectItem>
-                  <SelectItem value="biweekly" suppressHydrationWarning>{t('admin.payments.plans.form.biweekly', 'Bi-weekly')}</SelectItem>
-                  <SelectItem value="monthly" suppressHydrationWarning>{t('admin.payments.plans.form.monthly', 'Monthly')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Subscription Configuration */}
-      {formData.plan_type === 'subscription' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.subscriptionConfig', 'Subscription Configuration')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="subscription_frequency" suppressHydrationWarning>{t('admin.payments.plans.form.billingFrequency', 'Billing Frequency')} *</Label>
-              <Select
-                value={formData.subscription_frequency}
-                onValueChange={(value) => setFormData({ ...formData, subscription_frequency: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('admin.payments.plans.form.selectFrequency', 'Select frequency')} />
-                </SelectTrigger>
-                <SelectContent dir={direction}>
-                  <SelectItem value="weekly" suppressHydrationWarning>{t('admin.payments.plans.form.weekly', 'Weekly')}</SelectItem>
-                  <SelectItem value="monthly" suppressHydrationWarning>{t('admin.payments.plans.form.monthly', 'Monthly')}</SelectItem>
-                  <SelectItem value="quarterly" suppressHydrationWarning>{t('admin.payments.plans.form.quarterly', 'Quarterly')}</SelectItem>
-                  <SelectItem value="annually" suppressHydrationWarning>{t('admin.payments.plans.form.annually', 'Annually')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="subscription_amount" suppressHydrationWarning>{t('admin.payments.plans.form.pricePerPeriod', 'Price per period')}</Label>
-              <Input
-                id="subscription_amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={formData.subscription_amount ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    subscription_amount: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-                placeholder="100"
-              />
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-                {t(
-                  'admin.payments.plans.form.pricePerPeriodHelp',
-                  'Charged every period, e.g. 100 monthly or 1,000 yearly. Leave empty to use the product price. A change applies from each member\'s next charge.'
-                )}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base" suppressHydrationWarning>{t('admin.payments.plans.form.settings', 'Settings')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="priority" suppressHydrationWarning>{t('admin.payments.plans.priority', 'Priority')}</Label>
-            <Input
-              id="priority"
-              type="number"
-              value={formData.priority}
-              onChange={(e) => setFormData({ ...formData, priority: Number(e.target.value) })}
-              placeholder="10"
-            />
-            <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
-              {t('admin.payments.plans.form.priorityDesc', 'Higher priority plans are selected first during auto-detection')}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="auto_detect_enabled" suppressHydrationWarning>{t('admin.payments.plans.form.autoDetectionEnabled', 'Auto-Detection Enabled')}</Label>
-              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.plans.form.autoDetectionDesc', 'Automatically assign this plan to eligible enrollments')}
-              </p>
-            </div>
-            <Switch
-              id="auto_detect_enabled"
-              checked={formData.auto_detect_enabled}
-              onCheckedChange={(checked) => setFormData({ ...formData, auto_detect_enabled: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="is_active" suppressHydrationWarning>{t('admin.payments.plans.form.active', 'Active')}</Label>
-              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.plans.form.activeDesc', 'Inactive plans cannot be assigned to new enrollments')}
-              </p>
-            </div>
-            <Switch
-              id="is_active"
-              checked={formData.is_active}
-              onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="is_default" suppressHydrationWarning>{t('admin.payments.plans.form.defaultPlan', 'Default Plan')}</Label>
-              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
-                {t('admin.payments.plans.form.defaultPlanDesc', 'Use this plan when no other plan matches')}
-              </p>
-            </div>
-            <Switch
-              id="is_default"
-              checked={formData.is_default}
-              onCheckedChange={(checked) => setFormData({ ...formData, is_default: checked })}
-            />
-          </div>
-        </CardContent>
-      </Card>
-      </DialogBody>
-
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          <span suppressHydrationWarning>{t('admin.payments.plans.form.cancel', 'Cancel')}</span>
-        </Button>
-        <Button type="submit">
-          <span suppressHydrationWarning>{plan ? t('admin.payments.plans.form.saveChanges', 'Save Changes') : t('admin.payments.plans.form.createPlan', 'Create Plan')}</span>
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }

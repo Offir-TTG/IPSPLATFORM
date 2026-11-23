@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import EnrollmentWizard from '@/components/enroll/EnrollmentWizard';
 
 type Invite = {
   product_name: string;
@@ -19,11 +20,36 @@ const money = (n: number, c: string) =>
  * Uses the same enrollment endpoints as the invitation page; confirming
  * continues to the existing wizard (details, agreement, payment).
  */
-export function EnrollInline({ enrollmentUrl, accent, onStart, autoContinue = false }: { enrollmentUrl: string | null; accent: string; onStart: (wizardUrl: string) => void; autoContinue?: boolean }) {
+export function EnrollInline({
+  enrollmentUrl,
+  productId,
+  offer,
+  price,
+  upcomingLine,
+  attachPlanId,
+  accent,
+  onStart,
+  autoContinue = false,
+}: {
+  enrollmentUrl: string | null;
+  /** No enrollment yet (joining a club): pressing the button starts one for this product. */
+  productId?: string;
+  offer?: Invite;
+  /** A membership's price, shown large: "‏29.99 ‏$" + "לחודש". */
+  price?: { amount: string; per: string } | null;
+  /** A scheduled price change, as a chip beside the price. */
+  upcomingLine?: string | null;
+  /** The product's only plan, attached before the wizard opens (it would otherwise fall back to a one-time payment). */
+  attachPlanId?: string | null;
+  accent: string;
+  onStart: (wizardUrl: string) => void;
+  autoContinue?: boolean;
+}) {
   const router = useRouter();
   const token = enrollmentUrl?.match(/\/enroll\/([^/?#]+)/)?.[1] ?? null;
-  const [invite, setInvite] = useState<Invite | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'expired' | 'closed' | 'busy' | 'error'>(token ? 'loading' : 'expired');
+  const starting = !token && !!productId;
+  const [invite, setInvite] = useState<Invite | null>(starting ? offer ?? null : null);
+  const [state, setState] = useState<'loading' | 'ready' | 'expired' | 'closed' | 'busy' | 'error'>(token ? 'loading' : starting ? 'ready' : 'expired');
 
   useEffect(() => {
     if (!token) return;
@@ -37,13 +63,35 @@ export function EnrollInline({ enrollmentUrl, accent, onStart, autoContinue = fa
   }, [token]);
 
   const accept = async () => {
-    if (!token) return;
+    let t = token;
+    if (!t && !productId) return;
     setState('busy');
-    const res = await fetch(`/api/enrollments/token/${token}/accept`, { method: 'POST' }).catch(() => null);
+    if (!t) {
+      // The platform's self-enrollment: creates the enrollment (or resumes an unfinished one).
+      const res = await fetch('/api/public/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId }),
+      }).catch(() => null);
+      const data = res ? await res.json().catch(() => null) : null;
+      if (res?.status === 409) return router.refresh();
+      t = data?.enrollment_token ?? null;
+      if (!t) return setState('error');
+    }
+    if (attachPlanId) {
+      // The wizard's own plan endpoint; 409 means a payment already started, so the plan stays.
+      const r = await fetch(`/api/enrollments/token/${t}/select-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_plan_id: attachPlanId }),
+      }).catch(() => null);
+      if (!r || (!r.ok && r.status !== 409)) return setState('error');
+    }
+    const res = await fetch(`/api/enrollments/token/${t}/accept`, { method: 'POST' }).catch(() => null);
     const data = res ? await res.json().catch(() => null) : null;
     if (res?.ok && data) {
       setState('ready');
-      return onStart(data.wizard_url || `/enroll/wizard/${data.enrollment_id}?token=${token}`);
+      return onStart(data.wizard_url || `/enroll/wizard/${data.enrollment_id}?token=${t}`);
     }
     // Already enrolled (paid elsewhere, or in another tab): just show the page as it is now.
     if (res?.status === 409 && data?.already_enrolled) return router.refresh();
@@ -68,13 +116,24 @@ export function EnrollInline({ enrollmentUrl, accent, onStart, autoContinue = fa
   return (
     <section className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
       <div className="flex-1 min-w-0">
-        <b className="block text-[15px] text-amber-950">נשאר להשלים את ההרשמה</b>
+        <b className="block text-[15px] text-amber-950">{starting ? 'הצטרפות למועדון' : 'נשאר להשלים את ההרשמה'}</b>
         {state === 'expired' ? (
           <span className="text-sm text-amber-950/80">הקישור להרשמה פג. אפשר לפנות לצוות בית הספר כדי לקבל קישור חדש.</span>
         ) : state === 'closed' ? (
           <span className="text-sm text-amber-950/80">ההרשמה הזו כבר לא פתוחה. אפשר לפנות לצוות בית הספר.</span>
         ) : state === 'loading' ? (
           <span className="text-sm text-amber-950/70">טוענים…</span>
+        ) : price ? (
+          // A membership: the price, large, and any scheduled change beside it.
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="flex items-baseline gap-1.5">
+              <span className="font-rubik font-bold text-[22px] leading-none text-amber-950">{price.amount}</span>
+              <span className="text-[13px] text-amber-950/70">{price.per}</span>
+            </span>
+            {upcomingLine && (
+              <span className="text-[12px] font-semibold text-[#5b3a8e] bg-white border border-[#e6dcf3] px-2.5 py-1 rounded-full">{upcomingLine}</span>
+            )}
+          </div>
         ) : (
           invite && (
             <span className="text-sm text-amber-950/80">
@@ -103,78 +162,23 @@ export function EnrollInline({ enrollmentUrl, accent, onStart, autoContinue = fa
 }
 
 /**
- * The existing enrollment wizard (details, agreement, payment), shown under
- * the child's header instead of on its own page. The frame grows with each
- * step; when the wizard finishes it opens the child's page, which takes the
- * whole window again.
+ * The existing enrollment wizard (details, agreement, payment), rendered
+ * right here under the child's header as part of the page (no frame). The
+ * agreement opens in a dialog over the page and payment opens in place; when
+ * the wizard finishes it goes to the child's page.
  */
 export function EmbeddedWizard({ src }: { src: string }) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(240);
-  // While the wizard shows a dialog (signing), the frame covers the whole window.
-  const [overlay, setOverlay] = useState(false);
-  const overlayRef = useRef(false);
-
-  useEffect(() => {
-    const el = frame.current;
-    if (!el) return;
-    let observer: ResizeObserver | null = null;
-    // Same site, so the page inside can be measured directly. The content area
-    // (not the whole document, which is never shorter than the frame) sets the
-    // height; it is watched again on every step, since each step is a new page.
-    const watch = () => {
-      observer?.disconnect();
-      const doc = el.contentDocument;
-      const content = doc?.querySelector('main') ?? doc?.body;
-      if (!content) return;
-      const measure = () => {
-        if (overlayRef.current) return;
-        setHeight(Math.ceil(Math.max(content.getBoundingClientRect().height, content.scrollHeight)));
-      };
-      observer = new ResizeObserver(measure);
-      observer.observe(content);
-      measure();
-    };
-    el.addEventListener('load', watch);
-    // Client-side step changes inside the wizard swap the content without a new load.
-    const id = setInterval(watch, 1500);
-
-    // The wizard tells us when its dialog opens and closes.
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin || e.source !== el.contentWindow) return;
-      if (e.data?.source !== 'ips-wizard' || typeof e.data.overlay !== 'boolean') return;
-      overlayRef.current = e.data.overlay;
-      setOverlay(e.data.overlay);
-      document.documentElement.style.overflow = e.data.overlay ? 'hidden' : '';
-      if (!e.data.overlay) watch();
-    };
-    window.addEventListener('message', onMessage);
-
-    return () => {
-      el.removeEventListener('load', watch);
-      window.removeEventListener('message', onMessage);
-      clearInterval(id);
-      observer?.disconnect();
-      document.documentElement.style.overflow = '';
-    };
-  }, []);
+  // src is the wizard link: /enroll/wizard/<enrollmentId>?token=<token>
+  const url = new URL(src, 'https://local.invalid');
+  const enrollmentId = url.pathname.split('/').filter(Boolean)[2] ?? '';
+  const token = url.searchParams.get('token');
 
   return (
     <section className="rounded-[22px] bg-white shadow-[0_1px_0_#e9e3f1] overflow-hidden">
       <div className="px-4 py-2.5 border-b border-[#efe9f6] text-sm">
         <b className="text-[#221a2e]">השלמת ההרשמה והתשלום</b>
       </div>
-      {/* Keeps the card's place while the frame is lifted over the whole window. */}
-      {overlay && <div style={{ height }} aria-hidden="true" />}
-      <iframe
-        ref={frame}
-        src={src}
-        title="השלמת ההרשמה והתשלום"
-        className={overlay ? 'fixed inset-0 z-[80] w-screen h-[100dvh] border-0 bg-transparent' : 'block w-full border-0 bg-transparent'}
-        style={overlay ? { colorScheme: 'normal' } : { height, colorScheme: 'normal' }}
-        scrolling={overlay ? 'auto' : 'no'}
-        allow="payment *"
-      />
+      <EnrollmentWizard enrollmentId={enrollmentId} token={token} embedded />
     </section>
   );
 }

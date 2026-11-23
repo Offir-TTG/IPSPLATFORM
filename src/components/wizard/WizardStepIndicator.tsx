@@ -20,6 +20,12 @@ interface WizardStepIndicatorProps {
   showSignature: boolean;
   showPayment: boolean;
   showPassword: boolean;
+  /** Contact details: hidden for logged-in users, who skip that step. */
+  showProfile?: boolean;
+  /** The closing "Welcome" screen: hidden for logged-in users, who go straight back to their page. */
+  showComplete?: boolean;
+  /** Embedded in a portal page: a slim row of small steps. */
+  compact?: boolean;
 }
 
 const ALL_STEPS: StepConfig[] = [
@@ -37,11 +43,16 @@ export default function WizardStepIndicator({
   showSignature,
   showPayment,
   showPassword,
+  showProfile = true,
+  showComplete = true,
+  compact = false,
 }: WizardStepIndicatorProps) {
   const { t } = useLanguage();
 
   // Filter steps based on what's required
   const visibleSteps = ALL_STEPS.filter(step => {
+    if (step.key === 'profile' && !showProfile) return false;
+    if (step.key === 'complete' && !showComplete) return false;
     if (step.key === 'signature' && !showSignature) return false;
     if (step.key === 'payment' && !showPayment) return false;
     if (step.key === 'password' && !showPassword) return false;
@@ -84,12 +95,7 @@ export default function WizardStepIndicator({
 
   // Inside the portal's child page (framed) the wizard is part of a card, so
   // a slim row of small steps replaces the big circles.
-  const [embedded, setEmbedded] = React.useState(false);
-  React.useEffect(() => {
-    try { setEmbedded(window.self !== window.top); } catch { setEmbedded(true); }
-  }, []);
-
-  if (embedded) {
+  if (compact) {
     return (
       <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-2 pb-3 text-xs" aria-label={t('enrollment.wizard.steps.current', 'Current step')}>
         {visibleSteps.map((step, index) => {

@@ -249,7 +249,7 @@ export const PaymentScheduleTemplate: React.FC<{ data: ScheduleData }> = ({ data
         {/* Student Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            {t('pdf.schedule.student', 'Student Information')}
+            {t('pdf.schedule.student', 'Client Information')}
           </Text>
           <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 5, textAlign: isRTL ? 'right' : 'left', direction: isRTL ? 'rtl' : 'ltr' }}>
             {isRTL ? `${user.last_name} ${user.first_name}` : `${user.first_name} ${user.last_name}`}

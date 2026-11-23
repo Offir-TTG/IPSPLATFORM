@@ -7,6 +7,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { DEFAULT_FALLBACK_TIMEZONE, formatInTimezone } from '@/lib/datetime/timezone';
 import { cleanQuestions, type IntakeQuestion } from './intake';
+import { chargeHeldSession } from '@/lib/payments/perSession';
 
 type Fail = { ok: false; status: number; error: string };
 const fail = (status: number, error: string): Fail => ({ ok: false, status, error });
@@ -18,16 +19,49 @@ const COUNTED = ['done', 'late_cancelled', 'no_show'];
 
 export async function listCoachingRequests(tenantId: string, status: 'new' | 'in_progress' | 'handled' = 'new') {
   const db = createAdminClient();
-  const { data: requests, error } = await db
-    .from('coaching_requests')
-    .select('id, parent_user_id, child_id, note, status, created_at, handled_at')
-    .eq('tenant_id', tenantId)
-    .eq('status', status)
-    .order('created_at', { ascending: status !== 'handled' })
-    .limit(200);
+  const read = (cols: string) =>
+    db.from('coaching_requests').select(cols).eq('tenant_id', tenantId).eq('status', status).order('created_at', { ascending: status !== 'handled' }).limit(200);
+  // The type and package columns come with the coaching packages update; older rows are child requests.
+  let { data: requests, error } = (await read('id, parent_user_id, child_id, note, status, created_at, handled_at, kind, enrollment_id, sessions_requested')) as { data: any[] | null; error: any };
+  if (error) ({ data: requests, error } = (await read('id, parent_user_id, child_id, note, status, created_at, handled_at')) as { data: any[] | null; error: any });
   if (error) return fail(500, error.message);
-  const parentIds = [...new Set((requests ?? []).map((r) => r.parent_user_id))];
-  const childIds = [...new Set((requests ?? []).map((r) => r.child_id).filter(Boolean))] as string[];
+  const packIds = [...new Set((requests ?? []).map((r: any) => r.enrollment_id).filter(Boolean))] as string[];
+  const { data: packRows } = packIds.length
+    ? await db.from('enrollments').select('id, product_id, coach_id, child_id').in('id', packIds)
+    : { data: [] as any[] };
+  const { data: packProducts } = (packRows ?? []).length
+    ? await db.from('products').select('id, title, session_count').in('id', [...new Set((packRows ?? []).map((p: any) => p.product_id))])
+    : { data: [] as any[] };
+  const { data: packSessions } = packIds.length ? await db.from('coaching_sessions').select('enrollment_id, status').in('enrollment_id', packIds) : { data: [] as any[] };
+  const { data: packOffers } = packIds.length ? await db.from('coaching_offers').select('enrollment_id, sessions, status').in('enrollment_id', packIds) : { data: [] as any[] };
+  const coachIds = [...new Set((packRows ?? []).map((p: any) => p.coach_id).filter(Boolean))] as string[];
+  const { data: packCoaches } = coachIds.length ? await db.from('users').select('id, first_name, last_name, email').in('id', coachIds) : { data: [] as any[] };
+  const packInfo = (id: string | null) => {
+    const p = (packRows ?? []).find((x: any) => x.id === id);
+    if (!p) return null;
+    const product = (packProducts ?? []).find((x: any) => x.id === p.product_id);
+    const extra = (packOffers ?? []).filter((o: any) => o.enrollment_id === p.id && o.status === 'approved').reduce((n: number, o: any) => n + Number(o.sessions || 0), 0);
+    return {
+      enrollment_id: p.id,
+      kind: p.child_id ? 'child' : 'parent',
+      title: product?.title ?? '',
+      used: (packSessions ?? []).filter((s: any) => s.enrollment_id === p.id && COUNTED.includes(s.status)).length,
+      total: (Number(product?.session_count) || 0) + extra,
+      coach_name: p.coach_id ? nameOf((packCoaches ?? []).find((c: any) => c.id === p.coach_id)) : null,
+    };
+  };
+  // What each parent already has (for "already in parent coaching, Noa in child coaching").
+  const parentIdsAll = [...new Set((requests ?? []).map((r: any) => r.parent_user_id))];
+  const { data: parentPacks } = parentIdsAll.length
+    ? await db.from('enrollments').select('user_id, child_id, product:products!enrollments_product_id_fkey(type)').in('user_id', parentIdsAll).in('status', ['pending', 'active', 'suspended'])
+    : { data: [] as any[] };
+  const coachingOfParent = (id: string) => {
+    const mine = (parentPacks ?? []).filter((p: any) => p.user_id === id && (Array.isArray(p.product) ? p.product[0] : p.product)?.type === 'session_pack');
+    return { parent: mine.some((p: any) => !p.child_id), child_ids: mine.map((p: any) => p.child_id).filter(Boolean) as string[] };
+  };
+  const parentIds = parentIdsAll;
+  const otherChildIds = (parentPacks ?? []).map((p: any) => p.child_id).filter(Boolean);
+  const childIds = [...new Set([...(requests ?? []).map((r: any) => r.child_id).filter(Boolean), ...otherChildIds])] as string[];
   const [{ data: parents }, { data: children }, { data: packs }, counts] = await Promise.all([
     parentIds.length ? db.from('users').select('id, first_name, last_name, email, phone').in('id', parentIds) : Promise.resolve({ data: [] as any[] }),
     childIds.length ? db.from('children').select('id, first_name, last_name, birth_year').in('id', childIds) : Promise.resolve({ data: [] as any[] }),
@@ -42,12 +76,20 @@ export async function listCoachingRequests(tenantId: string, status: 'new' | 'in
   return {
     ok: true as const,
     counts: { new: counts[0].count ?? 0, in_progress: counts[1].count ?? 0 },
-    requests: (requests ?? []).map((r) => {
+    requests: (requests ?? []).map((r: any) => {
       const p = parentById.get(r.parent_user_id);
       const c = r.child_id ? childById.get(r.child_id) : null;
+      const has = coachingOfParent(r.parent_user_id);
       return {
         id: r.id,
         status: r.status,
+        kind: (r.kind === 'more_sessions' ? 'more_sessions' : 'child') as 'child' | 'more_sessions',
+        sessions_requested: r.sessions_requested ?? null,
+        pack: packInfo(r.enrollment_id ?? null),
+        parent_has: {
+          parent_coaching: has.parent,
+          children: has.child_ids.map((id) => childById.get(id)?.first_name).filter(Boolean) as string[],
+        },
         note: r.note,
         created_at: r.created_at,
         parent: p ? { id: p.id, name: nameOf(p), email: p.email, phone: p.phone ?? null } : null,
@@ -80,6 +122,20 @@ export async function coachingChoices(tenantId: string) {
     db.from('users').select('id, first_name, last_name, email, role').eq('tenant_id', tenantId).in('role', ['instructor', 'admin']).order('first_name'),
     db.from('coach_availability').select('coach_id, start_time, end_time').eq('tenant_id', tenantId),
   ]);
+  const planIds = [...new Set((products ?? []).map((p: any) => p.default_payment_plan_id).filter(Boolean))] as string[];
+  const [{ data: plans }, { data: forms }] = await Promise.all([
+    planIds.length ? db.from('payment_plans').select('id, plan_type, session_amount').in('id', planIds) : Promise.resolve({ data: [] as any[] }),
+    db.from('intake_forms').select('product_id').eq('tenant_id', tenantId).eq('is_active', true),
+  ]);
+  const planById = new Map((plans ?? []).map((p: any) => [p.id, p]));
+  const formFor = new Set((forms ?? []).map((f: any) => f.product_id ?? '*'));
+  /** One session's price: the per-session plan's, the product's own, or the total split. */
+  const sessionPrice = (p: any) => {
+    const plan: any = p.default_payment_plan_id ? planById.get(p.default_payment_plan_id) : null;
+    if (plan?.plan_type === 'per_session' && Number(plan.session_amount) > 0) return Number(plan.session_amount);
+    if (Number(p.payment_plan?.session_amount) > 0) return Number(p.payment_plan.session_amount);
+    return p.session_count ? Math.round((Number(p.price ?? 0) / p.session_count) * 100) / 100 : Number(p.price ?? 0);
+  };
   const weeklyMinutes = new Map<string, number>();
   for (const h of hours ?? []) {
     const [sh, sm] = String(h.start_time).split(':').map(Number);
@@ -92,10 +148,18 @@ export async function coachingChoices(tenantId: string) {
       id: p.id,
       title: p.title,
       price: Number(p.price ?? 0),
-      currency: p.currency ?? 'ILS',
+      currency: p.currency ?? 'USD',
       session_count: p.session_count ?? null,
       session_minutes: p.session_duration_minutes ?? 50,
       payment_plan_id: p.default_payment_plan_id ?? null,
+      // Parent or child coaching, as set on the product (none = shown for both).
+      kind: p.metadata?.coaching_kind === 'parent' || p.metadata?.coaching_kind === 'child' ? p.metadata.coaching_kind : null,
+      price_per_session: sessionPrice(p),
+      per_session: p.payment_model === 'per_session' || (planById.get(p.default_payment_plan_id) as any)?.plan_type === 'per_session',
+      requires_signature: !!p.requires_signature,
+      has_intake: formFor.has(p.id) || formFor.has('*'),
+      // CRM tags the client's contact gets when the enrollment is completed.
+      crm_tag_slugs: Array.isArray(p.crm_tag_slugs) ? p.crm_tag_slugs : [],
     })),
     coaches: (coaches ?? []).map((c: any) => ({
       id: c.id,
@@ -259,7 +323,15 @@ export async function markSession(tenantId: string, sessionId: string, outcome: 
   if (new Date(s.starts_at).getTime() > Date.now()) return fail(409, 'This session has not happened yet');
   if (!['booked', 'done', 'no_show'].includes(s.status)) return fail(409, 'A cancelled session cannot be marked');
   const { error } = await db.from('coaching_sessions').update({ status: outcome, updated_at: new Date().toISOString() }).eq('id', s.id);
-  return error ? fail(500, error.message) : { ok: true as const };
+  if (error) return fail(500, error.message);
+  // Pay as you go: a held session is charged to the saved card now. The
+  // session stays held even if the card fails; that charge then follows the
+  // usual retry and overdue handling.
+  if (outcome === 'done') {
+    const charge = await chargeHeldSession(tenantId, s.id);
+    return { ok: true as const, charge };
+  }
+  return { ok: true as const };
 }
 
 /** Staff cancel: no 24-hour rule; `counted` decides whether it uses up a session. */

@@ -28,10 +28,24 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/:path*',
+        // Every page except the signing return page (below).
+        source: '/((?!enroll/signing-return).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+        ],
+      },
+      {
+        // DocuSign shows signing in its own nested frames and, when done,
+        // loads this page inside one of them. Only this page may be framed by
+        // DocuSign too. (Browsers follow frame-ancestors over X-Frame-Options;
+        // the later rule overrides the one above for this path.)
+        source: '/enroll/signing-return',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self' https://*.docusign.com https://*.docusign.net",
+          },
         ],
       },
     ];

@@ -162,7 +162,7 @@ export function WhiteboardTopicBlock({ topic, t, isRtl, mode = 'view' }: Whitebo
         <p className="text-xs text-muted-foreground">
           {t(
             'lms.topics.collaboration_enabled_info',
-            'You can draw and collaborate with other students in real-time'
+            'You can draw and collaborate with other clients in real-time'
           )}
         </p>
       )}

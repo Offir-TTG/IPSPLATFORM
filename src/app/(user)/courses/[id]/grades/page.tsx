@@ -10,5 +10,5 @@ export default function CourseGradesRedirect({
 }: {
   params: { id: string };
 }) {
-  redirect(`/grades?course=${params.id}`);
+  redirect(`/courses/${params.id}?part=grades`);
 }

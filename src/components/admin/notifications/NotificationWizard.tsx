@@ -25,6 +25,7 @@ import type {
 import { CATEGORIES, CATEGORY_ICON, PRIORITIES, PRIORITY_TONE } from './notificationStyle';
 import { PortalPreview, StyleThumbnail } from './PortalPreview';
 import { TargetPicker } from './TargetPicker';
+import { QuickPills, SaveBar, saveBarText } from './kit';
 
 type T = (key: string, fallback?: string) => string;
 
@@ -41,7 +42,7 @@ const MESSAGE_MAX = 1000;
 const LIST_PATH = '/admin/notifications';
 
 const inputClass =
-  'h-10 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
+  'h-10 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20';
 
 /**
  * Sending a notification, step by step, like the Messages editor on the
@@ -388,7 +389,7 @@ export function NotificationWizard({
       onClick={onClick}
       aria-pressed={on}
       className={`flex w-full items-start gap-3 rounded-xl border-2 p-3.5 text-start transition-colors ${
-        on ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40' : 'border-border bg-card hover:border-blue-300'
+        on ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
       }`}
     >
       {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
@@ -411,7 +412,7 @@ export function NotificationWizard({
       {/* Steps */}
       <header className="mb-4 rounded-md border border-border bg-card px-4 py-2.5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+          <span className="text-sm font-medium text-primary">
             {t('admin.notifications.wizard.stepOf', 'Step {n} of {total}')
               .replace('{n}', String(index + 1))
               .replace('{total}', String(STEP_IDS.length))}
@@ -420,7 +421,7 @@ export function NotificationWizard({
         </div>
         <div className="mt-1.5 flex gap-[3px]" aria-hidden>
           {STEP_IDS.map((id, i) => (
-            <i key={id} className={`h-1.5 flex-1 rounded ${i <= index ? 'bg-blue-600' : 'bg-blue-100 dark:bg-blue-900/50'}`} />
+            <i key={id} className={`h-1.5 flex-1 rounded ${i <= index ? 'bg-primary' : 'bg-primary/15'}`} />
           ))}
         </div>
         <ol className="mt-2.5 flex gap-1.5 overflow-x-auto pb-0.5">
@@ -432,10 +433,10 @@ export function NotificationWizard({
                 aria-current={id === step ? 'step' : undefined}
                 className={`inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition-colors ${
                   id === step
-                    ? 'border-blue-600 bg-blue-600 text-white'
+                    ? 'border-primary bg-primary text-primary-foreground'
                     : i < index
-                      ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 hover:border-blue-400'
-                      : 'border-border text-muted-foreground hover:border-blue-300'
+                      ? 'border-primary/30 bg-primary/10 text-primary hover:border-primary/60'
+                      : 'border-border text-muted-foreground hover:border-primary/40'
                 }`}
               >
                 <span className="opacity-70">{i + 1}</span>
@@ -457,8 +458,8 @@ export function NotificationWizard({
             <div className="grid gap-3 sm:grid-cols-2">
               {(
                 [
-                  ['tenant', Building2, t('admin.notifications.tenant', 'All Users'), t('admin.notifications.wizard.whoTenant', 'All students and parents')],
-                  ['individual', Users, t('admin.notifications.individual', 'Students'), t('admin.notifications.wizard.whoIndividual', 'Pick people by name')],
+                  ['tenant', Building2, t('admin.notifications.tenant', 'All Users'), t('admin.notifications.wizard.whoTenant', 'All clients and parents')],
+                  ['individual', Users, t('admin.notifications.individual', 'Clients'), t('admin.notifications.wizard.whoIndividual', 'Pick people by name')],
                   ['course', BookOpen, t('admin.notifications.course', 'Courses'), t('admin.notifications.wizard.whoCourse', 'Everyone enrolled in them')],
                   ['program', GraduationCap, t('admin.notifications.program', 'Programs'), t('admin.notifications.wizard.whoProgram', 'Everyone enrolled in them')],
                 ] as const
@@ -472,7 +473,7 @@ export function NotificationWizard({
                     setSelectedCourseIds([]);
                     setSelectedProgramIds([]);
                   }}
-                  icon={<Icon className="h-5 w-5 text-blue-600" />}
+                  icon={<Icon className="h-5 w-5 text-primary" />}
                   title={label}
                   text={text}
                 />
@@ -482,7 +483,7 @@ export function NotificationWizard({
               <div className="mt-5">
                 <p className="mb-2 text-sm font-medium">
                   {scope === 'individual'
-                    ? t('admin.notifications.selectUsers', 'Select Students')
+                    ? t('admin.notifications.selectUsers', 'Select Clients')
                     : scope === 'course'
                       ? t('admin.notifications.selectCourses', 'Select Courses')
                       : t('admin.notifications.selectPrograms', 'Select Programs')}
@@ -493,7 +494,7 @@ export function NotificationWizard({
                   onChange={scope === 'individual' ? setSelectedUserIds : scope === 'course' ? setSelectedCourseIds : setSelectedProgramIds}
                   searchPlaceholder={
                     scope === 'individual'
-                      ? t('admin.notifications.searchUsers', 'Search students...')
+                      ? t('admin.notifications.searchUsers', 'Search clients...')
                       : scope === 'course'
                         ? t('admin.notifications.searchCourses', 'Search courses...')
                         : t('admin.notifications.searchPrograms', 'Search programs...')
@@ -535,25 +536,25 @@ export function NotificationWizard({
               ))}
             </div>
             <p className="mb-2 mt-6 text-sm font-medium">{t('admin.notifications.wizard.topic', 'What is it about?')}</p>
-            <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map((c) => {
-                const Icon = CATEGORY_ICON[c];
-                const on = category === c;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCategory(c)}
-                    aria-pressed={on}
-                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors ${
-                      on ? 'border-blue-600 bg-blue-600 text-white' : 'border-border bg-card hover:border-blue-300'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {categoryLabel(c)}
-                  </button>
-                );
-              })}
+            <div className="-mx-1 overflow-x-auto px-1 pb-1">
+              <QuickPills
+                joined
+                label={t('admin.notifications.wizard.topic', 'What is it about?')}
+                value={category}
+                onChange={setCategory}
+                options={CATEGORIES.map((c) => {
+                  const Icon = CATEGORY_ICON[c];
+                  return {
+                    value: c,
+                    label: (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon className="h-4 w-4" aria-hidden />
+                        {categoryLabel(c)}
+                      </span>
+                    ),
+                  };
+                })}
+              />
             </div>
           </section>
 
@@ -576,7 +577,7 @@ export function NotificationWizard({
                     onClick={() => setDisplayStyle(o.value)}
                     aria-pressed={on}
                     className={`rounded-xl border-2 p-2.5 text-start transition-colors ${
-                      on ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40' : 'border-border bg-card hover:border-blue-300'
+                      on ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
                     }`}
                   >
                     <StyleThumbnail style={o.value} />
@@ -643,7 +644,7 @@ export function NotificationWizard({
               aria-invalid={messageMissing}
               aria-describedby={messageMissing ? 'n-message-error' : undefined}
               placeholder={t('admin.notifications.messagePlaceholder', 'Notification message...')}
-              className={`mt-1 w-full rounded-md border bg-card p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 ${
+              className={`mt-1 w-full rounded-md border bg-card p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 ${
                 messageMissing ? 'border-red-500 dark:border-red-500' : 'border-border'
               }`}
             />
@@ -698,8 +699,8 @@ export function NotificationWizard({
               text={t('admin.notifications.wizard.deliveryText', 'It always shows in the portal. Email and SMS are extra.')}
             />
             <div className="grid gap-3">
-              <div className="flex items-start gap-3 rounded-xl border-2 border-blue-600 bg-blue-50 dark:bg-blue-950/40 p-3.5 opacity-90">
-                <Bell className="mt-0.5 h-5 w-5 text-blue-600" />
+              <div className="flex items-start gap-3 rounded-xl border-2 border-primary bg-primary/10 p-3.5 opacity-90">
+                <Bell className="mt-0.5 h-5 w-5 text-primary" />
                 <span>
                   <span className="block font-semibold">{t('admin.notifications.channels.inApp', 'In-App')}</span>
                   <span className="block text-sm text-muted-foreground">{t('admin.notifications.wizard.alwaysOn', 'Always on')}</span>
@@ -709,31 +710,23 @@ export function NotificationWizard({
                 <Choice
                   on={emailEnabled}
                   onClick={() => setEmailEnabled((v) => !v)}
-                  icon={<Mail className="h-5 w-5 text-blue-600" />}
+                  icon={<Mail className="h-5 w-5 text-primary" />}
                   title={t('admin.notifications.channels.email', 'Email')}
                   text={t('admin.notifications.wizard.emailText', 'Also sends it by email')}
                 />
                 {emailEnabled && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 ps-3">
                     <span className="text-sm text-muted-foreground">{t('admin.notifications.wizard.emailLanguage', 'Email language')}</span>
-                    {(
-                      [
-                        ['he', 'עברית'],
-                        ['en', 'English'],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setEmailLanguage(value)}
-                        aria-pressed={emailLanguage === value}
-                        className={`min-h-8 rounded-full border px-3 text-sm ${
-                          emailLanguage === value ? 'border-blue-600 bg-blue-600 text-white' : 'border-border bg-card'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                    <QuickPills
+                      joined
+                      label={t('admin.notifications.wizard.emailLanguage', 'Email language')}
+                      value={emailLanguage}
+                      onChange={setEmailLanguage}
+                      options={[
+                        { value: 'he', label: 'עברית' },
+                        { value: 'en', label: 'English' },
+                      ]}
+                    />
                   </div>
                 )}
               </div>
@@ -794,7 +787,7 @@ export function NotificationWizard({
                   <span className="text-muted-foreground">{label}</span>
                   <span className="flex min-w-0 items-center gap-3">
                     <bdi className="[overflow-wrap:anywhere]">{value}</bdi>
-                    <button type="button" onClick={() => goTo(id)} className="shrink-0 font-medium text-blue-700 dark:text-blue-300 hover:underline">
+                    <button type="button" onClick={() => goTo(id)} className="shrink-0 font-medium text-primary hover:underline">
                       {t('admin.notifications.wizard.change', 'Change')}
                     </button>
                   </span>
@@ -807,7 +800,7 @@ export function NotificationWizard({
           {/* Back / Continue */}
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             {index > 0 ? (
-              <button type="button" onClick={() => goTo(STEP_IDS[index - 1])} className="min-h-10 px-2 text-sm font-medium text-blue-700 dark:text-blue-300 hover:underline">
+              <button type="button" onClick={() => goTo(STEP_IDS[index - 1])} className="min-h-10 px-2 text-sm font-medium text-primary hover:underline">
                 {t('admin.notifications.wizard.back', 'Back')}
               </button>
             ) : (
@@ -817,7 +810,7 @@ export function NotificationWizard({
               <button
                 type="button"
                 onClick={() => goTo(STEP_IDS[index + 1])}
-                className="min-h-10 rounded-md bg-blue-600 px-5 text-sm font-medium text-white hover:bg-blue-700"
+                className="min-h-10 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
               >
                 {t('admin.notifications.wizard.continueTo', 'Continue to {step}').replace('{step}', STEP_LABEL[STEP_IDS[index + 1]])}
               </button>
@@ -846,24 +839,20 @@ export function NotificationWizard({
         </aside>
       </div>
 
-      {/* Send bar, like the save bar on IParentingSchool */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-full bg-slate-900 dark:bg-slate-800 py-2 pe-2 ps-5 text-sm text-white shadow-xl">
-          <span>{sending ? t('admin.notifications.sending', 'Sending...') : t('admin.notifications.wizard.notSent', 'Not sent yet')}</span>
-          <Link href={LIST_PATH} className="rounded-full px-4 py-2 font-medium hover:bg-card/10">
-            {t('common.cancel', 'Cancel')}
-          </Link>
-          <button
-            type="button"
-            onClick={() => void send()}
-            disabled={sending}
-            className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            {t('admin.notifications.send', 'Send Notification')}
-          </button>
-        </div>
-      </div>
+      {/* The one save bar (here it sends) */}
+      <SaveBar
+        isNew
+        dirty={false}
+        saving={sending}
+        onSave={() => void send()}
+        cancelHref={LIST_PATH}
+        saveLabel={t('admin.notifications.send', 'Send Notification')}
+        text={{
+          ...saveBarText(t).bar,
+          newItem: t('admin.notifications.wizard.notSent', 'Not sent yet'),
+          saving: t('admin.notifications.sending', 'Sending...'),
+        }}
+      />
 
       <AlertDialog open={confirmEmpty} onOpenChange={setConfirmEmpty}>
         <AlertDialogContent dir={direction}>

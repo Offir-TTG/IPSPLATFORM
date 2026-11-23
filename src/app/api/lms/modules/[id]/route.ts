@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { createReplacementModule, currentTenantId, placeReplacementModule, loadModule, moduleLessons, moveLessons } from '@/lib/lms/moduleDelete.server';
 import { requireStaff } from '@/lib/auth/requireStaff';
 import { moduleService } from '@/lib/lms/moduleService.server';
 
@@ -160,7 +161,49 @@ export async function DELETE(
       );
     }
 
-    console.log('[DELETE /api/lms/modules/[id]] User authenticated:', user.id);
+    // A module with lessons needs a choice: move them to another module of
+    // the course, or delete them one by one (which also cancels their Zoom /
+    // Daily meetings). Without one, nothing is deleted.
+    const body = (await request.json().catch(() => ({}))) as { lessons?: 'move' | 'delete'; target_module_id?: string; new_module_title?: string };
+    const tenantId = await currentTenantId();
+    if (!tenantId) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const db = createAdminClient();
+    const mod = await loadModule(db, id, tenantId);
+    if (!mod) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    const lessons = await moduleLessons(db, id);
+    let lessonNote = '';
+    let replacementId: string | null = null;
+    if (lessons.length > 0) {
+      if (body.lessons === 'move') {
+        const newTitle = (body.new_module_title || '').trim();
+        let target: { id: string; course_id: string } | null = null;
+        if (newTitle) {
+          if (newTitle.length > 200) return NextResponse.json({ success: false, error: 'title_too_long' }, { status: 400 });
+          target = { ...(await createReplacementModule(db, mod, newTitle)), course_id: mod.course_id };
+          replacementId = target.id;
+        } else if (body.target_module_id) {
+          target = await loadModule(db, body.target_module_id, tenantId);
+        }
+        if (!target || target.id === id || target.course_id !== mod.course_id) {
+          return NextResponse.json({ success: false, error: 'target_invalid' }, { status: 400 });
+        }
+        await moveLessons(db, lessons, target.id);
+        lessonNote = ` (${lessons.length} lessons moved to ${target.id})`;
+      } else if (body.lessons === 'delete') {
+        const { lessonService } = await import('@/lib/lms/lessonService.server');
+        let deleted = 0;
+        for (const l of lessons) {
+          const r = await lessonService.deleteLesson(l.id);
+          if (!r.success) {
+            return NextResponse.json({ success: false, error: 'lesson_delete_failed', deleted, total: lessons.length }, { status: 500 });
+          }
+          deleted += 1;
+        }
+        lessonNote = ` (${deleted} lessons deleted)`;
+      } else {
+        return NextResponse.json({ success: false, error: 'has_lessons', lesson_count: lessons.length }, { status: 409 });
+      }
+    }
 
     // Delete module
     const result = await moduleService.deleteModule(id);
@@ -173,6 +216,8 @@ export async function DELETE(
       );
     }
 
+    if (replacementId) await placeReplacementModule(db, replacementId, mod.order);
+
     // Log audit event
     await supabase.from('audit_events').insert({
       user_id: user.id,
@@ -181,7 +226,7 @@ export async function DELETE(
       resource_type: 'modules',
       resource_id: id,
       action: 'Deleted module',
-      description: `Deleted module ${id}`,
+      description: `Deleted module ${id}${lessonNote}`,
       risk_level: 'medium',
     });
 

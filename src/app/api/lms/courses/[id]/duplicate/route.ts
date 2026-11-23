@@ -15,8 +15,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Students can't change course content.
-    const denied = await requireStaff();
+    // Managing courses is for admins only.
+    const denied = await requireStaff(['admin', 'super_admin']);
     if (denied) return denied;
 
     const supabase = await createClient();

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { upcomingForBuyers } from '@/lib/payments/subscriptionPrice';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
         price,
         currency,
         payment_plan,
+        default_payment_plan_id,
         requires_signature,
         program_id,
         course_id,
@@ -225,6 +227,10 @@ export async function GET(request: NextRequest) {
         };
       })
     );
+
+    // A scheduled membership price, so buyers see "from {date}: {price}" before paying.
+    const upcoming = await upcomingForBuyers(supabase, (products || []) as any[]);
+    for (const p of enrichedProducts as any[]) p.upcoming_price = upcoming.get(p.id) ?? null;
 
     // If fetching single product, return just the product
     if (id) {
