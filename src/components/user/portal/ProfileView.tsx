@@ -80,6 +80,13 @@ export function ProfileView({ data, kids, initialTab }: { data: ProfileData; kid
   const [tab, setTab] = useState<Tab>(initialTab);
   const initial = (data.firstName || data.email || '?').charAt(0).toUpperCase();
 
+  const [signingOut, setSigningOut] = useState(false);
+  const signOut = async () => {
+    setSigningOut(true);
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    router.replace('/login');
+  };
+
   // Photo
   const fileRef = useRef<HTMLInputElement>(null);
   const [avatar, setAvatar] = useState(data.avatarUrl);
@@ -158,6 +165,14 @@ export function ProfileView({ data, kids, initialTab }: { data: ProfileData; kid
         <Link href="/billing" className="block text-center p-2.5 rounded-xl bg-[#f1ebf8] font-semibold text-sm no-underline text-[#5b3a8e]">
           תשלומים ומנויים ←
         </Link>
+        <button
+          type="button"
+          onClick={signOut}
+          disabled={signingOut}
+          className="block w-full text-center border-0 bg-transparent p-2 rounded-xl font-semibold text-sm text-[#73698a] hover:bg-[#faf8fd] hover:text-[#5b3a8e] disabled:opacity-60"
+        >
+          {signingOut ? 'יוצאים…' : 'יציאה מהחשבון'}
+        </button>
       </aside>
 
       <section className="bg-white rounded-[22px] p-4 lg:p-6 shadow-[0_1px_0_#e9e3f1] flex flex-col gap-4 lg:min-h-[600px]">
@@ -504,10 +519,6 @@ function Security({ sessions }: { sessions: ProfileData['sessions'] }) {
           ))}
         </div>
       )}
-
-      <button type="button" onClick={signOut} className="self-start border-0 bg-transparent text-[#5b3a8e] font-semibold text-sm py-1.5 px-0">
-        יציאה מהחשבון
-      </button>
 
       <div className="mt-4 pt-4 border-t border-[#efe9f6] flex flex-col gap-2">
         {!confirmDeactivate ? (

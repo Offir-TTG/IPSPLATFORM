@@ -18,7 +18,58 @@ const chip = {
 };
 
 type Card = { id: string; brand?: string; last4?: string; expMonth?: number; expYear?: number; isDefault: boolean };
-type Invoice = { id: string; hosted_invoice_url?: string | null; invoice_pdf?: string | null };
+/** One Stripe invoice, as /api/user/invoices returns it. */
+type Invoice = {
+  id: string;
+  number: string;
+  status: string;
+  amount_due: number;
+  amount_paid: number;
+  refund_amount: number;
+  currency: string;
+  created: number;
+  paid_at: number | null;
+  hosted_invoice_url?: string | null;
+  invoice_pdf?: string | null;
+  description: string;
+};
+
+const HISTORY_FIRST = 3;
+
+const money = (amount: number, currency: string) => {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+};
+
+const dayLabel = (ms: number) =>
+  new Intl.DateTimeFormat('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(ms)).replace(/\//g, '.');
+
+/** "Club - Payment #2" → "Club · תשלום 2". */
+const invoiceTitle = (d: string) => d.replace(/\s*-\s*Payment\s*#\s*(\d+)\s*$/i, ' · תשלום $1') || 'חשבונית';
+
+/** The status chip: words and colour. */
+function invoiceStatus(inv: Invoice): { text: string; tone: keyof typeof chip; payable: boolean } {
+  switch (inv.status) {
+    case 'paid':
+      return { text: 'שולם', tone: 'ok', payable: false };
+    case 'refunded':
+      return { text: 'הוחזר', tone: 'off', payable: false };
+    case 'partially_refunded':
+      return { text: `הוחזר חלקית · ${money(inv.refund_amount, inv.currency)}`, tone: 'off', payable: false };
+    case 'overdue':
+    case 'uncollectible':
+      return { text: 'באיחור', tone: 'warn', payable: true };
+    default:
+      return { text: 'ממתין לתשלום', tone: 'due', payable: true };
+  }
+}
+
+/** Cancelled, draft and $0 invoices aren't payments, so they stay out of the list. */
+const shownInvoice = (inv: Invoice) =>
+  inv.status !== 'void' && inv.status !== 'draft' && (inv.amount_paid > 0 || inv.amount_due > 0);
 
 export function BillingView({ data }: { data: BillingData }) {
   const router = useRouter();
@@ -27,7 +78,9 @@ export function BillingView({ data }: { data: BillingData }) {
   const [cardOpen, setCardOpen] = useState(false);
   const [openSub, setOpenSub] = useState<string | null>(null);
   const [openPlan, setOpenPlan] = useState<string | null>(null);
-  const [invoices, setInvoices] = useState<Map<string, Invoice>>(new Map());
+  // null while Stripe is being asked; 'error' when it couldn't be reached.
+  const [invoices, setInvoices] = useState<Invoice[] | null | 'error'>(null);
+  const [allInvoices, setAllInvoices] = useState(false);
   const [paying, setPaying] = useState<string | null>(null);
   const [payResult, setPayResult] = useState<Record<string, { ok: boolean; text: string }>>({});
 
@@ -42,11 +95,11 @@ export function BillingView({ data }: { data: BillingData }) {
 
   useEffect(() => {
     loadCard();
-    // Receipts come from Stripe; match them to payments by invoice id.
+    // The history is the client's Stripe invoices, newest first.
     fetch('/api/user/invoices')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => setInvoices(new Map(((j?.invoices as Invoice[]) ?? []).map((i) => [i.id, i]))))
-      .catch(() => {});
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => setInvoices(((j?.invoices as Invoice[]) ?? []).filter(shownInvoice)))
+      .catch(() => setInvoices('error'));
   }, []);
 
   const pay = async (d: BillingDue) => {
@@ -156,8 +209,8 @@ export function BillingView({ data }: { data: BillingData }) {
         </section>
       )}
 
-      {(data.due.length > 0 || data.history.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      {(data.due.length > 0 || data.history.length > 0 || (Array.isArray(invoices) && invoices.length > 0)) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start lg:items-stretch">
           <section className={`${panel} gap-2.5`}>
             <h2 className={`${h2} mb-1`}>תשלומים קרובים</h2>
             {data.due.length === 0 && <span className="text-[#73698a] text-sm p-2">אין תשלומים קרובים.</span>}
@@ -195,32 +248,78 @@ export function BillingView({ data }: { data: BillingData }) {
             })}
           </section>
 
-          <section className={`${panel} gap-1.5`}>
-            <h2 className={`${h2} mb-1.5`}>היסטוריה וקבלות</h2>
-            {data.history.length === 0 && <span className="text-[#73698a] text-sm p-2">עוד אין תשלומים.</span>}
-            {data.history.map((h) => {
-              const inv = h.invoiceId ? invoices.get(h.invoiceId) : undefined;
-              const url = inv?.hosted_invoice_url || inv?.invoice_pdf;
-              return (
-                <div key={h.key} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center py-2.5 px-1 border-b border-[#efe9f6] last:border-b-0">
-                  <span className="min-w-0">
-                    <b className="block text-sm font-semibold">{h.what}</b>
-                    <span className="text-[#73698a] text-[12.5px]">
-                      {h.date}
-                      {h.refunded && <span className="text-[#7a4f00]"> · הוחזרו {h.refunded}</span>}
-                    </span>
-                  </span>
-                  <span className="font-semibold">{h.sum}</span>
-                  {url ? (
-                    <a href={url} target="_blank" rel="noopener noreferrer" className="font-semibold text-[13px] no-underline text-[#5b3a8e] hover:text-[#3d2466]">
-                      קבלה
-                    </a>
-                  ) : (
-                    <span className="w-[30px]" />
-                  )}
+          <section className={`${panel} gap-1`}>
+            <div className="flex justify-between items-baseline gap-3 mb-1.5">
+              <h2 className={h2}>היסטוריה וקבלות</h2>
+              {Array.isArray(invoices) && invoices.length > 0 && (
+                <span className="text-[#73698a] text-[13px]">{invoices.length} חשבוניות</span>
+              )}
+            </div>
+
+            {invoices === null &&
+              [0, 1, 2].map((i) => (
+                <div key={i} className="flex flex-col gap-2 py-3 px-1 border-b border-[#efe9f6] last:border-b-0" aria-hidden>
+                  <span className="block h-3.5 w-1/2 rounded bg-[#f1ebf8] animate-pulse" />
+                  <span className="block h-3 w-1/3 rounded bg-[#f6f2fb] animate-pulse" />
                 </div>
-              );
-            })}
+              ))}
+
+            {invoices === 'error' && (
+              <span className="text-[#73698a] text-sm p-2">לא הצלחנו לטעון את החשבוניות כרגע. אפשר לנסות שוב מאוחר יותר.</span>
+            )}
+
+            {Array.isArray(invoices) && invoices.length === 0 && <span className="text-[#73698a] text-sm p-2">עוד אין חשבוניות.</span>}
+
+            {Array.isArray(invoices) &&
+              (allInvoices ? invoices : invoices.slice(0, HISTORY_FIRST)).map((inv) => {
+                const st = invoiceStatus(inv);
+                const sum = money(st.payable ? inv.amount_due : inv.amount_paid, inv.currency);
+                const link = 'no-underline text-[#5b3a8e] hover:text-[#3d2466]';
+                return (
+                  <div key={inv.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 py-3 px-1 border-b border-[#efe9f6] last:border-b-0">
+                    <span className="min-w-0 flex flex-col gap-0.5">
+                      <b className="text-[14.5px] font-semibold">{invoiceTitle(inv.description)}</b>
+                      <span className="text-[#73698a] text-[12.5px]">
+                        {dayLabel(inv.paid_at ?? inv.created)} · <span dir="ltr">{inv.number}</span>
+                      </span>
+                    </span>
+                    <span className="flex flex-col items-end gap-1">
+                      <b dir="ltr" className="font-rubik font-semibold text-[15px]">{sum}</b>
+                      <span className={`font-semibold text-xs px-2.5 py-1 rounded-full whitespace-nowrap ${chip[st.tone]}`}>{st.text}</span>
+                    </span>
+                    {(inv.hosted_invoice_url || inv.invoice_pdf) && (
+                      <span className="col-span-full flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] font-semibold">
+                        {st.payable && inv.hosted_invoice_url && (
+                          <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="no-underline bg-[#5b3a8e] hover:bg-[#4a2f75] text-white px-3 py-1.5 rounded-[9px]">
+                            לתשלום ↗
+                          </a>
+                        )}
+                        {inv.hosted_invoice_url && (
+                          <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className={link}>
+                            צפייה בחשבונית ↗
+                          </a>
+                        )}
+                        {inv.invoice_pdf && (
+                          <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer" className={link}>
+                            הורדת PDF ↓
+                          </a>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+
+            {Array.isArray(invoices) && invoices.length > HISTORY_FIRST && (
+              <button
+                type="button"
+                onClick={() => setAllInvoices((v) => !v)}
+                aria-expanded={allInvoices}
+                className="mt-2 self-center border border-[#e3dcef] bg-white hover:bg-[#faf8fd] font-semibold text-[13.5px] text-[#5b3a8e] px-[18px] py-[9px] rounded-[11px]"
+              >
+                {allInvoices ? 'הצגת פחות' : `הצגת עוד (${invoices.length - HISTORY_FIRST})`}
+              </button>
+            )}
           </section>
         </div>
       )}

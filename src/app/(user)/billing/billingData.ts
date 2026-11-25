@@ -168,6 +168,28 @@ export async function loadBillingData(userId: string): Promise<BillingData> {
       }
     }
   }
+  // A membership's next renewal is only written as a payment shortly before
+  // it's charged. Until then, show it from the membership itself.
+  const owedEnrollments = new Set(
+    (scheduleRows ?? []).filter((s: any) => OWED.has(s.status)).map((s: any) => s.enrollment_id as string),
+  );
+  for (const m of subs) {
+    if (!m.nextCharge || owedEnrollments.has(m.enrollmentId)) continue;
+    const when = new Date(m.nextCharge.at);
+    if (when.getTime() > now.getTime() + 45 * DAY) continue;
+    due.push({
+      scheduleId: `next-${m.enrollmentId}`,
+      what: `${m.title} · מנוי`,
+      when: `יחויב ב-${date(m.nextCharge.at)}`,
+      sum: money(m.nextCharge.amount, m.nextCharge.currency),
+      state: 'auto',
+      overdue: false,
+    });
+    if (when.getTime() <= now.getTime() + 30 * DAY) {
+      dueSum += m.nextCharge.amount;
+      dueCurrency = m.nextCharge.currency || dueCurrency;
+    }
+  }
   due.sort((a, b) => Number(b.overdue) - Number(a.overdue));
 
   // History: payments received, newest first.

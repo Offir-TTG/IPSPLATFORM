@@ -57,6 +57,8 @@ export type MembershipView = {
   canPause: boolean;
   canSwitch: boolean;
   switchTo: { planId: string; title: string; sub: string }[];
+  /** The next renewal of an active membership, for "upcoming payments" before its charge exists. */
+  nextCharge: { at: string; amount: number; currency: string } | null;
 };
 
 export async function loadMembershipView(userId: string, enrollmentId: string, title: string, color: string): Promise<MembershipView | null> {
@@ -119,5 +121,7 @@ export async function loadMembershipView(userId: string, enrollmentId: string, t
         title: `מעבר למנוי ${isYearly(p.interval) ? 'שנתי' : 'חודשי'}`,
         sub: `${money(p.amount, s.currency)} ${per(p.interval)}, מהחיוב הבא`,
       })),
+    nextCharge:
+      s.state === 'active' && s.next_charge_date ? { at: s.next_charge_date, amount: s.amount, currency: s.currency } : null,
   };
 }
