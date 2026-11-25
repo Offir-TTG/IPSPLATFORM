@@ -440,6 +440,17 @@ async function testResendConnection(credentials: Record<string, any>) {
       headers: { Authorization: `Bearer ${credentials.api_key}` },
     });
     if (response.status === 401 || response.status === 403) {
+      // A sending-only key (the recommended kind) may not read the domain
+      // list. Resend says so by name, which means the key itself is valid.
+      const err = (await response.json().catch(() => null)) as { name?: string } | null;
+      if (err?.name === 'restricted_api_key') {
+        return {
+          success: true,
+          message: credentials.from_email
+            ? `The API key works. It can only send, so the domain can't be checked from here. Send a test email to ${credentials.from_email.split('@')[1]} to confirm.`
+            : 'The API key works. It can only send. Add the sender email so emails can go out.',
+        };
+      }
       return { success: false, message: 'Resend refused the API key. Check that it was copied in full.' };
     }
     if (!response.ok) {
