@@ -193,6 +193,9 @@ export async function POST(
       html: renderedEmail.bodyHtml,
       text: renderedEmail.bodyText,
     });
+    // In Communications > Send log, as a system message.
+    const { logDirectEmail } = await import('@/lib/messaging/deliver');
+    await logDirectEmail({ tenantId: tenant.id, userId: targetUserData.id, toEmail: targetEmail, title: renderedEmail.subject, ok: !!emailResult.success, error: emailResult.error });
 
     if (!emailResult.success) {
       console.error('❌ Failed to send custom email:', emailResult.error);

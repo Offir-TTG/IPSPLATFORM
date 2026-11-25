@@ -103,6 +103,9 @@ const KNOWN_CRONS = [
   'create-payment-invoices',
   'retry-failed-payments',
   'check-overdue-payments',
+  'send-daily-summary',
+  'run-reminders',
+  'cleanup-guest-enrollments',
 ];
 
 export default function AdminCronMonitorPage() {

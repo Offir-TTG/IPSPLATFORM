@@ -41,10 +41,22 @@ const initials = (name: string) =>
 const personName = (u: UserOption) => `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.email;
 
 /**
- * Enrolls a person in a program straight away: finds the program's product
- * (or makes a free one, as before) and creates an active enrollment.
+ * What adding a person did:
+ *   active   a free program: enrolled straight away
+ *   waiting  a paid program: an enrollment waiting for the client (card,
+ *            payment), whose link the admin sends from the enrollment
+ *   already  they were already enrolled, or already had an open enrollment
  */
-export async function enrollInProgram(program: Pick<Program, 'id' | 'name' | 'price' | 'currency'>, userId: string) {
+export type ProgramEnrollResult = { outcome: 'active' | 'waiting' | 'already'; enrollmentId: string | null };
+
+/**
+ * Enrolls a person in a program: finds the program's product (or makes a
+ * free one, as before). A free product is active straight away. A paid one
+ * is a normal enrollment (draft) the client completes from its link, never
+ * active without a card (its charges would fail). The server applies the
+ * one rule, so a person is never enrolled twice.
+ */
+export async function enrollInProgram(program: Pick<Program, 'id' | 'name' | 'price' | 'currency'>, userId: string): Promise<ProgramEnrollResult> {
   const productsRes = await fetch('/api/admin/products?type=program');
   const productsData = await productsRes.json().catch(() => ({}));
   const products = productsData.success ? productsData.data : [];
@@ -66,15 +78,18 @@ export async function enrollInProgram(program: Pick<Program, 'id' | 'name' | 'pr
     if (!createRes.ok) throw new Error(created.error || 'Failed to create product for program');
     product = created.success ? created.data : created;
   }
+  const free = product.payment_model === 'free' || Number(product.price ?? NaN) === 0;
   const res = await fetch('/api/admin/enrollments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, product_id: product.id, status: 'active' }),
+    body: JSON.stringify({ user_id: userId, product_id: product.id, status: free ? 'active' : 'draft' }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to enroll student');
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 409 && (body.code === 'already_enrolled' || body.code === 'open_enrollment_exists')) {
+    return { outcome: 'already', enrollmentId: body.enrollment_id ?? null };
   }
+  if (!res.ok) throw new Error(body.error || 'Failed to enroll client');
+  return { outcome: free ? 'active' : 'waiting', enrollmentId: body.id ?? null };
 }
 
 function Avatar({ name }: { name: string }) {
@@ -178,8 +193,16 @@ export function ProgramStudentsTab({
     }
     setAdding(u.id);
     try {
-      await enrollInProgram(program, u.id);
-      toast({ title: t('lms.program_detail.toast_success', 'Success'), description: t('lms.program_detail.student_enrolled_success', 'Client enrolled successfully') });
+      const { outcome } = await enrollInProgram(program, u.id);
+      toast({
+        title: t('lms.program_detail.toast_success', 'Success'),
+        description:
+          outcome === 'waiting'
+            ? t('admin.programs.students.waitingForClient', 'This program is paid, so the client gets an enrollment to complete. Open it under "Enrolled" and send them the link.')
+            : outcome === 'already'
+              ? t('admin.programs.students.alreadyHas', 'This client already has an enrollment in this program. Open it under "Enrolled".')
+              : t('lms.program_detail.student_enrolled_success', 'Client enrolled successfully'),
+      });
       await reload();
     } catch (error) {
       toast({
@@ -214,9 +237,11 @@ export function ProgramStudentsTab({
     }
     setAddingMany(true);
     let failed = 0;
+    let waiting = 0;
     for (const u of pickedPeople) {
       try {
-        await enrollInProgram(program, u.id);
+        const { outcome } = await enrollInProgram(program, u.id);
+        if (outcome === 'waiting') waiting += 1;
       } catch {
         failed += 1;
       }
@@ -231,10 +256,15 @@ export function ProgramStudentsTab({
             description: t('admin.programs.multi.someFailed', '{n} of them were not enrolled. Try them again.').replace('{n}', String(failed)),
             variant: 'destructive',
           }
-        : {
-            title: t('lms.program_detail.toast_success', 'Success'),
-            description: t('admin.programs.multi.enrolled', '{n} people enrolled').replace('{n}', String(pickedPeople.length)),
-          },
+        : waiting > 0
+          ? {
+              title: t('lms.program_detail.toast_success', 'Success'),
+              description: t('admin.programs.multi.waiting', 'This program is paid, so {n} clients got an enrollment to complete. Open each one under "Enrolled" and send them the link.').replace('{n}', String(waiting)),
+            }
+          : {
+              title: t('lms.program_detail.toast_success', 'Success'),
+              description: t('admin.programs.multi.enrolled', '{n} people enrolled').replace('{n}', String(pickedPeople.length)),
+            },
     );
   };
 

@@ -74,7 +74,7 @@ Submitted at: ${timestamp}
     // Use tenant's support email if available, otherwise fall back to a default
     const contactEmail = tenant.support_email || process.env.DEFAULT_CONTACT_EMAIL || 'support@tenafly-tg.com';
 
-    await sendEmail({
+    const sent = await sendEmail({
       to: contactEmail,
       subject: `Contact Form: ${subject}`,
       html: emailHtml,
@@ -82,6 +82,9 @@ Submitted at: ${timestamp}
       replyTo: email,
       tenantId: tenant.id, // Use the tenant's Resend settings
     });
+    // In Communications > Send log, as a website contact.
+    const { logDirectEmail } = await import('@/lib/messaging/deliver');
+    await logDirectEmail({ tenantId: tenant.id, toEmail: contactEmail, title: `Contact Form: ${subject}`, ok: !!sent.success, error: sent.error, source: 'contact' });
 
     console.log(`✅ Contact form notification sent to ${contactEmail} for tenant: ${tenant.name}`);
 

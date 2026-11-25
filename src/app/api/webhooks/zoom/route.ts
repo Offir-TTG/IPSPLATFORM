@@ -490,6 +490,22 @@ async function handleRecordingCompleted(payload: any) {
         console.log(
           `[Zoom] Triggered recording.ready for ${enrollments.length} students (${triggeredOk} OK)`,
         );
+
+        // The automatic reminder "Recording is ready", when it's on (turning
+        // it on switches the old trigger above off, so nobody gets two).
+        const { fireEvent } = await import('@/lib/messaging/engine');
+        await fireEvent(
+          lesson.tenant_id,
+          'lesson.recording',
+          enrollments
+            .filter((e) => e.user_id)
+            .map((e) => ({
+              subjectType: 'lesson',
+              subjectId: fullLesson.id,
+              userId: e.user_id as string,
+              context: { lesson: fullLesson.title, course: (fullLesson.courses as any)?.title || '', courseId: fullLesson.course_id, lessonId: fullLesson.id },
+            })),
+        );
       }
     }
   } catch (triggerError) {

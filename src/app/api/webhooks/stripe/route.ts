@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
-import { refreshEnrollmentTotals } from '@/lib/payments/dueSchedules';
+import { refreshEnrollmentTotals, recordInvoicePaid, recordChargeFailed } from '@/lib/payments/dueSchedules';
 import { emitPersonBecameCustomer } from '@/lib/persons/outbox';
 import { listIntegrations } from '@/lib/integrations/store';
 
@@ -108,7 +108,8 @@ export async function POST(request: NextRequest) {
     // Handle different event types
     switch (event.type) {
       case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(supabase, event);
+        // Not used by the platform (checkout sessions belong to the marketing site).
+        console.log('[Webhook] checkout.session.completed is not used by the platform; ignored');
         break;
 
       case 'payment_intent.succeeded':
@@ -120,15 +121,10 @@ export async function POST(request: NextRequest) {
         break;
 
       case 'customer.subscription.created':
-        await handleSubscriptionCreated(supabase, event);
-        break;
-
       case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(supabase, event);
-        break;
-
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(supabase, event);
+        // Memberships renew through the platform's own schedules, not Stripe subscriptions.
+        console.log(`[Webhook] ${event.type} is not used by the platform; ignored`);
         break;
 
       case 'invoice.payment_succeeded':
@@ -173,12 +169,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Store the webhook event: an audit trail, and how a repeat is recognised.
-    await supabase.from('webhook_events').insert({
+    const { error: logError } = await supabase.from('webhook_events').insert({
       source: 'stripe',
       event_type: event.type,
       payload: event,
       processed_at: new Date().toISOString()
     });
+    if (logError && logError.code !== '23505') {
+      console.error('[Webhook] Event handled but not logged:', event.id, logError.message);
+    }
 
     // Return success response to Stripe
     return NextResponse.json({ received: true });
@@ -391,13 +390,8 @@ async function handlePaymentIntentSucceeded(supabase: any, event: Stripe.Event, 
     console.error('[Webhook] tenant_id:', tenant_id);
     console.error('[Webhook] enrollment_id:', enrollment_id);
     console.error('[Webhook] Full metadata:', metadata);
-    // Fall back to old behavior
-    await supabase
-      .from('payments')
-      .update({
-        status: 'completed'
-      })
-      .eq('stripe_payment_intent', paymentIntent.id);
+    // Not a pay-page payment of ours (an invoice's payment is recorded from
+    // its invoice event). Nothing to write here.
     return;
   }
 
@@ -703,43 +697,19 @@ async function handlePaymentIntentFailed(supabase: any, event: Stripe.Event) {
   } = metadata;
 
   if (!tenant_id || !enrollment_id) {
-    console.error('Missing required metadata in payment intent');
-    // Fall back to old behavior
-    await supabase
-      .from('payments')
-      .update({ status: 'failed' })
-      .eq('stripe_payment_intent_id', paymentIntent.id);
+    // Not a pay-page payment of ours (an invoice's payment is handled from its
+    // invoice event). Nothing to write here.
+    console.log('[Webhook] payment_intent.payment_failed without our metadata; ignored', paymentIntent.id);
     return;
   }
 
-  // Update payment schedule to failed with retry logic
+  // The schedule becomes failed with its next retry, unless it is already
+  // paid, refunded or cancelled (a late "failed" can never undo a payment).
   if (schedule_id) {
-    const { data: schedule } = await supabase
-      .from('payment_schedules')
-      .select('retry_count')
-      .eq('id', schedule_id)
-      .eq('tenant_id', tenant_id)
-      .single();
-
-    if (schedule) {
-      const retryCount = (schedule.retry_count || 0) + 1;
-      const maxRetries = 3;
-
-      // Calculate next retry date (exponential backoff: 1 day, 3 days, 7 days)
-      const retryDays = retryCount === 1 ? 1 : retryCount === 2 ? 3 : 7;
-      const nextRetryDate = new Date();
-      nextRetryDate.setDate(nextRetryDate.getDate() + retryDays);
-
-      await supabase
-        .from('payment_schedules')
-        .update({
-          status: 'failed',
-          retry_count: retryCount,
-          next_retry_date: retryCount < maxRetries ? nextRetryDate.toISOString() : null,
-          last_error: last_payment_error?.message || 'Payment failed',
-        })
-        .eq('id', schedule_id)
-        .eq('tenant_id', tenant_id);
+    const failed = await recordChargeFailed(supabase, schedule_id, tenant_id, last_payment_error?.message || 'Payment failed');
+    if (!failed) {
+      console.log('[Webhook] payment_intent.payment_failed: schedule already settled, nothing changed', schedule_id);
+      return;
     }
   }
 
@@ -881,87 +851,17 @@ async function handleInvoicePaymentSucceeded(supabase: any, event: Stripe.Event)
     return;
   }
 
-  // Get schedule details to update enrollment
-  const { data: schedule, error: scheduleReadError } = await supabase
-    .from('payment_schedules')
-    .select('amount, enrollment_id, payment_number, payment_type, payment_plan_id')
-    .eq('id', scheduleId)
-    .eq('tenant_id', tenantId)
-    .single();
-  if (scheduleReadError || !schedule) {
-    throw new Error(`Schedule ${scheduleId} not found: ${scheduleReadError?.message ?? 'missing'}`);
+  const recorded = await recordInvoicePaid(supabase, invoice, 'webhook');
+  if (!recorded.ok) {
+    // Thrown so Stripe sends the event again.
+    throw new Error(`Invoice ${invoice.id} not recorded: ${recorded.error}`);
   }
-  const resolvedEnrollmentId = enrollmentId || schedule.enrollment_id;
-
-  const { data: enrollment } = await supabase
-    .from('enrollments')
-    .select('product_id')
-    .eq('id', resolvedEnrollmentId)
-    .single();
-
-  // One payment row per invoice, however often Stripe repeats the event.
-  const { data: existingPayment } = await supabase
-    .from('payments')
-    .select('id')
-    .eq('stripe_invoice_id', invoice.id)
-    .maybeSingle();
-
-  let paymentId: string | undefined = existingPayment?.id;
-  if (!paymentId) {
-    // Use schedule amount (correct amount charged) instead of invoice.amount_paid (can be 0)
-    const { data: paymentRecord, error: paymentError } = await supabase
-      .from('payments')
-      .insert({
-        tenant_id: tenantId,
-        enrollment_id: resolvedEnrollmentId,
-        payment_schedule_id: scheduleId,
-        product_id: enrollment?.product_id ?? null,
-        payment_plan_id: schedule.payment_plan_id,
-        amount: parseFloat(schedule.amount.toString()),
-        currency: invoice.currency.toUpperCase(),
-        payment_type: schedule.payment_type,
-        installment_number: schedule.payment_number,
-        stripe_payment_intent_id: invoice.payment_intent as string,
-        stripe_invoice_id: invoice.id,
-        stripe_customer_id: invoice.customer as string,
-        status: 'paid',
-        paid_at: new Date().toISOString(),
-        metadata: {
-          payment_number: schedule.payment_number,
-          payment_type: schedule.payment_type,
-          schedule_id: scheduleId,
-        },
-      })
-      .select('id')
-      .single();
-    if (paymentError || !paymentRecord) {
-      throw new Error(`Payment for invoice ${invoice.id} not saved: ${paymentError?.message}`);
-    }
-    paymentId = paymentRecord.id;
+  if (recorded.skipped) {
+    console.log('[Webhook] invoice.payment_succeeded skipped:', recorded.skipped);
+    return;
   }
-
-  // Update schedule to paid
-  const { error: scheduleUpdateError } = await supabase
-    .from('payment_schedules')
-    .update({
-      status: 'paid',
-      paid_date: new Date().toISOString(),
-      stripe_invoice_id: invoice.id,
-      payment_id: paymentId,
-      retry_count: 0,
-      next_retry_date: null,
-      last_error: null,
-    })
-    .eq('id', scheduleId)
-    .eq('tenant_id', tenantId);
-  if (scheduleUpdateError) {
-    throw new Error(`Schedule ${scheduleId} not marked paid: ${scheduleUpdateError.message}`);
-  }
-
-  const totals = await refreshEnrollmentTotals(supabase, resolvedEnrollmentId);
-  if (!totals.ok) {
-    throw new Error(`Enrollment ${resolvedEnrollmentId} totals not updated: ${totals.error}`);
-  }
+  const { data: scheduleRow } = await supabase.from('payment_schedules').select('enrollment_id').eq('id', scheduleId).maybeSingle();
+  const resolvedEnrollmentId = enrollmentId || scheduleRow?.enrollment_id;
 
   if (resolvedEnrollmentId) {
     // Trigger payment.completed event
@@ -978,7 +878,7 @@ async function handleInvoicePaymentSucceeded(supabase: any, event: Stripe.Event)
             type
           )
         `)
-        .eq('id', enrollmentId)
+        .eq('id', resolvedEnrollmentId)
         .single();
 
       if (fullEnrollment) {
@@ -994,7 +894,7 @@ async function handleInvoicePaymentSucceeded(supabase: any, event: Stripe.Event)
             tenantId: tenantId,
             eventData: {
               paymentId: invoice.payment_intent as string,
-              enrollmentId: enrollmentId,
+              enrollmentId: resolvedEnrollmentId,
               userId: fullEnrollment.user_id,
               productId: fullEnrollment.product_id,
               productName: fullEnrollment.products?.title || '',
@@ -1039,33 +939,16 @@ async function handleInvoiceFinalized(supabase: any, event: Stripe.Event) {
   }
 }
 
-// Handle invoice paid
+// Handle invoice paid: one of our scheduled charges is recorded (safe if
+// invoice.payment_succeeded already did); a receipt invoice is skipped.
 async function handleInvoicePaid(supabase: any, event: Stripe.Event) {
   const invoice = event.data.object as Stripe.Invoice;
-
-  console.log('Invoice paid:', invoice.id);
-
-  // You can create a payment record for this invoice
   if (invoice.subscription) {
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('student_id, enrollment_id')
-      .eq('stripe_subscription_id', invoice.subscription)
-      .single();
-
-    if (subscription) {
-      await supabase.from('payments').insert({
-        student_id: subscription.student_id,
-        enrollment_id: subscription.enrollment_id,
-        amount: invoice.amount_paid / 100,
-        currency: invoice.currency,
-        status: 'completed',
-        stripe_invoice_id: invoice.id,
-        stripe_payment_intent: invoice.payment_intent as string,
-        created_at: new Date().toISOString()
-      });
-    }
+    console.log('[Webhook] invoice.paid for a Stripe subscription; not used by the platform');
+    return;
   }
+  const recorded = await recordInvoicePaid(supabase, invoice, 'webhook:invoice.paid');
+  if (!recorded.ok) throw new Error(`Invoice ${invoice.id} not recorded: ${recorded.error}`);
 }
 
 // Handle invoice payment failed
@@ -1121,14 +1004,6 @@ async function handleInvoicePaymentFailed(supabase: any, event: Stripe.Event, st
     return;
   }
 
-  // Get current retry count
-  const { data: schedule } = await supabase
-    .from('payment_schedules')
-    .select('retry_count')
-    .eq('id', scheduleId)
-    .single();
-
-  const retryCount = (schedule?.retry_count || 0) + 1;
 
   // The card's actual decline reason, for the client email and the admin.
   let failureReason = invoice.last_finalization_error?.message || 'Payment failed';
@@ -1141,30 +1016,15 @@ async function handleInvoicePaymentFailed(supabase: any, event: Stripe.Event, st
     }
   }
 
-  // Calculate next retry date (exponential backoff: 1, 3, 7 days)
-  let nextRetryDate: Date | null = null;
-  if (retryCount === 1) {
-    nextRetryDate = new Date();
-    nextRetryDate.setDate(nextRetryDate.getDate() + 1); // +1 day
-  } else if (retryCount === 2) {
-    nextRetryDate = new Date();
-    nextRetryDate.setDate(nextRetryDate.getDate() + 3); // +3 days
-  } else if (retryCount === 3) {
-    nextRetryDate = new Date();
-    nextRetryDate.setDate(nextRetryDate.getDate() + 7); // +7 days
+  // Failed with the next retry, only if this failure wasn't recorded yet
+  // (the charge itself records it) and the schedule isn't already paid.
+  const failed = await recordChargeFailed(supabase, scheduleId, tenantId, failureReason, ['processing']);
+  if (!failed) {
+    console.log('[Webhook] invoice.payment_failed: already recorded or settled, nothing changed', scheduleId);
+    return;
   }
-  // After 3 retries, nextRetryDate stays null (no more auto-retries)
-
-  await supabase
-    .from('payment_schedules')
-    .update({
-      status: 'failed',
-      retry_count: retryCount,
-      next_retry_date: nextRetryDate?.toISOString() || null,
-      last_error: failureReason,
-    })
-    .eq('id', scheduleId)
-    .eq('tenant_id', tenantId);
+  const retryCount = failed.retryCount;
+  const nextRetryDate = failed.nextRetryDate ? new Date(failed.nextRetryDate) : null;
 
   console.log(`[Webhook] ✓ Updated schedule ${scheduleId}: retry_count=${retryCount}, next_retry=${nextRetryDate?.toISOString() || 'none'}`);
 
@@ -1346,7 +1206,8 @@ async function handleDisputeCreated(supabase: any, event: Stripe.Event) {
       : { data: null };
 
     if (!paymentByIntent) {
-      console.log('[Webhook] No payment found for payment intent:', intentId);
+      // Logged as an error so it is seen (no payment of ours matches this charge).
+      console.error('[Webhook] DISPUTE WITHOUT A MATCHING PAYMENT:', { dispute: dispute.id, charge: chargeId, payment_intent: intentId, amount: dispute.amount / 100, currency: dispute.currency });
       return;
     }
 
@@ -1405,8 +1266,8 @@ async function handleDisputeCreated(supabase: any, event: Stripe.Event) {
       },
     });
 
-  if (disputeError) {
-    console.error('[Webhook] Error creating dispute record:', disputeError);
+  if (disputeError && disputeError.code !== '23505') {
+    throw new Error(`Dispute ${dispute.id} not saved: ${disputeError.message}`);
   } else {
     console.log(`[Webhook] ✓ Created dispute record for ${dispute.id}`);
   }
@@ -1475,7 +1336,7 @@ async function handleDisputeUpdated(supabase: any, event: Stripe.Event) {
     .eq('stripe_dispute_id', dispute.id);
 
   if (updateError) {
-    console.error('[Webhook] Error updating dispute:', updateError);
+    throw new Error(`Dispute ${dispute.id} not updated: ${updateError.message}`);
   } else {
     console.log(`[Webhook] ✓ Updated dispute ${dispute.id} to status: ${disputeStatus}`);
   }
@@ -1510,7 +1371,7 @@ async function handleDisputeClosed(supabase: any, event: Stripe.Event) {
     .eq('stripe_dispute_id', dispute.id);
 
   if (updateError) {
-    console.error('[Webhook] Error updating dispute to closed:', updateError);
+    throw new Error(`Dispute ${dispute.id} not closed: ${updateError.message}`);
   } else {
     console.log(`[Webhook] ✓ Dispute ${dispute.id} closed with status: ${finalStatus}`);
   }

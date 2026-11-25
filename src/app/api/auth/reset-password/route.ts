@@ -192,6 +192,10 @@ export async function POST(request: NextRequest) {
       tenantId: tenant.id,
     });
 
+    // In Communications > Send log, as a system message.
+    const { logDirectEmail } = await import('@/lib/messaging/deliver');
+    await logDirectEmail({ tenantId: tenant.id, userId: users.id, toEmail: email, title: renderedEmail.subject, ok: !!emailResult.success, error: emailResult.error });
+
     console.log('📬 Email send result:', emailResult);
 
     if (!emailResult.success) {

@@ -65,6 +65,10 @@ export async function POST(
         testResult = await testSmtpConnection(credentials);
         break;
 
+      case 'keap':
+        testResult = await testKeapConnection(credentials);
+        break;
+
       default:
         return NextResponse.json(
           { error: 'Unsupported integration type' },
@@ -459,5 +463,22 @@ async function testResendConnection(credentials: Record<string, any>) {
       success: false,
       message: error instanceof Error ? error.message : 'Could not reach Resend',
     };
+  }
+}
+
+// Keap: a read of the account profile with the Service Account Key.
+async function testKeapConnection(credentials: Record<string, any>) {
+  if (!credentials.api_key) return { success: false, message: 'Missing required fields: api_key' };
+  try {
+    const res = await fetch('https://api.infusionsoft.com/crm/rest/v1/account/profile', {
+      headers: { 'X-Keap-API-Key': credentials.api_key, Accept: 'application/json' },
+    });
+    if (res.status === 401 || res.status === 403) return { success: false, message: 'Keap refused the key. Check it, or create a new Service Account Key.' };
+    if (!res.ok) return { success: false, message: `Keap answered ${res.status}` };
+    const profile = await res.json().catch(() => ({}));
+    const name = profile?.name || profile?.business_name || '';
+    return { success: true, message: name ? `Connected to Keap account "${name}"` : 'Connected to Keap' };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : 'Could not reach Keap' };
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { loadStripe } from '@stripe/stripe-js';
+import { payScheduleNow } from './payNow';
 import { PaymentMethodsManager } from '@/components/user/PaymentMethodsManager';
 import { MembershipControls } from './MembershipControls';
 import { useUserLanguage } from '@/context/AppContext';
@@ -53,23 +53,10 @@ export function BillingView({ data }: { data: BillingData }) {
     setPaying(d.scheduleId);
     const done = (ok: boolean, text: string) => setPayResult((r) => ({ ...r, [d.scheduleId]: { ok, text } }));
     try {
-      const res = await fetch(`/api/user/payment-schedules/${d.scheduleId}/pay`, { method: 'POST' });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) return done(false, json.error === 'The card was declined' ? 'הכרטיס סורב. אפשר להחליף כרטיס ולנסות שוב.' : 'התשלום לא בוצע. נסו שוב או פנו אלינו.');
-      if (json.status === 'requires_action' && json.client_secret) {
-        // The bank asks for confirmation (3-D Secure).
-        const cfg = await fetch('/api/user/payment-methods/stripe-config').then((r) => r.json());
-        const stripe = cfg?.publishableKey ? await loadStripe(cfg.publishableKey) : null;
-        if (!stripe) return done(false, 'לא הצלחנו לפתוח את אישור הבנק. נסו שוב.');
-        const { error } = await stripe.confirmCardPayment(json.client_secret);
-        if (error) return done(false, 'הבנק לא אישר את התשלום.');
-        done(true, 'התשלום התקבל, מאשרים מול הבנק…');
-      } else {
-        done(true, json.status === 'paid' ? 'שולם, תודה' : 'התשלום התקבל, מאשרים מול הבנק…');
-      }
-      setTimeout(() => router.refresh(), 2500);
-    } catch {
-      done(false, 'התשלום לא בוצע. נסו שוב.');
+      // The bank may ask for confirmation (3-D Secure); payScheduleNow handles it.
+      const r = await payScheduleNow(d.scheduleId);
+      done(r.ok, r.text);
+      if (r.ok) setTimeout(() => router.refresh(), 2500);
     } finally {
       setPaying(null);
     }

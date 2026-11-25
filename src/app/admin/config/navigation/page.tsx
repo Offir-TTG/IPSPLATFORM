@@ -21,24 +21,18 @@ import {
 import {
   DndContext,
   DragOverlay,
-  KeyboardSensor,
   PointerSensor,
   pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
-  DragEndEvent,
-  DragStartEvent,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 interface NavItem {
   id: string;
@@ -138,58 +132,121 @@ function removeFromTree(
 }
 
 // ============================================================================
-// Drop targets — drop-on-row to nest, gap-between-rows to reorder.
+// Drag and drop. Every row and every section card is a drop target, and
+// where the pointer is on it decides the drop:
+//   • item row, top part    → above that item
+//   • item row, bottom part → below that item
+//   • item row, middle      → becomes its sub-item (top-level rows only;
+//                             the menu has two levels at most)
+//   • section card (a dragged section) → above / below by its middle
+//   • section card or empty section (a dragged item) → into that section
+// A line shows where it will land, or an outline for "inside".
 //
-// Drop-target ID grammar (parsed by handleTreeDragEnd):
-//   nest-{itemId}           — drop on a top-level item row → become its child
-//   gap-section-{secId}-{i} — drop in gap among section's items at index i
-//   gap-subs-{itemId}-{i}   — drop in gap among sub-items at index i
-//   section-empty-{secId}   — drop on empty section body
-//   gap-root-{i}            — drop in gap among sections at index i
+// Drop-target ids: row-{itemId}, sec-{sectionId}, section-empty-{sectionId}.
 // ============================================================================
 
-function NestZone({ id, children, disabled }: {
-  id: string;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id, disabled });
-  return (
-    <div
-      ref={setNodeRef}
-      className={[
-        'rounded-lg transition-colors',
-        isOver ? 'ring-2 ring-primary bg-primary/5' : '',
-      ].join(' ')}
-    >
-      {children}
-    </div>
-  );
+type DropPos = 'before' | 'after' | 'inside';
+/** Where the dragged thing will land: next to / inside this item or section. */
+type DropHint = { targetId: string; pos: DropPos } | null;
+
+const ROW_PREFIX = 'row-';
+const SEC_PREFIX = 'sec-';
+const EMPTY_PREFIX = 'section-empty-';
+
+/** Renumbers every level after a move. */
+function renumber(sections: NavSection[]): NavSection[] {
+  return reorderArray(sections).map((s) => ({
+    ...s,
+    items: reorderArray(s.items).map((i) => ({ ...i, children: reorderArray(i.children ?? []) })),
+  }));
 }
 
-function GapZone({ id, isDragActive }: { id: string; isDragActive: boolean }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
-  // Stay invisible when nothing's being dragged so the layout reads
-  // cleanly; expand to a real, hittable hover band as soon as a drag
-  // starts. When the cursor is actually over the gap, fill it solid.
+/** The tree after dropping `sourceId` at `hint`, or null when nothing changes. */
+function applyDrop(sections: NavSection[], sourceId: string, hint: { targetId: string; pos: DropPos }): NavSection[] | null {
+  if (hint.targetId === sourceId) return null;
+  const sourceLoc = findInTree(sections, sourceId);
+  if (!sourceLoc) return null;
+  const { sections: next, removed } = removeFromTree(sections, sourceId);
+  if (!removed) return null;
+
+  if (sourceLoc.type === 'section') {
+    const at = next.findIndex((s) => s.id === hint.targetId);
+    if (at < 0) return null;
+    next.splice(hint.pos === 'after' ? at + 1 : at, 0, removed as NavSection);
+    return renumber(next);
+  }
+
+  const moved: NavItem = { ...(removed as NavItem), children: [...((removed as NavItem).children ?? [])] };
+  const targetLoc = findInTree(next, hint.targetId);
+  if (!targetLoc) return null;
+
+  // A sub-item can't have sub-items of its own. When an item that has
+  // some becomes a sub-item, they stay where it was.
+  const becomesSub = targetLoc.type === 'sub' || (targetLoc.type === 'item' && hint.pos === 'inside');
+  const leftBehind = becomesSub ? moved.children ?? [] : [];
+  if (becomesSub) moved.children = [];
+
+  if (targetLoc.type === 'section') {
+    next[targetLoc.sectionIdx].items.push(moved);
+  } else if (targetLoc.type === 'item') {
+    const items = next[targetLoc.sectionIdx].items;
+    if (hint.pos === 'inside') {
+      const parent = items[targetLoc.itemIdx];
+      parent.children = [...(parent.children ?? []), moved];
+    } else {
+      items.splice(hint.pos === 'after' ? targetLoc.itemIdx + 1 : targetLoc.itemIdx, 0, moved);
+    }
+  } else {
+    const parent = next[targetLoc.sectionIdx].items[targetLoc.itemIdx];
+    const kids = [...(parent.children ?? [])];
+    kids.splice(hint.pos === 'after' ? targetLoc.subIdx + 1 : targetLoc.subIdx, 0, moved);
+    parent.children = kids;
+  }
+
+  if (leftBehind.length && sourceLoc.type === 'item') {
+    const home = next[sourceLoc.sectionIdx].items;
+    home.splice(Math.min(sourceLoc.itemIdx, home.length), 0, ...leftBehind);
+  }
+  return renumber(next);
+}
+
+/** The line above or below a target while something is dragged over it. */
+function DropLine({ pos }: { pos: DropPos | null | undefined }) {
+  if (pos !== 'before' && pos !== 'after') return null;
   return (
-    <div
-      ref={setNodeRef}
-      className={[
-        'transition-all rounded-full',
-        !isDragActive
-          ? 'h-0 my-0'
-          : isOver
-            ? 'h-3 my-1.5 bg-primary'
-            : 'h-2 my-1 bg-primary/15 border border-dashed border-primary/40',
-      ].join(' ')}
+    <span
       aria-hidden="true"
+      className={[
+        'pointer-events-none absolute inset-x-0 z-10 h-1 rounded-full bg-primary',
+        pos === 'before' ? '-top-0.5' : '-bottom-0.5',
+      ].join(' ')}
     />
   );
 }
 
+/** The drag handle: a big enough target for a mouse or a finger. */
+function DragHandle({ attributes, listeners, label, large }: {
+  attributes: React.HTMLAttributes<HTMLElement>;
+  listeners: Record<string, unknown> | undefined;
+  label: string;
+  large?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="-m-1 grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground cursor-grab touch-none hover:bg-muted hover:text-foreground active:cursor-grabbing"
+      {...attributes}
+      {...(listeners as React.HTMLAttributes<HTMLButtonElement>)}
+    >
+      <GripVertical className={large ? 'h-5 w-5' : 'h-4 w-4'} />
+    </button>
+  );
+}
+
 function EmptySectionZone({ sectionId, t }: { sectionId: string; t: (k: string, f?: string) => string }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `section-empty-${sectionId}` });
+  const { setNodeRef, isOver } = useDroppable({ id: `${EMPTY_PREFIX}${sectionId}` });
   return (
     <div
       ref={setNodeRef}
@@ -206,15 +263,13 @@ function EmptySectionZone({ sectionId, t }: { sectionId: string; t: (k: string, 
   );
 }
 
-// Draggable item row (replaces SortableItem's drag mechanics). The row
-// itself is also a drop target — `nest-{id}` — for top-level items, so
-// dragging another item ONTO this row makes that item a child.
-// Sub-items don't accept nest drops (2-level cap), but they're still
-// drag sources.
+// One item row (top-level or sub-item). Drag it by the handle; it is also
+// a drop target for other items (see the top of this section).
 function DraggableItemRow({
   item,
   sectionId,
-  parentItemId,
+  hint,
+  dragLabel,
   onToggleVisibility,
   onEditName,
   editingItemId,
@@ -225,8 +280,9 @@ function DraggableItemRow({
 }: {
   item: NavItem;
   sectionId: string;
-  /** When set, this row is a SUB-item under that parent item. */
-  parentItemId?: string;
+  /** Where a dragged item would land relative to this row, if over it. */
+  hint: DropPos | null;
+  dragLabel: string;
   onToggleVisibility: (sectionId: string, itemId: string) => void;
   onEditName: (itemId: string, currentName: string) => void;
   editingItemId: string | null;
@@ -235,104 +291,93 @@ function DraggableItemRow({
   onCancelEdit: () => void;
   editingInHint?: string;
 }) {
-  const isSubItem = !!parentItemId;
-  const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
-    useDraggable({ id: item.id });
-  // Only top-level items can BE a nest target (a sub-item can't accept
-  // children because of the 2-level cap).
-  const { setNodeRef: setNestRef, isOver: isNestOver } = useDroppable({
-    id: `nest-${item.id}`,
-    disabled: isSubItem,
-  });
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: item.id });
+  // The drop target includes the small space around the row, so there is
+  // no dead gap between two rows.
+  const { setNodeRef: setDropRef } = useDroppable({ id: `${ROW_PREFIX}${item.id}` });
 
   const isEditing = editingItemId === item.id;
 
   return (
-    <div
-      ref={(node) => {
-        setDragRef(node);
-        if (!isSubItem) setNestRef(node);
-      }}
-      style={{ opacity: isDragging ? 0.4 : 1 }}
-      className={[
-        'flex items-center justify-between p-3 border rounded-lg bg-background transition-colors',
-        isNestOver ? 'ring-2 ring-primary bg-primary/5 border-primary' : '',
-      ].join(' ')}
-    >
-      <div className="flex items-center gap-3 flex-1">
-        <div
-          className="cursor-grab active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
-        {isEditing ? (
-          <div className="flex items-center gap-2 flex-1 flex-wrap">
-            <input
-              type="text"
-              value={editingName}
-              onChange={(e) => onEditName(item.id, e.target.value)}
-              className="px-2 py-1 border rounded font-medium flex-1 min-w-0"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onSaveEdit();
-                if (e.key === 'Escape') onCancelEdit();
-              }}
-            />
-            {editingInHint && (
-              <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
-                {editingInHint}
-              </span>
-            )}
-            <Button variant="ghost" size="sm" onClick={onSaveEdit} className="h-8 w-8 p-0">
-              <Check className="h-4 w-4 text-green-600" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onCancelEdit} className="h-8 w-8 p-0">
-              <X className="h-4 w-4 text-red-600" />
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <div>
-              <p className="font-medium">{item.label}</p>
-              <p className="text-sm text-muted-foreground">{item.href}</p>
+    <div ref={setDropRef} className="relative py-0.5">
+      <DropLine pos={hint} />
+      <div
+        ref={setDragRef}
+        style={{ opacity: isDragging ? 0.4 : 1 }}
+        className={[
+          'flex items-center justify-between gap-2 p-3 border rounded-lg bg-background transition-colors',
+          hint === 'inside' ? 'ring-2 ring-primary bg-primary/5 border-primary' : '',
+        ].join(' ')}
+      >
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <DragHandle attributes={attributes} listeners={listeners} label={dragLabel} />
+          {isEditing ? (
+            <div className="flex items-center gap-2 flex-1 flex-wrap">
+              <input
+                type="text"
+                value={editingName}
+                onChange={(e) => onEditName(item.id, e.target.value)}
+                className="px-2 py-1 border rounded font-medium flex-1 min-w-0"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSaveEdit();
+                  if (e.key === 'Escape') onCancelEdit();
+                }}
+              />
+              {editingInHint && (
+                <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
+                  {editingInHint}
+                </span>
+              )}
+              <Button variant="ghost" size="sm" onClick={onSaveEdit} className="h-8 w-8 p-0">
+                <Check className="h-4 w-4 text-green-600" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onCancelEdit} className="h-8 w-8 p-0">
+                <X className="h-4 w-4 text-red-600" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEditName(item.id, item.label)}
-              className="h-8 w-8 p-0"
-            >
-              <Pencil className="h-3 w-3" />
-            </Button>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onToggleVisibility(sectionId, item.id)}
-        >
-          {item.visible ? (
-            <Eye className="h-4 w-4" />
           ) : (
-            <EyeOff className="h-4 w-4" />
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="min-w-0">
+                <p className="font-medium">{item.label}</p>
+                <p className="text-sm text-muted-foreground truncate">{item.href}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onEditName(item.id, item.label)}
+                className="h-8 w-8 p-0"
+              >
+                <Pencil className="h-3 w-3" />
+              </Button>
+            </div>
           )}
-        </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onToggleVisibility(sectionId, item.id)}
+          >
+            {item.visible ? (
+              <Eye className="h-4 w-4" />
+            ) : (
+              <EyeOff className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );
 }
 
-// Sortable Section Component
+// A section card. Drag it by the handle in its header; it is also a drop
+// target for other sections (above / below) and for items (into it).
 function SortableSection({
   section,
-  sectionIndex,
-  sectionsLength,
+  hint,
+  dragLabel,
   onToggleVisibility,
-  onMoveSection,
   onEditName,
   editingSectionId,
   editingName,
@@ -343,10 +388,10 @@ function SortableSection({
   editingInHint,
 }: {
   section: NavSection;
-  sectionIndex: number;
-  sectionsLength: number;
+  /** Where a dragged section (or item) would land relative to this card. */
+  hint: DropPos | null;
+  dragLabel: string;
   onToggleVisibility: (id: string) => void;
-  onMoveSection: (id: string, direction: 'up' | 'down') => void;
   onEditName: (id: string, currentName: string) => void;
   editingSectionId: string | null;
   editingName: string;
@@ -356,218 +401,75 @@ function SortableSection({
   t: (key: string, fallback: string) => string;
   editingInHint?: string;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: section.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: section.id });
+  const { setNodeRef: setDropRef } = useDroppable({ id: `${SEC_PREFIX}${section.id}` });
 
   const isEditing = editingSectionId === section.id;
 
   return (
-    <Card ref={setNodeRef} style={style}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 flex-1">
-            <div
-              className="cursor-grab active:cursor-grabbing"
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical className="h-5 w-5 text-muted-foreground" />
+    <div ref={setDropRef} className="relative py-1">
+      <DropLine pos={hint} />
+      <Card
+        ref={setDragRef}
+        style={{ opacity: isDragging ? 0.5 : 1 }}
+        className={hint === 'inside' ? 'ring-2 ring-primary' : undefined}
+      >
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1">
+              <DragHandle attributes={attributes} listeners={listeners} label={dragLabel} large />
+              {isEditing ? (
+                <div className="flex items-center gap-2 flex-1 flex-wrap">
+                  <input
+                    type="text"
+                    value={editingName}
+                    onChange={(e) => onEditName(section.id, e.target.value)}
+                    className="px-2 py-1 border rounded text-lg font-semibold flex-1 min-w-0"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onSaveEdit();
+                      if (e.key === 'Escape') onCancelEdit();
+                    }}
+                  />
+                  {editingInHint && (
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
+                      {editingInHint}
+                    </span>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={onSaveEdit} className="h-8 w-8 p-0">
+                    <Check className="h-4 w-4 text-green-600" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={onCancelEdit} className="h-8 w-8 p-0">
+                    <X className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <CardTitle>{section.title}</CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onEditName(section.id, section.title)}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                </>
+              )}
             </div>
-            {isEditing ? (
-              <div className="flex items-center gap-2 flex-1 flex-wrap">
-                <input
-                  type="text"
-                  value={editingName}
-                  onChange={(e) => onEditName(section.id, e.target.value)}
-                  className="px-2 py-1 border rounded text-lg font-semibold flex-1 min-w-0"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') onSaveEdit();
-                    if (e.key === 'Escape') onCancelEdit();
-                  }}
-                />
-                {editingInHint && (
-                  <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
-                    {editingInHint}
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onSaveEdit}
-                  className="h-8 w-8 p-0"
-                >
-                  <Check className="h-4 w-4 text-green-600" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onCancelEdit}
-                  className="h-8 w-8 p-0"
-                >
-                  <X className="h-4 w-4 text-red-600" />
-                </Button>
-              </div>
-            ) : (
-              <>
-                <CardTitle>{section.title}</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onEditName(section.id, section.title)}
-                  className="h-8 w-8 p-0"
-                >
-                  <Pencil className="h-3 w-3" />
-                </Button>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={section.visible}
-              onCheckedChange={() => onToggleVisibility(section.id)}
-            />
-            <span className="text-sm text-muted-foreground" suppressHydrationWarning>
-              {section.visible ? t('navigation.visible', 'Visible') : t('navigation.hidden', 'Hidden')}
-            </span>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  );
-}
-
-// Sortable Item Component
-function SortableItem({
-  item,
-  sectionId,
-  onToggleVisibility,
-  onEditName,
-  editingItemId,
-  editingName,
-  onSaveEdit,
-  onCancelEdit,
-  editingInHint,
-}: {
-  item: NavItem;
-  sectionId: string;
-  onToggleVisibility: (sectionId: string, itemId: string) => void;
-  onEditName: (itemId: string, currentName: string) => void;
-  editingItemId: string | null;
-  editingName: string;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
-  editingInHint?: string;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const isEditing = editingItemId === item.id;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center justify-between p-3 border rounded-lg bg-background"
-    >
-      <div className="flex items-center gap-3 flex-1">
-        <div
-          className="cursor-grab active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
-        {isEditing ? (
-          <div className="flex items-center gap-2 flex-1 flex-wrap">
-            <input
-              type="text"
-              value={editingName}
-              onChange={(e) => onEditName(item.id, e.target.value)}
-              className="px-2 py-1 border rounded font-medium flex-1 min-w-0"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onSaveEdit();
-                if (e.key === 'Escape') onCancelEdit();
-              }}
-            />
-            {editingInHint && (
-              <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded whitespace-nowrap">
-                {editingInHint}
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={section.visible}
+                onCheckedChange={() => onToggleVisibility(section.id)}
+              />
+              <span className="text-sm text-muted-foreground" suppressHydrationWarning>
+                {section.visible ? t('navigation.visible', 'Visible') : t('navigation.hidden', 'Hidden')}
               </span>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onSaveEdit}
-              className="h-8 w-8 p-0"
-            >
-              <Check className="h-4 w-4 text-green-600" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onCancelEdit}
-              className="h-8 w-8 p-0"
-            >
-              <X className="h-4 w-4 text-red-600" />
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <div>
-              <p className="font-medium">{item.label}</p>
-              <p className="text-sm text-muted-foreground">{item.href}</p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEditName(item.id, item.label)}
-              className="h-8 w-8 p-0"
-            >
-              <Pencil className="h-3 w-3" />
-            </Button>
           </div>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onToggleVisibility(sectionId, item.id)}
-        >
-          {item.visible ? (
-            <Eye className="h-4 w-4" />
-          ) : (
-            <EyeOff className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
+        </CardHeader>
+        <CardContent>{children}</CardContent>
+      </Card>
     </div>
   );
 }
@@ -583,6 +485,7 @@ export default function NavigationPage() {
     availableLanguages.find((l) => l.code === language)?.native_name
     || language.toUpperCase();
   const editingInHint = t('navigation.editingIn', 'עריכה ב-{lang}').replace('{lang}', currentLanguageLabel);
+  const dragLabel = t('navigation.dragToMove', 'Drag to move');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sections, setSections] = useState<NavSection[]>([]);
@@ -590,6 +493,8 @@ export default function NavigationPage() {
   // render a clone that follows the cursor — without this the drag
   // feels broken because nothing visibly moves.
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  // Where the dragged row or section will land (drives the line / outline).
+  const [dropHint, setDropHint] = useState<DropHint>(null);
   // Section IDs that the admin wants deleted on next save. We hold
   // them client-side until Save Changes commits both deletes and
   // updates in one API round-trip. Section is only deleteable when
@@ -604,10 +509,7 @@ export default function NavigationPage() {
 
   // Drag sensors
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
 
   // Navigation structure with translation keys (for reference, not used directly)
@@ -756,88 +658,32 @@ export default function NavigationPage() {
     ));
   };
 
+  /** Applies `change` to the item with this id, at any depth (items and
+   *  their sub-items). */
+  const mapItemById = (items: NavItem[], itemId: string, change: (item: NavItem) => NavItem): NavItem[] =>
+    items.map((i) =>
+      i.id === itemId
+        ? change(i)
+        : i.children?.length
+          ? { ...i, children: mapItemById(i.children, itemId, change) }
+          : i,
+    );
+
   const toggleItemVisibility = (sectionId: string, itemId: string) => {
     setSections(sections.map(s =>
       s.id === sectionId
-        ? {
-            ...s,
-            items: s.items.map(i =>
-              i.id === itemId ? { ...i, visible: !i.visible } : i
-            )
-          }
+        ? { ...s, items: mapItemById(s.items, itemId, (i) => ({ ...i, visible: !i.visible })) }
         : s
     ));
   };
 
-  const moveSection = (sectionId: string, direction: 'up' | 'down') => {
-    const index = sections.findIndex(s => s.id === sectionId);
-    if (
-      (direction === 'up' && index === 0) ||
-      (direction === 'down' && index === sections.length - 1)
-    ) {
-      return;
-    }
-
-    const newSections = [...sections];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
-
-    // Update order values
-    newSections.forEach((s, i) => {
-      s.order = i + 1;
-    });
-
-    setSections(newSections);
-  };
-
-  // Handle section drag end
-  const handleSectionDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = sections.findIndex((s) => s.id === active.id);
-      const newIndex = sections.findIndex((s) => s.id === over.id);
-
-      const newSections = arrayMove(sections, oldIndex, newIndex);
-
-      // Update order values
-      newSections.forEach((s, i) => {
-        s.order = i + 1;
-      });
-
-      setSections(newSections);
-    }
-  };
-
-  // Handle item drag end within a section
-  const handleItemDragEnd = (event: DragEndEvent, sectionId: string) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      setSections((prevSections) =>
-        prevSections.map((section) => {
-          if (section.id !== sectionId) return section;
-
-          const oldIndex = section.items.findIndex((item) => item.id === active.id);
-          const newIndex = section.items.findIndex((item) => item.id === over.id);
-
-          const newItems = arrayMove(section.items, oldIndex, newIndex);
-
-          // Update order values
-          newItems.forEach((item, i) => {
-            item.order = i + 1;
-          });
-
-          return { ...section, items: newItems };
-        })
-      );
-    }
-  };
 
   // Edit handlers
   const handleEditSectionName = (sectionId: string, name: string) => {
     setEditingSectionId(sectionId);
+    setEditingItemId(null);
     setEditingName(name);
+    setEditingTranslationKey('');
     const section = sections.find(s => s.id === sectionId);
     if (section?.translation_key) {
       setEditingTranslationKey(section.translation_key);
@@ -847,18 +693,20 @@ export default function NavigationPage() {
   const handleEditItemName = (itemId: string, name: string) => {
     setEditingItemId(itemId);
     setEditingName(name);
-    // Find the item and get its translation key
-    for (const section of sections) {
-      const item = section.items.find(i => i.id === itemId);
-      if (item?.translation_key) {
-        setEditingTranslationKey(item.translation_key);
-        break;
-      }
-    }
+    // Find the item (or sub-item) and get its translation key. Cleared
+    // first so a key left from an earlier edit can't be saved by mistake.
+    setEditingTranslationKey(findItemById(itemId)?.translation_key ?? '');
   };
 
   const handleSaveEdit = async () => {
-    if (!editingTranslationKey || !editingName) return;
+    if (!editingName.trim()) {
+      toast.error(t('navigation.nameRequired', 'Type a name before saving'));
+      return;
+    }
+    if (!editingTranslationKey) {
+      toast.error(t('navigation.updateError', 'Failed to update name'));
+      return;
+    }
 
     // Snapshot what we're editing — handleCancelEdit() resets these and
     // we want the optimistic update + the API call to use the same values.
@@ -874,7 +722,7 @@ export default function NavigationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           translation_key: savedKey,
-          translation_value: savedName,
+          translation_value: savedName.trim(),
           language_code: language, // current admin language only — see note below
           category: savedKey.split('.')[0],
           context: 'admin',
@@ -897,14 +745,12 @@ export default function NavigationPage() {
       setSections((prev) =>
         prev.map((section) => {
           if (savedSectionId && !savedItemId && section.id === savedSectionId) {
-            return { ...section, label: savedName };
+            return { ...section, title: savedName.trim() };
           }
           if (savedItemId) {
             return {
               ...section,
-              items: section.items.map((item) =>
-                item.id === savedItemId ? { ...item, label: savedName } : item
-              ),
+              items: mapItemById(section.items, savedItemId, (item) => ({ ...item, label: savedName.trim() })),
             };
           }
           return section;
@@ -1017,27 +863,8 @@ export default function NavigationPage() {
     }
   };
 
-  /**
-   * Unified drag-end handler for the whole nav tree.
-   *
-   * Source can be a section, a top-level item, or a sub-item.
-   * Target ID grammar (see drop-target components above):
-   *   nest-{itemId}             → become child of that top-level item
-   *   gap-section-{secId}-{i}   → insert at position i among section items
-   *   gap-subs-{itemId}-{i}     → insert at position i among sub-items
-   *   gap-root-{i}              → insert at position i among sections
-   *   section-empty-{secId}     → append to an empty section
-   *
-   * Enforces the 2-level cap: if a top-level item with children is
-   * nested into another item, its children are promoted back to
-   * siblings of their original position so we never end up with a
-   * 3rd level. Sections themselves can only be reordered, never
-   * nested.
-   */
-  /** Look up an item (sub-item too) by id, so DragOverlay can render
-   *  a faithful clone of the row being dragged. Returns null for
-   *  section drags (we don't render an overlay for those since the
-   *  whole section card visibly transforms via useSortable). */
+  /** Look up an item (sub-item too) by id, for the drag preview and the
+   *  rename. */
   const findItemById = (id: string): NavItem | null => {
     for (const section of sections) {
       for (const item of section.items) {
@@ -1050,8 +877,65 @@ export default function NavigationPage() {
     return null;
   };
 
+  const isSectionId = (id: string) => sections.some((s) => s.id === id);
+
+  /** The targets a drag may use. A section only goes next to another
+   *  section; an item goes on a row, an empty section or a section card,
+   *  never onto itself or one of its own sub-items. Rows win over the card
+   *  around them. */
+  const collisionDetection: CollisionDetection = (args) => {
+    const activeId = String(args.active.id);
+    const draggingSection = isSectionId(activeId);
+    const own = new Set<string>([`${ROW_PREFIX}${activeId}`]);
+    if (!draggingSection) {
+      for (const child of findItemById(activeId)?.children ?? []) own.add(`${ROW_PREFIX}${child.id}`);
+    }
+    const rank = (id: string) => (id.startsWith(ROW_PREFIX) ? 0 : id.startsWith(EMPTY_PREFIX) ? 1 : 2);
+    return pointerWithin(args)
+      .filter((c) => {
+        const id = String(c.id);
+        if (own.has(id)) return false;
+        return draggingSection ? id.startsWith(SEC_PREFIX) : true;
+      })
+      .sort((a, b) => rank(String(a.id)) - rank(String(b.id)));
+  };
+
+  /** Works out the drop line / outline from where the pointer is. */
+  const updateDropHint = (event: DragMoveEvent | DragOverEvent) => {
+    const over = event.over;
+    if (!over) {
+      setDropHint(null);
+      return;
+    }
+    const overId = String(over.id);
+    const activeId = String(event.active.id);
+    const start = event.activatorEvent as PointerEvent;
+    const y = (typeof start.clientY === 'number' ? start.clientY : over.rect.top) + event.delta.y;
+    const rel = (y - over.rect.top) / Math.max(1, over.rect.height);
+
+    let next: DropHint = null;
+    if (overId.startsWith(SEC_PREFIX)) {
+      const secId = overId.slice(SEC_PREFIX.length);
+      next = isSectionId(activeId)
+        ? { targetId: secId, pos: rel < 0.5 ? 'before' : 'after' }
+        : { targetId: secId, pos: 'inside' };
+    } else if (overId.startsWith(EMPTY_PREFIX)) {
+      next = { targetId: overId.slice(EMPTY_PREFIX.length), pos: 'inside' };
+    } else if (overId.startsWith(ROW_PREFIX)) {
+      const targetId = overId.slice(ROW_PREFIX.length);
+      // Only a top-level item can take sub-items.
+      const canNest = findInTree(sections, targetId)?.type === 'item';
+      const pos: DropPos = canNest
+        ? rel < 0.3 ? 'before' : rel > 0.7 ? 'after' : 'inside'
+        : rel < 0.5 ? 'before' : 'after';
+      next = { targetId, pos };
+    }
+    setDropHint((prev) => (prev?.targetId === next?.targetId && prev?.pos === next?.pos ? prev : next));
+  };
+
   const handleTreeDragStart = (event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
+    setDropHint(null);
   };
 
   /** Mark a section for deletion on next save. Only legal when the
@@ -1064,135 +948,15 @@ export default function NavigationPage() {
     );
   };
 
+  /** Drops where the line / outline showed. Changes are kept on screen
+   *  and saved with Save Changes, as before. */
   const handleTreeDragEnd = (event: DragEndEvent) => {
-    setActiveDragId(null); // clear overlay regardless of outcome
-
-    const sourceId = event.active.id;
-    const overId = event.over?.id;
-    if (!overId || sourceId === overId) return;
-    if (typeof sourceId !== 'string' || typeof overId !== 'string') return;
-
-    const sourceLoc = findInTree(sections, sourceId);
-    if (!sourceLoc) return;
-
-    // Section source: only handle reorder among sections.
-    if (sourceLoc.type === 'section') {
-      if (!overId.startsWith('gap-root-')) return;
-      const targetIdx = parseInt(overId.slice('gap-root-'.length), 10);
-      if (Number.isNaN(targetIdx)) return;
-      const next = cloneTree(sections);
-      const [moved] = next.splice(sourceLoc.sectionIdx, 1);
-      // Account for the removal shifting indices.
-      const insertAt = targetIdx > sourceLoc.sectionIdx ? targetIdx - 1 : targetIdx;
-      next.splice(insertAt, 0, moved);
-      setSections(reorderArray(next));
-      return;
-    }
-
-    // Item or sub-item source: pull from tree, then insert at target.
-    // (The `section` case bailed above, so sourceLoc.type is now
-    // narrowed to 'item' | 'sub'.)
-    const { sections: withoutSource, removed } = removeFromTree(sections, sourceId);
-    if (!removed) return;
-    const removedItem = removed as NavItem;
-    if (!removedItem.children) removedItem.children = [];
-
-    // Helper to insert a list of "promoted" children back at the
-    // source's original position. Used when a top-level item that
-    // had sub-items gets nested — its sub-items can't follow it
-    // (would create a 3rd level) so they stay where they were.
-    const promotedChildren =
-      sourceLoc.type === 'item' && removedItem.children.length > 0
-        ? removedItem.children
-        : [];
-    if (promotedChildren.length > 0) {
-      removedItem.children = [];
-    }
-
-    // --- nest-{itemId}: source becomes child of target item -------
-    if (overId.startsWith('nest-')) {
-      const targetItemId = overId.slice('nest-'.length);
-      if (targetItemId === sourceId) return; // can't nest into self
-      const targetLoc = findInTree(withoutSource, targetItemId);
-      if (!targetLoc || targetLoc.type !== 'item') return;
-
-      const next = cloneTree(withoutSource);
-      next[targetLoc.sectionIdx].items[targetLoc.itemIdx].children!.push(removedItem);
-      next[targetLoc.sectionIdx].items[targetLoc.itemIdx].children = reorderArray(
-        next[targetLoc.sectionIdx].items[targetLoc.itemIdx].children!,
-      );
-      // Re-add promoted children where the source used to live.
-      if (promotedChildren.length > 0 && sourceLoc.type === 'item') {
-        next[sourceLoc.sectionIdx].items.splice(sourceLoc.itemIdx, 0, ...promotedChildren);
-        next[sourceLoc.sectionIdx].items = reorderArray(next[sourceLoc.sectionIdx].items);
-      }
-      setSections(next);
-      return;
-    }
-
-    // --- gap-section-{secId}-{i}: insert among top-level items ----
-    if (overId.startsWith('gap-section-')) {
-      const rest = overId.slice('gap-section-'.length);
-      const lastDash = rest.lastIndexOf('-');
-      const secId = rest.slice(0, lastDash);
-      const idx = parseInt(rest.slice(lastDash + 1), 10);
-      if (Number.isNaN(idx)) return;
-      const targetSecIdx = withoutSource.findIndex((s) => s.id === secId);
-      if (targetSecIdx < 0) return;
-
-      const next = cloneTree(withoutSource);
-      next[targetSecIdx].items.splice(idx, 0, removedItem);
-      next[targetSecIdx].items = reorderArray(next[targetSecIdx].items);
-      if (promotedChildren.length > 0 && sourceLoc.type === 'item') {
-        // Source was an item that had children — drop those children
-        // at the section level where source used to be.
-        next[sourceLoc.sectionIdx].items.push(...promotedChildren);
-        next[sourceLoc.sectionIdx].items = reorderArray(next[sourceLoc.sectionIdx].items);
-      }
-      setSections(next);
-      return;
-    }
-
-    // --- gap-subs-{itemId}-{i}: insert among sub-items of itemId --
-    if (overId.startsWith('gap-subs-')) {
-      const rest = overId.slice('gap-subs-'.length);
-      const lastDash = rest.lastIndexOf('-');
-      const parentItemId = rest.slice(0, lastDash);
-      const idx = parseInt(rest.slice(lastDash + 1), 10);
-      if (Number.isNaN(idx)) return;
-      if (parentItemId === sourceId) return; // can't put inside self
-      const parentLoc = findInTree(withoutSource, parentItemId);
-      if (!parentLoc || parentLoc.type !== 'item') return;
-
-      const next = cloneTree(withoutSource);
-      next[parentLoc.sectionIdx].items[parentLoc.itemIdx].children!.splice(idx, 0, removedItem);
-      next[parentLoc.sectionIdx].items[parentLoc.itemIdx].children = reorderArray(
-        next[parentLoc.sectionIdx].items[parentLoc.itemIdx].children!,
-      );
-      if (promotedChildren.length > 0 && sourceLoc.type === 'item') {
-        next[sourceLoc.sectionIdx].items.push(...promotedChildren);
-        next[sourceLoc.sectionIdx].items = reorderArray(next[sourceLoc.sectionIdx].items);
-      }
-      setSections(next);
-      return;
-    }
-
-    // --- section-empty-{secId}: append to empty section -----------
-    if (overId.startsWith('section-empty-')) {
-      const secId = overId.slice('section-empty-'.length);
-      const targetSecIdx = withoutSource.findIndex((s) => s.id === secId);
-      if (targetSecIdx < 0) return;
-
-      const next = cloneTree(withoutSource);
-      next[targetSecIdx].items.push(removedItem);
-      next[targetSecIdx].items = reorderArray(next[targetSecIdx].items);
-      if (promotedChildren.length > 0 && sourceLoc.type === 'item') {
-        next[sourceLoc.sectionIdx].items.push(...promotedChildren);
-        next[sourceLoc.sectionIdx].items = reorderArray(next[sourceLoc.sectionIdx].items);
-      }
-      setSections(next);
-      return;
-    }
+    const hint = dropHint;
+    setActiveDragId(null);
+    setDropHint(null);
+    if (!hint || !event.over) return;
+    const sourceId = String(event.active.id);
+    setSections((prev) => applyDrop(prev, sourceId, hint) ?? prev);
   };
 
   if (loading) {
@@ -1226,132 +990,115 @@ export default function NavigationPage() {
           </Button>
         </div>
 
-        {/* Navigation tree — single DndContext spans the whole tree.
-            • Drag an item over another item's row → it becomes that
-              item's child (nest).
-            • Drag an item into a gap between rows → it lands at that
-              position (reorder / section-move).
-            • Drag a section into a gap between sections → section
-              reorder.
-            Collision uses `pointerWithin` because the nest-target
-            (whole row) and gap-zones share screen space — pointerWithin
-            picks whichever the cursor is actually inside. */}
+        {/* Navigation tree — one DndContext for sections, items and
+            sub-items. See "Drag and drop" at the top of the file for how
+            a drop position is chosen. */}
         <DndContext
           sensors={sensors}
-          collisionDetection={pointerWithin}
+          collisionDetection={collisionDetection}
           onDragStart={handleTreeDragStart}
+          onDragMove={updateDropHint}
+          onDragOver={updateDropHint}
           onDragEnd={handleTreeDragEnd}
-          onDragCancel={() => setActiveDragId(null)}
+          onDragCancel={() => {
+            setActiveDragId(null);
+            setDropHint(null);
+          }}
         >
-          {/* SortableContext for sections provides the context that
-              SortableSection's `useSortable` hook still needs (it
-              renders the drag-handle attributes and transform). Drop
-              logic is handled by handleTreeDragEnd, not by the
-              sortable's default behavior. */}
-          <SortableContext
-            items={sections.map((s) => s.id)}
-            strategy={verticalListSortingStrategy}
-          >
-          <div className="space-y-4">
-            {sections.map((section, sectionIndex) => (
-              <div key={section.id}>
-                <GapZone id={`gap-root-${sectionIndex}`} isDragActive={!!activeDragId} />
-                <SortableSection
-                  section={section}
-                  sectionIndex={sectionIndex}
-                  sectionsLength={sections.length}
-                  onToggleVisibility={toggleSectionVisibility}
-                  onMoveSection={moveSection}
-                  onEditName={handleEditSectionName}
-                  editingSectionId={editingSectionId}
-                  editingName={editingName}
-                  onSaveEdit={handleSaveEdit}
-                  onCancelEdit={handleCancelEdit}
-                  t={t}
-                  editingInHint={editingInHint}
-                >
-                  {section.items.length === 0 ? (
-                    <div className="space-y-2">
-                      <EmptySectionZone sectionId={section.id} t={t} />
-                      {/* Empty sections can be deleted outright — the
-                          actual DELETE is queued and runs on Save Changes.
-                          We only show this for empty sections so the
-                          admin can't accidentally wipe a populated one. */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteSection(section.id)}
-                        className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-                      >
-                        <X className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
-                        <span suppressHydrationWarning>
-                          {t('navigation.deleteCategory', 'Delete category')}
-                        </span>
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <GapZone id={`gap-section-${section.id}-0`} isDragActive={!!activeDragId} />
-                      {section.items.map((item, itemIndex) => (
-                        <div key={item.id}>
-                          {/* DraggableItemRow wires its own `useDroppable`
-                              with id `nest-{item.id}` — no outer wrapper
-                              needed (would conflict with duplicate IDs). */}
-                          <DraggableItemRow
-                            item={item}
-                            sectionId={section.id}
-                            onToggleVisibility={toggleItemVisibility}
-                            onEditName={handleEditItemName}
-                            editingItemId={editingItemId}
-                            editingName={editingName}
-                            onSaveEdit={handleSaveEdit}
-                            onCancelEdit={handleCancelEdit}
-                            editingInHint={editingInHint}
-                          />
-                          {/* Sub-items: rendered indented under their
-                              parent, with their own gap drop zones for
-                              reordering and re-parenting. */}
-                          {item.children && item.children.length > 0 && (
-                            <div className="mt-1 ltr:ml-8 rtl:mr-8 ltr:border-l-2 rtl:border-r-2 border-border ltr:pl-3 rtl:pr-3">
-                              <GapZone id={`gap-subs-${item.id}-0`} isDragActive={!!activeDragId} />
-                              {item.children.map((child, childIdx) => (
-                                <div key={child.id}>
-                                  <DraggableItemRow
-                                    item={child}
-                                    sectionId={section.id}
-                                    parentItemId={item.id}
-                                    onToggleVisibility={toggleItemVisibility}
-                                    onEditName={handleEditItemName}
-                                    editingItemId={editingItemId}
-                                    editingName={editingName}
-                                    onSaveEdit={handleSaveEdit}
-                                    onCancelEdit={handleCancelEdit}
-                                    editingInHint={editingInHint}
-                                  />
-                                  <GapZone id={`gap-subs-${item.id}-${childIdx + 1}`} isDragActive={!!activeDragId} />
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <GapZone id={`gap-section-${section.id}-${itemIndex + 1}`} isDragActive={!!activeDragId} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </SortableSection>
-              </div>
+          <div className="space-y-2">
+            {sections.map((section) => (
+              <SortableSection
+                key={section.id}
+                section={section}
+                hint={dropHint?.targetId === section.id ? dropHint.pos : null}
+                dragLabel={dragLabel}
+                onToggleVisibility={toggleSectionVisibility}
+                onEditName={handleEditSectionName}
+                editingSectionId={editingSectionId}
+                editingName={editingName}
+                onSaveEdit={handleSaveEdit}
+                onCancelEdit={handleCancelEdit}
+                t={t}
+                editingInHint={editingInHint}
+              >
+                {section.items.length === 0 ? (
+                  <div className="space-y-2">
+                    <EmptySectionZone sectionId={section.id} t={t} />
+                    {/* Empty sections can be deleted outright — the
+                        actual DELETE is queued and runs on Save Changes.
+                        We only show this for empty sections so the
+                        admin can't accidentally wipe a populated one. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteSection(section.id)}
+                      className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <X className="h-4 w-4 ltr:mr-2 rtl:ml-2" />
+                      <span suppressHydrationWarning>
+                        {t('navigation.deleteCategory', 'Delete category')}
+                      </span>
+                    </Button>
+                  </div>
+                ) : (
+                  <div>
+                    {section.items.map((item) => (
+                      <div key={item.id}>
+                        <DraggableItemRow
+                          item={item}
+                          sectionId={section.id}
+                          hint={dropHint?.targetId === item.id ? dropHint.pos : null}
+                          dragLabel={dragLabel}
+                          onToggleVisibility={toggleItemVisibility}
+                          onEditName={handleEditItemName}
+                          editingItemId={editingItemId}
+                          editingName={editingName}
+                          onSaveEdit={handleSaveEdit}
+                          onCancelEdit={handleCancelEdit}
+                          editingInHint={editingInHint}
+                        />
+                        {/* Sub-items, indented under their parent. */}
+                        {item.children && item.children.length > 0 && (
+                          <div className="ltr:ml-8 rtl:mr-8 ltr:border-l-2 rtl:border-r-2 border-border ltr:pl-3 rtl:pr-3">
+                            {item.children.map((child) => (
+                              <DraggableItemRow
+                                key={child.id}
+                                item={child}
+                                sectionId={section.id}
+                                hint={dropHint?.targetId === child.id ? dropHint.pos : null}
+                                dragLabel={dragLabel}
+                                onToggleVisibility={toggleItemVisibility}
+                                onEditName={handleEditItemName}
+                                editingItemId={editingItemId}
+                                editingName={editingName}
+                                onSaveEdit={handleSaveEdit}
+                                onCancelEdit={handleCancelEdit}
+                                editingInHint={editingInHint}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SortableSection>
             ))}
-            <GapZone id={`gap-root-${sections.length}`} isDragActive={!!activeDragId} />
           </div>
-          </SortableContext>
 
-          {/* DragOverlay: a styled clone of the dragged row follows the
-              cursor. Without this the original element just fades to
-              opacity 0.4 and the user can't tell where the drag is —
-              the most common cause of "feels broken". */}
+          {/* A copy of the dragged row or section follows the pointer. */}
           <DragOverlay dropAnimation={null}>
             {activeDragId
               ? (() => {
+                  const section = sections.find((s) => s.id === activeDragId);
+                  if (section) {
+                    return (
+                      <div className="flex items-center gap-3 p-4 border rounded-lg bg-card shadow-lg ring-2 ring-primary cursor-grabbing">
+                        <GripVertical className="h-5 w-5 text-muted-foreground" />
+                        <p className="text-lg font-semibold">{section.title}</p>
+                      </div>
+                    );
+                  }
                   const item = findItemById(activeDragId);
                   if (!item) return null;
                   return (

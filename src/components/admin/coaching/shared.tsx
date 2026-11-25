@@ -44,7 +44,8 @@ export async function api<T = any>(url: string, init?: { method?: string; body?:
   } catch {
     data = null;
   }
-  if (!res.ok) throw new Error(data?.error || `${res.status} ${res.statusText}`);
+  // The status and answer ride along, for callers that act on a specific refusal.
+  if (!res.ok) throw Object.assign(new Error(data?.error || `${res.status} ${res.statusText}`), { status: res.status, data });
   return data as T;
 }
 

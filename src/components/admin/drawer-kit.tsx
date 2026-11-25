@@ -62,7 +62,7 @@ export function DrawerShell({
           const target = e.target as HTMLElement | null;
           if (target?.closest?.('[role="region"], li[role="status"], [data-radix-toast-viewport]')) e.preventDefault();
         }}
-        className={`flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] ${wide ? 'sm:max-w-[560px]' : 'sm:max-w-[480px]'} [&>button.absolute]:hidden`}
+        className={`flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] ${wide ? 'sm:max-w-[560px]' : 'sm:max-w-[480px]'} [&>[data-default-close]]:hidden`}
       >
         <button
           type="button"

@@ -1,5 +1,9 @@
 export const COURSE_TYPES = ['course', 'lecture', 'workshop', 'webinar', 'session', 'session_pack', 'bundle', 'custom'] as const;
 export type CourseType = (typeof COURSE_TYPES)[number];
+/** The types offered when creating or editing a course. Only these two behave
+ *  differently (a lecture shows as a lecture card in the client portal); the
+ *  rest were labels only. Courses saved with another type keep it. */
+export const OFFERED_COURSE_TYPES = ['course', 'lecture'] as const;
 
 export const COURSE_TYPE_FALLBACK: Record<CourseType, string> = {
   course: 'Course',

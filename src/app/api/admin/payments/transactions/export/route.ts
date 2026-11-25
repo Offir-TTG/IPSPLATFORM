@@ -47,7 +47,9 @@ export async function GET(request: NextRequest) {
 
     // Apply filters
     if (status) {
-      query = query.eq('status', status);
+      // The screen's "completed" is a payment stored as paid (older rows: succeeded/completed).
+      if (status === 'completed') query = query.in('status', ['paid', 'succeeded', 'completed']);
+      else query = query.eq('status', status);
     }
     if (dateFrom) {
       query = query.gte('created_at', dateFrom);
@@ -184,7 +186,7 @@ export async function GET(request: NextRequest) {
         schedule?.payment_number || '',
         payment.amount || 0,
         payment.currency || 'USD',
-        payment.status,
+        ['paid', 'succeeded', 'completed'].includes(payment.status) ? 'completed' : payment.status,
         payment.payment_method || '',
         payment.refunded_amount || 0,
         payment.refund_reason ? `"${payment.refund_reason}"` : '',

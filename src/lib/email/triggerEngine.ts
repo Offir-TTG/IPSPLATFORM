@@ -11,6 +11,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
+import { categoryForTriggerEvent } from '@/lib/messaging/categories';
+import { planTriggerEmail, finishTriggerEmail, type TriggerEmailPlan } from '@/lib/messaging/triggerEmails';
 
 // =====================================================
 // Types
@@ -183,10 +185,27 @@ async function processSingleTrigger(
   }
 
   // Calculate scheduled time
-  const scheduledFor = calculateScheduledTime(trigger, eventData);
+  let scheduledFor = calculateScheduledTime(trigger, eventData);
 
   // Extract template variables from event data
   const templateVariables = extractTemplateVariables(eventData, trigger);
+
+  // The client's settings decide: email only if they left this kind on, after
+  // their quiet hours, or in their daily summary. A lesson reminder is tied
+  // to the lesson's start, so it's never emailed after it.
+  const category = categoryForTriggerEvent(trigger.trigger_event);
+  let plan: TriggerEmailPlan = { kind: 'send', at: scheduledFor };
+  if (recipient.userId) {
+    plan = await planTriggerEmail({
+      tenantId,
+      userId: recipient.userId,
+      category,
+      at: scheduledFor,
+      timeSensitiveUntil:
+        trigger.trigger_event === 'lesson.reminder' && eventData.lessonStartTime ? new Date(eventData.lessonStartTime) : null,
+    });
+    if (plan.kind === 'send') scheduledFor = plan.at;
+  }
 
   // Queue the email
   const { data: emailQueueId, error: queueError } = await supabase
@@ -214,10 +233,24 @@ async function processSingleTrigger(
 
   console.log(`Email queued successfully for trigger ${trigger.id}, queue ID: ${emailQueueId}`);
 
+  // Bell, send log, and (when the settings say so) holding the email back:
+  // cancelled for "bell only", moved into the daily summary.
+  if (recipient.userId && emailQueueId) {
+    await finishTriggerEmail({
+      tenantId,
+      userId: recipient.userId,
+      queueId: emailQueueId as string,
+      category,
+      plan,
+      actionUrl: eventData.portalUrl || eventData.recordingUrl || eventData.lessonUrl || null,
+    });
+  }
+
   return {
     success: true,
     triggerId: trigger.id,
     emailQueueId: emailQueueId as string,
+    ...(plan.kind === 'none' ? { skipped: true, skipReason: `Bell only: ${plan.reason}` } : {}),
   };
 }
 

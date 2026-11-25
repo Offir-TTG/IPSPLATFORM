@@ -61,6 +61,9 @@ export type AttachIdentityInput = {
   /** Set to true for any flow that represents an "enrolled" milestone
    *  (signup-via-Register, invitation-accept, wizard-complete). */
   emitEnrolledEvent?: boolean;
+  /** An existing user: replace a saved person_id when the CRM answers with
+   *  a different one for this email (the old contact was deleted). */
+  refresh?: boolean;
   /** Set when the flow ALSO completes an enrollment (free product OR
    *  paid enrollment finalisation). Carries the product summary so
    *  IParentingSchool's customer card has rich data. */
@@ -106,6 +109,7 @@ export async function attachPersonIdentity(
     personToken,
     source,
     emitEnrolledEvent,
+    refresh = false,
     emitBecameCustomer,
   } = input;
 
@@ -172,11 +176,11 @@ export async function attachPersonIdentity(
 
   // ─── Stamp users.person_id ─────────────────────────────────────────
   if (personId) {
-    const { error } = await supabase
-      .from("users")
-      .update({ person_id: personId })
-      .eq("id", userId)
-      .is("person_id", null); // never overwrite an already-linked user
+    // A new user is stamped once. On refresh, the CRM's answer by email
+    // (not a token fallback) replaces a stale saved id.
+    let stamp = supabase.from("users").update({ person_id: personId }).eq("id", userId);
+    if (!(refresh && outcome.ok)) stamp = stamp.is("person_id", null); // never overwrite an already-linked user
+    const { error } = await stamp;
     if (error) {
       console.error("[persons/attach] failed to stamp person_id:", error.message);
       // Continue — the link can be backfilled later via inbound events.

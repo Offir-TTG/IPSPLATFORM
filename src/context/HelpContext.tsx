@@ -31,6 +31,11 @@ interface HelpContextValue {
   isOpen: boolean;
   openDrawer: (slug?: string) => void;
   closeDrawer: () => void;
+
+  /** The "Which service should I create?" guide (header icon and Help). */
+  guideOpen: boolean;
+  openGuide: () => void;
+  closeGuide: () => void;
 }
 
 const HelpContext = React.createContext<HelpContextValue | null>(null);
@@ -39,6 +44,12 @@ export function HelpProvider({ children }: { children: React.ReactNode }) {
   const [pageSlug, setPageSlug] = React.useState<string | null>(null);
   const [activeSlug, setActiveSlug] = React.useState<string | null>(null);
   const [isOpen, setIsOpen] = React.useState(false);
+  const [guideOpen, setGuideOpen] = React.useState(false);
+  const openGuide = React.useCallback(() => {
+    setIsOpen(false);
+    setGuideOpen(true);
+  }, []);
+  const closeGuide = React.useCallback(() => setGuideOpen(false), []);
 
   const openDrawer = React.useCallback((slug?: string) => {
     setActiveSlug(slug ?? pageSlug ?? null);
@@ -57,6 +68,9 @@ export function HelpProvider({ children }: { children: React.ReactNode }) {
     isOpen,
     openDrawer,
     closeDrawer,
+    guideOpen,
+    openGuide,
+    closeGuide,
   };
 
   return <HelpContext.Provider value={value}>{children}</HelpContext.Provider>;

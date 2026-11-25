@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { joinedBar, joinedSegment } from '@/components/admin/notifications/kit';
 import { api, Btn, errText, Field, FieldError, Loading, ErrorBox, priceText, tf, UiSelect } from '@/components/admin/coaching/shared';
 import { kindName, type PackageKind } from '@/components/admin/coaching/packageText';
+import { ExistingEnrollmentNotice, readExistingEnrollment, type ExistingEnrollment } from '@/components/admin/enrollments/ExistingEnrollmentNotice';
 
 interface Product {
   id: string;
@@ -106,6 +107,9 @@ function NewPackageInner() {
   const [intakeFormId, setIntakeFormId] = useState(PRODUCT_FORM);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
+  // The client (or child) already has this package: shown instead of a second one.
+  const [existing, setExisting] = useState<ExistingEnrollment | null>(null);
+  useEffect(() => setExisting(null), [step]);
 
   const load = async () => {
     setLoading(true);
@@ -272,7 +276,9 @@ function NewPackageInner() {
       }
       router.push(`/admin/coaching?package=${created.id}`);
     } catch (err) {
-      toast.error(errText(err));
+      const found = readExistingEnrollment((err as any)?.status, (err as any)?.data);
+      if (found) setExisting(found);
+      else toast.error(errText(err));
       setSaving(false);
     }
   };
@@ -691,6 +697,10 @@ function NewPackageInner() {
                   </div>
                 </div>
               </>
+            )}
+
+            {existing && step === 3 && (
+              <ExistingEnrollmentNotice existing={existing} language="he" openHref={`/admin/coaching?package=${existing.enrollment_id}`} />
             )}
 
             <div className="flex items-center justify-between">

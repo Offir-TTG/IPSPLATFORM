@@ -65,6 +65,9 @@ export function useEnrollmentFormat() {
   const date = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
   const statusLabel = (s: string) => (s ? t(`admin.enrollments.status.${s}`, s.replace(/_/g, ' ')) : 'N/A');
+  /** An enrollment's status, saying "Cancelled by client" when the client cancelled it in the portal. */
+  const enrollmentStatus = (e: { status: string; cancelled_by_client?: boolean }) =>
+    e.status === 'cancelled' && e.cancelled_by_client ? t('admin.enrollments.status.cancelledByClient', 'Cancelled by client') : statusLabel(e.status);
   const paymentLabel = (s: string) =>
     t(
       `admin.enrollments.paymentStatus.${s}`,
@@ -99,5 +102,5 @@ export function useEnrollmentFormat() {
     return { kind: 'quiet', text: '—' };
   };
 
-  return { planName, productType, money, date, statusLabel, paymentLabel, nextStep, daysAgo };
+  return { planName, productType, money, date, statusLabel, enrollmentStatus, paymentLabel, nextStep, daysAgo };
 }

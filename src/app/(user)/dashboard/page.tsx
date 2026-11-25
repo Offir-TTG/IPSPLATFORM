@@ -11,8 +11,11 @@ import { loadParentCoaching } from '@/lib/portal/parentCoaching';
 
 export const dynamic = 'force-dynamic';
 
-const cover = (color: string) =>
-  `radial-gradient(70% 90% at 90% 10%, rgba(255,255,255,.28), transparent 60%), radial-gradient(60% 80% at 0% 100%, rgba(0,0,0,.25), transparent 60%), ${color}`;
+const cover = (color: string, imageUrl?: string | null) =>
+  imageUrl
+    ? // The product's picture, darkened a little so the icon and tag stay readable.
+      `linear-gradient(180deg, rgba(0,0,0,.28), rgba(0,0,0,.05) 55%), url("${imageUrl.replace(/"/g, '%22')}") center / cover no-repeat, ${color}`
+    : `radial-gradient(70% 90% at 90% 10%, rgba(255,255,255,.28), transparent 60%), radial-gradient(60% 80% at 0% 100%, rgba(0,0,0,.25), transparent 60%), ${color}`;
 
 const CapIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" aria-hidden="true">
@@ -58,6 +61,13 @@ function SectionHead({ title, note, link }: { title: string; note?: string; link
   );
 }
 
+// Badge colours by tone: fine / needs attention / ended.
+const STATUS_TONE = {
+  ok: 'bg-[#e3f4ea] text-[#1f6b3f]',
+  warn: 'bg-[#fbefd6] text-[#7a4f00]',
+  off: 'bg-[#efedf3] text-[#5f5675]',
+} as const;
+
 function SpaceCard({ s }: { s: HomeSpace }) {
   return (
     <Link
@@ -66,7 +76,7 @@ function SpaceCard({ s }: { s: HomeSpace }) {
     >
       <div
         className="h-[74px] lg:h-[130px] lg:p-4 flex justify-between items-start text-white"
-        style={{ background: cover(s.color) }}
+        style={{ background: cover(s.color, s.imageUrl) }}
       >
         <span className="hidden lg:grid w-[42px] h-[42px] rounded-[13px] bg-white/[.18] place-items-center">
           {s.kind === 'program' ? <CapIcon /> : s.kind === 'coaching' ? <PersonIcon /> : <SparkIcon />}
@@ -76,7 +86,15 @@ function SpaceCard({ s }: { s: HomeSpace }) {
         )}
       </div>
       <div className="px-3 pt-2.5 pb-3 lg:px-4 lg:pt-3.5 lg:pb-[18px] flex flex-col gap-[3px] lg:gap-1.5">
-        <span className="hidden lg:block text-[#73698a] text-[12.5px]">{s.kicker}</span>
+        {s.status ? (
+          // A club's membership status, on phone and desktop alike.
+          <span className="flex items-center gap-2">
+            <span className="hidden lg:inline text-[#73698a] text-[12.5px]">{s.kicker}</span>
+            <span className={`font-semibold text-[11.5px] lg:text-xs px-2 py-[3px] rounded-full ${STATUS_TONE[s.status.tone]}`}>{s.status.label}</span>
+          </span>
+        ) : (
+          <span className="hidden lg:block text-[#73698a] text-[12.5px]">{s.kicker}</span>
+        )}
         <b className="font-rubik font-semibold text-[14.5px] lg:text-lg leading-[1.25]">{s.title}</b>
         {s.progress !== null && (
           <span className="hidden lg:block h-[5px] rounded-full bg-[#f3edfa] overflow-hidden mt-1">
@@ -132,7 +150,7 @@ function ItemRow({ it, first }: { it: HomeItem; first: boolean }) {
   );
 }
 
-export default async function DashboardPage({ searchParams }: { searchParams: { enrollment?: string } }) {
+export default async function DashboardPage({ searchParams }: { searchParams: { enrollment?: string; open?: string } }) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -154,6 +172,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
       title: 'הליווי שלי',
       kicker: c.coach ? `ליווי הורי · עם ${c.coach.name}` : 'ליווי הורי',
       color: '#6b4bb5',
+      imageUrl: c.imageUrl,
       href: `/coaching/${c.id}`,
       tag: 'ליווי',
       line: c.total ? `${c.used} מתוך ${c.total} מפגשים · נשאר ${left}` : `${c.used} מפגשים`,
@@ -187,6 +206,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
       {/* Enrollments the team opened for the client, and added sessions to approve, to finish here. */}
       <ToComplete
         items={toComplete}
+        // Arriving from a product's enrollment link (logged in, or just
+        // logged in): that enrollment opens here, at its next step.
+        openId={searchParams?.open}
         approvals={myCoaching
           .filter((c) => c.offer)
           .map((c) => ({

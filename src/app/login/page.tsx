@@ -2,25 +2,42 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 import { useUserLanguage, useTenant } from '@/context/AppContext';
-import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { supabase } from '@/lib/supabase/client';
-import { ArrowLeft } from 'lucide-react';
 import { LoadingState } from '@/components/user/LoadingState';
+import { LoginShell, LOGIN_BUTTON, LOGIN_INPUT, LOGIN_PANEL, LOGIN_TITLE } from './LoginShell';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { t, loading: translationsLoading, direction } = useUserLanguage();
+  const { t, loading: translationsLoading, direction, language } = useUserLanguage();
   const { setTenant } = useTenant();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const isRtl = direction === 'rtl';
+
+  // From an enrollment ("Already have an account? Log in"): the email the
+  // client typed there is filled in, a line names the product that continues
+  // after logging in, and "No account?" goes back to that enrollment.
+  const [enrolling, setEnrolling] = useState<{ name: string; imageUrl: string | null; backHref: string } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromEnroll = params.get('email');
+    if (fromEnroll) setEmail((current) => current || fromEnroll);
+
+    const token = params.get('enroll');
+    if (!token || !/^[A-Za-z0-9_-]{6,}$/.test(token)) return;
+    const returnId = sessionStorage.getItem('enrollment_return_id');
+    const backHref = returnId ? `/enroll/wizard/${returnId}?token=${token}` : `/enroll/${token}`;
+    fetch(`/api/enrollments/token/${token}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.product_name && setEnrolling({ name: d.product_name, imageUrl: d.product_image_url ?? null, backHref }))
+      .catch(() => undefined);
+  }, []);
 
   // Show loading state while translations are loading to prevent flash
   if (translationsLoading) {
@@ -148,21 +165,41 @@ export default function LoginPage() {
       // Wait a bit for cookies to be set
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Check if user came from enrollment wizard
+      // Came from an enrollment ("Already have an account? Log in"): the
+      // token is in the address (?enroll=), or in this tab's storage.
+      const isStaff = data.data.user.role === 'admin' || data.data.user.role === 'super_admin';
       const enrollmentReturnId = sessionStorage.getItem('enrollment_return_id');
-      const enrollmentReturnToken = sessionStorage.getItem('enrollment_return_token');
+      const enrollToken = [new URLSearchParams(window.location.search).get('enroll'), sessionStorage.getItem('enrollment_return_token')].find(
+        (v): v is string => !!v && /^[A-Za-z0-9_-]{6,}$/.test(v),
+      );
+      sessionStorage.removeItem('enrollment_return_id');
+      sessionStorage.removeItem('enrollment_return_token');
 
-      if (enrollmentReturnId && enrollmentReturnToken) {
-        // Clear the stored values
-        sessionStorage.removeItem('enrollment_return_id');
-        sessionStorage.removeItem('enrollment_return_token');
-        // Redirect back to enrollment wizard
-        router.push(`/enroll/wizard/${enrollmentReturnId}?token=${enrollmentReturnToken}`);
+      if (enrollToken) {
+        if (!isStaff) {
+          // A client: the enrollment joins their account and continues in
+          // their portal, opened in "להשלמה" on the home page. Details they
+          // already gave us are not asked again.
+          const linkRes = await fetch(`/api/enrollments/token/${enrollToken}/link-user`, { method: 'POST' }).catch(() => null);
+          const linked = linkRes ? await linkRes.json().catch(() => null) : null;
+          // Already in this product (or on hold): straight to the portal / Billing.
+          if (linkRes?.ok && linked?.redirect) {
+            router.push(linked.redirect);
+            return;
+          }
+          // Joined, or their own open enrollment in this product continues.
+          if (linkRes?.ok && linked?.enrollment_id) {
+            router.push(`/dashboard?open=${encodeURIComponent(linked.enrollment_id)}`);
+            return;
+          }
+        }
+        // Staff, or the enrollment couldn't be linked: back to the wizard as before.
+        router.push(enrollmentReturnId ? `/enroll/wizard/${enrollmentReturnId}?token=${enrollToken}` : `/enroll/${enrollToken}`);
         return;
       }
 
       // Redirect based on user role
-      if (data.data.user.role === 'admin' || data.data.user.role === 'super_admin') {
+      if (isStaff) {
         router.push('/admin/dashboard');
       } else {
         // Students, Instructors, and Parents go to user portal
@@ -175,88 +212,116 @@ export default function LoginPage() {
     }
   };
 
+  // The enrollment line, with the product's name in bold.
+  const [enrollBefore, enrollAfter] = t(
+    'auth.login.continueEnrollment',
+    'After you log in, your enrollment in {product} continues in your portal.',
+  ).split('{product}');
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background px-4 py-8" dir={direction}>
-      <div className="w-full max-w-md">
-        <div className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'}`}>
-          <LanguageSwitcher context="user" />
-        </div>
+    <LoginShell>
+      {(page, siteLink) => {
+        // Words the admin wrote show on the Hebrew page; empty ones, and the
+        // English page, use the built-in wording.
+        const own = (value: string | undefined, key: string, fallback: string) =>
+          language === 'he' && value ? value : t(key, fallback);
+        const badge = own(page?.badge, 'auth.login.badge', 'Your personal area');
+        const title = own(page?.title, 'auth.login.homeTitle', 'Welcome home');
+        const subtitle = own(page?.subtitle, 'auth.login.homeSubtitle', 'Your programs, sessions and club are waiting for you here.');
+        return (
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            className={LOGIN_PANEL}
+          >
+            <span className="hidden self-start rounded-full bg-[#fbefd6] px-3 py-1.5 text-[13px] font-bold text-[#7a4f00] lg:inline-block">
+              {badge}
+            </span>
+            <div className="flex flex-col gap-2">
+              <h1 className={LOGIN_TITLE}>{title}</h1>
+              <p className="m-0 text-[15px] text-[#73698a] lg:text-[17px]">{subtitle}</p>
+            </div>
 
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            {t('auth.login.title', 'Welcome Back')}
-          </h1>
-          <p className="text-muted-foreground text-base">
-            {t('auth.login.subtitle', 'Sign in to your account to continue')}
-          </p>
-        </div>
-
-        <div className="bg-card border border-border/50 rounded-xl p-8 shadow-xl shadow-black/5 backdrop-blur-sm">
-          <form onSubmit={handleSubmit} noValidate className="space-y-6">
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm font-medium">
-                {error}
+            {enrolling && (
+              <div className="flex items-center gap-3 rounded-xl border border-[#f4dfab] bg-[#fff8e8] px-3.5 py-2.5 text-[15px] text-[#5c4208]">
+                {enrolling.imageUrl ? (
+                  <img src={enrolling.imageUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                ) : (
+                  <span className="h-10 w-10 shrink-0 rounded-lg bg-gradient-to-br from-[#8d6cc7] to-[#5b3a8e]" aria-hidden />
+                )}
+                <span>
+                  {enrollBefore}
+                  <b>{enrolling.name}</b>
+                  {enrollAfter}
+                </span>
               </div>
             )}
 
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-semibold text-foreground">
+            {error && (
+              <p role="alert" className="m-0 rounded-xl bg-[#fdecec] px-3.5 py-3 text-sm font-medium text-[#9b1c1c]">
+                {error}
+              </p>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="email" className="text-[15px] font-semibold">
                 {t('auth.login.email')}
               </label>
               <input
                 id="email"
                 type="email"
+                dir="ltr"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-foreground placeholder:text-muted-foreground"
+                className={`${LOGIN_INPUT} ${isRtl ? 'text-right' : ''}`}
                 placeholder="you@example.com"
               />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-semibold text-foreground">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between">
+                <label htmlFor="password" className="text-[15px] font-semibold">
                   {t('auth.login.password')}
                 </label>
-                <Link
-                  href="/reset-password"
-                  className="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
-                >
+                <Link href="/reset-password" className="text-sm font-semibold text-[#5b3a8e] no-underline hover:text-[#3d2466]">
                   {t('auth.login.forgotPassword')}
                 </Link>
               </div>
               <input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-foreground placeholder:text-muted-foreground"
+                className={LOGIN_INPUT}
                 placeholder="••••••••"
               />
             </div>
 
-            <Button
+            <button
               type="submit"
-              className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200"
               disabled={loading}
+              className={LOGIN_BUTTON}
             >
-              {loading ? t('common.loading') : t('auth.login.button')}
-            </Button>
-          </form>
+              {loading ? t('auth.login.signingIn', 'Signing in…') : t('auth.login.button')}
+            </button>
 
-          <div className="mt-6 text-center">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>{t('auth.login.backToHome', 'Back to Home')}</span>
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
+            {enrolling && (
+              <p className="m-0 text-center text-[15px] text-[#73698a]">
+                {t('auth.login.noAccountYet', "Don't have an account?")}{' '}
+                <a href={enrolling.backHref} className="font-semibold text-[#5b3a8e] no-underline hover:text-[#3d2466]">
+                  {t('auth.login.backToEnrollment', 'Back to the enrollment')}
+                </a>
+              </p>
+            )}
+
+            {siteLink && <div className="self-center lg:hidden">{siteLink}</div>}
+          </form>
+        );
+      }}
+    </LoginShell>
   );
 }

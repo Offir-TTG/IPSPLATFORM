@@ -27,6 +27,18 @@
     {
       "path": "/api/cron/schedule-email-sends",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/send-daily-summary",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/run-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-guest-enrollments",
+      "schedule": "30 3 * * *"
     }
   ]
 }

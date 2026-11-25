@@ -70,6 +70,24 @@ export async function POST(
       // Check if intent is still cancellable
       const intent = await stripe.paymentIntents.retrieve(payment_intent_id);
 
+      // Only this enrollment's own checkout can be cancelled through its link:
+      // the intent carries this enrollment's id, or one of its schedules holds it.
+      let owned = intent.metadata?.enrollment_id === enrollment.id;
+      if (!owned) {
+        const { data: holder } = await supabase
+          .from('payment_schedules')
+          .select('id')
+          .eq('enrollment_id', enrollment.id)
+          .eq('stripe_payment_intent_id', payment_intent_id)
+          .limit(1)
+          .maybeSingle();
+        owned = !!holder;
+      }
+      if (!owned) {
+        console.warn('[Cancel Intent] Intent does not belong to this enrollment; refused', payment_intent_id);
+        return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+      }
+
       if (intent.status === 'requires_payment_method' ||
           intent.status === 'requires_confirmation' ||
           intent.status === 'requires_action') {
@@ -83,7 +101,8 @@ export async function POST(
             .from('payment_schedules')
             .update({ stripe_payment_intent_id: null })
             .eq('id', schedule_id)
-            .eq('enrollment_id', enrollment.id);
+            .eq('enrollment_id', enrollment.id)
+            .eq('stripe_payment_intent_id', payment_intent_id);
         }
 
         return NextResponse.json({

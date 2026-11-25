@@ -155,8 +155,11 @@ export async function GET(request: NextRequest) {
         // Use payment record status if schedule is not refunded
         if (payment.status === 'refunded') transactionStatus = 'refunded';
         else if (payment.status === 'partially_refunded') transactionStatus = 'partially_refunded';
-        else if (payment.status === 'succeeded') transactionStatus = 'completed';
+        else if (['paid', 'succeeded', 'completed'].includes(payment.status)) transactionStatus = 'completed';
         else if (payment.status === 'failed') transactionStatus = 'failed';
+        // A payment row with another status falls back to the schedule's own.
+        else if (schedule.status === 'paid') transactionStatus = 'completed';
+        else if (schedule.status === 'failed') transactionStatus = 'failed';
 
         refundAmount = payment.refunded_amount ? parseFloat(payment.refunded_amount) : undefined;
       } else {

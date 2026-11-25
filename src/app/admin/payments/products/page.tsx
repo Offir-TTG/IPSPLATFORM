@@ -41,6 +41,7 @@ import {
   usePagedList,
 } from '@/components/admin/notifications/kit';
 import { ProductDrawer, productTypeLook } from '@/components/admin/products/ProductDrawer';
+import type { PaymentPlan } from '@/components/admin/plans/planFormat';
 import { useProductDelete } from '@/components/admin/products/useProductDelete';
 import { productPublicPath } from '@/components/admin/products/ProductWizardPage';
 
@@ -130,14 +131,16 @@ export default function ProductsPage() {
   };
 
   /** Plan names a product offers, as the old badges showed them. */
-  const planNames = (product: Product): string[] => {
+  /** The payment plans a product offers (its default first when set). */
+  const productPlans = (product: Product): PaymentPlan[] => {
     const ids = product.alternative_payment_plan_ids?.length
       ? product.alternative_payment_plan_ids
       : product.default_payment_plan_id
         ? [product.default_payment_plan_id]
         : [];
-    return ids.map((id) => paymentPlans.find((plan) => plan.id === id)?.plan_name).filter(Boolean) as string[];
+    return ids.map((id) => paymentPlans.find((plan) => plan.id === id)).filter(Boolean) as PaymentPlan[];
   };
+  const planNames = (product: Product): string[] => productPlans(product).map((plan) => plan.plan_name);
 
   const counts = useMemo(
     () => ({
@@ -417,10 +420,11 @@ export default function ProductsPage() {
 
       <ProductDrawer
         product={openProduct}
-        planNames={openProduct ? planNames(openProduct) : []}
+        plans={openProduct ? productPlans(openProduct) : []}
         onClose={() => setOpenId(null)}
         onCopyLink={copyLink}
         onDelete={askDelete}
+        onUpdated={(updated) => setProducts((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
       />
       {dialogs}
     </AdminLayout>

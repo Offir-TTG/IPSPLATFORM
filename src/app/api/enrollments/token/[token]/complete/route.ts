@@ -738,14 +738,25 @@ export async function POST(
       showConfirmation = false;
     }
 
+    // The CRM tags this enrollment brought, saved on it (when it has none
+    // yet), so the admin can find every enrollment with tag X later. An
+    // error (the column's SQL not run yet) changes nothing else.
+    if (Array.isArray(product?.crm_tag_slugs) && product.crm_tag_slugs.length > 0) {
+      await supabase
+        .from('enrollments')
+        .update({ crm_tag_slugs: product.crm_tag_slugs })
+        .eq('id', enrollment.id)
+        .eq('crm_tag_slugs', '{}')
+        .then(() => undefined, () => undefined);
+    }
+
     // ─── Cross-platform person identity ───────────────────────────────
     // For new users: resolve a person_id via IParentingSchool (signed
     // token OR get-or-create by email) and stamp users.person_id.
     // Emit person.enrolled and person.became_customer (this route always
     // represents a finalised enrollment — free OR paid).
-    // For existing users: skip get-or-create (users.person_id should
-    // already be set from their original signup) and only emit
-    // person.became_customer so IParentingSchool's lifecycle catches up.
+    // For existing users: the same check by email (refresh), so a contact
+    // deleted from the CRM is created again and the link is updated.
     try {
       if (!isExistingUser) {
         const profileEmail = profileData?.email ?? profile?.email;
@@ -788,58 +799,47 @@ export async function POST(
           });
         }
       } else {
-        // Existing user: look up their already-stamped person_id and
-        // emit became_customer directly. No get-or-create needed.
+        // Existing user: check the CRM by email every time. It finds the
+        // contact (and updates it with these details) or creates it again
+        // if it is gone; a changed id replaces the saved one. Then the
+        // enrollment, the purchase and the product's tags are sent.
         const { data: linkedUser } = await supabase
           .from('users')
           .select('person_id, email, first_name, last_name, phone, location')
           .eq('id', userId)
           .maybeSingle();
-        if (linkedUser?.person_id) {
-          const { emitPersonBecameCustomer } = await import('@/lib/persons/outbox');
-          await emitPersonBecameCustomer(supabase, {
-            personId: linkedUser.person_id,
+        const email = linkedUser?.email ?? profileData?.email ?? profile?.email;
+        if (email) {
+          await attachPersonIdentity({
+            supabase,
             userId,
-            firstPurchaseAt: new Date().toISOString(),
-            productSummary: {
-              product_name: product?.title ?? "",
-              product_type: product?.type ?? null,
-              amount: enrollment.total_amount ?? 0,
-              currency: (enrollment.currency ?? "USD").toUpperCase(),
-            },
-            crmTagSlugs: Array.isArray(product?.crm_tag_slugs)
-              ? product.crm_tag_slugs
-              : [],
-          });
-        } else {
-          // Existing user without person_id is rare (legacy account
-          // pre-cross-platform). Resolve via email so future events
-          // route correctly.
-          if (linkedUser?.email) {
-            await attachPersonIdentity({
-              supabase,
-              userId,
-              email: linkedUser.email,
-              firstName: linkedUser.first_name ?? null,
-              lastName: linkedUser.last_name ?? null,
-              phone: linkedUser.phone ?? null,
-              // users.location holds the full Google-formatted address
-              // (set in the wizard's user insert as profile.address).
-              addressLine1: (linkedUser as { location?: string | null }).location ?? null,
-              personToken: person_token ?? null,
-              source: source ?? null,
-              emitEnrolledEvent: false, // not new — they were already enrolled
-              emitBecameCustomer: {
-                firstPurchaseAt: new Date().toISOString(),
-                productSummary: {
-                  product_name: product?.title ?? "",
-                  product_type: product?.type ?? null,
-                  amount: enrollment.total_amount ?? 0,
-                  currency: (enrollment.currency ?? "USD").toUpperCase(),
-                },
+            email,
+            firstName: profileData?.first_name ?? linkedUser?.first_name ?? null,
+            lastName: profileData?.last_name ?? linkedUser?.last_name ?? null,
+            phone: profileData?.phone ?? linkedUser?.phone ?? null,
+            locale: profileData?.language ?? null,
+            country: profileData?.country ?? null,
+            addressLine1: profileData?.address_line1 ?? profileData?.address ?? (linkedUser as { location?: string | null } | null)?.location ?? null,
+            city: profileData?.city ?? null,
+            region: profileData?.region ?? null,
+            postalCode: profileData?.postal_code ?? null,
+            personToken: person_token ?? null,
+            source: source ?? null,
+            refresh: true,
+            emitEnrolledEvent: true,
+            emitBecameCustomer: {
+              firstPurchaseAt: new Date().toISOString(),
+              productSummary: {
+                product_name: product?.title ?? "",
+                product_type: product?.type ?? null,
+                amount: enrollment.total_amount ?? 0,
+                currency: (enrollment.currency ?? "USD").toUpperCase(),
               },
-            });
-          }
+              crmTagSlugs: Array.isArray(product?.crm_tag_slugs)
+                ? product.crm_tag_slugs
+                : [],
+            },
+          });
         }
       }
     } catch (identityError) {

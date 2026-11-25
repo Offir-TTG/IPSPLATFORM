@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAdminLanguage } from '@/context/AppContext';
 import { toast } from 'sonner';
+import { ExistingEnrollmentNotice, readExistingEnrollment, type ExistingEnrollment } from '@/components/admin/enrollments/ExistingEnrollmentNotice';
 
 interface CreateEnrollmentDialogProps {
   open: boolean;
@@ -21,13 +22,15 @@ export function CreateEnrollmentDialog({
   onClose,
   onSuccess,
 }: CreateEnrollmentDialogProps) {
-  const { t, direction } = useAdminLanguage();
+  const { t, direction, language } = useAdminLanguage();
   const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
+  // The client already has this product: shown instead of a second enrollment.
+  const [existing, setExisting] = useState<ExistingEnrollment | null>(null);  const [users, setUsers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
 
   const [selectedUser, setSelectedUser] = useState('');
   const [selectedProduct, setSelectedProduct] = useState('');
+  useEffect(() => setExisting(null), [open, selectedUser, selectedProduct]);
   const [waivePayment, setWaivePayment] = useState(false);
   const [isParent, setIsParent] = useState(false);
   const [expiryDate, setExpiryDate] = useState('');
@@ -265,7 +268,12 @@ export function CreateEnrollmentDialog({
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
+        const found = readExistingEnrollment(response.status, error);
+        if (found) {
+          setExisting(found);
+          return;
+        }
         throw new Error(error.error || 'Failed to create enrollment');
       }
 
@@ -515,6 +523,7 @@ export function CreateEnrollmentDialog({
               {t('admin.enrollments.create.alert', 'This enrollment will be marked as admin-assigned and will bypass the normal purchase flow.')}
             </AlertDescription>
           </Alert>
+          {existing && <ExistingEnrollmentNotice existing={existing} language={language === 'he' ? 'he' : 'en'} />}
           </DialogBody>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">

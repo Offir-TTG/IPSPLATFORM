@@ -42,7 +42,7 @@ export function SidePanel({
       <SheetContent
         side={rtl ? 'left' : 'right'}
         dir={direction}
-        className={`flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none [&>button.absolute]:hidden ${wide ? 'sm:max-w-[780px]' : 'sm:max-w-[540px]'}`}
+        className={`flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none [&>[data-default-close]]:hidden ${wide ? 'sm:max-w-[780px]' : 'sm:max-w-[540px]'}`}
       >
         <header className="relative shrink-0 border-b border-border bg-primary/[0.04] px-6 pb-4 pt-5">
           <SheetTitle className="pe-12 text-[22px] font-extrabold leading-tight [font-family:inherit] [overflow-wrap:anywhere]">{title}</SheetTitle>

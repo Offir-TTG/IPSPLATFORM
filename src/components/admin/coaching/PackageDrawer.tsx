@@ -653,7 +653,7 @@ export function AddSessionsSheet({
 
   return (
     <Sheet open={!!enrollmentId} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side={rtl ? 'left' : 'right'} dir={direction} className="flex w-full flex-col gap-0 p-0 sm:max-w-[480px] [&>button.absolute]:hidden">
+      <SheetContent side={rtl ? 'left' : 'right'} dir={direction} className="flex w-full flex-col gap-0 p-0 sm:max-w-[480px] [&>[data-default-close]]:hidden">
         <div className="flex items-start gap-3 border-b border-border px-6 pb-4 pt-6">
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-semibold text-muted-foreground">

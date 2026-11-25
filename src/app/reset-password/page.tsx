@@ -4,11 +4,11 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useUserLanguage } from '@/context/AppContext';
-import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { LoadingState } from '@/components/user/LoadingState';
+// The same frame as the login page: "Forgot password?" keeps the picture and
+// only the form beside it changes.
+import { LoginShell, LOGIN_BUTTON, LOGIN_INPUT, LOGIN_PANEL, LOGIN_TITLE } from '../login/LoginShell';
 
 export default function ResetPasswordPage() {
   const { t, loading: translationsLoading, direction } = useUserLanguage();
@@ -60,86 +60,67 @@ export default function ResetPasswordPage() {
     }
   };
 
+  const backToLogin = (
+    <Link href="/login" className="inline-flex min-h-[44px] items-center self-center px-2 text-sm font-semibold text-[#5b3a8e] no-underline hover:text-[#3d2466]">
+      {t('auth.reset.backToLogin', 'Back to login')}
+    </Link>
+  );
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background px-4 py-8" dir={direction}>
-      <div className="w-full max-w-md">
-        <div className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'}`}>
-          <LanguageSwitcher context="user" />
-        </div>
-
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            {t('auth.reset.title', 'Reset your password')}
-          </h1>
-          <p className="text-muted-foreground text-base">
-            {t('auth.reset.subtitle', "We'll send you an email with a link to reset your password")}
-          </p>
-        </div>
-
-        <div className="bg-card border border-border/50 rounded-xl p-8 shadow-xl shadow-black/5 backdrop-blur-sm">
-          {success ? (
-            <div className="text-center space-y-6">
-              <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded-lg text-sm font-medium">
-                {t('auth.reset.successMessage', 'Check your email for a password reset link')}
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {t('auth.reset.emailSent', "We've sent an email to")}
-                </p>
-                <p className="text-base font-semibold text-foreground">{email}</p>
-                <p className="text-sm text-muted-foreground">
-                  {t('auth.reset.withInstructions', 'with instructions to reset your password')}
-                </p>
-              </div>
-              <Link href="/login" className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary/80 font-medium transition-colors">
-                <ArrowLeft className="h-4 w-4" />
-                {t('auth.reset.backToLogin', 'Back to login')}
-              </Link>
+    <LoginShell>
+      {() =>
+        success ? (
+          <div className={LOGIN_PANEL}>
+            <div className="flex flex-col gap-2">
+              <h1 className={LOGIN_TITLE}>{t('auth.reset.successMessage', 'Check your email for a password reset link')}</h1>
+              <p className="m-0 text-[15px] text-[#73698a] lg:text-[17px]">
+                {t('auth.reset.emailSent', "We've sent an email to")}{' '}
+                <bdi className="font-semibold text-[#221a2e]">{email}</bdi>{' '}
+                {t('auth.reset.withInstructions', 'with instructions to reset your password')}
+              </p>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} noValidate className="space-y-6">
-              {error && (
-                <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm font-medium">
-                  {error}
-                </div>
-              )}
+            {backToLogin}
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} noValidate className={LOGIN_PANEL}>
+            <div className="flex flex-col gap-2">
+              <h1 className={LOGIN_TITLE}>{t('auth.reset.title', 'Reset your password')}</h1>
+              <p className="m-0 text-[15px] text-[#73698a] lg:text-[17px]">
+                {t('auth.reset.subtitle', "We'll send you an email with a link to reset your password")}
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-semibold text-foreground">
-                  {t('auth.reset.email', 'Email address')}
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-foreground placeholder:text-muted-foreground"
-                  placeholder="you@example.com"
-                />
-              </div>
+            {error && (
+              <p role="alert" className="m-0 rounded-xl bg-[#fdecec] px-3.5 py-3 text-sm font-medium text-[#9b1c1c]">
+                {error}
+              </p>
+            )}
 
-              <Button
-                type="submit"
-                className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200"
-                disabled={loading}
-              >
-                {loading ? t('auth.reset.sending', 'Sending...') : t('auth.reset.sendButton', 'Send reset link')}
-              </Button>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="email" className="text-[15px] font-semibold">
+                {t('auth.reset.email', 'Email address')}
+              </label>
+              <input
+                id="email"
+                type="email"
+                dir="ltr"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className={`${LOGIN_INPUT} ${isRtl ? 'text-right' : ''}`}
+                placeholder="you@example.com"
+              />
+            </div>
 
-              <div className="text-center">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  {t('auth.reset.backToLogin', 'Back to login')}
-                </Link>
-              </div>
-            </form>
-          )}
-        </div>
-      </div>
-    </div>
+            <button type="submit" disabled={loading} className={LOGIN_BUTTON}>
+              {loading ? t('auth.reset.sending', 'Sending...') : t('auth.reset.sendButton', 'Send reset link')}
+            </button>
+
+            {backToLogin}
+          </form>
+        )
+      }
+    </LoginShell>
   );
 }

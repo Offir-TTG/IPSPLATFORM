@@ -68,7 +68,9 @@ export async function GET(request: NextRequest) {
         enrollment_id
       `)
       .eq('tenant_id', tenantId)
-      .eq('status', 'paid')
+      // Collected in the period, including charges refunded later (a full
+      // refund turns the schedule "refunded"); refunds are subtracted below.
+      .in('status', ['paid', 'refunded'])
       .gte('paid_date', startDate.toISOString())
       .order('paid_date', { ascending: true });
 
@@ -102,11 +104,15 @@ export async function GET(request: NextRequest) {
     const pendingAmount = allSchedules?.filter(s => s.status === 'pending')
       .reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
 
-    // Get refunds from payments table (need paid_at for chart and payment_type for breakdown)
-    const { data: payments } = await supabase
+    // Refunds on the charges collected in this period only (need paid_at for
+    // chart and payment_type for breakdown).
+    const periodScheduleIds = new Set(paidSchedules.map(s => s.id));
+    const { data: allPayments } = await supabase
       .from('payments')
-      .select('refunded_amount, paid_at, payment_type')
-      .eq('tenant_id', tenantId);
+      .select('refunded_amount, paid_at, payment_type, payment_schedule_id')
+      .eq('tenant_id', tenantId)
+      .gt('refunded_amount', 0);
+    const payments = (allPayments ?? []).filter(p => p.payment_schedule_id && periodScheduleIds.has(p.payment_schedule_id));
 
     const totalRefunds = payments?.reduce((sum, p) => {
       const refunded = parseFloat(p.refunded_amount?.toString() || '0');
@@ -201,7 +207,7 @@ export async function GET(request: NextRequest) {
       .from('payment_schedules')
       .select('amount')
       .eq('tenant_id', tenantId)
-      .eq('status', 'paid')
+      .in('status', ['paid', 'refunded'])
       .gte('paid_date', previousPeriodStart.toISOString())
       .lt('paid_date', startDate.toISOString());
 

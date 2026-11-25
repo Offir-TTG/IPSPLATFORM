@@ -2315,7 +2315,7 @@ export default function CourseBuilderPage() {
         <SheetContent
           side={isRtl ? 'left' : 'right'}
           dir={direction}
-          className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none sm:max-w-[560px] [&>button.absolute]:hidden"
+          className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none sm:max-w-[560px] [&>[data-default-close]]:hidden"
         >
           <header className="relative shrink-0 border-b border-border bg-primary/[0.04] px-6 pb-4 pt-5">
             {(() => {

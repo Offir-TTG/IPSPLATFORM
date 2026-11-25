@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { BookOpen, ChevronLeft, ChevronRight, Eye, ImageIcon, Loader2, Settings2, Trash2, Users } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, ImageIcon, Link2, Loader2, Settings2, Trash2, Users } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -248,10 +248,24 @@ export default function ProgramDetailPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {productId && (
-              <a href={`/program/${productId}`} target="_blank" rel="noopener noreferrer" className={kitButton.secondary}>
-                <Eye className="h-4 w-4" aria-hidden />
-                {t('admin.programs.viewPage', 'View page')}
-              </a>
+              // The program's enrollment link (the old product page now goes
+              // straight into the enrollment, so it is copied, not opened).
+              <button
+                type="button"
+                onClick={async () => {
+                  const url = `${window.location.origin}/enroll/product/${productId}`;
+                  try {
+                    await navigator.clipboard.writeText(url);
+                    toast({ title: t('admin.payments.products.linkCopied', 'Link copied'), description: url });
+                  } catch {
+                    toast({ title: t('admin.payments.products.linkCopyFailed', 'Failed to copy link'), variant: 'destructive' });
+                  }
+                }}
+                className={kitButton.secondary}
+              >
+                <Link2 className="h-4 w-4" aria-hidden />
+                {t('admin.products.copyEnrollLink', 'Copy enrollment link')}
+              </button>
             )}
             <button
               type="button"

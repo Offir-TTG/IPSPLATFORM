@@ -5,7 +5,7 @@
  */
 import { createAdminClient } from '@/lib/supabase/server';
 import { getStripeClient } from './getStripeClient';
-import { nextChargeable, refreshEnrollmentTotals, type ScheduleRow } from './dueSchedules';
+import { nextChargeable, recordInvoicePaid, refreshEnrollmentTotals, type ScheduleRow } from './dueSchedules';
 import { addPeriod, createScheduledInvoice } from './invoiceService';
 import { planSubscriptionAmount } from './paymentEngine';
 import { loadPriceChanges, readMemberPrice, upcomingForMember } from './subscriptionPrice';
@@ -231,7 +231,9 @@ export async function getSubscriptionSummary(userId: string, enrollmentId: strin
     paused_until: dates.pausedUntil?.toISOString() ?? null,
     can_stop: !cancelled && !dates.endsAt,
     can_resume: !cancelled && (!!dates.endsAt || pauseActiveOrComing),
-    can_pause: state === 'active' && !!paidThrough && paidThrough > now,
+    // Pausing a membership for a month is not offered (the business decided
+    // not to allow it). A pause set before stays and can still be cancelled.
+    can_pause: false,
     can_switch: (state === 'active' || state === 'pause_scheduled') && productPlans.length > 1,
     current_plan_id: currentPlanId,
     plans: productPlans.map((p) => ({ ...p, current: p.plan_id === currentPlanId })),
@@ -342,20 +344,43 @@ export async function changeSubscription(
     // A charge already created for the paused month is called off.
     const { data: inWindow } = await supabase
       .from('payment_schedules')
-      .select('id, status, stripe_invoice_id')
+      .select('id, status, stripe_invoice_id, stripe_payment_intent_id')
       .eq('enrollment_id', enrollmentId)
-      .in('status', ['pending', 'adjusted'])
+      .in('status', ['pending', 'adjusted', 'processing'])
       .gte('scheduled_date', pausedFrom.toISOString())
       .lt('scheduled_date', pausedUntil.toISOString());
+    if ((inWindow ?? []).some((s) => s.status === 'processing')) {
+      return { ok: false, status: 409, error: 'A payment is being processed right now. Please try again in a few minutes.' };
+    }
     if ((inWindow ?? []).length) {
       const { stripe } = await getStripeClient(enrollment.tenant_id);
+      // Only a charge that was really not paid is called off. If its invoice
+      // turns out paid, the payment is recorded and the pause is refused.
       for (const s of inWindow ?? []) {
-        if (s.stripe_invoice_id) await closeUnpaidInvoice(stripe, s.stripe_invoice_id);
+        if (s.stripe_invoice_id) {
+          const closed = await closeUnpaidInvoice(stripe, s.stripe_invoice_id);
+          if (closed === 'paid') {
+            const invoice = await stripe.invoices.retrieve(s.stripe_invoice_id).catch(() => null);
+            if (invoice) await recordInvoicePaid(supabase, invoice, 'pause_month');
+            return { ok: false, status: 409, error: 'A payment just went through. Please refresh and try again.' };
+          }
+          if (typeof closed === 'object') return { ok: false, status: 502, error: closed.error };
+        } else if (s.stripe_payment_intent_id) {
+          const intent = await stripe.paymentIntents.retrieve(s.stripe_payment_intent_id).catch(() => null);
+          if (intent && (intent.status === 'succeeded' || intent.status === 'processing')) {
+            return { ok: false, status: 409, error: 'A payment just went through. Please refresh and try again.' };
+          }
+          if (intent && intent.status !== 'canceled') {
+            await stripe.paymentIntents.cancel(s.stripe_payment_intent_id).catch(() => null);
+          }
+        }
       }
-      await supabase
+      const { error: cancelError } = await supabase
         .from('payment_schedules')
         .update({ status: 'cancelled', adjustment_reason: 'Membership paused by the client', updated_at: now.toISOString() })
-        .in('id', (inWindow ?? []).map((s) => s.id));
+        .in('id', (inWindow ?? []).map((s) => s.id))
+        .in('status', ['pending', 'adjusted']);
+      if (cancelError) return { ok: false, status: 500, error: cancelError.message };
     }
     const { error } = await supabase
       .from('enrollments')

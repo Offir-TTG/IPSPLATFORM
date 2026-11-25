@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertCircle, ShieldCheck, AlertTriangle, XCircle, Tag } from 'lucide-react';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useCrmTagNames } from '@/hooks/useCrmTagNames';
 
 type EnrichedTag = { value: string; from_products: string[] };
 
@@ -144,6 +145,8 @@ function severityStyles(sev: Severity) {
 export function UserOverviewTab({ userId, summary, onSwitchToTab }: UserOverviewTabProps) {
   const { t } = useAdminLanguage();
   const [crmTagSlugs, setCrmTagSlugs] = useState<EnrichedTag[]>([]);
+  // The tags' names from the CRM, in the admin's language.
+  const { label: tagLabel } = useCrmTagNames();
   const [loadingTags, setLoadingTags] = useState(true);
 
   // Enrollment tags — CRM tag slugs aggregated across every
@@ -267,12 +270,12 @@ export function UserOverviewTab({ userId, summary, onSwitchToTab }: UserOverview
                           key={`crm-${tag.value}`}
                           variant="outline"
                           className="font-normal"
-                          title={t(
+                          title={`${tag.value} · ${t(
                             'admin.users.activity.overview.tags.fromProducts',
                             { products: tag.from_products.join(', ') },
-                          )}
+                          )}`}
                         >
-                          {tag.value}
+                          {tagLabel(tag.value)}
                         </Badge>
                       ))}
                     </div>

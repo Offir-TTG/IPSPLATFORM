@@ -159,59 +159,21 @@ export async function chargeHeldSession(tenantId: string, sessionId: string): Pr
 }
 
 /**
- * A session charge whose Stripe invoice is paid: records the payment (once per
- * invoice) and marks the charge paid, as the Stripe webhook does. Safe to run
- * again, and safe alongside the webhook. Returns the charge's status after.
+ * A session charge whose Stripe invoice is paid: recorded through the same
+ * function as every other scheduled charge (one payment per invoice, the
+ * schedule marked paid, totals updated). Safe to run again, and safe
+ * alongside the webhook. Returns the charge's status after.
  */
 export async function syncSessionCharge(tenantId: string, scheduleId: string): Promise<{ status: string; error?: string }> {
   const db = createAdminClient();
-  const { data: s } = await db
-    .from('payment_schedules')
-    .select('id, enrollment_id, amount, currency, status, payment_number, payment_type, payment_plan_id, stripe_invoice_id')
-    .eq('id', scheduleId)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data: s } = await db.from('payment_schedules').select('id, status, stripe_invoice_id').eq('id', scheduleId).eq('tenant_id', tenantId).maybeSingle();
   if (!s) return { status: 'missing' };
   if (s.status === 'paid' || !s.stripe_invoice_id) return { status: s.status };
-
   const { getStripeClient } = await import('./getStripeClient');
+  const { recordInvoicePaid } = await import('./dueSchedules');
   const { stripe } = await getStripeClient(tenantId);
-  const invoice: any = await stripe.invoices.retrieve(s.stripe_invoice_id);
+  const invoice = await stripe.invoices.retrieve(s.stripe_invoice_id);
   if (invoice.status !== 'paid') return { status: s.status };
-
-  const { data: existing } = await db.from('payments').select('id').eq('stripe_invoice_id', invoice.id).maybeSingle();
-  let paymentId = existing?.id as string | undefined;
-  if (!paymentId) {
-    const { data: enrollment } = await db.from('enrollments').select('product_id').eq('id', s.enrollment_id).maybeSingle();
-    const { data: row, error } = await db
-      .from('payments')
-      .insert({
-        tenant_id: tenantId,
-        enrollment_id: s.enrollment_id,
-        payment_schedule_id: s.id,
-        product_id: enrollment?.product_id ?? null,
-        payment_plan_id: s.payment_plan_id,
-        amount: Number(s.amount),
-        currency: String(invoice.currency).toUpperCase(),
-        payment_type: s.payment_type,
-        installment_number: s.payment_number,
-        stripe_payment_intent_id: typeof invoice.payment_intent === 'string' ? invoice.payment_intent : invoice.payment_intent?.id ?? null,
-        stripe_invoice_id: invoice.id,
-        stripe_customer_id: typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id ?? null,
-        status: 'paid',
-        paid_at: invoice.status_transitions?.paid_at ? new Date(invoice.status_transitions.paid_at * 1000).toISOString() : new Date().toISOString(),
-        metadata: { payment_number: s.payment_number, payment_type: s.payment_type, schedule_id: s.id },
-      })
-      .select('id')
-      .single();
-    if (error || !row) return { status: s.status, error: error?.message ?? 'Payment not saved' };
-    paymentId = row.id;
-  }
-  const { error: updateError } = await db
-    .from('payment_schedules')
-    .update({ status: 'paid', paid_date: new Date().toISOString(), payment_id: paymentId, retry_count: 0, next_retry_date: null, last_error: null })
-    .eq('id', s.id);
-  if (updateError) return { status: s.status, error: updateError.message };
-  await refreshEnrollmentTotals(db as any, s.enrollment_id);
-  return { status: 'paid' };
+  const recorded = await recordInvoicePaid(db as any, invoice, 'session-sync');
+  return recorded.ok ? { status: 'paid' } : { status: s.status, error: recorded.error };
 }

@@ -18,6 +18,9 @@ export interface PaymentSchedule {
   retry_count?: number;
   next_retry_date?: string;
   last_error?: string;
+  /** Stripe's ids for this payment, when it went through Stripe. */
+  stripe_payment_intent_id?: string | null;
+  stripe_invoice_id?: string | null;
 }
 
 export const SCHEDULE_STATUSES = ['pending', 'overdue', 'failed', 'processing', 'adjusted', 'paused', 'paid', 'cancelled'] as const;

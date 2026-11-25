@@ -17,6 +17,9 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/server';
 import { chargeHeldSession, priceOfHeldSession } from '@/lib/payments/perSession';
 import { getStripeClient } from '@/lib/payments/getStripeClient';
+import { deliverMessage } from '@/lib/messaging/deliver';
+import { chaserForEvent } from '@/lib/messaging/store';
+import { fireEvent } from '@/lib/messaging/engine';
 
 type Fail = { ok: false; status: number; error: string };
 const fail = (status: number, error: string): Fail => ({ ok: false, status, error });
@@ -352,20 +355,33 @@ async function notifyOffer(tenantId: string, adminId: string, enrollmentId: stri
     const { data: e } = await db.from('enrollments').select('user_id, child_id').eq('id', enrollmentId).maybeSingle();
     if (!e?.user_id) return;
     const { data: child } = e.child_id ? await db.from('children').select('first_name').eq('id', e.child_id).maybeSingle() : { data: null };
-    await db.from('notifications').insert({
-      tenant_id: tenantId,
-      scope: 'individual',
-      target_user_id: e.user_id,
-      category: 'announcement',
+    // The automatic reminder "More sessions offered" decides (words, email, on/off).
+    const reminder = await chaserForEvent(db, tenantId, 'coaching.offer');
+    if (reminder !== 'missing') {
+      if (reminder?.status === 'active') {
+        await fireEvent(tenantId, 'coaching.offer', [{
+          subjectType: 'enrollment',
+          subjectId: enrollmentId,
+          userId: e.user_id,
+          context: { child: child?.first_name ?? '', childId: e.child_id ?? undefined, enrollmentId, sessions },
+        }]);
+      }
+      return;
+    }
+    await deliverMessage({
+      tenantId,
+      userId: e.user_id,
+      source: 'coaching',
+      category: 'lesson',
+      email: false,
       priority: 'high',
-      display_style: 'list',
       title: child?.first_name ? `הוצעו ${sessions} מפגשים נוספים עבור ${child.first_name}` : `הוצעו לך ${sessions} מפגשים נוספים`,
-      message: 'לא נגבה כלום באישור. כל מפגש נגבה רק כשהוא מתקיים, ואין צורך לחתום שוב.',
-      action_url: e.child_id ? `/children/${e.child_id}` : `/coaching/${enrollmentId}?tab=package`,
-      action_label: 'לאישור',
+      body: 'לא נגבה כלום באישור. כל מפגש נגבה רק כשהוא מתקיים, ואין צורך לחתום שוב.',
+      actionUrl: e.child_id ? `/children/${e.child_id}` : `/coaching/${enrollmentId}?tab=package`,
+      actionLabel: 'לאישור',
       metadata: { kind: 'coaching_offer', enrollment_id: enrollmentId },
-      created_by: adminId,
-    });
+      createdBy: adminId,
+    }, db);
   } catch (error) {
     console.error('[coaching] offer notification failed', error);
   }

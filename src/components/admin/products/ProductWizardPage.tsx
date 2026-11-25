@@ -14,9 +14,12 @@ import type { Product, ProductFormData } from '@/types/product';
 import { ProductWizard } from '@/components/admin/products/ProductWizard';
 import { useProductDelete } from '@/components/admin/products/useProductDelete';
 
-/** Public address of a product, as the list's copy-link button always built it. */
+/**
+ * A product's enrollment link: one link for everyone, any product type. It
+ * opens the enrollment wizard directly (no product page in between).
+ */
 export function productPublicPath(product: Pick<Product, 'id' | 'type'>) {
-  return product.type === 'program' ? `/program/${product.id}` : `/course/${product.id}`;
+  return `/enroll/product/${product.id}`;
 }
 
 /**
@@ -150,7 +153,7 @@ export function ProductWizardPage({ productId }: { productId?: string }) {
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={copyLink} className={kitButton.secondary}>
                 <Link2 className="h-4 w-4" aria-hidden />
-                {t('admin.payments.products.copyLink', 'Copy product link')}
+                {t('admin.products.copyEnrollLink', 'Copy enrollment link')}
               </button>
               <button
                 type="button"

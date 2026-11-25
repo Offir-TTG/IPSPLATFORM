@@ -23,8 +23,12 @@ const button =
  * details, and the actions this status allows. The actions open the same
  * dialogs as before; the page owns them.
  */
+/** A CRM tag's name and its category colour (from /api/admin/crm/tags). */
+export type CrmTagInfo = { name: string; color: string | null };
+
 export function EnrollmentDrawer({
   enrollment,
+  tagInfo,
   refreshKey,
   onClose,
   onSendLink,
@@ -35,6 +39,8 @@ export function EnrollmentDrawer({
   onRecordPayment,
 }: {
   enrollment: Enrollment | null;
+  /** CRM tags by slug, to name and colour the enrollment's tag badges. */
+  tagInfo?: Map<string, CrmTagInfo>;
   /** Changes after an action, so the schedule reloads. */
   refreshKey: number;
   onClose: () => void;
@@ -191,7 +197,7 @@ export function EnrollmentDrawer({
       <SheetContent
         side={rtl ? 'left' : 'right'}
         dir={direction}
-        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[540px] [&>button.absolute]:hidden"
+        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[540px] [&>[data-default-close]]:hidden"
       >
         <button
           type="button"
@@ -206,7 +212,7 @@ export function EnrollmentDrawer({
         <header className="shrink-0 border-b border-border bg-primary/[0.04] px-6 pb-5 pt-6">
           <p className={`inline-flex items-center gap-2 pe-10 text-[13.5px] font-semibold ${tone.text}`}>
             <span className={`h-2 w-2 rounded-full ${tone.dot}`} aria-hidden />
-            {f.statusLabel(e.status)} ·{' '}
+            {f.enrollmentStatus(e)} ·{' '}
             {e.enrollment_type === 'admin_assigned'
               ? t('admin.enrollments.type.adminAssigned', 'Assigned by an admin')
               : t('admin.enrollments.type.selfEnrolled', 'Self-enrolled')}
@@ -237,6 +243,27 @@ export function EnrollmentDrawer({
               </button>
             </div>
           </SheetDescription>
+          {(e.crm_tag_slugs ?? []).length > 0 && (
+            <ul className="mt-2.5 flex list-none flex-wrap items-center gap-1.5 p-0" aria-label={t('admin.enrollments.drawer.crmTags', 'CRM tags')}>
+              {(e.crm_tag_slugs ?? []).map((slug) => {
+                const tag = tagInfo?.get(slug);
+                const color = tag?.color ?? null;
+                return (
+                  <li
+                    key={slug}
+                    className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium"
+                    style={{
+                      backgroundColor: color ? `${color}22` : 'hsl(var(--muted))',
+                      color: color ?? undefined,
+                      border: color ? `1px solid ${color}55` : '1px solid hsl(var(--border))',
+                    }}
+                  >
+                    <bdi>{tag?.name ?? slug}</bdi>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <div className="mt-4 grid grid-cols-3 gap-2">
             <Stat
               label={t('admin.enrollments.drawer.paid', 'Paid')}

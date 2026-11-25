@@ -311,6 +311,13 @@ export const lessonService = {
         }
       }
 
+      // The time and status before the change, so a moved or cancelled
+      // meeting can tell its members (automatic reminders).
+      const timeOrStatusChanging = 'start_time' in updates || 'status' in updates;
+      const { data: before } = timeOrStatusChanging
+        ? await supabase.from('lessons').select('start_time, status').eq('id', id).maybeSingle()
+        : { data: null };
+
       // Update the lesson in the database
       // Explicitly list all columns to avoid PostgREST schema cache issues
       const lessonsColumns = 'id, course_id, module_id, tenant_id, title, description, content, order, start_time, duration, timezone, zoom_meeting_id, zoom_join_url, zoom_start_url, recording_url, materials, status, is_published, content_blocks, created_at, updated_at, zoom_passcode, zoom_waiting_room, zoom_join_before_host, zoom_mute_upon_entry, zoom_require_authentication, zoom_host_video, zoom_participant_video, zoom_audio, zoom_auto_recording, zoom_record_speaker_view, zoom_recording_disclaimer';
@@ -327,6 +334,16 @@ export const lessonService = {
           success: false,
           error: error.message,
         };
+      }
+
+      if (before && data) {
+        const after = data as any;
+        const { lessonChanged } = await import('@/lib/messaging/events');
+        if (after.status === 'cancelled' && before.status !== 'cancelled') {
+          await lessonChanged({ ...after, start_time: before.start_time }, 'cancelled');
+        } else if (after.start_time && before.start_time && new Date(after.start_time).getTime() !== new Date(before.start_time).getTime()) {
+          await lessonChanged(after, 'moved');
+        }
       }
 
       // Auto-sync to Zoom if a Zoom meeting exists and relevant fields were updated
@@ -518,7 +535,7 @@ export const lessonService = {
       // Get the lesson to access tenant_id
       const { data: lesson, error: lessonFetchError } = await supabase
         .from('lessons')
-        .select('tenant_id')
+        .select('id, tenant_id, course_id, title, start_time')
         .eq('id', id)
         .single();
 
@@ -641,6 +658,12 @@ export const lessonService = {
           success: false,
           error: error.message,
         };
+      }
+
+      // A future meeting that was deleted is cancelled for its members.
+      {
+        const { lessonChanged } = await import('@/lib/messaging/events');
+        await lessonChanged(lesson as any, 'cancelled');
       }
 
       // Build message with Zoom and Daily.co deletion status

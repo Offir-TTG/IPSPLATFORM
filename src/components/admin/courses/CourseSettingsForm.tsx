@@ -11,7 +11,7 @@ import { useAdminLanguage } from '@/context/AppContext';
 import { SaveBar, saveBarText, useLeaveGuard } from '@/components/admin/notifications/kit';
 import { StepWizard, WizardField, useStepWizard } from '@/components/admin/wizard/StepWizard';
 import { stripHtml } from '@/components/admin/programs/types';
-import { COURSE_TYPES, COURSE_TYPE_FALLBACK, dayOf, loadCourseOptions, personName, type AdminCourse, type Option } from './types';
+import { OFFERED_COURSE_TYPES, COURSE_TYPE_FALLBACK, dayOf, loadCourseOptions, personName, type AdminCourse, type Option } from './types';
 
 // Keep in step with /api/lms/courses/upload-image.
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -248,8 +248,21 @@ export function CourseSettingsForm({
 
   const errorText = (code: string | undefined, fallback: string) => (code && code.includes('.') && !code.includes(' ') ? t(code, fallback) : code || fallback);
 
+  // A new course is created once. Opening its page can take a while, so a
+  // second click on Create (or Enter) only opens it again, never creates a
+  // second course; `busy` also stops a fast double click.
+  const createdId = useRef<string | null>(null);
+  const busy = useRef(false);
+
   const save = async () => {
+    if (!course && createdId.current) {
+      router.replace(`/admin/lms/courses/${createdId.current}?step=structure`);
+      return;
+    }
+    if (busy.current) return;
     if (!w.checkAll()) return;
+    busy.current = true;
+    let leaving = false;
     setSaving(true);
     const body = {
       title: form.title.trim(),
@@ -277,6 +290,7 @@ export function CourseSettingsForm({
         const result = await res.json().catch(() => ({}));
         if (!res.ok || !result.success) throw new Error(errorText(result.error, t('lms.courses.error.create_failed', 'Failed to create course')));
         const id = result.data.id as string;
+        createdId.current = id;
         // Creating takes the basic fields only; switches turned off are saved right after.
         const features = {
           ...('uses_grades' in body ? { uses_grades: (body as any).uses_grades } : {}),
@@ -295,6 +309,8 @@ export function CourseSettingsForm({
         }
         toast({ title: t('common.success', 'Success'), description: t('lms.msg.create_success', 'Created successfully') });
         guard.allowLeave();
+        // Stays "saving" until the course page opens.
+        leaving = true;
         router.replace(`/admin/lms/courses/${id}?step=structure`);
         return;
       }
@@ -346,7 +362,8 @@ export function CourseSettingsForm({
         variant: 'destructive',
       });
     } finally {
-      setSaving(false);
+      busy.current = false;
+      if (!leaving) setSaving(false);
     }
   };
 
@@ -382,8 +399,10 @@ export function CourseSettingsForm({
               <Input id="course-title" value={form.title} onChange={(e) => set('title', e.target.value)} dir={direction} aria-invalid={!!errors.title} className={`h-11 ${errBorder('title')}`} />
             </WizardField>
             <WizardField label={t('lms.course.type_label', 'Course Type')} required error={errors.course_type}>
-              <div role="radiogroup" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {COURSE_TYPES.map((type) => {
+              <div role="radiogroup" className="grid grid-cols-2 gap-2 sm:max-w-md">
+                {/* Course or lecture. A course saved earlier with another type
+                    keeps it as a choice, so editing it changes nothing. */}
+                {[...OFFERED_COURSE_TYPES, ...((OFFERED_COURSE_TYPES as readonly string[]).includes(saved.course_type) ? [] : [saved.course_type])].map((type) => {
                   const on = form.course_type === type;
                   const Icon = TYPE_ICON[type] ?? BookOpen;
                   return (

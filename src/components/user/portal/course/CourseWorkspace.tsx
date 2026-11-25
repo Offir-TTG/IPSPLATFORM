@@ -387,32 +387,28 @@ export function CourseWorkspace({
       )}
 
       {part === 'about' && (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-4 items-stretch">
-          <div className="flex flex-col gap-4 min-h-0">
-            {/* As tall as the overview column; the description scrolls inside. */}
-            <div className="relative flex-1 min-h-[420px] lg:min-h-[320px]">
-              <section className={`${panel} absolute inset-0 p-4 lg:p-[22px] flex flex-col gap-2.5 overflow-hidden`}>
-                {info.image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={info.image_url} alt="" className="w-full h-40 lg:h-48 shrink-0 object-cover rounded-2xl" />
-                )}
-                <h2 className="m-0 shrink-0 font-rubik font-semibold text-lg text-[#221a2e]">{listTitle === 'המפגשים' ? 'על המועדון' : 'על הקורס'}</h2>
-                {desc ? (
-                  <p tabIndex={0} className="m-0 flex-1 min-h-0 overflow-y-auto pe-1 text-[15px] text-[#3b3349] leading-[1.75] whitespace-pre-line focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5b3a8e]/40 rounded-lg">
-                    {desc}
-                  </p>
-                ) : (
-                  <span className="text-sm text-[#73698a]">אין תיאור עדיין.</span>
-                )}
-              </section>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-4 items-start">
+          <div className="flex flex-col gap-4 min-w-0">
+            {/* The whole description, at its natural height; the page scrolls, not a small box. */}
+            <section className={`${panel} p-4 lg:p-[22px] flex flex-col gap-2.5`}>
+              {info.image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={info.image_url} alt="" className="w-full h-40 lg:h-56 object-cover rounded-2xl" />
+              )}
+              <h2 className="m-0 font-rubik font-semibold text-lg text-[#221a2e]">{listTitle === 'המפגשים' ? 'על המועדון' : 'על הקורס'}</h2>
+              {desc ? (
+                <p className="m-0 text-[15px] text-[#3b3349] leading-[1.75] whitespace-pre-line">{desc}</p>
+              ) : (
+                <span className="text-sm text-[#73698a]">אין תיאור עדיין.</span>
+              )}
+            </section>
             {info.instructor && !hideInstructor && (
-              <section className={`${panel} p-4 lg:p-[22px] flex items-center gap-3.5`}>
+              <section className={`${panel} p-4 lg:p-[22px] flex items-start gap-3.5`}>
                 {info.instructor_avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={info.instructor_avatar} alt="" className="w-14 h-14 rounded-full object-cover" />
+                  <img src={info.instructor_avatar} alt="" className="w-14 h-14 shrink-0 rounded-full object-cover" />
                 ) : (
-                  <span aria-hidden="true" className="w-14 h-14 rounded-full grid place-items-center text-white font-rubik font-bold text-[17px]" style={{ background: accent }}>
+                  <span aria-hidden="true" className="w-14 h-14 shrink-0 rounded-full grid place-items-center text-white font-rubik font-bold text-[17px]" style={{ background: accent }}>
                     {info.instructor
                       .split(' ')
                       .map((w) => w.charAt(0))
@@ -425,7 +421,7 @@ export function CourseWorkspace({
                   <span className="text-[12.5px] text-[#73698a]">מנחה</span>
                   <b className="font-rubik font-semibold text-[17px]">{info.instructor}</b>
                   {info.instructor_bio && plainText(info.instructor_bio) && (
-                    <span className="text-[13.5px] text-[#73698a] leading-[1.6] line-clamp-4 whitespace-pre-line">{plainText(info.instructor_bio)}</span>
+                    <span className="text-[13.5px] text-[#73698a] leading-[1.6] whitespace-pre-line">{plainText(info.instructor_bio)}</span>
                   )}
                 </span>
               </section>

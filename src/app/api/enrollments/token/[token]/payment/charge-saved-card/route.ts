@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
-import { nextChargeable, recordSchedulePaid, refreshEnrollmentTotals, type ScheduleRow } from '@/lib/payments/dueSchedules';
+import { nextChargeable, recordInvoicePaid, recordSchedulePaid, refreshEnrollmentTotals, type ScheduleRow } from '@/lib/payments/dueSchedules';
 import { loadIntegration } from '@/lib/integrations/store';
 
 /**
@@ -141,6 +141,31 @@ export async function POST(
       return NextResponse.json({ error: "This payment isn't due yet." }, { status: 400 });
     }
 
+    // An invoice from an earlier automatic charge: record it if it was paid
+    // after all; otherwise close it, so it can't also be charged later.
+    if (schedule.stripe_invoice_id) {
+      const earlierInvoice = await stripe.invoices.retrieve(schedule.stripe_invoice_id).catch(() => null);
+      if (earlierInvoice?.status === 'paid') {
+        await recordInvoicePaid(supabase, earlierInvoice, 'charge-saved-card-check');
+        return NextResponse.json({ success: true, message: 'Payment already completed', already_paid: true });
+      }
+      if (earlierInvoice?.status === 'open') {
+        try {
+          await stripe.invoices.voidInvoice(earlierInvoice.id);
+        } catch {
+          return NextResponse.json({ error: 'This payment is being charged right now. Try again in a few minutes.' }, { status: 409 });
+        }
+      }
+      if (earlierInvoice) {
+        // Cleared, and re-read so the claim below compares against this change.
+        const { data: fresh } = await supabase.from('payment_schedules').update({ stripe_invoice_id: null }).eq('id', schedule.id).select('status, updated_at').single();
+        if (fresh) {
+          schedule.status = fresh.status;
+          schedule.updated_at = fresh.updated_at;
+        }
+      }
+    }
+
     // Get customer's default payment method if not provided
     let paymentMethodId = payment_method_id;
 
@@ -193,9 +218,24 @@ export async function POST(
       payment_method: paymentMethodId,
     });
 
-    // Create Payment Intent with saved payment method. The key makes a double
-    // click or a retried request return the same charge instead of a new one.
-    const paymentIntent = await stripe.paymentIntents.create({
+    // Take the payment for this charge first, so a second click (or the
+    // scheduled charger) can't start another one at the same moment.
+    const claimAt = new Date().toISOString();
+    let claim = supabase.from('payment_schedules').update({ status: 'processing', updated_at: claimAt }).eq('id', schedule.id).eq('status', schedule.status);
+    claim = schedule.updated_at ? claim.eq('updated_at', schedule.updated_at) : claim.is('updated_at', null);
+    const { data: claimed, error: claimError } = await claim.select('id');
+    if (claimError || !claimed || claimed.length === 0) {
+      return NextResponse.json({ error: 'This payment is already being charged. Please wait a moment and refresh.' }, { status: 409 });
+    }
+    const putBack = () =>
+      supabase.from('payment_schedules').update({ status: schedule.status, updated_at: new Date().toISOString() }).eq('id', schedule.id).eq('status', 'processing');
+
+    // Create Payment Intent with saved payment method. The key is the same
+    // for every retry of this attempt (a double click or a resent request
+    // returns the same charge); a new attempt after a failed one gets a new key.
+    let paymentIntent: Stripe.PaymentIntent;
+    try {
+    paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(schedule.amount * 100), // Convert to cents
       currency: schedule.currency.toLowerCase(),
       customer: enrollment.stripe_customer_id,
@@ -213,8 +253,15 @@ export async function POST(
       },
       description: `${schedule.payment_type === 'deposit' ? 'Deposit' : `Payment ${schedule.payment_number || 1}`} for ${product?.title || 'Product'}`,
     }, {
-      idempotencyKey: `charge-saved:${schedule.id}:${paymentMethodId}:${Math.floor(Date.now() / 60000)}`,
+      idempotencyKey: `charge-saved:${schedule.id}:${paymentMethodId}:${schedule.stripe_payment_intent_id ?? 'first'}:${Math.round(schedule.amount * 100)}`,
     });
+    } catch (chargeError: any) {
+      // Declined or refused by Stripe: nothing was taken, the payment is open again.
+      const failedIntent = chargeError?.raw?.payment_intent?.id ?? chargeError?.payment_intent?.id;
+      if (failedIntent) await supabase.from('payment_schedules').update({ stripe_payment_intent_id: failedIntent }).eq('id', schedule.id);
+      await putBack();
+      throw chargeError;
+    }
 
     await supabase
       .from('payment_schedules')
@@ -230,6 +277,7 @@ export async function POST(
     // Check if payment succeeded
     if (paymentIntent.status !== 'succeeded') {
       console.error('[Charge Saved Card] Payment did not succeed:', paymentIntent.status);
+      if (paymentIntent.status !== 'processing') await putBack();
       return NextResponse.json(
         { error: `Payment ${paymentIntent.status}. Please try again or use a different card.` },
         { status: 400 }

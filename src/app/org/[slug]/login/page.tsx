@@ -173,7 +173,7 @@ export default function TenantLoginPage() {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? t('common.loading') : t('auth.login.button')}
+              {loading ? t('auth.login.signingIn', 'Signing in…') : t('auth.login.button')}
             </Button>
           </form>
 

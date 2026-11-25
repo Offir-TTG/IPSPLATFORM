@@ -341,45 +341,13 @@ export async function processEnrollment(
       scheduleId = firstSchedule?.id;
     }
 
-    try {
-      // Import Stripe service dynamically to avoid issues if not configured
-      const { createPaymentIntent } = await import('./stripeService');
-
-      const result = await createPaymentIntent(
-        {
-          enrollment_id: enrollment.id,
-          amount: immediateAmount,
-          currency: product.currency,
-          payment_type: paymentType,
-          schedule_id: scheduleId,
-          metadata: {
-            user_id: user_id,
-            product_type: product.product_type,
-            payment_plan_name: paymentPlan.plan_name,
-          },
-        },
-        tenant_id,
-        user_id
-      );
-
-      stripeClientSecret = result.client_secret;
-      paymentIntentId = result.payment_intent_id;
-
-      // Update schedule with Stripe payment intent ID
-      // Link the open payment to its schedule (there is no metadata column
-      // on schedules, so this write used to fail silently). The status stays
-      // as it is: the client hasn't paid yet, and "processing" would stop
-      // them paying.
-      if (scheduleId) {
-        await supabase
-          .from('payment_schedules')
-          .update({ stripe_payment_intent_id: paymentIntentId })
-          .eq('id', scheduleId);
-      }
-    } catch (error: any) {
-      console.error('Error creating Stripe payment intent:', error);
-      // Don't fail enrollment if Stripe fails - can process payment manually later
-    }
+    // No charge is opened here. This used the platform's own Stripe key (not
+    // the tenant's), so a payment made on it reached no tenant and was never
+    // recorded. The client pays on the enrollment's payment step, which uses
+    // the tenant's Stripe account.
+    void immediateAmount;
+    void paymentType;
+    void scheduleId;
   }
 
   return {
@@ -747,6 +715,8 @@ export async function cancelEnrollment(
   admin_id: string,
   refund_amount?: number,
   admin_email?: string | null,
+  /** More to keep with the cancellation (e.g. cancelled_by_client), stored in payment_metadata. */
+  extra_metadata?: Record<string, unknown>,
 ): Promise<CancelEnrollmentResult> {
   const supabase = createAdminClient();
 
@@ -803,6 +773,7 @@ export async function cancelEnrollment(
         cancelled_by: admin_id,
         cancellation_reason: reason,
         refund_requested: requestedCents / 100,
+        ...(extra_metadata ?? {}),
       },
       updated_at: now,
     })
@@ -1168,7 +1139,7 @@ export async function recordStandalonePayment(
         : 1;
 
     const nowIso = new Date().toISOString();
-    await supabase.from('payment_schedules').insert({
+    const { data: scheduleRow, error: scheduleError } = await supabase.from('payment_schedules').insert({
       tenant_id,
       enrollment_id: enrollment.id,
       payment_plan_id: null, // manual entries don't belong to a plan
@@ -1181,17 +1152,17 @@ export async function recordStandalonePayment(
       paid_date: payload.payment_date ?? nowIso,
       status: 'paid',
       payment_id: payment.id,
-    });
+    }).select('id').single();
+    if (scheduleError || !scheduleRow) {
+      throw new Error(`Payment recorded but not added to the enrollment: ${scheduleError?.message ?? 'unknown'}`);
+    }
+    // Link both ways, so refunds and reports find the payment from its schedule.
+    await supabase.from('payments').update({ payment_schedule_id: scheduleRow.id }).eq('id', payment.id);
 
-    const newPaid = enrollment.paid_amount + payload.amount;
-    const isFullyPaid = newPaid >= enrollment.total_amount && enrollment.total_amount > 0;
-    await supabase
-      .from('enrollments')
-      .update({
-        paid_amount: newPaid,
-        payment_status: isFullyPaid ? 'paid' : 'partial',
-      })
-      .eq('id', enrollment.id);
+    // Paid amount and status come from the schedules, the same way as every
+    // other payment (a hand-rolled sum said "partial" on a $0-total enrollment).
+    const refreshed = await refreshEnrollmentTotals(supabase, enrollment.id);
+    if (!refreshed.ok) throw new Error(`Payment recorded but totals not updated: ${refreshed.error}`);
   }
 
   return { payment_id: payment.id };

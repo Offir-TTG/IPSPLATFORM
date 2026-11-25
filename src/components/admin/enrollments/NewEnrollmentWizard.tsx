@@ -10,6 +10,7 @@ import { useAdminLanguage } from '@/context/AppContext';
 import { productTypeLook } from '@/components/admin/products/ProductDrawer';
 import { BlockedNote, ChoiceCard, SaveBar, kitButton, saveBarText } from '@/components/admin/notifications/kit';
 import type { ProductType } from '@/types/product';
+import { ExistingEnrollmentNotice, readExistingEnrollment, type ExistingEnrollment } from './ExistingEnrollmentNotice';
 
 const STEPS = ['who', 'product', 'payment', 'review'] as const;
 type Step = (typeof STEPS)[number];
@@ -52,6 +53,8 @@ export function NewEnrollmentWizard() {
   const [step, setStep] = useState<Step>('who');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [blocked, setBlocked] = useState<string | null>(null);
+  // The client already has this product: shown instead of a second enrollment.
+  const [existing, setExisting] = useState<ExistingEnrollment | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Who
@@ -196,6 +199,7 @@ export function NewEnrollmentWizard() {
   const go = (target: Step) => {
     const from = STEPS.indexOf(step);
     const to = STEPS.indexOf(target);
+    setExisting(null);
     if (to <= from) {
       setStep(target);
       setErrors({});
@@ -250,6 +254,12 @@ export function NewEnrollmentWizard() {
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
+        const found = readExistingEnrollment(response.status, error);
+        if (found) {
+          setExisting(found);
+          setSaving(false);
+          return;
+        }
         throw new Error(error.error || 'Failed to create enrollment');
       }
       const created = await response.json().catch(() => null);
@@ -619,6 +629,7 @@ export function NewEnrollmentWizard() {
 
         <div className="mt-6">
           <BlockedNote text={blocked} />
+          {existing && <ExistingEnrollmentNotice existing={existing} language={sendLanguage} />}
         </div>
 
         {/* Back / Continue */}

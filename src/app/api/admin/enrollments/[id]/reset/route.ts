@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { reasonNotToRestart } from '@/lib/payments/enrollmentLink';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,14 @@ export async function POST(
 
     if (fetchError || !enrollment) {
       return NextResponse.json({ error: 'Enrollment not found' }, { status: 404 });
+    }
+
+    // Same guard as sending a new link: never on an enrollment that's
+    // finished, cancelled, or where money was taken (resetting set the paid
+    // amount to 0 and put an active client back to draft).
+    const blocked = await reasonNotToRestart(supabase, enrollment.id, enrollment.status);
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 409 });
     }
 
     // Build update object
@@ -119,7 +128,7 @@ export async function POST(
     }
 
     // Reset user onboarding if requested
-    if (resetProfile) {
+    if (resetProfile && enrollment.user_id) {
       await supabase
         .from('users')
         .update({

@@ -293,8 +293,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create user record in users table
-    const { error: userError } = await supabase.from('users').insert({
+    // Create user record in users table. The caller was checked as owner/admin
+    // above; the record is written with the server client, as signup and
+    // invitation accept do (the signed-in admin's own access is refused by RLS).
+    const { error: userError } = await adminClient.from('users').insert({
       id: authData.user.id,
       email,
       first_name,
@@ -317,7 +319,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add user to tenant with specified role
-    const { error: tenantUserError } = await supabase.from('tenant_users').insert({
+    const { error: tenantUserError } = await adminClient.from('tenant_users').insert({
       tenant_id: tenant.id,
       user_id: authData.user.id,
       role: role || NEW_CLIENT_ROLE,
@@ -328,7 +330,7 @@ export async function POST(request: NextRequest) {
     if (tenantUserError) {
       console.error('Error adding user to tenant:', tenantUserError);
       // Cleanup: delete user and auth user
-      await supabase.from('users').delete().eq('id', authData.user.id);
+      await adminClient.from('users').delete().eq('id', authData.user.id);
       await adminClient.auth.admin.deleteUser(authData.user.id);
       return NextResponse.json(
         { success: false, error: `Failed to add user to tenant: ${tenantUserError.message}` },
@@ -391,12 +393,15 @@ export async function POST(request: NextRequest) {
         });
 
         if (renderedEmail) {
-          await sendEmail({
+          const sent = await sendEmail({
             to: email,
             subject: renderedEmail.subject,
             html: renderedEmail.bodyHtml,
             text: renderedEmail.bodyText,
           });
+          // In Communications > Send log, as a system message.
+          const { logDirectEmail } = await import('@/lib/messaging/deliver');
+          await logDirectEmail({ tenantId: tenant.id, userId: authData.user.id, toEmail: email, title: renderedEmail.subject, ok: !!sent.success, error: sent.error });
           console.log('✅ Welcome email sent to:', email);
         } else {
           console.warn('⚠️ Could not render welcome email template');

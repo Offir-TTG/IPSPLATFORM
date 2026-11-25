@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { setSignatureStatus } from '@/lib/messaging/contractAlerts';
 import { listIntegrations } from '@/lib/integrations/store';
 import crypto from 'crypto';
 
@@ -202,26 +203,9 @@ async function handleEnvelopeCompleted(supabase: any, event: DocuSignWebhookEven
   const enrollmentId = customFields.find(f => f.name === 'enrollment_id')?.value;
 
   if (enrollmentId) {
-    // Update enrollment with completed signature
-    await supabase
-      .from('enrollments')
-      .update({
-        signature_status: 'completed',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', enrollmentId);
-
-    // Create notification for admin
-    await supabase.from('notifications').insert({
-      type: 'signature_completed',
-      title: 'Contract Signed',
-      message: `Enrollment contract has been signed for enrollment ${enrollmentId}`,
-      data: {
-        enrollment_id: enrollmentId,
-        envelope_id: envelopeId
-      },
-      created_at: new Date().toISOString()
-    });
+    // Marks it signed and tells every admin, once (the enrollment page's own
+    // check may have got there first).
+    await setSignatureStatus(supabase, enrollmentId, 'completed');
   }
 
   console.log(`Envelope ${envelopeId} completed for enrollment ${enrollmentId}`);
@@ -235,26 +219,7 @@ async function handleEnvelopeDeclined(supabase: any, event: DocuSignWebhookEvent
   const declinedReason = event.data.recipients?.signers?.[0]?.declinedReason;
 
   if (enrollmentId) {
-    await supabase
-      .from('enrollments')
-      .update({
-        signature_status: 'declined',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', enrollmentId);
-
-    // Create notification for admin
-    await supabase.from('notifications').insert({
-      type: 'signature_declined',
-      title: 'Contract Declined',
-      message: `Enrollment contract was declined: ${declinedReason || 'No reason provided'}`,
-      data: {
-        enrollment_id: enrollmentId,
-        envelope_id: envelopeId,
-        reason: declinedReason
-      },
-      created_at: new Date().toISOString()
-    });
+    await setSignatureStatus(supabase, enrollmentId, 'declined', { declinedReason });
   }
 
   console.log(`Envelope ${envelopeId} declined for enrollment ${enrollmentId}: ${declinedReason}`);

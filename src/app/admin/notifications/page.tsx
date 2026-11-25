@@ -485,7 +485,7 @@ export default function AdminNotificationsPage() {
         <SheetContent
           side={rtl ? 'left' : 'right'}
           dir={direction}
-          className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[480px] [&>button.absolute]:hidden"
+          className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[480px] [&>[data-default-close]]:hidden"
         >
           <button
             type="button"

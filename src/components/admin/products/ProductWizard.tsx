@@ -21,6 +21,7 @@ import { EmailTemplateSelector } from '@/components/products/EmailTemplateSelect
 import { SaveBar, saveBarText, useLeaveGuard } from '@/components/admin/notifications/kit';
 import { SubscriptionPriceSection } from './SubscriptionPriceSection';
 import { CoachingServiceFields } from './CoachingServiceFields';
+import { ProductImageField } from './ProductImageField';
 import { TypePicture } from '@/components/admin/plans/TypePicture';
 import { PLAN_TONE } from '@/components/admin/plans/planFormat';
 import { EMPTY_FUTURE_PRICE, FuturePriceFields, checkFuturePrice, type FuturePriceDraft } from './FuturePriceFields';
@@ -335,11 +336,17 @@ export function ProductWizard({ product, onSave, t }: {
   const discard = () => {
     if (!initialData) return;
     setFormData(initialData);
+    setClubPick(null);
     setConfigMode(initialConfigMode);
     setUseTemplates(initialConfigMode === 'template');
     setValidationErrors({});
     setFormError(null);
   };
+
+  // "Club" in the type cards: a course product sold as a monthly membership.
+  // Null = not chosen in this visit, so a saved product shows as a club when
+  // it is a course on a subscription.
+  const [clubPick, setClubPick] = useState<boolean | null>(null);
 
   // Is this product a membership? Its own payment type, or a subscription plan template.
   const templatePlanIds = [formData.default_payment_plan_id, ...(formData.alternative_payment_plan_ids || [])].filter(Boolean) as string[];
@@ -349,6 +356,22 @@ export function ProductWizard({ product, onSave, t }: {
   // A default subscription plan with its own price is the price that changes; otherwise the product price.
   const ownPricePlanId =
     configMode === 'template' && formData.default_payment_plan_id && subscriptionPlans.get(formData.default_payment_plan_id)?.amount != null ? formData.default_payment_plan_id : null;
+  const isClub = clubPick ?? (formData.type === 'course' && isSubscription);
+  // Choosing "Club" sets the monthly membership: the subscription plan when
+  // there is one ("Club membership"), otherwise a monthly subscription here.
+  const selectClub = () => {
+    setClubPick(true);
+    const planId = [...subscriptionPlans.entries()].find(([, p]) => p.frequency === 'monthly')?.[0] ?? [...subscriptionPlans.keys()][0];
+    if (planId) {
+      setConfigMode('template');
+      setUseTemplates(true);
+      setFormData((f) => ({ ...f, type: 'course', payment_model: 'one_time', payment_plan: {}, default_payment_plan_id: planId, alternative_payment_plan_ids: [planId] }));
+    } else {
+      setConfigMode('custom');
+      setUseTemplates(false);
+      setFormData((f) => ({ ...f, type: 'course', default_payment_plan_id: undefined, alternative_payment_plan_ids: [], payment_model: 'subscription', payment_plan: { subscription_interval: 'monthly' } }));
+    }
+  };
   const membershipPrice = ownPricePlanId ? (subscriptionPlans.get(ownPricePlanId)?.amount as number) : Number(formData.price) || 0;
 
   // Pay per session: the price comes from the plan. Total = sessions × price per session.
@@ -503,6 +526,8 @@ export function ProductWizard({ product, onSave, t }: {
 
   // Memoized callbacks for ContentSelector to prevent infinite loops
   const handleTypeChange = useCallback((type: ProductType) => {
+    // Any card other than "Club" is not a club; "Club" sets it right after.
+    setClubPick(false);
     setFormData(prev => ({ ...prev, type }));
     setValidationErrors(prev => {
       const newErrors = { ...prev };
@@ -639,6 +664,14 @@ export function ProductWizard({ product, onSave, t }: {
               dir={direction}
             />
           </div>
+
+          {/* The product's own picture: the client portal's cards show this one. */}
+          <ProductImageField
+            value={formData.metadata?.image_url || null}
+            onChange={(url) => setFormData((prev) => ({ ...prev, metadata: { ...(prev.metadata || {}), image_url: url } }))}
+            productId={product?.id}
+            t={t}
+          />
         </TabsContent>
 
         {/* Benefit, access and on/off */}
@@ -740,6 +773,8 @@ export function ProductWizard({ product, onSave, t }: {
             sessionCount={formData.session_count}
             onSessionCountChange={handleSessionCountChange}
             onContentNameChange={handleContentNameChange}
+            isClub={isClub}
+            onClubSelect={selectClub}
             validationErrors={validationErrors}
             t={t}
           />

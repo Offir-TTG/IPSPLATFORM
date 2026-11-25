@@ -40,6 +40,28 @@ export async function sendNotificationEmail(options: EmailDeliveryOptions): Prom
 
     const organizationName = tenant?.name || 'Learning Platform';
 
+    // The client's update settings decide: email only if they left this
+    // kind on, after their quiet hours, or in their daily summary. The bell
+    // (the notification itself) always got it. Every recipient is logged.
+    const { decideTeamEmail, logTeamMessage } = await import('@/lib/messaging/teamMessages');
+    const decision = userId ? await decideTeamEmail(tenantId, userId, notification.category) : ({ kind: 'send', at: null } as const);
+    const logArgs = {
+      tenantId,
+      userId: userId ?? '',
+      toEmail: recipientEmail,
+      notificationId: notification.id ?? null,
+      category: notification.category,
+      title: notification.title,
+      body: notification.message,
+      actionUrl: notification.action_url ?? null,
+      actionLabel: notification.action_label ?? null,
+      decision,
+    };
+    if (decision.kind !== 'send') {
+      if (userId) await logTeamMessage(logArgs);
+      return { success: true };
+    }
+
     console.log('[Email Delivery] Sending notification email:', {
       to: recipientEmail,
       language,
@@ -66,7 +88,22 @@ export async function sendNotificationEmail(options: EmailDeliveryOptions): Prom
       language: language as EmailLanguage,
       priority: notification.priority === 'urgent' ? 'urgent' :
                 notification.priority === 'high' ? 'high' : 'normal',
+      // Quiet hours: the email waits in the queue for them to end.
+      ...(decision.at ? { scheduledFor: decision.at } : {}),
     });
+
+    if (userId) {
+      await logTeamMessage({
+        ...logArgs,
+        email: {
+          ok: emailResult.success,
+          // A waiting email returns its queue id; one sent now returns the provider's id.
+          queueId: decision.at ? emailResult.message_id ?? null : null,
+          providerId: decision.at ? null : ((emailResult as any).messageId ?? emailResult.message_id ?? null),
+          error: emailResult.error ?? null,
+        },
+      });
+    }
 
     // Log delivery in notification_deliveries table if we have userId
     if (userId && notification.id) {

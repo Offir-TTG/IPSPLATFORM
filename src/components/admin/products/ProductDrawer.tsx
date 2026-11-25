@@ -19,6 +19,10 @@ import {
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useAdminLanguage } from '@/context/AppContext';
+import { useCrmTagNames } from '@/hooks/useCrmTagNames';
+import { useToast } from '@/components/ui/use-toast';
+import { DrawerQuickEdit, saveDrawerEdit, type DrawerEditValues } from '@/components/admin/drawer-kit';
+import { usePlanFormat, type PaymentPlan } from '@/components/admin/plans/planFormat';
 import { SubscriptionPriceSection } from './SubscriptionPriceSection';
 import type { Product, ProductType } from '@/types/product';
 
@@ -51,26 +55,60 @@ const footerButton =
 /**
  * A short look at one product, in the admin template's drawer: a pinned top
  * with type and status, the name, and three numbers (price, how it's paid,
- * status), then Details and Description sections, and Edit / Copy link /
- * Delete at the bottom. Edit opens the product wizard page.
+ * status), then Details and Description sections, and Edit / Copy
+ * enrollment link / Delete at the bottom. Edit opens the product wizard
+ * page; the Description section's own Edit changes the name, picture and
+ * description in place.
  */
 export function ProductDrawer({
   product,
-  planNames,
+  plans,
   onClose,
   onCopyLink,
   onDelete,
+  onUpdated,
 }: {
   product: Product | null;
   /** Names of the payment plans the product offers, if it uses plans. */
-  planNames: string[];
+  plans: PaymentPlan[];
   onClose: () => void;
   onCopyLink: (product: Product) => void;
   onDelete: (product: Product) => void;
+  /** The name, picture or description was saved: the list shows the change. */
+  onUpdated?: (product: Product) => void;
 }) {
   const { t, direction } = useAdminLanguage();
+  const { label: crmTagLabel } = useCrmTagNames();
+  const { toast } = useToast();
+  const planFormat = usePlanFormat();
   const rtl = direction === 'rtl';
   const p = product;
+
+  const saveEdit = async (values: DrawerEditValues) => {
+    if (!product) return false;
+    try {
+      const saved = await saveDrawerEdit({
+        values,
+        currentImageUrl: product.metadata?.image_url,
+        // The same upload the product editor's picture field uses.
+        uploadUrl: '/api/lms/courses/upload-image',
+        uploadIdField: 'courseId',
+        itemId: `product-${product.id}`,
+        patchUrl: `/api/admin/products/${product.id}`,
+        nameField: 'title',
+      });
+      const metadata = { ...(product.metadata || {}) };
+      if (saved.image_url) metadata.image_url = saved.image_url;
+      else delete metadata.image_url;
+      onUpdated?.({ ...product, title: saved.name, description: saved.description ?? undefined, metadata });
+      toast({ title: t('common.success', 'Success'), description: t('admin.payments.products.updateSuccess', 'Product updated successfully') });
+      return true;
+    } catch (error) {
+      const reason = error instanceof Error ? ` (${error.message})` : '';
+      toast({ title: t('common.error', 'Error'), description: `${t('admin.courses.drawer.saveError', 'The change was not saved. Try again.')}${reason}`, variant: 'destructive' });
+      return false;
+    }
+  };
 
   const money = (amount: number, currency?: string) => {
     try {
@@ -81,19 +119,46 @@ export function ProductDrawer({
   };
 
   const typeLabel = p ? t(`products.type.${p.type}`, p.type) : '';
-  const howPaid = p ? (planNames.length > 0 ? planNames.join(' · ') : t(`products.payment_model.${p.payment_model}`, p.payment_model)) : '';
+  // How the client pays. A product that uses payment plans is paid the way
+  // its plans say (its stored payment_model is only a placeholder then), so
+  // the plans' types are shown, e.g. "Installments". Otherwise the product's
+  // own model (one-time, subscription…).
+  const planTypes = Array.from(new Set(plans.map((plan) => plan.plan_type)));
+  const howPaid = p
+    ? planTypes.length > 0
+      ? planTypes.map((type) => planFormat.typeLabel(type)).join(' · ')
+      : t(`products.payment_model.${p.payment_model}`, p.payment_model)
+    : '';
   const statusText = p ? (p.is_active ? t('admin.payments.products.active', 'Active') : t('admin.payments.products.inactive', 'Inactive')) : '';
 
   const rows: { label: string; value: ReactNode }[] = p
     ? [
         { label: t('admin.payments.products.productType', 'Product Type'), value: typeLabel },
         { label: t('admin.payments.products.paymentModel', 'Payment Model'), value: howPaid },
+        ...(plans.length > 0
+          ? [
+              {
+                label: t('admin.payments.paymentPlans', 'Payment Plans'),
+                // Each plan the client can choose, and how it charges.
+                value: (
+                  <ul className="m-0 list-none space-y-1 p-0 text-end">
+                    {plans.map((plan) => (
+                      <li key={plan.id}>
+                        <bdi className="font-semibold">{plan.plan_name}</bdi>
+                        <span className="block text-[13px] font-normal text-muted-foreground">{planFormat.details(plan)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ),
+              },
+            ]
+          : []),
         ...(p.program ? [{ label: t('products.type.program', 'Program'), value: p.program.name }] : []),
         ...(p.course ? [{ label: t('products.type.course', 'Course'), value: p.course.title }] : []),
         ...(p.contains_courses && p.contains_courses.length > 0
           ? [{ label: t('products.type.bundle', 'Bundle'), value: `${p.contains_courses.length} ${t('products.courses', 'courses')}` }]
           : []),
-        ...(p.session_count ? [{ label: t('products.type.session_pack', 'Session Pack'), value: `${p.session_count} ${t('products.sessions', 'sessions')}` }] : []),
+        ...(p.session_count ? [{ label: t('products.type.session_pack', 'Personal guidance'), value: `${p.session_count} ${t('products.sessions', 'sessions')}` }] : []),
         ...(p.access_duration ? [{ label: t('admin.products.drawer.access', 'Access'), value: p.access_duration }] : []),
         {
           label: t('products.requires_signature', 'Signature Required'),
@@ -106,8 +171,8 @@ export function ProductDrawer({
                 value: (
                   <span className="flex flex-wrap justify-end gap-1.5">
                     {p.crm_tag_slugs.map((slug) => (
-                      <span key={slug} dir="ltr" className="rounded-full border border-border px-2 py-0.5 text-xs font-medium">
-                        {slug}
+                      <span key={slug} title={slug} className="rounded-full border border-border px-2 py-0.5 text-xs font-medium">
+                        <bdi>{crmTagLabel(slug)}</bdi>
                       </span>
                     ))}
                   </span>
@@ -126,7 +191,7 @@ export function ProductDrawer({
       <SheetContent
         side={rtl ? 'left' : 'right'}
         dir={direction}
-        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[480px] [&>button.absolute]:hidden"
+        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[480px] [&>[data-default-close]]:hidden"
       >
         <button
           type="button"
@@ -184,14 +249,18 @@ export function ProductDrawer({
               {/* Memberships: the price and scheduled price changes */}
               <SubscriptionPriceSection key={p.id} productId={p.id} />
 
-              {p.description && (
-                <Section title={t('admin.products.drawer.about', 'Description')}>
-                  <div
-                    className="prose prose-sm line-clamp-6 max-w-none p-3.5 text-sm text-foreground/85 dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: p.description }}
-                  />
-                </Section>
-              )}
+              {/* The whole description (Show more / Show less), and Edit for the
+                  name, picture and description, as in the program and course drawers. */}
+              <DrawerQuickEdit
+                key={p.id}
+                title={t('admin.products.drawer.about', 'Description')}
+                nameLabel={t('products.title', 'Product name')}
+                name={p.title}
+                imageUrl={p.metadata?.image_url}
+                html={p.description ?? ''}
+                maxImageBytes={20 * 1024 * 1024}
+                onSave={saveEdit}
+              />
             </div>
 
             {/* Pinned bottom: the product's own actions */}
@@ -206,7 +275,7 @@ export function ProductDrawer({
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => onCopyLink(p)} className={`${footerButton} border-border text-primary hover:bg-muted`}>
                   <Link2 className="h-4 w-4" aria-hidden />
-                  {t('admin.products.drawer.copyLink', 'Copy link')}
+                  {t('admin.products.copyEnrollLink', 'Copy enrollment link')}
                 </button>
                 <button
                   type="button"

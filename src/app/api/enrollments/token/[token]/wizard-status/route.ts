@@ -48,7 +48,7 @@ export async function GET(
 
     const { data: freshEnrollmentDataArray, error: enrollmentError } = await supabase
       .from('enrollments')
-      .select('id, tenant_id, user_id, product_id, payment_plan_id, total_amount, paid_amount, currency, status, payment_status, signature_status, docusign_envelope_id, token_expires_at, wizard_profile_data, updated_at, stripe_setup_intent_id')
+      .select('id, tenant_id, user_id, product_id, payment_plan_id, total_amount, paid_amount, currency, status, payment_status, signature_status, docusign_envelope_id, token_expires_at, wizard_profile_data, updated_at, stripe_setup_intent_id, payment_start_date')
       .eq('enrollment_token', params.token)
       .gte('updated_at', veryOldDate) // Dynamic value - forces new query each time
       .limit(1);
@@ -211,6 +211,9 @@ export async function GET(
       wizard_profile_data: profileData,
       alternative_payment_plan_ids: product.alternative_payment_plan_ids || [], // Added for multi-plan support
       payment_plan_id: enrollment.payment_plan_id, // Added to track selected plan
+      // When the team set payments to start later: the wizard then doesn't
+      // claim anything is charged today.
+      payment_start_date: enrollment.payment_start_date ?? null,
       // A scheduled membership price, shown before paying.
       upcoming_price: (await upcomingForBuyers(supabase, [product as any])).get(product.id) ?? null,
     });

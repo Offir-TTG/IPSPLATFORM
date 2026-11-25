@@ -18,6 +18,8 @@ const dayDate = (iso: string) => `${fmt(iso, { weekday: 'short' })} ${fmt(iso, {
 export type ParentCoachingView = {
   id: string;
   title: string;
+  /** The coaching product's picture (metadata.image_url), for the home card. */
+  imageUrl: string | null;
   coach: { name: string; avatarUrl: string | null; bio: string | null } | null;
   used: number;
   total: number;
@@ -42,7 +44,7 @@ export async function loadParentCoaching(userId: string): Promise<ParentCoaching
   if (!user?.tenant_id) return [];
   const { data: rows } = await db
     .from('enrollments')
-    .select('id, tenant_id, product_id, status, child_id, payment_metadata, product:products!enrollments_product_id_fkey(type)')
+    .select('id, tenant_id, product_id, status, child_id, payment_metadata, product:products!enrollments_product_id_fkey(type, metadata)')
     .eq('user_id', userId)
     .is('child_id', null)
     .in('status', ['active', 'suspended', 'completed'])
@@ -66,6 +68,7 @@ export async function loadParentCoaching(userId: string): Promise<ParentCoaching
     out.push({
       id: e.id,
       title: pack.product_title,
+      imageUrl: (() => { const p: any = Array.isArray(e.product) ? e.product[0] : e.product; return p?.metadata?.image_url || null; })(),
       coach: c ? { name: `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim(), avatarUrl: c.avatar_url ?? null, bio: plain(c.bio) } : null,
       used: pack.sessions_used,
       total: pack.sessions_total,

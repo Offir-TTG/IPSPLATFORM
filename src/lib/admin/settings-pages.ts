@@ -7,6 +7,7 @@
 export type SettingsPageId =
   | 'organization'
   | 'theme'
+  | 'loginPage'
   | 'languages'
   | 'translations'
   | 'platform'
@@ -35,6 +36,13 @@ export const SETTINGS_PAGES: Record<
     titleFallback: 'Theme',
     summaryKey: 'admin.settingsHub.theme',
     summaryFallback: 'Colors, fonts and how the platform looks',
+  },
+  loginPage: {
+    href: '/admin/settings/login-page',
+    titleKey: 'admin.settingsHub.loginPageTitle',
+    titleFallback: 'Login page',
+    summaryKey: 'admin.settingsHub.loginPage',
+    summaryFallback: "The portal's home page: its picture and its words",
   },
   languages: {
     href: '/admin/config/languages',

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { startOrContinue } from '@/lib/payments/openEnrollment';
 import { processEnrollment } from '@/lib/payments/enrollmentService';
 import { logAuditEvent } from '@/lib/audit/logger';
 
@@ -48,22 +49,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user is already enrolled in this product
-    const { data: existingEnrollment } = await supabase
-      .from('enrollments')
-      .select('id, payment_status, status')
-      .eq('user_id', enrollUserId)
-      .eq('product_id', product_id)
-      .eq('tenant_id', userData.tenant_id)
-      .in('status', ['draft', 'pending', 'active', 'suspended'])
-      .single();
-
-    if (existingEnrollment) {
+    // The one rule (lib/payments/openEnrollment): no second enrollment while
+    // one is open, active or on hold. (This used .single(), which found
+    // nothing as soon as there were two rows, so it let duplicates through.)
+    const existing = await startOrContinue(createAdminClient(), {
+      tenantId: userData.tenant_id,
+      productId: product_id,
+      userId: enrollUserId,
+      refreshLink: false,
+    });
+    if (existing.kind !== 'start') {
       return NextResponse.json(
         {
-          error: 'User is already enrolled in this product',
-          enrollment_id: existingEnrollment.id,
-          status: existingEnrollment.status,
+          error: existing.kind === 'continue' ? 'There is already an open enrollment in this product' : 'User is already enrolled in this product',
+          code: existing.kind === 'continue' ? 'open_enrollment_exists' : 'already_enrolled',
+          enrollment_id: existing.enrollment.id,
+          status: existing.enrollment.status,
         },
         { status: 409 }
       );

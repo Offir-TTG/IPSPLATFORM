@@ -165,6 +165,17 @@ export async function POST(
             subject: renderedSubject,
           })
           .eq('id', queueId as string);
+        // The client's update settings decide (email off, quiet hours, daily summary). Logged.
+        const { settleQueuedEmail } = await import('@/lib/messaging/triggerEmails');
+        const { isClientCategory } = await import('@/lib/messaging/categories');
+        await settleQueuedEmail({
+          tenantId: schedule.tenant_id,
+          userId: r.user_id,
+          queueId: queueId as string,
+          category: isClientCategory(varsForRow.category) ? varsForRow.category : 'announcement',
+          source: 'scheduled',
+          actionUrl: typeof baseVars.actionUrl === 'string' ? baseVars.actionUrl : null,
+        });
       }
       enqueued += 1;
     }

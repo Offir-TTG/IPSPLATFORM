@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import {
   FileSignature,
   CreditCard,
+  Archive,
   Video,
   Mail,
   CheckCircle,
@@ -34,6 +35,7 @@ const CARD_GROUPS: Array<{ id: string; labelKey: string; fallback: string; keys?
   { id: 'payments', labelKey: 'admin.integrations.group.payments', fallback: 'Payments', keys: ['stripe'] },
   { id: 'signatures', labelKey: 'admin.integrations.group.signatures', fallback: 'Signatures', keys: ['docusign'] },
   { id: 'video', labelKey: 'admin.integrations.group.video', fallback: 'Video meetings', keys: ['zoom', 'daily'] },
+  { id: 'history', labelKey: 'admin.integrations.group.history', fallback: 'Order history', keys: ['keap'] },
   { id: 'other', labelKey: 'admin.integrations.group.other', fallback: 'Other' },
 ];
 const GROUPED_KEYS = new Set(CARD_GROUPS.flatMap((g) => g.keys ?? []));
@@ -108,6 +110,23 @@ export default function IntegrationsPage() {
 
   // Integration configurations
   const integrationConfigs: IntegrationConfig[] = [
+    {
+      // Keap is being retired: kept only to bring its orders and payments
+      // into the history page (read-only), refreshed until the account closes.
+      key: 'keap',
+      name: 'Keap',
+      description: t('admin.integrations.keap.description', 'Past orders and payments from Keap, brought in as history (read-only)'),
+      icon: <Archive className="h-5 w-5" />,
+      fields: [
+        {
+          key: 'api_key',
+          label: t('admin.integrations.keap.apiKey', 'Service Account Key'),
+          type: 'password',
+          placeholder: t('admin.integrations.keap.apiKeyPlaceholder', 'Keap → Settings → API settings → Service Account Keys'),
+          required: true,
+        },
+      ],
+    },
     {
       key: 'docusign',
       name: 'DocuSign',

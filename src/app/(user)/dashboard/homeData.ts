@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server';
 import { lessonEnd, loadClientLearning } from '@/lib/portal/clientLearning';
 import { money } from '@/lib/portal/membership';
 import { loadClubOffers } from '@/lib/portal/clubOffers';
+import { loadMembershipView } from '@/lib/portal/membership';
 
 /**
  * Everything the client home needs, loaded on the server in one pass.
@@ -34,10 +35,14 @@ export type HomeSpace = {
   title: string;
   kicker: string;
   color: string;
+  /** The product's own picture (metadata.image_url); the course or program inside isn't used. */
+  imageUrl: string | null;
   href: string;
   tag: string | null;
   line: string;
   progress: number | null;
+  /** A club membership's status, the same words as its "המנוי שלי" card. */
+  status?: { label: string; tone: 'ok' | 'warn' | 'off' } | null;
 };
 
 export type HomeItem = {
@@ -176,6 +181,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
         title: program?.name ?? p.title,
         kicker: 'תוכנית',
         color,
+        imageUrl: p.metadata?.image_url || null,
         href: `/programs/${p.program_id}`,
         tag: null,
         line: `${finished} מתוך ${required.length} קורסי חובה${current ? ` · עכשיו: ${courseById.get(current.course_id)?.title ?? ''}` : ''}`,
@@ -189,6 +195,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
     const prog = progressOf(p.course_id);
     if (p.payment_model === 'subscription') {
       const meeting = nextMeeting(p.course_id);
+      const membership = await loadMembershipView(userId, e.id, '', '').catch(() => null);
       spaces.push({
         // A bundle gives several entries for one enrollment: the course keeps keys unique.
         key: `${e.id}:${p.course_id}`,
@@ -196,10 +203,12 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
         title: p.club_name ?? course.title,
         kicker: 'מועדון',
         color: colorOf(`course:${p.course_id}`),
+        imageUrl: p.metadata?.image_url || null,
         href: `/clubs/${p.course_id}`,
         tag: recentRecording(p.course_id) ? 'הקלטה חדשה' : null,
         line: meeting ? `המפגש הבא · ${whenLabel(meeting.start_time)}` : 'מפגש חדש יפורסם בקרוב',
         progress: null,
+        status: membership ? { label: membership.status, tone: membership.tone } : null,
       });
       continue;
     }
@@ -245,6 +254,7 @@ export async function loadHomeData(userId: string): Promise<HomeData> {
       title: o.title,
       kicker: 'מועדון',
       color: o.color,
+      imageUrl: o.imageUrl,
       href: `/clubs/${o.courseId}`,
       tag: o.enrollmentUrl ? 'נשאר להשלים' : 'הצטרפות',
       line: o.enrollmentUrl ? 'נשאר להשלים את ההרשמה' : [o.priceLine, 'להצטרפות'].filter(Boolean).join(' · '),

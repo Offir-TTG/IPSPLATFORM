@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  LogIn,
   Flag,
   Languages,
   Mail,
@@ -31,6 +32,7 @@ import { SETTINGS_PAGES, type SettingsPageId } from '@/lib/admin/settings-pages'
 const ICONS: Record<SettingsPageId, LucideIcon> = {
   organization: Building2,
   theme: Palette,
+  loginPage: LogIn,
   languages: Languages,
   translations: FileText,
   platform: SlidersHorizontal,
@@ -42,7 +44,7 @@ const ICONS: Record<SettingsPageId, LucideIcon> = {
 };
 
 const GROUPS: Array<{ key: string; fallback: string; pages: SettingsPageId[] }> = [
-  { key: 'admin.settingsHub.group.organization', fallback: 'Your organization', pages: ['organization', 'theme'] },
+  { key: 'admin.settingsHub.group.organization', fallback: 'Your organization', pages: ['organization', 'theme', 'loginPage'] },
   { key: 'admin.settingsHub.group.language', fallback: 'Language', pages: ['languages', 'translations'] },
   { key: 'admin.settingsHub.group.platform', fallback: 'Platform', pages: ['platform', 'features', 'integrations'] },
   { key: 'admin.settingsHub.group.system', fallback: 'Menu, emails and system', pages: ['navigation', 'emails', 'crons'] },

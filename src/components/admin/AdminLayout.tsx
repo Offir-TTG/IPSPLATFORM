@@ -36,7 +36,7 @@ import {
   Activity,
   PanelLeftClose,
   PanelLeft,
-  Baby, HeartHandshake } from 'lucide-react';
+  Baby, HeartHandshake, Zap, Home as HomeIcon, Send, List as ListIcon, AlertTriangle, Settings2, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -52,6 +52,7 @@ import { supabase } from '@/lib/supabase/client';
 import { SETTINGS_HOME, settingsPageFor } from '@/lib/admin/settings-pages';
 import { HelpButton } from '@/components/admin/help/HelpButton';
 import { HelpDrawer } from '@/components/admin/help/HelpDrawer';
+import { ServicesGuide, ServicesGuideButton } from '@/components/admin/help/ServicesGuide';
 import { useAdminEmbedded } from '@/components/admin/AdminEmbed';
 
 interface AdminLayoutProps {
@@ -260,6 +261,7 @@ function AdminFrame({ children }: AdminLayoutProps) {
     'dashboard': LayoutDashboard,
     'programs': BookOpen,
     'courses': GraduationCap,
+    'products': Package,
     'enrollments': UserPlus,
     'grading': Award,
     'users': Users,
@@ -277,6 +279,14 @@ function AdminFrame({ children }: AdminLayoutProps) {
     'audit': Shield,
     'notifications': Bell,
     'coaching': HeartHandshake,
+    'reminders': Zap,
+    'communications': Mail,
+    'comms_overview': HomeIcon,
+    'comms_messages': Send,
+    'comms_templates': FileText,
+    'comms_log': ListIcon,
+    'comms_attention': AlertTriangle,
+    'comms_settings': Settings2,
   };
 
   // Translation key mapping for navigation items
@@ -307,6 +317,7 @@ function AdminFrame({ children }: AdminLayoutProps) {
     'payments': 'admin.nav.payments',
     'audit': 'admin.nav.audit',
     'notifications': 'admin.nav.notifications',
+    'reminders': 'admin.nav.reminders',
   };
 
   const baseNavSections: NavSection[] = [
@@ -335,7 +346,19 @@ function AdminFrame({ children }: AdminLayoutProps) {
     {
       titleKey: 'admin.nav.communications',
       items: [
-        { key: 'admin.nav.notifications', icon: Bell, href: '/admin/notifications' },
+        {
+          key: 'admin.nav.communications_hub',
+          icon: Mail,
+          href: '/admin/communications',
+          children: [
+            { key: 'admin.nav.comms_messages', icon: Send, href: '/admin/communications/messages' },
+            { key: 'admin.nav.reminders', icon: Zap, href: '/admin/reminders' },
+            { key: 'admin.nav.comms_templates', icon: FileText, href: '/admin/communications/templates' },
+            { key: 'admin.nav.comms_log', icon: ListIcon, href: '/admin/communications/log' },
+            { key: 'admin.nav.comms_attention', icon: AlertTriangle, href: '/admin/communications/attention' },
+            { key: 'admin.nav.comms_settings', icon: Settings2, href: '/admin/communications/settings' },
+          ],
+        },
       ],
     },
     {
@@ -415,6 +438,7 @@ function AdminFrame({ children }: AdminLayoutProps) {
         }}>{t('admin.title', 'Admin Panel')}</h1>
 
         <div className="flex items-center gap-2">
+          <ServicesGuideButton />
           <HelpButton />
           <LanguageSwitcher context="admin" />
 
@@ -621,7 +645,7 @@ function AdminFrame({ children }: AdminLayoutProps) {
                       item.children!.some((c: any) => isActive(c.href));
                     const isExpanded =
                       hasChildren &&
-                      (expandedNavKeys.has(item.key) || childActiveSomewhere);
+                      (expandedNavKeys.has(item.key) || childActiveSomewhere || active);
 
                     return (
                       <div key={item.href}>
@@ -668,7 +692,8 @@ function AdminFrame({ children }: AdminLayoutProps) {
                                   {item.badge}
                                 </span>
                               )}
-                              {active && <ChevronRight className="h-4 w-4" />}
+                              {/* An item with sub-items has its own expand arrow beside it. */}
+                              {active && !hasChildren && <ChevronRight className="h-4 w-4" />}
                             </>
                           )}
                         </Link>
@@ -838,6 +863,7 @@ function AdminFrame({ children }: AdminLayoutProps) {
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <ServicesGuideButton />
             <HelpButton />
             <LanguageSwitcher context="admin" />
 
@@ -963,6 +989,7 @@ function AdminFrame({ children }: AdminLayoutProps) {
       </main>
       <Toaster />
       <HelpDrawer />
+      <ServicesGuide />
     </div>
   );
 }

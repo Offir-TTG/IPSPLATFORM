@@ -55,7 +55,8 @@ export async function GET(
           payment_model,
           payment_plan,
           default_payment_plan_id,
-          alternative_payment_plan_ids
+          alternative_payment_plan_ids,
+          metadata
         ),
         payment_plan:payment_plans!enrollments_payment_plan_id_fkey (
           id,
@@ -175,6 +176,8 @@ export async function GET(
       id: enrollment.id,
       product_id: product.id,
       product_name: product.title,
+      // The picture set in the product editor (login page and wizard summary).
+      product_image_url: (product as any).metadata?.image_url ?? null,
       product_type: product.type,
       product_description: product.description,
       total_amount: enrollment.total_amount,

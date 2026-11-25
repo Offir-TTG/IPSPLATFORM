@@ -179,6 +179,29 @@ export async function GET(request: NextRequest) {
         console.error('[CRON - Overdue Check] Error processing suspension notifications:', triggerError);
         // Don't fail cron if notifications fail
       }
+
+      // The automatic reminder "Enrollment suspended", when it's on.
+      const { fireEvent } = await import('@/lib/messaging/engine');
+      const byTenant = new Map<string, typeof suspendedEnrollments>();
+      for (const e of suspendedEnrollments) byTenant.set(e.tenant_id, [...(byTenant.get(e.tenant_id) ?? []), e]);
+      for (const [tenantId, list] of byTenant) {
+        const { data: rows } = await supabase
+          .from('enrollments')
+          .select('id, product_id, product:products!enrollments_product_id_fkey(title)')
+          .in('id', list.map((e) => e.id));
+        const info = new Map((rows ?? []).map((r: any) => [r.id, r]));
+        await fireEvent(
+          tenantId,
+          'enrollment.suspended',
+          list
+            .filter((e) => e.user_id)
+            .map((e) => {
+              const r: any = info.get(e.id);
+              const product = Array.isArray(r?.product) ? r.product[0] : r?.product;
+              return { subjectType: 'enrollment', subjectId: e.id, userId: e.user_id, productId: r?.product_id ?? null, context: { product: product?.title ?? '', enrollmentId: e.id } };
+            }),
+        );
+      }
     }
 
     return {

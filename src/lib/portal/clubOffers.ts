@@ -17,6 +17,8 @@ export type ClubOffer = {
   title: string;
   tagline: string | null;
   color: string;
+  /** The product's picture (metadata.image_url), for the card cover. */
+  imageUrl: string | null;
   priceLine: string | null;
   /** The same price in parts, for the join card: "‏29.99 ‏$" and "לחודש". */
   priceAmount: string | null;
@@ -45,7 +47,7 @@ export async function loadClubOffers(userId: string, accessibleCourseIds: Iterab
 
   const { data: products } = await admin
     .from('products')
-    .select('id, type, title, price, currency, payment_model, course_id, program_id, default_payment_plan_id, alternative_payment_plan_ids')
+    .select('id, type, title, metadata, price, currency, payment_model, course_id, program_id, default_payment_plan_id, alternative_payment_plan_ids')
     .eq('tenant_id', me.tenant_id)
     .eq('is_active', true)
     .in('type', ['course', 'program']);
@@ -115,6 +117,7 @@ export async function loadClubOffers(userId: string, accessibleCourseIds: Iterab
         title: course.title ?? p.title,
         tagline: course.description ? String(course.description).replace(/<[^>]+>/g, '').trim().slice(0, 140) || null : null,
         color: colorFor(courseId as string),
+        imageUrl: p.metadata?.image_url || null,
         priceLine: price > 0 ? `${priceLabel(price, currency)} ${per}` : null,
         priceAmount: price > 0 ? priceLabel(price, currency) : null,
         pricePer: per,

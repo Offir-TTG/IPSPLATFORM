@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
-import { randomBytes } from 'crypto';
-
-/**
- * The enrollment link is the only thing protecting the client's details and
- * payment, so it gets the same strength as admin-sent links: 32 random bytes.
- * (It was 7 characters from Math.random, unique per tenant only, while the
- * link routes look it up across all tenants.) No uniqueness check needed.
- */
-async function ensureUniqueToken(_supabase: unknown, _tenantId: string): Promise<string> {
-  return randomBytes(32).toString('base64url');
-}
+import { isUniqueViolation, newEnrollmentToken, startOrContinue, type StartOrContinue } from '@/lib/payments/openEnrollment';
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,18 +28,25 @@ export async function POST(request: NextRequest) {
     // Check if user is authenticated (optional - not required for guest enrollment)
     let userId: string | null = null;
     let userProfile: any = null;
+    let clientInPortal = false;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       userId = user.id;
 
-      // Fetch user profile to pre-fill wizard
-      const { data: profile } = await supabase
+      // Fetch user profile to pre-fill wizard. The verified user's own row,
+      // read with the admin client (users RLS needs a tenant setting server
+      // requests don't carry, as in the portal frame).
+      const { data: profile } = await createAdminClient()
         .from('users')
-        .select('id, email, first_name, last_name, phone, location')
+        .select('id, email, first_name, last_name, phone, location, role')
         .eq('id', userId)
         .eq('tenant_id', tenant.id)
         .single();
+
+      // A signed-in client continues in their portal ("להשלמה" on the
+      // home page); staff testing a link stay in the wizard.
+      clientInPortal = !!profile && profile.role !== 'admin' && profile.role !== 'super_admin';
 
       if (profile) {
         userProfile = {
@@ -78,83 +75,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for existing enrollment (only if user is logged in).
-    //
-    // A 'draft' enrollment isn't a real enrollment yet — it's an
-    // unfinished wizard session. Returning 409 for drafts would lock
-    // users out the moment they abandon the wizard, since enrollments
-    // are inserted as 'draft' BEFORE the wizard runs. So: resume the
-    // draft (return its token), and block re-enrollment only for
-    // non-draft statuses (active / completed / etc.).
-    if (userId) {
-      // A client can have several enrollments in one product (admins may add
-      // more, and a former member can rejoin), so look at all of them.
-      const { data: existingRows } = await supabase
-        .from('enrollments')
-        .select('id, status, enrollment_token, token_expires_at, created_at')
-        .eq('user_id', userId)
-        .eq('product_id', product_id)
-        .eq('tenant_id', tenant.id)
-        .order('created_at', { ascending: false });
-      const existing = existingRows ?? [];
-
-      // Already a member: nothing to start.
-      const current = existing.find((e: any) => e.status === 'active' || e.status === 'completed');
-      if (current) {
+    // The one rule (lib/payments/openEnrollment): a signed-in client
+    // continues their open enrollment in this product, is sent to the portal
+    // when already enrolled, or to Billing when on hold. A guest always gets
+    // one guest enrollment, joined to their account if they log in.
+    const adminClient = createAdminClient();
+    const decide = () => startOrContinue(adminClient, { tenantId: tenant.id, productId: product_id, userId });
+    const answer = (found: Exclude<StartOrContinue, { kind: 'start' }>) => {
+      if (found.kind === 'already_enrolled') {
         return NextResponse.json(
-          { error: 'Already enrolled', redirect: '/dashboard', enrollment_id: current.id },
+          { error: 'Already enrolled', redirect: '/dashboard', enrollment_id: found.enrollment.id },
           { status: 409 }
         );
       }
-
-      // Suspended (e.g. payments failed): fix the payment, don't start over.
-      const suspended = existing.find((e: any) => e.status === 'suspended');
-      if (suspended) {
+      if (found.kind === 'suspended') {
         return NextResponse.json(
           {
             error: 'Membership suspended',
             code: 'suspended',
             message: 'Your membership is on hold. Update your payment to continue.',
             redirect: '/billing',
-            enrollment_id: suspended.id,
+            enrollment_id: found.enrollment.id,
           },
           { status: 409 }
         );
       }
+      const token = found.enrollment.enrollment_token;
+      return NextResponse.json({
+        success: true,
+        enrollment_id: found.enrollment.id,
+        enrollment_token: token,
+        wizard_url: `/enroll/${token}`,
+        resumed: true,
+        client_in_portal: clientInPortal,
+      });
+    };
 
-      // An unfinished signup (not sent yet, or sent and never finished):
-      // continue it, with a fresh link if the old one expired.
-      const unfinished = existing.find((e: any) => e.status === 'draft' || e.status === 'pending');
-      if (unfinished) {
-        const adminClient = createAdminClient();
-        const expiresAt = unfinished.token_expires_at ? new Date(unfinished.token_expires_at) : null;
-        const update: Record<string, string> = {};
-        let token = unfinished.enrollment_token as string | null;
-        if (!token) {
-          token = await ensureUniqueToken(adminClient, tenant.id);
-          update.enrollment_token = token;
-        }
-        if (!token || !expiresAt || expiresAt < new Date() || update.enrollment_token) {
-          const newExpiry = new Date();
-          newExpiry.setDate(newExpiry.getDate() + 7);
-          update.token_expires_at = newExpiry.toISOString();
-        }
-        if (Object.keys(update).length) {
-          await adminClient.from('enrollments').update(update).eq('id', unfinished.id);
-        }
-
-        return NextResponse.json({
-          success: true,
-          enrollment_id: unfinished.id,
-          enrollment_token: token,
-          wizard_url: `/enroll/${token}`,
-          resumed: true,
-        });
-      }
-
-      // Only cancelled or ended enrollments are left: a former member may
-      // join again with a new enrollment; their old one and its history stay.
-    }
+    const found = await decide();
+    if (found.kind !== 'start') return answer(found);
 
     // Determine total amount and payment status
     let totalAmount = 0;
@@ -169,11 +127,9 @@ export async function POST(request: NextRequest) {
       paymentStatus = 'pending';
     }
 
-    // Use admin client to bypass RLS for enrollment operations
-    const adminClient = createAdminClient();
-
-    // Generate unique enrollment token
-    const enrollmentToken = await ensureUniqueToken(adminClient, tenant.id);
+    // The enrollment link is the only thing protecting the client's details
+    // and payment: 32 random bytes, like admin-sent links.
+    const enrollmentToken = newEnrollmentToken();
 
     // Calculate token expiration (7 days from now)
     const tokenExpiresAt = new Date();
@@ -206,7 +162,12 @@ export async function POST(request: NextRequest) {
       .select('id, enrollment_token')
       .single();
 
-    if (enrollmentError) {
+    if (enrollmentError && isUniqueViolation(enrollmentError)) {
+      // Another tab or click created the open enrollment a moment ago: continue it.
+      const again = await decide();
+      if (again.kind !== 'start') return answer(again);
+    }
+    if (enrollmentError || !enrollment) {
       console.error('Error creating enrollment:', enrollmentError);
       return NextResponse.json(
         { error: 'Failed to create enrollment' },
@@ -267,7 +228,8 @@ export async function POST(request: NextRequest) {
       success: true,
       enrollment_id: enrollment.id,
       enrollment_token: enrollment.enrollment_token,
-      wizard_url: `/enroll/${enrollment.enrollment_token}`
+      wizard_url: `/enroll/${enrollment.enrollment_token}`,
+      client_in_portal: clientInPortal,
     });
 
   } catch (error) {

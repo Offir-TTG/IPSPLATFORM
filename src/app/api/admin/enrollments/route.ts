@@ -3,6 +3,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { randomUUID } from 'crypto';
 import { generatePaymentSchedules } from '@/lib/payments/paymentEngine';
 import { attachPendingChild, markRequestHandled, prepareCoaching } from '@/lib/family/coachingEnrollment';
+import { hasWorkingLink, isUniqueViolation, startOrContinue, type StartOrContinue } from '@/lib/payments/openEnrollment';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
         expires_at,
         wizard_profile_data,
         invitation_sent_at,
+        payment_metadata,
         user:users!enrollments_user_id_fkey (
           id,
           first_name,
@@ -71,6 +73,7 @@ export async function GET(request: NextRequest) {
           payment_plan,
           alternative_payment_plan_ids,
           default_payment_plan_id,
+          crm_tag_slugs,
           program:programs!products_program_id_fkey (
             id,
             name
@@ -102,7 +105,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Enrollments fetched from database
+    // Each enrollment's CRM tags (enrollments.crm_tag_slugs, saved when it
+    // was made). Read on its own so the list still works before that
+    // column's SQL has run; then the product's current tags stand in.
+    const enrollmentTags = new Map<string, string[]>();
+    const ids = (data || []).map((e: any) => e.id);
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data: tagRows, error: tagErr } = await supabase.from('enrollments').select('id, crm_tag_slugs').in('id', ids.slice(i, i + 500));
+      if (tagErr) break;
+      for (const r of tagRows ?? []) enrollmentTags.set((r as any).id, ((r as any).crm_tag_slugs ?? []) as string[]);
+    }
 
     // Transform data to match frontend expectations
     let enrollments = (data || []).map((enrollment: any) => {
@@ -196,6 +208,12 @@ export async function GET(request: NextRequest) {
         user_email: userEmail,
         product_id: enrollment.product_id,
         product_name: productName,
+        crm_tag_slugs: (() => {
+          const own = enrollmentTags.get(enrollment.id);
+          if (own && own.length) return own;
+          const fromProduct = enrollment.product?.crm_tag_slugs;
+          return Array.isArray(fromProduct) ? (fromProduct as string[]) : [];
+        })(),
         product_type: enrollment.product?.type || 'N/A',
         payment_plan_id: enrollment.payment_plan_id || '',
         payment_plan_key: paymentPlanKey,
@@ -214,6 +232,9 @@ export async function GET(request: NextRequest) {
         created_at: enrollment.created_at || enrollment.enrolled_at,
         expires_at: enrollment.expires_at || null,
         invitation_sent_at: enrollment.invitation_sent_at || null,
+        // The client cancelled it themselves in the portal ("Cancelled by client").
+        cancelled_by_client: enrollment.status === 'cancelled' && !!enrollment.payment_metadata?.cancelled_by_client,
+        cancellation_reason: enrollment.status === 'cancelled' ? enrollment.payment_metadata?.cancellation_reason || null : null,
       };
     });
 
@@ -448,12 +469,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: coaching.error }, { status: coaching.status });
     }
 
-    // Duplicate enrollments are allowed - admins can enroll users multiple times in the same product
-    // This supports use cases like:
-    // - Parents enrolling multiple children in the same program
-    // - Re-enrollment after course completion
-    // - Multiple enrollments for different time slots/sessions
-    // - Group registrations
+    // The one rule (lib/payments/openEnrollment): a client has at most one
+    // open enrollment per product (per child, for coaching). Instead of a
+    // second one, the admin is shown the existing enrollment and can send
+    // its link. Cancelled and ended ones are history: a new one is fine. A
+    // new person (no account yet) has nothing to compare, so as before. A
+    // child whose details wait for the wizard is a new child, so a new
+    // package.
+    const checkChild = coaching?.ok ? coaching.child_id : null;
+    const skipCheck = !finalUserId || (coaching?.ok && !!coaching.pending_child);
+    const existingFor = async () =>
+      skipCheck
+        ? ({ kind: 'start' } as const)
+        : startOrContinue(createAdminClient(), {
+            tenantId: adminData.tenant_id,
+            productId: product_id,
+            userId: finalUserId,
+            childId: checkChild,
+            refreshLink: false,
+          });
+    const refuse = (found: Exclude<StartOrContinue, { kind: 'start' }>) =>
+      found.kind === 'continue'
+        ? NextResponse.json(
+            {
+              code: 'open_enrollment_exists',
+              error: "There's already an open enrollment for this client in this product.",
+              enrollment_id: found.enrollment.id,
+              status: found.enrollment.status,
+              has_link: hasWorkingLink(found.enrollment),
+            },
+            { status: 409 }
+          )
+        : NextResponse.json(
+            {
+              code: 'already_enrolled',
+              error: 'This client is already enrolled in this product.',
+              enrollment_id: found.enrollment.id,
+              status: found.enrollment.status,
+            },
+            { status: 409 }
+          );
+    const existing = await existingFor();
+    if (existing.kind !== 'start') return refuse(existing);
 
     // Create enrollment
     const enrollmentData: any = {
@@ -554,10 +611,15 @@ export async function POST(request: NextRequest) {
       `)
       .single();
 
-    if (error) {
+    if (error && isUniqueViolation(error)) {
+      // An open enrollment for this client was made a moment ago.
+      const again = await existingFor();
+      if (again.kind !== 'start') return refuse(again);
+    }
+    if (error || !data) {
       console.error('Error creating enrollment:', error);
       return NextResponse.json(
-        { error: error.message || 'Failed to create enrollment' },
+        { error: error?.message || 'Failed to create enrollment' },
         { status: 500 }
       );
     }

@@ -20,6 +20,7 @@ import {
   CornerDownRight,
   CornerUpLeft,
 } from 'lucide-react';
+import { Compass } from 'lucide-react';
 import { useHelpContext } from '@/context/HelpContext';
 import { useAdminLanguage } from '@/context/AppContext';
 import { MiniMarkdown } from './MiniMarkdown';
@@ -77,7 +78,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 const MIN_SEARCH_LENGTH = 2;
 
 export function HelpDrawer() {
-  const { isOpen, closeDrawer, activeSlug, setActiveSlug } = useHelpContext();
+  const { isOpen, closeDrawer, activeSlug, setActiveSlug, openGuide } = useHelpContext();
   const { t, direction, language } = useAdminLanguage();
   const isRtl = direction === 'rtl';
 
@@ -279,7 +280,7 @@ export function HelpDrawer() {
                 size="icon"
                 onClick={closeDrawer}
                 className="h-8 w-8 shrink-0 rounded-lg hover:bg-foreground/5"
-                aria-label="Close"
+                aria-label={t('common.close', 'Close')}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -395,6 +396,23 @@ export function HelpDrawer() {
           {/* INDEX / SEARCH VIEW (no active article) */}
           {!loading && !error && !activeSlug && (
             <div className="px-5 py-5 space-y-6">
+              {/* The services guide (also the compass icon in the header). */}
+              <button
+                type="button"
+                onClick={openGuide}
+                className="flex w-full items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5 text-start transition-colors hover:bg-primary/10"
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
+                  <Compass className="h-5 w-5" aria-hidden />
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm font-bold text-foreground">{t('admin.servicesGuide.open', 'Which service should I create?')}</span>
+                  <span className="text-[13px] text-muted-foreground">
+                    {t('admin.servicesGuide.helpCard', 'Not sure what to create? A step-by-step guide for every service.')}
+                  </span>
+                </span>
+              </button>
+
               {/* Search input — always visible at the top of index */}
               <div className="relative">
                 <Search className="pointer-events-none absolute top-2.5 start-3 h-4 w-4 text-foreground/40" />

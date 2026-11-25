@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
+  Archive,
   ArrowDownRight,
   Calendar,
   ChevronLeft,
@@ -17,41 +18,46 @@ import {
   CreditCard,
   DollarSign,
   FileText,
-  Package,
   TrendingUp,
-  UserCheck,
   Wallet,
 } from 'lucide-react';
 import { KpiItem, KpiStrip, PageTitle } from '@/components/admin/notifications/kit';
 
 interface PaymentStats {
+  currency: string;
   totalRevenue: number;
   netRevenue: number;
   totalRefunds: number;
+  lostDisputes: number;
   activeEnrollments: number;
   pendingPayments: number;
   pendingAmount: number;
   overduePayments: number;
+  overdueAmount: number;
   thisMonthRevenue: number;
   revenueGrowth: number;
-  recentPayments: any[];
 }
 
-/** The payment areas, in the order they appeared as cards. */
+/** The payment areas. Products and Enrollments are under Learning in the menu. */
 const SECTIONS = [
-  { href: '/admin/payments/products', icon: Package, tone: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400', titleKey: 'admin.payments.cards.products.title', title: 'Products', descKey: 'admin.payments.cards.products.description', desc: 'Manage billable products and pricing' },
-  { href: '/admin/enrollments', icon: UserCheck, tone: 'bg-purple-500/10 text-purple-600 dark:text-purple-400', titleKey: 'admin.payments.cards.enrollments.title', title: 'Enrollments', descKey: 'admin.payments.cards.enrollments.description', desc: 'Manage user enrollments and payments' },
   { href: '/admin/payments/pdf-template', icon: FileText, tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', titleKey: 'admin.payments.cards.pdfTemplate.title', title: 'PDF Template', descKey: 'admin.payments.cards.pdfTemplate.description', desc: 'Configure PDF branding for payment receipts' },
   { href: '/admin/payments/plans', icon: CreditCard, tone: 'bg-primary/10 text-primary', titleKey: 'admin.payments.cards.paymentPlans.title', title: 'Payment Plans', descKey: 'admin.payments.cards.paymentPlans.description', desc: 'Configure and manage payment plans' },
   { href: '/admin/payments/schedules', icon: Wallet, tone: 'bg-green-500/10 text-green-600 dark:text-green-400', titleKey: 'admin.payments.combined.title', title: 'Payments', descKey: 'admin.payments.combined.cardDesc', desc: 'What is planned, what was paid, and refunds' },
   { href: '/admin/payments/disputes', icon: AlertTriangle, tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400', titleKey: 'admin.payments.cards.disputes.title', title: 'Disputes', descKey: 'admin.payments.cards.disputes.description', desc: 'Handle payment disputes and chargebacks' },
+  { href: '/admin/payments/keap-history', icon: Archive, tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', titleKey: 'admin.keapHistory.title', title: 'Keap history', descKey: 'admin.keapHistory.cardDesc', desc: 'Past orders and payments from Keap, read-only and searchable' },
   { href: '/admin/payments/reports', icon: FileText, tone: 'bg-slate-500/10 text-slate-600 dark:text-slate-300', titleKey: 'admin.payments.cards.reports.title', title: 'Reports', descKey: 'admin.payments.cards.reports.description', desc: 'View payment reports and analytics' },
+];
+
+/** The cards in groups: everyday money work, then setup. */
+const GROUPS: Array<{ key: string; fallback: string; hrefs: string[] }> = [
+  { key: 'admin.payments.group.money', fallback: 'Payments and reports', hrefs: ['/admin/payments/schedules', '/admin/payments/disputes', '/admin/payments/reports', '/admin/payments/keap-history'] },
+  { key: 'admin.payments.group.setup', fallback: 'Setup', hrefs: ['/admin/payments/plans', '/admin/payments/pdf-template'] },
 ];
 
 /**
  * Payments home, in the admin list template: the title, the money numbers
  * as one strip (Overdue opens the overdue schedules, as its link did), and
- * the payment areas as one list. The layout shows at once; the numbers fill
+ * the payment areas as cards in groups, like the Settings page. The layout shows at once; the numbers fill
  * in when they arrive.
  */
 export default function PaymentsPage() {
@@ -73,7 +79,9 @@ export default function PaymentsPage() {
     })();
   }, []);
 
-  const usd = (n: number) => `$${n.toLocaleString()}`;
+  // Amounts in the business currency, with cents.
+  const money = (n: number) =>
+    new Intl.NumberFormat(isRtl ? 'he-IL' : 'en-US', { style: 'currency', currency: stats?.currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
   const growth = stats?.revenueGrowth ?? 0;
   const growthText = `${growth > 0 ? '+' : ''}${growth}% ${t('admin.payments.fromLastMonth', 'from last month')}`;
 
@@ -90,28 +98,32 @@ export default function PaymentsPage() {
           <KpiItem
             icon={<DollarSign />}
             label={t('admin.payments.totalRevenue', 'Total Revenue')}
-            value={stats ? usd(stats.totalRevenue) : '—'}
+            value={stats ? money(stats.totalRevenue) : '—'}
             subtitle={t('admin.payments.grossRevenue', 'Gross revenue')}
           />
           <KpiItem
             icon={<TrendingUp />}
             tone="green"
             label={t('admin.payments.netRevenue', 'Net Revenue')}
-            value={stats ? usd(stats.netRevenue) : '—'}
+            value={stats ? money(stats.netRevenue) : '—'}
             subtitle={stats ? growthText : undefined}
           />
           <KpiItem
             icon={<ArrowDownRight />}
             tone="grey"
             label={t('admin.payments.refunds', 'Refunds')}
-            value={stats ? `-${usd(stats.totalRefunds)}` : '—'}
-            subtitle={t('admin.payments.totalRefunded', 'Total refunded')}
+            value={stats ? (stats.totalRefunds > 0 ? `-${money(stats.totalRefunds)}` : money(0)) : '—'}
+            subtitle={
+              stats && stats.lostDisputes > 0
+                ? t('admin.payments.refundsAndLostDisputes', 'Includes {amount} in lost disputes').replace('{amount}', money(stats.lostDisputes))
+                : t('admin.payments.totalRefunded', 'Total refunded')
+            }
           />
           <KpiItem
             icon={<Calendar />}
             tone="blue"
             label={t('admin.payments.pendingPayments', 'Pending Payments')}
-            value={stats ? usd(stats.pendingAmount) : '—'}
+            value={stats ? money(stats.pendingAmount) : '—'}
             subtitle={
               stats
                 ? t('admin.payments.fromPayments', 'From {count} payments').replace('{count}', stats.pendingPayments.toString())
@@ -123,33 +135,35 @@ export default function PaymentsPage() {
             tone={stats && stats.overduePayments > 0 ? 'amber' : 'grey'}
             label={t('admin.payments.overduePayments', 'Overdue Payments')}
             value={stats ? stats.overduePayments.toLocaleString() : '—'}
-            subtitle={t('admin.payments.viewOverdue', 'View Overdue')}
+            subtitle={stats && stats.overduePayments > 0 ? `${money(stats.overdueAmount)} · ${t('admin.payments.viewOverdue', 'View Overdue')}` : t('admin.payments.viewOverdue', 'View Overdue')}
             onClick={() => router.push('/admin/payments/schedules?status=overdue')}
           />
         </KpiStrip>
 
-        {/* The payment areas, as one list */}
-        <nav aria-label={t('admin.payments.title', 'Payments')} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <ul className="divide-y divide-border/70">
-            {SECTIONS.map(({ href, icon: Icon, tone, titleKey, title, descKey, desc }) => (
-              <li key={href}>
+        {/* The payment areas as cards in groups, like the Settings page */}
+        {GROUPS.map((group) => (
+          <section key={group.key} aria-label={t(group.key, group.fallback)}>
+            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t(group.key, group.fallback)}</h2>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {SECTIONS.filter((x) => group.hrefs.includes(x.href)).map(({ href, icon: Icon, tone, titleKey, title, descKey, desc }) => (
                 <Link
+                  key={href}
                   href={href}
-                  className="group flex min-h-[68px] items-center gap-4 px-5 py-3.5 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                  className="group flex items-start gap-4 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:shadow-sm"
                 >
                   <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tone}`}>
-                    <Icon className="h-[18px] w-[18px]" aria-hidden />
+                    <Icon className="h-5 w-5" aria-hidden />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-semibold">{t(titleKey, title)}</span>
-                    <span className="block text-sm text-muted-foreground">{t(descKey, desc)}</span>
+                    <h3 className="text-base font-semibold">{t(titleKey, title)}</h3>
+                    <span className="mt-0.5 block text-sm text-muted-foreground [overflow-wrap:anywhere]">{t(descKey, desc)}</span>
                   </span>
-                  <Chevron className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden />
+                  <Chevron className="h-4 w-4 shrink-0 self-center text-muted-foreground group-hover:text-foreground" aria-hidden />
                 </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
     </AdminLayout>
   );

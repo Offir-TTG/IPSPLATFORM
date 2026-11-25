@@ -30,7 +30,7 @@ import {
   usePagedList,
 } from '@/components/admin/notifications/kit';
 import { stripHtml } from '@/components/admin/programs/types';
-import { COURSE_TYPES, COURSE_TYPE_FALLBACK, courseStatus, dateRange, dayOf, personName, type AdminCourse } from '@/components/admin/courses/types';
+import { OFFERED_COURSE_TYPES, COURSE_TYPE_FALLBACK, courseStatus, dateRange, dayOf, personName, type AdminCourse } from '@/components/admin/courses/types';
 import { CourseDrawer, type CourseQuickAction } from '@/components/admin/courses/CourseDrawer';
 
 type StatusFilter = 'all' | 'published' | 'draft' | 'inactive';
@@ -147,6 +147,13 @@ export default function CoursesListPage() {
     for (const c of courses) by[courseStatus(c)] += 1;
     return { all: courses.length, ...by, month: courses.filter(startsThisMonth).length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses]);
+
+  // Course and lecture, plus any older type a course still has.
+  const typeOptions = useMemo(() => {
+    const set = new Set<string>(OFFERED_COURSE_TYPES);
+    for (const c of courses) if (c.course_type) set.add(c.course_type);
+    return [...set];
   }, [courses]);
 
   const programOptions = useMemo(() => {
@@ -277,7 +284,7 @@ export default function CoursesListPage() {
                 value={type}
                 onChange={setType}
                 dir={direction}
-                options={[{ value: 'all', label: t('admin.courses.filter.all', 'All') }, ...COURSE_TYPES.map((v) => ({ value: v, label: typeLabel(v) }))]}
+                options={[{ value: 'all', label: t('admin.courses.filter.all', 'All') }, ...typeOptions.map((v) => ({ value: v, label: typeLabel(v) }))]}
               />
               <FilterSelect
                 label={t('lms.courses.program', 'Program')}

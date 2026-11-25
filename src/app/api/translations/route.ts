@@ -68,7 +68,10 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('translations')
       .select('translation_key, translation_value, context, tenant_id')
-      .eq('language_code', languageCode);
+      .eq('language_code', languageCode)
+      // A fixed order, so paging through more than 1,000 rows can't skip
+      // or repeat any.
+      .order('id');
 
     // Filter by tenant_id (include tenant-specific OR global translations)
     // For now, get translations for specific tenant OR global (null tenant_id)
@@ -125,10 +128,18 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Translations API] Fetched ${translations?.length || 0} translations for language=${languageCode}, context=${context}, tenant_id=${tenantId}`);
 
-    // Convert array to object for easier lookup
+    // Convert array to object for easier lookup. The school's own wording
+    // (tenant_id set) always beats the shared default for the same key,
+    // whatever order the rows came back in, so a renamed label sticks.
     const translationsMap: Record<string, string> = {};
+    const fromTenant = new Set<string>();
     translations?.forEach((t) => {
-      translationsMap[t.translation_key] = t.translation_value;
+      if (t.tenant_id) {
+        translationsMap[t.translation_key] = t.translation_value;
+        fromTenant.add(t.translation_key);
+      } else if (!fromTenant.has(t.translation_key)) {
+        translationsMap[t.translation_key] = t.translation_value;
+      }
     });
 
     // Update cache

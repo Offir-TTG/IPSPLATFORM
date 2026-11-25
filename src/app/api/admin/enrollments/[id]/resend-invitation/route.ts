@@ -55,6 +55,7 @@ export async function POST(
         total_amount,
         currency,
         expires_at,
+        wizard_profile_data,
         user:users!enrollments_user_id_fkey (
           id,
           email,
@@ -88,6 +89,19 @@ export async function POST(
     }
     const keepSignature = enrollment.signature_status === 'completed';
 
+    // Who gets it: the client's account, or, for a new person who has no
+    // account yet, the email and name kept on the enrollment. (This read
+    // enrollmentUser.id unchecked and crashed for a new person.)
+    const profile = (enrollment.wizard_profile_data ?? null) as { email?: string; first_name?: string; last_name?: string } | null;
+    const recipient = enrollmentUser
+      ? { email: enrollmentUser.email as string, firstName: enrollmentUser.first_name as string | null, language: enrollmentUser.language_preference as string | null }
+      : profile?.email
+        ? { email: profile.email, firstName: profile.first_name ?? null, language: null }
+        : null;
+    if (!recipient?.email) {
+      return NextResponse.json({ error: 'This enrollment has no client or email to send to' }, { status: 400 });
+    }
+
     // Generate new enrollment token (using base64url to match send-link endpoint)
     const newToken = crypto.randomBytes(32).toString('base64url');
 
@@ -113,7 +127,11 @@ export async function POST(
         ...(keepSignature ? {} : { signature_status: null, docusign_envelope_id: null }),
         paid_amount: 0,
         payment_status: 'pending',
-        wizard_profile_data: null, // Clear wizard profile data from previous attempt
+        // Clear the previous attempt, but keep a new person's email and name:
+        // they are the only record of who the enrollment is for.
+        wizard_profile_data: enrollmentUser || !profile?.email
+          ? null
+          : { email: profile.email, first_name: profile.first_name || '', last_name: profile.last_name || '' },
         updated_at: new Date().toISOString()
       })
       .eq('id', enrollment.id);
@@ -129,13 +147,15 @@ export async function POST(
     console.log('[Resend Invitation] Successfully reset enrollment');
 
     // Reset user onboarding
-    await supabase
-      .from('users')
-      .update({
-        onboarding_enrollment_id: null,
-        onboarding_completed: false
-      })
-      .eq('id', enrollmentUser.id);
+    if (enrollmentUser?.id) {
+      await supabase
+        .from('users')
+        .update({
+          onboarding_enrollment_id: null,
+          onboarding_completed: false
+        })
+        .eq('id', enrollmentUser.id);
+    }
 
     // Get organization name
     const { data: tenant } = await supabase
@@ -155,10 +175,9 @@ export async function POST(
     // invitation flow itself depends on it); we block only inactive /
     // suspended. The admin sees an explicit error so they know to
     // reactivate the user first instead of silently dropping the send.
-    const eligible = await isUserEligibleForCommunication(
-      supabase,
-      enrollmentUser.id,
-    );
+    const eligible = enrollmentUser?.id
+      ? await isUserEligibleForCommunication(supabase, enrollmentUser.id)
+      : true;
     if (!eligible) {
       return NextResponse.json(
         {
@@ -174,10 +193,10 @@ export async function POST(
       await sendTemplateEmail({
         tenantId: enrollment.tenant_id,
         templateKey,
-        to: enrollmentUser.email,
-        language: (enrollmentUser.language_preference || 'en') as 'en' | 'he',
+        to: recipient.email,
+        language: (recipient.language || 'en') as 'en' | 'he',
         variables: {
-          userName: enrollmentUser.first_name || enrollmentUser.email.split('@')[0],
+          userName: recipient.firstName || recipient.email.split('@')[0],
           productName: product.title,
           productType: product.type || 'course',
           organizationName: tenant?.name || 'IPS Platform',
@@ -202,7 +221,7 @@ export async function POST(
       resource_type: 'enrollment',
       resource_id: enrollment.id,
       details: {
-        recipient_email: enrollmentUser.email,
+        recipient_email: recipient.email,
         new_token: newToken,
         expires_at: tokenExpiresAt.toISOString()
       },
@@ -215,7 +234,7 @@ export async function POST(
       invitation_url: invitationUrl,
       token_expires_at: tokenExpiresAt.toISOString(),
       email_sent: true,
-      recipient: enrollmentUser.email
+      recipient: recipient.email
     });
 
   } catch (error: any) {

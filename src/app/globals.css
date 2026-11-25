@@ -206,6 +206,30 @@
     text-align: left;
   }
 
+  /* Anything marked dir="ltr" (addresses, codes, English fields) stays LTR
+     inside a Hebrew page; the rule above would otherwise flip it back.
+     Only text and field elements: UI library containers (menus, tabs, scroll
+     areas) are divs that carry dir="ltr" by default, and matching them turned
+     whole screens LTR. */
+  [dir="rtl"] :is(span, input, textarea, p, a, bdi, code, td, th, dt, dd)[dir="ltr"],
+  [dir="rtl"] :is(span, input, textarea, p, a, bdi, code, td, th, dt, dd)[dir="ltr"] * {
+    direction: ltr;
+  }
+
+  /* Opening a drawer or dialog hides the page's scrollbar; the page used to
+     jump sideways (the library makes up for it on the right, but in Hebrew
+     the scrollbar is on the left). Keep the scrollbar's room always, and
+     drop the library's make-up margin, so nothing moves. */
+  html {
+    scrollbar-gutter: stable;
+  }
+  html body[data-scroll-locked] {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
   body {
     @apply bg-background;
     color: hsl(var(--text-body));

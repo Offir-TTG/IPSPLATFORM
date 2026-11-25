@@ -219,7 +219,7 @@ export function LessonPanel({
       <SheetContent
         side={isRtl ? 'left' : 'right'}
         dir={direction}
-        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none sm:max-w-[540px] [&>button.absolute]:hidden"
+        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none sm:max-w-[540px] [&>[data-default-close]]:hidden"
       >
         <header className="relative shrink-0 border-b border-border bg-primary/[0.04] px-6 pb-4 pt-5">
           <p className="pe-24 text-[13.5px] font-semibold text-muted-foreground">{statusLine}</p>

@@ -8,9 +8,10 @@
  *   - sendPriceChangeCancelledNotices: when an admin cancels a change members
  *     were already told about, they hear that the price stays.
  *
- * Emails use the editable templates 'subscription.price_change' and
- * 'subscription.price_change_cancelled' (Emails > Templates). Until those are
- * added for the organization, a built-in text in the same words is sent.
+ * The words, on/off and the client's settings come from the two price-change
+ * rows on Automatic reminders. Until that screen's tables exist, the editable
+ * templates 'subscription.price_change' and 'subscription.price_change_cancelled'
+ * (or a built-in text in the same words) are emailed as before.
  */
 
 import { createAdminClient } from '@/lib/supabase/server';
@@ -19,6 +20,7 @@ import { sendEmail } from '@/lib/email/send';
 import { renderEmailLayout } from '@/lib/email/layout';
 import { planSubscriptionAmount } from './paymentEngine';
 import { changeMatches, type PriceChange } from './subscriptionPrice';
+import { sendPriceChangeMessage } from '@/lib/messaging/events';
 
 const COLLECTING = ['active', 'suspended'];
 
@@ -59,6 +61,7 @@ function portalUrl() {
 
 interface Member {
   enrollmentId: string;
+  userId: string;
   email: string;
   name: string;
   lang: 'he' | 'en';
@@ -116,6 +119,7 @@ async function membersFor(db: any, change: PriceChange): Promise<Member[]> {
     for (let i = 0; i < 400 && charge < effective; i++) charge = addPeriod(charge, frequency);
     out.push({
       enrollmentId: e.id,
+      userId: e.user_id,
       email: u.email,
       name: `${u.first_name ?? ''}`.trim() || u.email,
       lang: u.preferred_language === 'en' ? 'en' : 'he',
@@ -220,7 +224,20 @@ export async function sendDuePriceChangeNotices(): Promise<{ sent: number; error
         chargeDate: longDate(m.chargeDate, m.lang),
         portalUrl: portalUrl(),
       };
-      const ok = await sendNotice({ db, tenantId: change.tenant_id, templateKey: 'subscription.price_change', to: m.email, lang: m.lang, variables: v, fallback: noticeWords(m.lang, v) }).catch(() => false);
+      // The row on Automatic reminders decides (words, on/off, the client's
+      // settings); before that screen's tables exist, the email goes as before.
+      const via = await sendPriceChangeMessage(change.tenant_id, 'price.changing', m.userId, {
+        product: product?.title || '',
+        oldPrice: Number(change.old_amount),
+        newPrice: Number(change.new_amount),
+        currency: change.currency,
+        effectiveAt: m.chargeDate.toISOString(),
+        productId: change.product_id,
+      }).catch(() => 'fallback' as const);
+      if (via === 'off') continue;
+      const ok =
+        via === 'sent' ||
+        (await sendNotice({ db, tenantId: change.tenant_id, templateKey: 'subscription.price_change', to: m.email, lang: m.lang, variables: v, fallback: noticeWords(m.lang, v) }).catch(() => false));
       if (ok) sent++;
       else errors.push(`Price change ${change.id}: notice to enrollment ${m.enrollmentId} was not sent`);
     }
@@ -263,7 +280,16 @@ export async function sendPriceChangeCancelledNotices(change: PriceChange): Prom
   let told = 0;
   for (const m of members) {
     const v = { userName: m.name, productName: product?.title || '', oldPrice: money(Number(change.old_amount), change.currency, m.lang) };
-    const ok = await sendNotice({ db, tenantId: change.tenant_id, templateKey: 'subscription.price_change_cancelled', to: m.email, lang: m.lang, variables: v, fallback: cancelledWords(m.lang, v) }).catch(() => false);
+    const via = await sendPriceChangeMessage(change.tenant_id, 'price.cancelled', m.userId, {
+      product: product?.title || '',
+      oldPrice: Number(change.old_amount),
+      currency: change.currency,
+      productId: change.product_id,
+    }).catch(() => 'fallback' as const);
+    if (via === 'off') continue;
+    const ok =
+      via === 'sent' ||
+      (await sendNotice({ db, tenantId: change.tenant_id, templateKey: 'subscription.price_change_cancelled', to: m.email, lang: m.lang, variables: v, fallback: cancelledWords(m.lang, v) }).catch(() => false));
     if (ok) told++;
   }
   return told;

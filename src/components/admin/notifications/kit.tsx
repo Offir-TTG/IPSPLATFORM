@@ -15,6 +15,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as SelectPrimitive from '@radix-ui/react-select';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { AlertTriangle, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, Sparkles, X, type LucideIcon } from 'lucide-react';
 
@@ -556,6 +557,100 @@ export function FilterSelect<T extends string>({
         </SelectPrimitive.Content>
       </SelectPrimitive.Portal>
     </SelectPrimitive.Root>
+  );
+}
+
+/**
+ * FilterSelect with a search box inside, for long lists (products, people).
+ * Same button ("Product: All ▾"); the list opens with the search focused and
+ * narrows as you type. The first option is the "all" choice.
+ */
+export function FilterCombo({
+  label,
+  value,
+  onChange,
+  options,
+  searchPlaceholder,
+  emptyText,
+  dir,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  searchPlaceholder: string;
+  emptyText: string;
+  dir?: 'rtl' | 'ltr';
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const current = options.find((o) => o.value === value)?.label ?? '';
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o, i) => i === 0 || o.label.toLowerCase().includes(q)) : options;
+  return (
+    <PopoverPrimitive.Root
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setQuery('');
+      }}
+    >
+      <PopoverPrimitive.Trigger
+        aria-label={`${label}: ${current}`}
+        className="inline-flex h-11 min-w-0 max-w-full items-center gap-1 rounded-lg border border-border bg-card pe-2.5 ps-3.5 text-sm text-muted-foreground outline-none hover:bg-muted/60 focus-visible:border-primary data-[state=open]:border-primary"
+      >
+        <span className="whitespace-nowrap">{label}:</span>
+        <span className="min-w-0 max-w-[12rem] truncate font-semibold text-foreground">{current}</span>
+        <ChevronDown className="ms-1 h-4 w-4 shrink-0" aria-hidden />
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          sideOffset={6}
+          align="start"
+          dir={dir}
+          className="z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl dark:[color-scheme:dark]"
+        >
+          <div className="flex items-center gap-2 border-b border-border px-3">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <input
+              autoFocus
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
+            />
+          </div>
+          <div role="listbox" aria-label={label} className="max-h-72 overflow-y-auto p-1.5">
+            {shown.length <= 1 && q ? (
+              <p className="px-3 py-4 text-center text-sm text-muted-foreground">{emptyText}</p>
+            ) : null}
+            {shown.map((o, i) => {
+              if (q && i === 0 && shown.length <= 1) return null;
+              const on = o.value === value;
+              return (
+                <button
+                  key={o.value || '__all'}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                  className={`relative flex min-h-10 w-full items-center rounded-lg pe-3 ps-9 text-start text-sm hover:bg-muted ${on ? 'font-semibold text-primary' : ''}`}
+                >
+                  <span className="absolute start-3 flex h-4 w-4 items-center justify-center">{on && <Check className="h-4 w-4" aria-hidden />}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{o.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
 

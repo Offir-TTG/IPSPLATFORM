@@ -6,6 +6,8 @@ export interface Enrollment {
   user_email: string;
   product_id: string;
   product_name: string;
+  /** CRM tags this enrollment brought (saved when it was made). */
+  crm_tag_slugs?: string[];
   product_type: string;
   payment_plan_id: string;
   payment_plan_key: string;
@@ -24,6 +26,9 @@ export interface Enrollment {
   created_at: string;
   expires_at?: string | null;
   invitation_sent_at?: string | null;
+  /** Cancelled by the client in the portal, not by the team. */
+  cancelled_by_client?: boolean;
+  cancellation_reason?: string | null;
 }
 
 /** One payment in an enrollment's schedule (GET /api/enrollments/[id]/payment). */

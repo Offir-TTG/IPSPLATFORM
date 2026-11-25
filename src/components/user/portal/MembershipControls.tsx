@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { MembershipView } from '@/lib/portal/membership';
 
-type Action = 'stop' | 'resume' | 'pause_month' | 'switch_plan';
+type Action = 'stop' | 'resume' | 'switch_plan';
 
 /**
- * Pause, stop, resume and switch plan for one membership. Each option shows
- * only when the payment rules allow it (the can_* flags).
+ * Stop, resume and switch plan for one membership. Each option shows only
+ * when the payment rules allow it (the can_* flags). Pausing for a month is
+ * not offered; "resume" still cancels a pause that was set before.
  */
 export function MembershipControls({ m, accent = '#5b3a8e' }: { m: MembershipView; accent?: string }) {
   const router = useRouter();
@@ -68,18 +69,13 @@ export function MembershipControls({ m, accent = '#5b3a8e' }: { m: MembershipVie
           <button type="button" disabled={busy} onClick={() => change('stop')} className={`${primary} bg-[#b3392f]`}>
             אישור הפסקה
           </button>
-          {m.canPause && (
-            <button type="button" disabled={busy} onClick={() => change('pause_month')} className="border border-[#e3dcef] bg-white font-semibold text-sm px-4 py-[9px] rounded-[11px]">
-              השהיה לחודש במקום
-            </button>
-          )}
           <button type="button" onClick={() => setConfirmStop(false)} className="border-0 bg-transparent font-semibold text-sm px-2.5" style={{ color: accent }}>
             השארת המנוי
           </button>
         </div>
       </div>
     );
-  } else if (m.canStop || m.canPause || m.canSwitch) {
+  } else if (m.canStop || m.canSwitch) {
     body = (
       <div className="flex flex-col gap-2.5">
         {m.canSwitch &&
@@ -89,12 +85,6 @@ export function MembershipControls({ m, accent = '#5b3a8e' }: { m: MembershipVie
               <span className="text-[13px] text-[#73698a]">{p.sub}</span>
             </button>
           ))}
-        {m.canPause && (
-          <button type="button" disabled={busy} onClick={() => change('pause_month')} className={option}>
-            <b className="block text-[15px]">השהיה לחודש</b>
-            <span className="text-[13px] text-[#73698a]">בלי חיוב, והמנוי חוזר לבד</span>
-          </button>
-        )}
         {m.canStop && (
           <button type="button" onClick={() => setConfirmStop(true)} className={option}>
             <b className="block text-[15px]">הפסקת המנוי</b>

@@ -87,17 +87,9 @@ export async function GET(
           new: newSignatureStatus
         });
 
-        const { error: updateError } = await supabase
-          .from('enrollments')
-          .update({
-            signature_status: newSignatureStatus,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', enrollment.id);
-
-        if (updateError) {
-          console.error('[Check Signature] Failed to update signature status:', updateError);
-        }
+        // Signed or declined also tells every admin, once.
+        const { setSignatureStatus } = await import('@/lib/messaging/contractAlerts');
+        await setSignatureStatus(supabase, enrollment.id, newSignatureStatus);
       }
 
       return NextResponse.json({

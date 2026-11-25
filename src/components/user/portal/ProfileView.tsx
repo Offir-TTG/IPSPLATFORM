@@ -43,13 +43,14 @@ const TABS: [Tab, string][] = [
 ];
 
 // What each kind of update means to a client, and the defaults the system uses when nothing is saved.
-const PREF_ROWS: { key: string; label: string; sub: string; def: CategoryPref }[] = [
-  { key: 'lesson', label: 'מפגשים והקלטות', sub: 'תזכורת לפני מפגש חי, שינויים, והקלטה שעלתה לצפייה', def: { email: true } },
+// `inc`: which automatic reminders each kind includes.
+const PREF_ROWS: { key: string; label: string; sub: string; inc?: string; def: CategoryPref }[] = [
+  { key: 'lesson', label: 'מפגשים והקלטות', sub: 'תזכורת לפני מפגש חי, שינויים, והקלטה שעלתה לצפייה', inc: 'כולל מפגשי ליווי: תזכורת לפני, ושינוי מועד', def: { email: true } },
   { key: 'announcement', label: 'הודעות מהצוות', sub: 'עדכונים מהמנחים ומצוות בית הספר', def: { email: true } },
-  { key: 'assignment', label: 'מטלות ומועדי הגשה', sub: 'בכל המרחבים שלך', def: { email: true } },
-  { key: 'payment', label: 'תשלומים וקבלות', sub: 'לפני חיוב ואחריו', def: { email: true } },
-  { key: 'enrollment', label: 'הרשמה', sub: 'אישור הרשמה וסיום קורס', def: { email: true } },
-  { key: 'achievement', label: 'הישגים ותעודות', sub: 'כשמסיימים קורס או מגיעים לאבן דרך', def: { email: true } },
+  { key: 'assignment', label: 'מטלות ומועדי הגשה', sub: 'בכל המרחבים שלך', inc: 'כולל תזכורת לפני מועד הגשה, ומשוב שפורסם', def: { email: true } },
+  { key: 'payment', label: 'תשלומים וקבלות', sub: 'לפני חיוב ואחריו', inc: 'כולל תזכורות כשתשלום לא עבר או כרטיס עומד לפוג', def: { email: true } },
+  { key: 'enrollment', label: 'הרשמה', sub: 'אישור הרשמה וסיום קורס', inc: 'כולל תזכורות להשלמת הרשמה, חוזה ושאלון', def: { email: true } },
+  { key: 'achievement', label: 'הישגים ותעודות', sub: 'כשמסיימים קורס או מגיעים לאבן דרך', inc: 'כולל הודעה כשהתעודה מוכנה', def: { email: true } },
 ];
 
 const input = 'min-h-11 rounded-xl border border-[#e3dcef] bg-[#f9f7fc] px-3 text-[15px] text-[#221a2e] focus:outline-none focus:border-[#5b3a8e] focus:bg-white';
@@ -341,6 +342,7 @@ function Notify({ prefs }: { prefs: ProfileData['prefs'] }) {
           <span className="min-w-0">
             <b className="block text-[14.5px]">{r.label}</b>
             <span className="text-[#73698a] text-[12.5px]">{r.sub}</span>
+            {r.inc && <span className="mt-1 inline-block rounded-lg bg-[#fff3df] px-2 py-0.5 text-[12.5px] font-semibold text-[#8a5300]">{r.inc}</span>}
           </span>
           <span className="text-center">
             <Switch on={p.email && value(r.key, 'email')} onChange={() => toggle(r.key, 'email')} label={`${r.label} באימייל`} />
@@ -360,7 +362,7 @@ function Notify({ prefs }: { prefs: ProfileData['prefs'] }) {
             value={p.quietStart?.slice(0, 5) ?? ''}
             onChange={(e) => {
               setP((x) => ({ ...x, quietStart: e.target.value || null }));
-              save({ quiet_hours_start: e.target.value || null });
+              save({ quiet_hours_start: e.target.value || null, quiet_hours_timezone: browserZone() });
             }}
             className={`${input} min-h-10 bg-white`}
             style={{ direction: 'ltr' }}
@@ -372,7 +374,7 @@ function Notify({ prefs }: { prefs: ProfileData['prefs'] }) {
             value={p.quietEnd?.slice(0, 5) ?? ''}
             onChange={(e) => {
               setP((x) => ({ ...x, quietEnd: e.target.value || null }));
-              save({ quiet_hours_end: e.target.value || null });
+              save({ quiet_hours_end: e.target.value || null, quiet_hours_timezone: browserZone() });
             }}
             className={`${input} min-h-10 bg-white`}
             style={{ direction: 'ltr' }}
@@ -393,9 +395,19 @@ function Notify({ prefs }: { prefs: ProfileData['prefs'] }) {
           label="סיכום אחד ביום"
         />
       </div>
+      <p className="m-0 mt-1 text-[#73698a] text-[13px] leading-relaxed">הזמנה לפורטל, קישור הרשמה ואיפוס סיסמה תמיד נשלחים באימייל, כי ביקשת אותם.</p>
       {err && <span className="text-[#b3392f] text-sm" role="status">השינוי לא נשמר. נסו שוב.</span>}
     </div>
   );
+}
+
+/** The client's own time zone, so quiet hours mean their night, not the server's. */
+function browserZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function Security({ sessions }: { sessions: ProfileData['sessions'] }) {

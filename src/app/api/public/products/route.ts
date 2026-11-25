@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
         completion_description,
         access_duration,
         access_description,
+        metadata,
         programs!products_program_id_fkey (
           id,
           name,
@@ -205,7 +206,9 @@ export async function GET(request: NextRequest) {
           description: product.description || (product.type === 'program'
             ? (Array.isArray(product.programs) ? product.programs[0]?.description : product.programs?.description)
             : (Array.isArray(product.courses) ? product.courses[0]?.description : product.courses?.description)),
-          image_url,
+          // The picture set in the product editor comes first; otherwise the
+          // program's or course's picture.
+          image_url: product.metadata?.image_url || image_url,
           product_type: product.type,
           payment_model: product.payment_model,
           price: product.price,

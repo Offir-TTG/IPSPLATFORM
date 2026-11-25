@@ -22,6 +22,20 @@ const nextConfig = {
       'localhost',
     ],
   },
+  // Everything that goes out to clients lives in Communications now. The old
+  // addresses (bookmarks, links in older emails) lead to their new place.
+  async redirects() {
+    return [
+      { source: '/admin/emails', destination: '/admin/communications', permanent: false },
+      { source: '/admin/emails/analytics', destination: '/admin/communications', permanent: false },
+      { source: '/admin/emails/queue', destination: '/admin/communications/log', permanent: false },
+      { source: '/admin/emails/settings', destination: '/admin/communications/settings?tab=branding', permanent: false },
+      { source: '/admin/emails/templates', destination: '/admin/communications/templates', permanent: false },
+      { source: '/admin/emails/templates/:id', destination: '/admin/communications/templates/:id', permanent: false },
+      { source: '/admin/notifications', destination: '/admin/communications/messages', permanent: false },
+      { source: '/admin/notifications/new', destination: '/admin/communications/messages/new', permanent: false },
+    ];
+  },
   // Pages may be shown inside a frame only by this site itself (the portal
   // shows the enrollment wizard inside the child page). Other websites can't
   // frame them, which stops click-jacking.

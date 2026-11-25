@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getCurrentTenant } from '@/lib/tenant/detection';
 import { verifyTenantAdmin } from '@/lib/tenant/auth';
+import { readLoginPage } from '@/lib/portal/loginPage';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,6 +127,21 @@ export async function PATCH(request: NextRequest) {
       if (updateData[field] !== undefined) {
         filteredUpdate[field] = updateData[field];
       }
+    }
+
+    // The login page's picture and words (Settings → Login page) live in
+    // metadata.login_page. Merge, so the rest of metadata stays as it is.
+    if (updateData.login_page !== undefined) {
+      const { data: current, error: readError } = await admin
+        .from('tenants')
+        .select('metadata')
+        .eq('id', tenant.id)
+        .single();
+      if (readError) {
+        return NextResponse.json({ success: false, error: `Failed to update tenant: ${readError.message}` }, { status: 500 });
+      }
+      const metadata = (current?.metadata && typeof current.metadata === 'object' ? current.metadata : {}) as Record<string, unknown>;
+      filteredUpdate.metadata = { ...metadata, login_page: readLoginPage(updateData.login_page) };
     }
 
     if (Object.keys(filteredUpdate).length === 0) {

@@ -15,6 +15,7 @@
 
 import { createAdminClient } from "@/lib/supabase/server";
 import type { PersonEventEnvelope, PersonEventType } from "./types";
+import { getOrCreatePerson } from "./get-or-create-client";
 
 const BATCH_SIZE = 50;
 const MAX_BACKOFF_SECONDS = 3600;
@@ -105,6 +106,20 @@ export async function drainOutbox(): Promise<DrainResult> {
       continue;
     }
 
+    // The CRM no longer has the contact this person_id pointed to (deleted,
+    // or the CRM was emptied): find or create it again by the user's email,
+    // link the new id, and send the event again on the next run.
+    if (outcome.status === 409 && outcome.error.includes("unknown_person") && ev.user_id) {
+      const relinked = await relinkPerson(supabase, ev).catch((e) => {
+        console.error("[outbox-drainer] relink failed:", e);
+        return false;
+      });
+      if (relinked) {
+        retried++;
+        continue;
+      }
+    }
+
     const nextAttempts = ev.attempts + 1;
     const isPermanent =
       outcome.statusGroup === "4xx" &&
@@ -153,6 +168,48 @@ export async function drainOutbox(): Promise<DrainResult> {
     dead_lettered: deadLettered,
     configured: true,
   };
+}
+
+/**
+ * Finds or creates the user's CRM contact by email, saves the new
+ * person_id on the user, and points this and the user's other pending
+ * events at it (they are sent on the next run).
+ */
+async function relinkPerson(supabase: ReturnType<typeof createAdminClient>, ev: OutboxRow): Promise<boolean> {
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, email, first_name, last_name, phone, person_id")
+    .eq("id", ev.user_id!)
+    .maybeSingle();
+  if (!user?.email) return false;
+  const outcome = await getOrCreatePerson({
+    email: user.email,
+    name: [user.first_name, user.last_name].filter(Boolean).join(" ") || null,
+    phone: user.phone ?? null,
+  });
+  if (!outcome.ok) return false;
+  const newId = outcome.person_id;
+  const oldId = ev.person_id ?? (ev.payload as any)?.person_id ?? null;
+  if (!newId || newId === oldId) return false;
+
+  await supabase.from("users").update({ person_id: newId }).eq("id", user.id);
+
+  const { data: pending } = await supabase
+    .from("outbox_events")
+    .select("id, payload")
+    .eq("user_id", user.id)
+    .is("delivered_at", null)
+    .eq("dead_letter", false);
+  for (const p of pending ?? []) {
+    const payload = { ...((p.payload as Record<string, unknown>) ?? {}) };
+    if (payload.person_id === oldId || p.id === ev.id) payload.person_id = newId;
+    await supabase
+      .from("outbox_events")
+      .update({ person_id: newId, payload, next_attempt_at: new Date().toISOString(), last_error: `relinked from ${oldId ?? "none"}` })
+      .eq("id", p.id);
+  }
+  console.log(`[outbox-drainer] relinked user ${user.id}: ${oldId} -> ${newId} (${outcome.was_created ? "created" : "found"})`);
+  return true;
 }
 
 type PostOutcome =

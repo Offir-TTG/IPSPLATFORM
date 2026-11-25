@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { listIntegrations } from '@/lib/integrations/store';
 import { recordQueueBounce } from '@/lib/email/blocklist';
+import { markLogged } from '@/lib/messaging/queueSync';
 import { bounceClassFromResendEvent } from '@/lib/email/bounce';
 import { RESEND_APP_TAG } from '@/lib/email/send';
 
@@ -177,6 +178,11 @@ async function markBounce(
 
   if (rowId) {
     await recordQueueBounce(supabase, rowId, input.kind);
+    // The send log shows "the email didn't arrive" for this message.
+    if (input.kind !== 'complaint') {
+      const { data: row } = await supabase.from('email_queue').select('message_log_id').eq('id', rowId).maybeSingle();
+      await markLogged(supabase, (row as { message_log_id?: string | null } | null)?.message_log_id, 'bounced');
+    }
     return;
   }
   if (!input.to || !input.tenantId) return;

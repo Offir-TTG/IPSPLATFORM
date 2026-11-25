@@ -263,7 +263,7 @@ export function UserDrawer({
         onFocusOutside={(e) => {
           if ((e.target as HTMLElement | null)?.closest?.('.pac-container')) e.preventDefault();
         }}
-        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[880px] [&>button.absolute]:hidden"
+        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[880px] [&>[data-default-close]]:hidden"
       >
         <button
           type="button"

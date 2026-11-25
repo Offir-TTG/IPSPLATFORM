@@ -17,6 +17,7 @@ import type { ProductType } from '@/types/product';
 import {
   ClearFilters,
   FilterSelect,
+  FilterCombo,
   IconButton,
   KpiItem,
   KpiStrip,
@@ -34,7 +35,7 @@ import {
   kitButton,
   usePagedList,
 } from '@/components/admin/notifications/kit';
-import { EnrollmentDrawer } from '@/components/admin/enrollments/EnrollmentDrawer';
+import { EnrollmentDrawer, type CrmTagInfo } from '@/components/admin/enrollments/EnrollmentDrawer';
 import { CancelEnrollmentDialog, ManualPaymentDialog, ResetEnrollmentDialog } from '@/components/admin/enrollments/EnrollmentDialogs';
 import { useEnrollmentFormat } from '@/components/admin/enrollments/useEnrollmentFormat';
 import {
@@ -71,6 +72,26 @@ export default function EnrollmentsPage() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [payment, setPayment] = useState<string>('all');
   const [product, setProduct] = useState<string>('all');
+  // CRM tag filter ('' = all), with the tags' names from the CRM.
+  const [tag, setTag] = useState<string>('');
+  const [crmTagNames, setCrmTagNames] = useState<Map<string, CrmTagInfo>>(new Map());
+  useEffect(() => {
+    void fetch('/api/admin/crm/tags')
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success) return;
+        setCrmTagNames(
+          new Map(
+            (j.tags ?? []).map((x: any) => [
+              x.slug,
+              { name: (language === 'he' ? x.label_he || x.label_en : x.label_en || x.label_he) || x.slug, color: x.category?.color ?? null },
+            ]),
+          ),
+        );
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Dialogs (the same ones as before), opened from the drawer.
@@ -248,25 +269,34 @@ export default function EnrollmentsPage() {
     return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
   }, [enrollments]);
 
+  // The CRM tags the enrollments carry, named from the CRM when it answers.
+  const tagOptions = useMemo(() => {
+    const slugs = new Set<string>();
+    for (const e of enrollments) for (const s of e.crm_tag_slugs ?? []) slugs.add(s);
+    return [...slugs].map((s) => ({ value: s, label: crmTagNames.get(s)?.name ?? s })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [enrollments, crmTagNames]);
+
   const beforeStatus = useMemo(() => {
     const q = debounced.trim().toLowerCase();
     return enrollments.filter(
       (e) =>
         (payment === 'all' || e.payment_status === payment) &&
         (product === 'all' || e.product_id === product) &&
+        (!tag || (e.crm_tag_slugs ?? []).includes(tag)) &&
         (!q || `${e.user_name} ${e.user_email} ${e.product_name}`.toLowerCase().includes(q)),
     );
-  }, [enrollments, debounced, payment, product]);
+  }, [enrollments, debounced, payment, product, tag]);
   const shown = status === 'all' ? beforeStatus : beforeStatus.filter((e) => e.status === status);
   const pillCount = (s: string) => beforeStatus.filter((e) => e.status === s).length;
 
-  const paged = usePagedList(shown, `${debounced}|${status}|${payment}|${product}`);
-  const filtersOn = !!search || status !== 'all' || payment !== 'all' || product !== 'all';
+  const paged = usePagedList(shown, `${debounced}|${status}|${payment}|${product}|${tag}`);
+  const filtersOn = !!search || status !== 'all' || payment !== 'all' || product !== 'all' || !!tag;
   const clearFilters = () => {
     setSearch('');
     setStatus('all');
     setPayment('all');
     setProduct('all');
+    setTag('');
   };
   const toggleStatus = (s: StatusFilter) => setStatus((cur) => (cur === s ? 'all' : s));
   const filteredNow = t('admin.list.filteredNow', 'Filtered now');
@@ -424,6 +454,15 @@ export default function EnrollmentsPage() {
                 dir={direction}
                 options={[{ value: 'all', label: t('admin.enrollments.allProducts', 'All products') }, ...productOptions]}
               />
+              <FilterCombo
+                label={t('admin.enrollments.crmTag', 'CRM tag')}
+                value={tag}
+                onChange={setTag}
+                dir={direction}
+                searchPlaceholder={t('admin.enrollments.crmTagSearch', 'Search a tag...')}
+                emptyText={t('admin.enrollments.crmTagNone', 'No tag by that name.')}
+                options={[{ value: '', label: t('admin.enrollments.allTags', 'All tags') }, ...tagOptions]}
+              />
               <IconButton label={t('common.refresh', 'Refresh')} onClick={() => void load()} disabled={loading}>
                 <RefreshCw className={`h-[18px] w-[18px] ${loading ? 'animate-spin' : ''}`} aria-hidden />
               </IconButton>
@@ -514,7 +553,7 @@ export default function EnrollmentsPage() {
                 <ListCell label={t('admin.enrollments.table.status', 'Status')}>
                   <span className={`inline-flex items-center gap-2 font-semibold ${tone.text}`}>
                     <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden />
-                    {f.statusLabel(e.status)}
+                    {f.enrollmentStatus(e)}
                   </span>
                 </ListCell>
                 <ListCell label={t('admin.enrollments.table.paid', 'Paid')}>
@@ -560,6 +599,7 @@ export default function EnrollmentsPage() {
 
       <EnrollmentDrawer
         enrollment={openEnrollment}
+        tagInfo={crmTagNames}
         refreshKey={refreshKey}
         onClose={() => setOpenId(null)}
         onSendLink={openSendLink}

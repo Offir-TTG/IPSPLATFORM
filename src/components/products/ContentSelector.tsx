@@ -3,13 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+import { ContentPicker, type PickerItem } from './ContentPicker';
 import { ProductType } from '@/types/product';
 import { useAdminLanguage } from '@/context/AppContext';
-import { stripHtml } from '@/components/admin/programs/types';
 import {
   BookOpen,
   GraduationCap,
@@ -19,15 +15,19 @@ import {
   Package,
   Calendar,
   Grid3x3,
-  Loader2,
+  Repeat,
 } from 'lucide-react';
 
-/** The product types as choice cards, each with its picture. */
-const PRODUCT_TYPE_CARDS: { value: ProductType; icon: typeof BookOpen; fallback: string }[] = [
+/** The product types as choice cards, each with its picture. "Club" is not a
+ *  type of its own: it saves a course product sold as a monthly membership,
+ *  which is what the portal shows as a club. */
+type TypeCard = ProductType | 'club';
+const PRODUCT_TYPE_CARDS: { value: TypeCard; icon: typeof BookOpen; fallback: string }[] = [
   { value: 'program', icon: GraduationCap, fallback: 'Program' },
   { value: 'course', icon: BookOpen, fallback: 'Course' },
+  { value: 'club', icon: Repeat, fallback: 'Club' },
   { value: 'bundle', icon: Grid3x3, fallback: 'Bundle' },
-  { value: 'session_pack', icon: Package, fallback: 'Session Pack' },
+  { value: 'session_pack', icon: Package, fallback: 'Personal guidance' },
   { value: 'lecture', icon: Video, fallback: 'Lecture' },
   { value: 'workshop', icon: Users, fallback: 'Workshop' },
   { value: 'webinar', icon: Video, fallback: 'Webinar' },
@@ -39,6 +39,8 @@ interface Program {
   id: string;
   name: string;
   description?: string;
+  image_url?: string | null;
+  course_count?: number;
 }
 
 interface Course {
@@ -46,6 +48,9 @@ interface Course {
   title: string;
   description?: string;
   is_standalone: boolean;
+  course_type?: string | null;
+  image_url?: string | null;
+  start_date?: string | null;
 }
 
 interface ContentSelectorProps {
@@ -60,6 +65,10 @@ interface ContentSelectorProps {
   sessionCount?: number;
   onSessionCountChange: (count: number | undefined) => void;
   onContentNameChange?: (name: string) => void;
+  /** The product is a club (a course sold as a monthly membership). */
+  isClub?: boolean;
+  /** "Club" was chosen; the editor sets the membership payment. */
+  onClubSelect?: () => void;
   validationErrors?: Record<string, string>;
   t: (key: string, fallback: string) => string;
 }
@@ -76,6 +85,8 @@ export function ContentSelector({
   sessionCount,
   onSessionCountChange,
   onContentNameChange,
+  isClub = false,
+  onClubSelect,
   validationErrors = {},
   t,
 }: ContentSelectorProps) {
@@ -113,9 +124,15 @@ export function ContentSelector({
     }
   };
 
-  // Fetch programs and courses on mount
+  // Fetch programs and courses on mount, and again when the admin comes back
+  // to this tab (after creating a course or program from the picker's link).
   useEffect(() => {
     fetchContent();
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') fetchContent();
+    };
+    document.addEventListener('visibilitychange', onFocus);
+    return () => document.removeEventListener('visibilitychange', onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -166,114 +183,87 @@ export function ContentSelector({
     }
   };
 
-  const handleTypeChange = (type: ProductType) => {
+  const handleTypeChange = (card: TypeCard) => {
     // Clear previous selections
     onProgramChange(undefined);
     onCourseChange(undefined);
     onContainsCoursesChange([]);
     onSessionCountChange(undefined);
 
-    onTypeChange(type);
+    onTypeChange(card === 'club' ? 'course' : card);
+    if (card === 'club') onClubSelect?.();
+  };
+
+  const dateText = (d?: string | null) => {
+    if (!d) return '';
+    const date = new Date(d);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+  };
+  const courseKind = (c: Course) =>
+    c.course_type === 'lecture'
+      ? { key: 'lecture', label: t('lms.course.type_lecture', 'Lecture') }
+      : { key: 'course', label: t('lms.course.type_course', 'Course') };
+  const courseItems: PickerItem[] = courses.map((c) => ({
+    id: c.id,
+    title: c.title,
+    meta: c.start_date ? t('products.picker.starts', 'Starts {date}').replace('{date}', dateText(c.start_date)) : '',
+    kind: courseKind(c),
+    imageUrl: c.image_url || null,
+  }));
+  const programItems: PickerItem[] = programs.map((p) => ({
+    id: p.id,
+    title: p.name,
+    meta: typeof p.course_count === 'number' ? t('products.picker.courseCount', '{n} courses').replace('{n}', String(p.course_count)) : '',
+    imageUrl: p.image_url || null,
+  }));
+  const common = {
+    loading,
+    allLabel: t('products.picker.all', 'All'),
+    dir: direction as 'ltr' | 'rtl',
+    t,
   };
 
   const renderContentPicker = () => {
-    // Program type uses program selector
+    // A program: pick one program.
     if (productType === 'program') {
       return (
-        <div>
-          <Label>{t('products.select_program', 'Select Program')} *</Label>
-          <Select value={programId || ''} onValueChange={(val) => onProgramChange(val || undefined)} disabled={loading}>
-            <SelectTrigger className={validationErrors.program_id ? 'border-destructive' : ''}>
-              <SelectValue placeholder={t('products.select_program_placeholder', 'Choose a program...')} />
-            </SelectTrigger>
-            <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-              {programs.length === 0 ? (
-                <SelectItem value="__no_programs__" disabled>
-                  <span suppressHydrationWarning>{loading ? <Loader2 className="h-4 w-4 animate-spin text-primary inline" /> : t('products.no_programs', 'No programs available')}</span>
-                </SelectItem>
-              ) : (
-                programs.map((program) => (
-                  <SelectItem key={program.id} value={program.id}>
-                    <span suppressHydrationWarning>{program.name}</span>
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-          {validationErrors.program_id && (
-            <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-              {validationErrors.program_id}
-            </p>
-          )}
-          {!validationErrors.program_id && programId && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-              {/* The description is rich text: show its words, not its HTML. */}
-              {stripHtml(programs.find((p) => p.id === programId)?.description)}
-            </p>
-          )}
-        </div>
+        <ContentPicker
+          {...common}
+          label={t('products.picker.programLabel', 'Which program does the product open?')}
+          hint={t('products.picker.programHint', 'Search by name and choose one program.')}
+          items={programItems}
+          value={programId}
+          onChange={onProgramChange}
+          error={validationErrors.program_id}
+          searchPlaceholder={t('products.picker.programSearch', 'Search a program by name...')}
+          emptyText={t('products.no_programs', 'No programs available')}
+          noneFoundText={t('products.picker.programNoneFound', 'No program by that name.')}
+          createLabel={t('products.picker.programCreate', 'Program not listed? Create a new program')}
+          createHref="/admin/lms/programs/new"
+        />
       );
     }
 
-    // Bundle type uses multi-course selector
+    // A bundle: pick several courses.
     if (productType === 'bundle') {
       return (
-        <div>
-          <Label>{t('products.select_courses_bundle', 'Select Courses for Bundle')} *</Label>
-          <div className={`border rounded-md p-4 space-y-2 max-h-60 overflow-y-auto ${validationErrors.contains_courses ? 'border-destructive' : ''}`}>
-            {loading && (
-              <div className="flex justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              </div>
-            )}
-            {!loading && courses.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                {t('products.no_courses', 'No courses available')}
-              </div>
-            )}
-            {courses.map((course) => (
-              <div key={course.id} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`course-${course.id}`}
-                  checked={containsCourses.includes(course.id)}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      onContainsCoursesChange([...containsCourses, course.id]);
-                    } else {
-                      onContainsCoursesChange(containsCourses.filter((id) => id !== course.id));
-                    }
-                  }}
-                />
-                <label
-                  htmlFor={`course-${course.id}`}
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  {course.title}
-                </label>
-              </div>
-            ))}
-          </div>
-          {validationErrors.contains_courses && (
-            <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-              {validationErrors.contains_courses}
-            </p>
-          )}
-          {!validationErrors.contains_courses && containsCourses.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {containsCourses.map((id) => {
-                const course = courses.find((c) => c.id === id);
-                return course ? (
-                  <Badge key={id} variant="secondary">
-                    {course.title}
-                  </Badge>
-                ) : null;
-              })}
-            </div>
-          )}
-        </div>
+        <ContentPicker
+          {...common}
+          multiple
+          label={t('products.picker.bundleLabel', 'Which courses are in the bundle?')}
+          hint={t('products.picker.bundleHint', 'You can choose several courses. Chosen courses show on top; ✕ removes one.')}
+          items={courseItems}
+          values={containsCourses}
+          onChangeMany={onContainsCoursesChange}
+          error={validationErrors.contains_courses}
+          searchPlaceholder={t('products.picker.courseSearch', 'Search a course by name...')}
+          emptyText={t('products.no_courses', 'No courses available')}
+          noneFoundText={t('products.picker.courseNoneFound', 'No course by that name.')}
+          createLabel={t('products.picker.courseCreateMissing', 'Course missing? Create a new course')}
+          createHref="/admin/lms/courses/new"
+        />
       );
     }
-
     // Session pack uses session count input
     if (productType === 'session_pack') {
       return (
@@ -302,43 +292,26 @@ export function ContentSelector({
       );
     }
 
-    // All other types (course, lecture, workshop, webinar, session, custom) use course selector
+    // Every other type opens one course: pick one. A club is a course too.
     return (
-      <div>
-        <Label>
-          {productType === 'course'
-            ? t('products.select_course', 'Select Course')
-            : t('products.select_course_for_type', 'Select Course')} *
-        </Label>
-        <Select value={courseId || ''} onValueChange={(val) => onCourseChange(val || undefined)} disabled={loading}>
-          <SelectTrigger className={validationErrors.course_id ? 'border-destructive' : ''}>
-            <SelectValue placeholder={t('products.select_course_placeholder', 'Choose a course...')} />
-          </SelectTrigger>
-          <SelectContent dir={direction} className={isRtl ? 'text-right' : 'text-left'}>
-            {courses.length === 0 ? (
-              <SelectItem value="__no_courses__" disabled>
-                <span suppressHydrationWarning>{loading ? <Loader2 className="h-4 w-4 animate-spin text-primary inline" /> : t('products.no_courses', 'No courses available')}</span>
-              </SelectItem>
-            ) : (
-              courses.map((course) => (
-                <SelectItem key={course.id} value={course.id}>
-                  <span suppressHydrationWarning>{course.title}</span>
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
-        {validationErrors.course_id && (
-          <p className={`text-sm text-destructive mt-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-            {validationErrors.course_id}
-          </p>
-        )}
-        {!validationErrors.course_id && courseId && (
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-            {stripHtml(courses.find((c) => c.id === courseId)?.description)}
-          </p>
-        )}
-      </div>
+      <ContentPicker
+        {...common}
+        label={isClub ? t('products.picker.clubLabel', 'Which course is the club?') : t('products.picker.courseLabel', 'Which course does the product open?')}
+        hint={
+          isClub
+            ? t('products.picker.clubHint', 'The club is a course with its meetings and recordings. Its payment is a monthly membership ("Club membership").')
+            : t('products.picker.courseHint', 'Search by name and choose one course or lecture.')
+        }
+        items={courseItems}
+        value={courseId}
+        onChange={onCourseChange}
+        error={validationErrors.course_id}
+        searchPlaceholder={t('products.picker.courseSearch', 'Search a course by name...')}
+        emptyText={t('products.no_courses', 'No courses available')}
+        noneFoundText={t('products.picker.courseNoneFound', 'No course by that name.')}
+        createLabel={t('products.picker.courseCreate', 'Course not listed? Create a new course')}
+        createHref="/admin/lms/courses/new"
+      />
     );
   };
 
@@ -352,7 +325,7 @@ export function ContentSelector({
         </p>
         <div role="radiogroup" aria-label={t('products.product_type', 'Product Type')} className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {PRODUCT_TYPE_CARDS.map(({ value, icon: Icon, fallback }) => {
-            const on = productType === value;
+            const on = value === 'club' ? isClub : productType === value && !(value === 'course' && isClub);
             return (
               <button
                 key={value}

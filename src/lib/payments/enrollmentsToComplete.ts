@@ -1,11 +1,14 @@
 import 'server-only';
 import { createAdminClient } from '@/lib/supabase/server';
+import { enrollmentsWithMoney } from './openEnrollment';
 
 export type EnrollmentToComplete = {
   id: string;
   title: string;
   /** The enrollment link (/enroll/<token>), with a fresh expiry. */
   url: string;
+  /** Nothing paid in it, so the client may cancel it ("ביטול ההרשמה"). */
+  canCancel: boolean;
 };
 
 /**
@@ -28,6 +31,8 @@ export async function loadEnrollmentsToComplete(userId: string): Promise<Enrollm
   const { data: children } = childIds.length ? await db.from('children').select('id, first_name').in('id', childIds) : { data: [] as any[] };
   const childName = (e: any) => (children ?? []).find((c: any) => c.id === e.child_id)?.first_name ?? e.payment_metadata?.pending_child?.first_name ?? null;
 
+  const paid = await enrollmentsWithMoney(db, (rows ?? []).map((e: any) => e.id));
+
   const out: EnrollmentToComplete[] = [];
   for (const e of rows ?? []) {
     const product: any = Array.isArray(e.product) ? e.product[0] : e.product;
@@ -40,7 +45,7 @@ export async function loadEnrollmentsToComplete(userId: string): Promise<Enrollm
       await db.from('enrollments').update({ token_expires_at: fresh.toISOString() }).eq('id', e.id);
     }
     const child = product.type === 'session_pack' ? childName(e) : null;
-    out.push({ id: e.id, title: child ? `${product.title ?? ''} · ${child}` : product.title ?? '', url: `/enroll/${e.enrollment_token}` });
+    out.push({ id: e.id, title: child ? `${product.title ?? ''} · ${child}` : product.title ?? '', url: `/enroll/${e.enrollment_token}`, canCancel: !paid.has(e.id) });
   }
   return out;
 }

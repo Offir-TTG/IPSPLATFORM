@@ -33,7 +33,7 @@ export async function loadClientLearning(userId: string) {
   const { data: enrollmentRows } = await admin
     .from('enrollments')
     .select(
-      'id, status, is_parent, payment_plan_id, product:products(id, type, title, payment_model, program_id, course_id, contains_courses, default_payment_plan_id, alternative_payment_plan_ids)',
+      'id, status, is_parent, payment_plan_id, product:products(id, type, title, metadata, payment_model, program_id, course_id, contains_courses, default_payment_plan_id, alternative_payment_plan_ids)',
     )
     .eq('user_id', userId)
     .in('status', ['active', 'completed']);

@@ -473,7 +473,7 @@ function DisputeDrawer({
       <SheetContent
         side={rtl ? 'left' : 'right'}
         dir={direction}
-        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[520px] [&>button.absolute]:hidden"
+        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[520px] [&>[data-default-close]]:hidden"
       >
         <button type="button" onClick={onClose} aria-label={t('common.close', 'Close')} className="absolute end-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full text-primary hover:bg-muted">
           <X className="h-5 w-5" />

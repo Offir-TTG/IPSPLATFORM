@@ -126,6 +126,78 @@ export async function PUT(
   }
 }
 
+/**
+ * PATCH - the product drawer's quick edit: name, description and picture
+ * only. PUT replaces every field, so it can't be used for a partial save.
+ * The picture lives in metadata.image_url; the rest of metadata is kept.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const supabase = await createClient();
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('tenant_id, role')
+      .eq('id', user.id)
+      .single();
+
+    if (userError || !userData || userData.role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    if (!title) {
+      return NextResponse.json({ success: false, error: 'title is required' }, { status: 400 });
+    }
+
+    const { data: current, error: findError } = await supabase
+      .from('products')
+      .select('metadata')
+      .eq('id', params.id)
+      .eq('tenant_id', userData.tenant_id)
+      .single();
+    if (findError || !current) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
+    const metadata = { ...((current.metadata as Record<string, unknown>) || {}) };
+    if (typeof body.image_url === 'string' && body.image_url) metadata.image_url = body.image_url;
+    else delete metadata.image_url;
+
+    const { data: product, error } = await supabase
+      .from('products')
+      .update({
+        title,
+        description: typeof body.description === 'string' ? body.description : null,
+        metadata,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', params.id)
+      .eq('tenant_id', userData.tenant_id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Patch product error:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, product });
+  } catch (error) {
+    console.error('Patch product error:', error);
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 // DELETE - Delete product
 export async function DELETE(
   request: NextRequest,

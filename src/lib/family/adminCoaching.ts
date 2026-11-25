@@ -8,6 +8,9 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { DEFAULT_FALLBACK_TIMEZONE, formatInTimezone } from '@/lib/datetime/timezone';
 import { cleanQuestions, type IntakeQuestion } from './intake';
 import { chargeHeldSession } from '@/lib/payments/perSession';
+import { deliverMessage } from '@/lib/messaging/deliver';
+import { chaserForEvent } from '@/lib/messaging/store';
+import { fireEvent } from '@/lib/messaging/engine';
 
 type Fail = { ok: false; status: number; error: string };
 const fail = (status: number, error: string): Fail => ({ ok: false, status, error });
@@ -293,22 +296,36 @@ async function notifyParent(tenantId: string, adminId: string, sessionId: string
     const tz = tenant?.timezone || DEFAULT_FALLBACK_TIMEZONE;
     const when = formatInTimezone(s.starts_at, tz, { weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }, 'he-IL');
     const name = child?.first_name ?? '';
+    // The automatic reminder "Coaching session booked, moved or cancelled"
+    // decides: its words, email or bell only, or nothing when it's off.
+    const reminder = await chaserForEvent(db, tenantId, 'coaching.changed');
+    if (reminder !== 'missing') {
+      if (reminder?.status === 'active') {
+        await fireEvent(tenantId, 'coaching.changed', [{
+          subjectType: 'coaching_session',
+          subjectId: sessionId,
+          userId: p.user_id,
+          context: { change: kind, startsAt: s.starts_at, child: name, childId: s.child_id ?? undefined, enrollmentId: s.enrollment_id },
+        }]);
+      }
+      return;
+    }
+    // Before the reminders tables exist: the original message, bell only.
     const title = kind === 'booked' ? `נקבע מפגש עבור ${name}` : kind === 'moved' ? `המפגש של ${name} הועבר` : `המפגש של ${name} בוטל`;
     const message = kind === 'cancelled' ? `המפגש שהיה קבוע ל${when} בוטל.` : `המפגש נקבע ל${when}.`;
-    await db.from('notifications').insert({
-      tenant_id: tenantId,
-      scope: 'individual',
-      target_user_id: p.user_id,
-      category: 'announcement',
-      priority: 'medium',
-      display_style: 'list',
+    await deliverMessage({
+      tenantId,
+      userId: p.user_id,
+      source: 'coaching',
+      category: 'lesson',
+      email: false,
       title,
-      message,
-      action_url: s.child_id ? `/children/${s.child_id}` : '/dashboard',
-      action_label: 'לפרטים',
+      body: message,
+      actionUrl: s.child_id ? `/children/${s.child_id}` : '/dashboard',
+      actionLabel: 'לפרטים',
       metadata: { kind: `coaching_session_${kind}`, session_id: sessionId },
-      created_by: adminId,
-    });
+      createdBy: adminId,
+    }, db);
   } catch (error) {
     console.error('[coaching] parent notification failed', error);
   }

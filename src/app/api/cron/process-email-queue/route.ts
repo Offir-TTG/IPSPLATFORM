@@ -12,6 +12,7 @@ import { sendEmail } from '@/lib/email/send';
 import { recordQueueBounce } from '@/lib/email/blocklist';
 import { isUserEligibleForCommunication } from '@/lib/users/communication-eligible';
 import { runCron } from '@/lib/cron/withCronLogging';
+import { emailStillWanted, markLogged } from '@/lib/messaging/queueSync';
 import Handlebars from 'handlebars';
 import { ensureHandlebarsHelpers } from '@/lib/email/handlebarsHelpers';
 
@@ -111,6 +112,16 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // The client may have turned this kind of email off (or chosen the
+        // daily summary) while it waited for their quiet hours to end.
+        if (email.message_log_id && !(await emailStillWanted(supabase, email))) {
+          await supabase
+            .from('email_queue')
+            .update({ status: 'cancelled', error_message: 'Client turned this email off' })
+            .eq('id', email.id);
+          continue;
+        }
+
         // Render template variables in subject, body_html, and body_text
         const variables = email.template_variables || {};
 
@@ -148,6 +159,7 @@ export async function GET(request: NextRequest) {
             })
             .eq('id', email.id);
 
+          await markLogged(supabase, email.message_log_id, 'sent');
           if (updateError) {
             console.error(`[Email Queue Cron] CRITICAL: Failed to mark email ${email.id} as sent:`, updateError);
           } else {
@@ -166,6 +178,7 @@ export async function GET(request: NextRequest) {
               error_message: result.error || 'Recipient address previously hard-bounced',
             })
             .eq('id', email.id);
+          await markLogged(supabase, email.message_log_id, 'bounced');
           console.warn(`[Email Queue Cron] Skipped email ${email.id}: recipient hard-bounced`);
           failCount++;
         } else {
@@ -185,6 +198,7 @@ export async function GET(request: NextRequest) {
             })
             .eq('id', email.id);
 
+          await markLogged(supabase, email.message_log_id, result.bounceClass === 'hard' ? 'bounced' : 'send_error');
           if (updateError) {
             console.error(`[Email Queue Cron] Failed to mark email ${email.id} as failed:`, updateError);
           }

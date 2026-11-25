@@ -167,11 +167,25 @@ export function EnrollInline({
  * agreement opens in a dialog over the page and payment opens in place; when
  * the wizard finishes it goes to the child's page.
  */
-export function EmbeddedWizard({ src }: { src: string }) {
+export function EmbeddedWizard({ src, title }: { src: string; title?: string }) {
   // src is the wizard link: /enroll/wizard/<enrollmentId>?token=<token>
   const url = new URL(src, 'https://local.invalid');
   const enrollmentId = url.pathname.split('/').filter(Boolean)[2] ?? '';
   const token = url.searchParams.get('token');
+
+  if (title) {
+    // "להשלמה" on the home page (approved mockup): one white card in the
+    // portal's style, a small header (tag + product), the steps right inside.
+    return (
+      <section className="rounded-[20px] bg-white overflow-hidden shadow-[0_1px_0_#e9e3f1,0_6px_20px_rgba(91,58,142,0.06)]">
+        <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5 border-b border-[#e9e3f1] text-sm">
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-950">להשלמה</span>
+          <b className="text-[#221a2e]">{title}</b>
+        </div>
+        <EnrollmentWizard enrollmentId={enrollmentId} token={token} embedded />
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-[22px] bg-white shadow-[0_1px_0_#e9e3f1] overflow-hidden">

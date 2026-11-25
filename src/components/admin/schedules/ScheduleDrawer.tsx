@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { AlertCircle, ArrowUpDown, Calendar, CheckCircle2, Clock, CreditCard, DollarSign, Loader2, RotateCcw, Undo2, X, XCircle } from 'lucide-react';
+import { AlertCircle, ArrowUpDown, Calendar, Check, CheckCircle2, Clock, Copy, CreditCard, DollarSign, Loader2, RotateCcw, Undo2, X, XCircle } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useAdminLanguage } from '@/context/AppContext';
 import { SCHEDULE_TONE, type PaymentSchedule } from './types';
@@ -126,7 +126,7 @@ export function ScheduleDrawer({
       <SheetContent
         side={rtl ? 'left' : 'right'}
         dir={direction}
-        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[540px] [&>button.absolute]:hidden"
+        className="flex w-full flex-col gap-0 border-0 p-0 shadow-2xl outline-none focus:outline-none focus-visible:outline-none dark:[color-scheme:dark] sm:max-w-[540px] [&>[data-default-close]]:hidden"
       >
         <button
           type="button"
@@ -206,6 +206,16 @@ export function ScheduleDrawer({
                   t('admin.payments.schedules.drawer.notYet', 'Not yet')
                 )}
               </Row>
+              {s.stripe_payment_intent_id && (
+                <Row label={t('admin.payments.schedules.drawer.stripePayment', 'Stripe payment ID')}>
+                  <StripeId value={s.stripe_payment_intent_id} />
+                </Row>
+              )}
+              {s.stripe_invoice_id && (
+                <Row label={t('admin.payments.schedules.drawer.stripeInvoice', 'Stripe invoice ID')}>
+                  <StripeId value={s.stripe_invoice_id} />
+                </Row>
+              )}
             </dl>
           </Section>
 
@@ -332,5 +342,35 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="m-0 min-w-0 text-end font-medium [overflow-wrap:anywhere]">{children}</dd>
     </div>
+  );
+}
+
+/** A Stripe id, left to right, with a button that copies it (to search in Stripe). */
+function StripeId({ value }: { value: string }) {
+  const { t } = useAdminLanguage();
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked: the id is still on screen to select */
+    }
+  };
+  const label = copied ? t('admin.payments.schedules.drawer.copied', 'Copied') : t('admin.payments.schedules.drawer.copy', 'Copy');
+  return (
+    <span className="inline-flex max-w-full items-center gap-1.5">
+      <bdi dir="ltr" className="select-all font-mono text-[13px] [overflow-wrap:anywhere]">{value}</bdi>
+      <button
+        type="button"
+        onClick={copy}
+        title={label}
+        aria-label={label}
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-600" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+      </button>
+    </span>
   );
 }

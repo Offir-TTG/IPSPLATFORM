@@ -94,6 +94,8 @@ export async function GET(request: NextRequest) {
     .from('users')
     .select('id')
     .ilike('email', email);
+  const origin = (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, '');
+  const keap = await keapSummary(supabase, email, origin);
 
   if (usersError) {
     console.error('[customer-lookup] users query failed:', usersError);
@@ -106,6 +108,7 @@ export async function GET(request: NextRequest) {
       currency: null,
       last_purchase_at: null,
       purchases: [],
+      keap,
     });
   }
 
@@ -132,10 +135,15 @@ export async function GET(request: NextRequest) {
         enrolled_at,
         created_at,
         updated_at,
+        next_payment_date,
+        payment_plan_id,
         products:products!enrollments_product_id_fkey (
           id,
           title,
-          type
+          type,
+          session_count,
+          crm_tag_slugs,
+          course:courses!products_course_id_fkey (course_type)
         )
       `,
     )
@@ -150,6 +158,22 @@ export async function GET(request: NextRequest) {
   }
 
   const rows = (enrollments ?? []) as EnrollmentRow[];
+
+  // The richer card on the CRM contact: each enrollment's payments, its
+  // plan in plain words, the next charge, what is still owed and the
+  // CRM tags it brought. Read in bulk, never one query per row.
+  const ids = rows.map((r) => r.id);
+  const [{ data: schedules }, { data: tagRows }, { data: planRows }] = await Promise.all([
+    ids.length
+      ? supabase.from('payment_schedules').select('enrollment_id, payment_number, payment_type, amount, currency, scheduled_date, status, paid_date').in('enrollment_id', ids).order('scheduled_date')
+      : Promise.resolve({ data: [] as any[] }),
+    ids.length ? supabase.from('enrollments').select('id, crm_tag_slugs').in('id', ids).then((r) => (r.error ? { data: [] as any[] } : r)) : Promise.resolve({ data: [] as any[] }),
+    supabase.from('payment_plans').select('id, plan_type, subscription_frequency').in('id', rows.map((r: any) => r.payment_plan_id).filter(Boolean)),
+  ]);
+  const schedulesOf = new Map<string, any[]>();
+  for (const s of schedules ?? []) schedulesOf.set(s.enrollment_id, [...(schedulesOf.get(s.enrollment_id) ?? []), s]);
+  const tagsOf = new Map<string, string[]>((tagRows ?? []).map((r: any) => [r.id, r.crm_tag_slugs ?? []]));
+  const planOf = new Map<string, any>((planRows ?? []).map((p: any) => [p.id, p]));
 
   // Build per-enrollment records + roll-ups. "Customer" still means
   // "paid something" (paid_amount > 0); "Registered" means "any
@@ -189,6 +213,7 @@ export async function GET(request: NextRequest) {
         // "when did they pay?" — distinct from paid_at.
         enrolled_at: r.enrolled_at ?? r.created_at,
         paid_at: paidAt,
+        ...details(r, product, schedulesOf.get(r.id) ?? [], tagsOf.get(r.id), planOf.get((r as any).payment_plan_id), origin),
       };
     })
     // Most-recent first. Paid rows sort by paid_at, unpaid by
@@ -211,5 +236,91 @@ export async function GET(request: NextRequest) {
     currency,
     last_purchase_at: lastPurchaseAt,
     purchases,
+    customer_since: rows.map((r) => r.enrolled_at ?? r.created_at).filter(Boolean).sort()[0] ?? null,
+    portal_url: users.length === 1 ? `${origin}/admin/users/${users[0].id}` : null,
+    keap,
   });
+}
+
+/**
+ * One enrollment's detail for the CRM card: its payments, its plan (kind,
+ * how often, how many, how many paid), the next charge and what is owed.
+ */
+function details(r: any, product: any, list: any[], ownTags: string[] | undefined, plan: any, origin: string) {
+  const live = list.filter((s) => s.status !== 'cancelled');
+  const paidRows = live.filter((s) => s.status === 'paid');
+  const owedRows = live.filter((s) => ['pending', 'adjusted', 'failed', 'processing'].includes(s.status));
+  const types = new Set(live.map((s) => s.payment_type));
+  const kind = types.has('subscription')
+    ? 'subscription'
+    : types.has('session') || product?.type === 'session_pack'
+      ? 'per_session'
+      : types.has('deposit')
+        ? 'deposit'
+        : types.has('installment')
+          ? 'installments'
+          : Number(r.total_amount ?? 0) <= 0
+            ? 'free'
+            : 'one_time';
+  const installments = live.filter((s) => s.payment_type === 'installment');
+  const nextOwed = owedRows[0];
+  const lastSub = [...paidRows].reverse().find((s) => s.payment_type === 'subscription');
+  const membershipNext = kind === 'subscription' && !nextOwed && r.next_payment_date && r.status !== 'cancelled' ? { date: r.next_payment_date, amount: Number(lastSub?.amount ?? 0) } : null;
+  const fromProduct = Array.isArray(product?.crm_tag_slugs) ? product.crm_tag_slugs : [];
+  // The service's type, by the same rule the client portal uses to show it
+  // (src/app/(user)/dashboard/homeData.ts): a membership is a club, a
+  // lecture course or lecture product is a lecture, then the product type.
+  const course = Array.isArray(product?.course) ? product.course[0] : product?.course;
+  const serviceType =
+    kind === 'subscription'
+      ? 'club'
+      : course?.course_type === 'lecture' || product?.type === 'lecture'
+        ? 'lecture'
+        : product?.type === 'program'
+          ? 'program'
+          : product?.type === 'bundle'
+            ? 'bundle'
+            : product?.type === 'session_pack'
+              ? 'personal_guidance'
+              : 'course';
+  return {
+    enrollment_id: r.id,
+    service_type: serviceType,
+    url: `${origin}/admin/enrollments?enrollment=${r.id}`,
+    plan: {
+      kind,
+      frequency: plan?.subscription_frequency ?? (kind === 'subscription' ? 'monthly' : null),
+      installments: installments.length || null,
+      installments_paid: installments.filter((s) => s.status === 'paid').length,
+      sessions: kind === 'per_session' ? Number(product?.session_count) || null : null,
+      sessions_paid: kind === 'per_session' ? paidRows.length : null,
+      per_amount: kind === 'subscription' ? Number(lastSub?.amount ?? live[0]?.amount ?? 0) : null,
+    },
+    payments: live.map((s) => ({
+      number: s.payment_number,
+      type: s.payment_type,
+      amount: Number(s.amount ?? 0),
+      currency: s.currency ?? r.currency ?? null,
+      date: s.paid_date ?? s.scheduled_date,
+      status: s.status === 'paid' ? 'paid' : s.status === 'failed' ? 'failed' : s.status === 'refunded' ? 'refunded' : 'scheduled',
+    })),
+    next_charge: nextOwed ? { date: nextOwed.scheduled_date, amount: Number(nextOwed.amount ?? 0) } : membershipNext,
+    still_owed: kind === 'subscription' || kind === 'per_session' ? 0 : Math.max(0, Number(r.total_amount ?? 0) - Number(r.paid_amount ?? 0)),
+    tags: ownTags && ownTags.length ? ownTags : fromProduct,
+  };
+}
+
+/** The person's old Keap orders (Payments → Keap history), as one line. */
+async function keapSummary(supabase: ReturnType<typeof createAdminClient>, email: string, origin: string) {
+  const { data, error } = await supabase.from('keap_orders').select('total_paid, refund_total, order_date, currency').ilike('email', email);
+  if (error || !data?.length) return null;
+  const years = data.map((o: any) => (o.order_date ? new Date(o.order_date).getFullYear() : null)).filter(Boolean) as number[];
+  return {
+    orders: data.length,
+    total_paid: Math.round(data.reduce((sum: number, o: any) => sum + Number(o.total_paid ?? 0) - Number(o.refund_total ?? 0), 0) * 100) / 100,
+    currency: data[0].currency ?? 'USD',
+    first_year: years.length ? Math.min(...years) : null,
+    last_year: years.length ? Math.max(...years) : null,
+    url: `${origin}/admin/payments/keap-history?q=${encodeURIComponent(email)}`,
+  };
 }

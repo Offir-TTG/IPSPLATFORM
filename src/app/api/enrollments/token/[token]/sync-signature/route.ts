@@ -82,18 +82,9 @@ export async function POST(
 
       // Update enrollment if status changed
       if (newSignatureStatus !== enrollment.signature_status) {
-        const { error: updateError } = await supabase
-          .from('enrollments')
-          .update({
-            signature_status: newSignatureStatus,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', enrollment.id);
-
-        if (updateError) {
-          console.error('[Signature Sync] Error updating enrollment:', updateError);
-          throw new Error('Failed to update enrollment signature status');
-        }
+        // Signed or declined also tells every admin, once.
+        const { setSignatureStatus } = await import('@/lib/messaging/contractAlerts');
+        await setSignatureStatus(supabase, enrollment.id, newSignatureStatus);
 
         console.log(`[Signature Sync] Updated signature_status from ${enrollment.signature_status} to ${newSignatureStatus}`);
       }

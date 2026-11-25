@@ -1,21 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { deleteEnrollmentsWithCharges } from '@/lib/payments/deleteEnrollments';
+import { enrollmentsWithMoney, isUniqueViolation, startOrContinue, type StartOrContinue } from '@/lib/payments/openEnrollment';
 
 /**
  * POST /api/enrollments/token/:token/link-user
  *
- * Link currently logged-in user to an enrollment
- * Used when a user logs in from the enrollment wizard
+ * Joins a guest enrollment to the logged-in client (they logged in from the
+ * enrollment, or opened its link while logged in), through the one rule in
+ * lib/payments/openEnrollment. The answer's `kind` says what happened:
  *
- * This allows users who encounter "email exists" error to login
- * and then automatically continue with their enrollment
+ *   linked            this enrollment is now the client's (or already was)
+ *   continue          the client already had an open one in this product:
+ *                     use `enrollment_id` / `wizard_url`; the empty guest
+ *                     row is deleted
+ *   already_enrolled  the client is already in this product (`redirect`)
+ *   suspended         their membership is on hold (`redirect` to Billing)
+ *   staff             a team member: nothing is joined; the wizard is a preview
+ *
+ * Refused (409): the enrollment belongs to someone else, or the email typed
+ * in it is not the account's email (a forwarded link can't be claimed).
  */
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { token: string } }
 ) {
   try {
-    // Get currently logged-in user
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -26,20 +36,14 @@ export async function POST(
       );
     }
 
-    console.log('[Link User] Attempting to link user to enrollment:', {
-      userId: user.id,
-      token: params.token
-    });
-
     // Use admin client to bypass RLS
     const adminClient = createAdminClient();
 
-    // Get enrollment by token
     const { data: enrollment, error: enrollmentError } = await adminClient
       .from('enrollments')
-      .select('id, user_id, tenant_id, status, token_expires_at')
+      .select('id, user_id, tenant_id, product_id, child_id, status, token_expires_at, wizard_profile_data')
       .eq('enrollment_token', params.token)
-      .single();
+      .maybeSingle();
 
     if (enrollmentError || !enrollment) {
       console.error('[Link User] Enrollment not found:', enrollmentError);
@@ -58,33 +62,27 @@ export async function POST(
       return NextResponse.json({ error: 'This enrollment is no longer open' }, { status: 409 });
     }
 
-    // Check if enrollment is already linked to a user
     if (enrollment.user_id) {
-      // If already linked to this user, that's fine - return success
       if (enrollment.user_id === user.id) {
-        console.log('[Link User] Enrollment already linked to this user');
         return NextResponse.json({
           success: true,
+          kind: 'linked',
           message: 'Enrollment already linked to your account',
-          enrollment_id: enrollment.id
+          enrollment_id: enrollment.id,
         });
-      } else {
-        // Linked to a different user - this is an error
-        console.error('[Link User] Enrollment already linked to different user');
-        return NextResponse.json(
-          { error: 'This enrollment is already linked to another account' },
-          { status: 409 }
-        );
       }
+      return NextResponse.json(
+        { error: 'This enrollment is already linked to another account', code: 'other_account' },
+        { status: 409 }
+      );
     }
 
-    // Verify user exists in users table for this tenant
     const { data: userProfile, error: userError } = await adminClient
       .from('users')
-      .select('id, email, first_name, last_name, phone, location')
+      .select('id, email, first_name, last_name, phone, location, role')
       .eq('id', user.id)
       .eq('tenant_id', enrollment.tenant_id)
-      .single();
+      .maybeSingle();
 
     if (userError || !userProfile) {
       console.error('[Link User] User not found in tenant:', userError);
@@ -94,7 +92,66 @@ export async function POST(
       );
     }
 
-    // Link user to enrollment and pre-fill profile data
+    // A team member opening a client's link never takes it over.
+    if (userProfile.role === 'admin' || userProfile.role === 'super_admin') {
+      return NextResponse.json({ success: true, kind: 'staff', linked: false, enrollment_id: enrollment.id });
+    }
+
+    // Only the person it was started for: no email typed yet, or the account's.
+    const typedEmail = String((enrollment.wizard_profile_data as any)?.email ?? '').trim().toLowerCase();
+    const accountEmails = [userProfile.email, user.email].filter(Boolean).map((e) => String(e).trim().toLowerCase());
+    if (typedEmail && !accountEmails.includes(typedEmail)) {
+      return NextResponse.json(
+        {
+          error: 'This enrollment was started with a different email address than your account.',
+          code: 'email_mismatch',
+        },
+        { status: 409 }
+      );
+    }
+
+    const decide = () =>
+      startOrContinue(adminClient, {
+        tenantId: enrollment.tenant_id,
+        productId: enrollment.product_id,
+        userId: user.id,
+        childId: enrollment.child_id,
+      });
+
+    /**
+     * The client already has this product. An open one: theirs is continued
+     * and this guest row, when nothing was paid in it, is deleted. Already
+     * enrolled: the guest row is left alone (a guest one is cleared by the
+     * daily cleanup after 7 days).
+     */
+    const answerWithExisting = async (found: Exclude<StartOrContinue, { kind: 'start' }>) => {
+      if (found.kind === 'continue') {
+        const paid = await enrollmentsWithMoney(adminClient, [enrollment.id]);
+        if (!paid.has(enrollment.id)) {
+          const { error } = await deleteEnrollmentsWithCharges(adminClient, [enrollment.id]);
+          if (error) console.error('[Link User] Could not delete the guest enrollment:', error);
+        }
+        const token = found.enrollment.enrollment_token;
+        return NextResponse.json({
+          success: true,
+          kind: 'continue',
+          enrollment_id: found.enrollment.id,
+          enrollment_token: token,
+          wizard_url: token ? `/enroll/${token}` : null,
+        });
+      }
+      return NextResponse.json({
+        success: true,
+        kind: found.kind,
+        enrollment_id: found.enrollment.id,
+        redirect: found.kind === 'suspended' ? '/billing' : '/dashboard',
+      });
+    };
+
+    const found = await decide();
+    if (found.kind !== 'start') return answerWithExisting(found);
+
+    // Join this enrollment to the client and pre-fill their details.
     const { error: updateError } = await adminClient
       .from('enrollments')
       .update({
@@ -108,8 +165,14 @@ export async function POST(
         },
         updated_at: new Date().toISOString()
       })
-      .eq('id', enrollment.id);
+      .eq('id', enrollment.id)
+      .is('user_id', null);
 
+    if (updateError && isUniqueViolation(updateError)) {
+      // An open one appeared for this client a moment ago: continue that one.
+      const again = await decide();
+      if (again.kind !== 'start') return answerWithExisting(again);
+    }
     if (updateError) {
       console.error('[Link User] Failed to link user:', updateError);
       return NextResponse.json(
@@ -118,13 +181,9 @@ export async function POST(
       );
     }
 
-    console.log('[Link User] Successfully linked user to enrollment:', {
-      enrollmentId: enrollment.id,
-      userId: user.id
-    });
-
     return NextResponse.json({
       success: true,
+      kind: 'linked',
       message: 'Account linked successfully',
       enrollment_id: enrollment.id,
       user_id: user.id

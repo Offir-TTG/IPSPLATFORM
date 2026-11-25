@@ -3,20 +3,14 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import EnrollmentPayment from './EnrollmentPayment';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, CheckCircle2, FileText, User, CreditCard, ArrowRight, ArrowLeft, Lock } from 'lucide-react';
+import { Loader2, Check, ArrowLeft } from 'lucide-react';
 import { useLanguage } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase/client';
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
-import WizardStepIndicator from '@/components/wizard/WizardStepIndicator';
 import { toast } from 'sonner';
 
 // Extend Window interface for Google Maps
@@ -131,6 +125,8 @@ interface EnrollmentWizardData {
   total_amount: number;
   /** A scheduled membership price: shown before paying. */
   upcoming_price?: { amount: number; effective_date: string } | null;
+  /** Set by the team when payments start later than today. */
+  payment_start_date?: string | null;
   currency: string;
   requires_signature: boolean;
   signature_template_id?: string;
@@ -379,6 +375,19 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
           });
 
           const data = await response.json();
+
+          // The one rule: already in this product → the portal (or Billing);
+          // an open enrollment of their own in it → that one continues.
+          // (Inside the portal the wizard is given the client's own
+          // enrollment, so this only happens on a standalone link.)
+          if (response.ok && data?.redirect && !embedded) {
+            window.location.replace(data.redirect);
+            return;
+          }
+          if (response.ok && data?.kind === 'continue' && data.wizard_url && !embedded) {
+            window.location.replace(data.wizard_url);
+            return;
+          }
 
           if (response.ok) {
             console.log('[Wizard] ✅ User linked successfully:', data);
@@ -878,6 +887,21 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
 
   // Simplified payment logic - payment step shown if payment_required = true
   // Parent enrollments ALWAYS show payment step (even with saved card)
+
+  // A returning client logs in on the main login page (/login), which links
+  // this enrollment to their
+  // account and opens it in their portal ("להשלמה" on the home page).
+  // The token rides in the address (sessionStorage is kept as a fallback),
+  // so it survives the login page opening in another tab.
+  const goToLogin = () => {
+    sessionStorage.setItem('enrollment_return_id', enrollmentId);
+    sessionStorage.setItem('enrollment_return_token', enrollmentToken || '');
+    const email = profileData.email?.trim();
+    const query = new URLSearchParams();
+    if (enrollmentToken) query.set('enroll', enrollmentToken);
+    if (email) query.set('email', email);
+    window.location.href = `/login${query.toString() ? `?${query}` : ''}`;
+  };
 
   // Check if email already exists in the system
   // Returns true if email exists (user should login), false if available (can proceed)
@@ -1534,136 +1558,291 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
     return (completedSteps / steps.length) * 100;
   };
 
-  const getStepIcon = (step: WizardStep) => {
-    const iconClass = "h-5 w-5";
-    switch (step) {
-      case 'signature':
-        return <FileText className={iconClass} />;
-      case 'profile':
-        return <User className={iconClass} />;
-      case 'payment':
-        return <CreditCard className={iconClass} />;
-      case 'password':
-        return <Lock className={iconClass} />;
-      case 'complete':
-        return <CheckCircle2 className={iconClass} />;
+  // ----- The compact look (portal palette) -----
+
+  /** Money in the enrollment's currency (it comes from the business settings). */
+  const money = (amount: number): string => {
+    const value = Math.round((Number(amount) || 0) * 100) / 100;
+    const code = (enrollment?.currency || '').toUpperCase();
+    const digits = Number.isInteger(value) ? 0 : 2;
+    try {
+      return new Intl.NumberFormat(isRTL ? 'he-IL' : 'en-US', {
+        style: 'currency',
+        currency: code,
+        minimumFractionDigits: digits,
+        maximumFractionDigits: 2,
+      }).format(value);
+    } catch {
+      return `${code} ${value.toFixed(digits)}`.trim();
     }
   };
 
-  const getStepTitle = (step: WizardStep): string => {
-    switch (step) {
-      case 'signature':
-        return t('enrollment.wizard.signature.title', 'Sign Agreement');
-      case 'profile':
-        return t('enrollment.wizard.profile.title', 'Complete Profile');
-      case 'payment':
-        return t('enrollment.wizard.payment.title', 'Payment');
-      case 'password':
-        return t('enrollment.wizard.password.title', 'Create Account');
-      case 'complete':
-        return t('enrollment.wizard.complete.title', 'Welcome!');
-    }
+  const ui = {
+    card: 'wizard-step-card grid gap-3 rounded-2xl border border-[#e9e3f1] bg-white p-4 text-[#221a2e]',
+    title: 'wizard-step-title m-0 text-lg font-semibold',
+    sub: 'm-0 -mt-2 text-[13.5px] text-[#73698a]',
+    field: 'grid min-w-0 gap-1',
+    label: 'text-[13.5px] font-semibold text-[#221a2e]',
+    input: 'h-[42px] rounded-[10px] border-[#e9e3f1] bg-white px-3 text-[14.5px] text-[#221a2e] placeholder:text-[#a89fba]',
+    inputErr: 'border-[#d0453a] bg-[#fff6f5]',
+    err: 'text-[12.5px] font-semibold text-[#b3392f]',
+    actions: 'flex flex-wrap items-center justify-between gap-2',
+    primary: 'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[#5b3a8e] px-[22px] text-[15px] font-semibold text-white transition-colors hover:bg-[#4b2f77] disabled:cursor-not-allowed disabled:opacity-60',
+    back: 'inline-flex items-center gap-1 px-1 py-2 text-sm font-semibold text-[#73698a] hover:text-[#221a2e] disabled:opacity-50',
+    fine: 'text-xs text-[#73698a]',
   };
 
-  const getStepDescription = (step: WizardStep): string => {
-    switch (step) {
-      case 'signature':
-        return t('enrollment.wizard.signature.description', 'Please sign the enrollment agreement to continue');
-      case 'profile':
-        return t('enrollment.wizard.profile.description', 'Complete your profile information');
-      case 'payment':
-        return t('enrollment.wizard.payment.description', 'Complete payment to activate your enrollment');
-      case 'password':
-        return t('enrollment.wizard.password.description', 'Create a password to secure your account');
-      case 'complete':
-        return t('enrollment.wizard.complete.description', 'Your enrollment is complete!');
+  /** "→ Back" to the previous step, when the flow has one. */
+  const renderBack = (disabled: boolean) =>
+    getPreviousStep() ? (
+      <button type="button" onClick={handleBack} disabled={disabled} className={ui.back}>
+        <ArrowLeft className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+        {t('enrollment.wizard.back', 'Back')}
+      </button>
+    ) : (
+      <span />
+    );
+
+  /** One line of numbered steps: only the steps this enrollment goes through. */
+  const renderStepBar = () => {
+    if (!enrollment) return null;
+    const keys: WizardStep[] = [];
+    if (!enrollment.user_id) keys.push('profile');
+    if (enrollment.requires_signature) keys.push('signature');
+    if (enrollment.payment_required) keys.push('payment');
+    if (!enrollment.user_id) keys.push('password');
+    if (!skipWelcome) keys.push('complete');
+    const labels: Record<WizardStep, string> = {
+      profile: t('enrollment.wizard.compact.step.profile', 'Details'),
+      signature: t('enrollment.wizard.compact.step.signature', 'Signature'),
+      payment: t('enrollment.wizard.compact.step.payment', 'Payment'),
+      password: t('enrollment.wizard.compact.step.password', 'Password'),
+      complete: t('enrollment.wizard.compact.step.complete', 'Done'),
+    };
+
+    // Inside the portal card: the step as one small line, not a bar.
+    if (embedded) {
+      const index = keys.indexOf(currentStep);
+      if (index < 0) return null;
+      const text = index === keys.length - 1
+        ? t('enrollment.wizard.compact.pay.stepLast', 'Last step: {step}').replace('{step}', labels[currentStep])
+        : t('enrollment.wizard.compact.pay.stepOf', 'Step {n} of {total}: {step}')
+            .replace('{n}', String(index + 1))
+            .replace('{total}', String(keys.length))
+            .replace('{step}', labels[currentStep]);
+      return <p className="wizard-step-line m-0 text-end text-[12.5px] text-[#73698a]">{text}</p>;
     }
+
+    const completed = getCompletedSteps();
+    return (
+      <ol
+        className="wizard-steps m-0 flex list-none flex-wrap items-center gap-1.5 p-0 text-[13px] text-[#73698a]"
+        aria-label={t('enrollment.wizard.compact.steps', 'Enrollment steps')}
+      >
+        {keys.map((key, i) => {
+          const now = key === currentStep;
+          // Done steps can be opened again, as before.
+          const done = completed.includes(key) && !now;
+          const dot = (
+            <span
+              className={`grid h-5 w-5 flex-none place-items-center rounded-full text-[11px] font-semibold ${
+                done
+                  ? 'bg-[#5b3a8e] text-white'
+                  : now
+                    ? 'bg-[#f1ebf8] text-[#5b3a8e] shadow-[inset_0_0_0_2px_#5b3a8e]'
+                    : 'bg-[#e9e3f1] text-[#73698a]'
+              }`}
+              aria-hidden="true"
+            >
+              {done ? <Check className="h-3 w-3" strokeWidth={3} /> : i + 1}
+            </span>
+          );
+          // On a phone only the current step's name shows.
+          const label = <span className={now ? '' : 'max-sm:sr-only'}>{labels[key]}</span>;
+          return (
+            <li key={key} className="flex items-center gap-1.5" aria-current={now ? 'step' : undefined}>
+              {i > 0 && <span className="h-px w-3.5 bg-[#e9e3f1]" aria-hidden="true" />}
+              {done ? (
+                <button type="button" onClick={() => handleStepNavigation(key)} className="inline-flex items-center gap-1.5 hover:text-[#221a2e]">
+                  {dot}
+                  {label}
+                </button>
+              ) : (
+                <span className={`inline-flex items-center gap-1.5 ${now ? 'font-bold text-[#221a2e]' : ''}`}>
+                  {dot}
+                  {label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    );
+  };
+
+  /** How a plan charges, its per-payment amount, and what is charged today. */
+  const describePlan = (plan: PaymentPlanTemplate) => {
+    const total = enrollment?.total_amount || 0;
+    const type = plan.plan_type as string;
+    const count = plan.installment_count || 0;
+    const freq = (plan.installment_frequency as string) || 'monthly';
+    // Same deposit as the payment engine charges.
+    const deposit =
+      type === 'deposit'
+        ? plan.deposit_type === 'percentage'
+          ? (total * (plan.deposit_percentage || 0)) / 100
+          : Number(plan.deposit_amount) || 0
+        : 0;
+    const each = count > 0 ? (total - deposit) / count : total;
+    const countText = () => {
+      if (freq === 'weekly') return t('enrollment.wizard.compact.plan.weekly', '{count} weekly payments').replace('{count}', String(count));
+      if (freq === 'biweekly') return t('enrollment.wizard.compact.plan.biweekly', '{count} payments every two weeks').replace('{count}', String(count));
+      if (freq === 'monthly') return t('enrollment.wizard.compact.plan.monthly', '{count} monthly payments').replace('{count}', String(count));
+      return t('enrollment.wizard.compact.plan.custom', '{count} payments, every {days} days')
+        .replace('{count}', String(count))
+        .replace('{days}', String(plan.custom_frequency_days || ''));
+    };
+    const perText = (f: string) => {
+      if (f === 'weekly') return t('enrollment.wizard.compact.per.weekly', 'per week');
+      if (f === 'biweekly') return t('enrollment.wizard.compact.per.biweekly', 'every two weeks');
+      if (f === 'monthly') return t('enrollment.wizard.compact.per.monthly', 'per month');
+      if (f === 'yearly') return t('enrollment.wizard.compact.per.yearly', 'per year');
+      return t('enrollment.wizard.compact.per.payment', 'per payment');
+    };
+
+    // today: an amount, 'none' (nothing is charged now), or null (not shown).
+    let desc = '';
+    let amount: string | null = money(total);
+    let per: string | null = null;
+    let today: number | 'none' | null = null;
+
+    switch (type) {
+      case 'one_time':
+        desc = t('enrollment.wizard.compact.plan.oneTime', 'One payment');
+        today = total;
+        break;
+      case 'deposit':
+        desc = [
+          deposit > 0 ? t('enrollment.wizard.compact.plan.deposit', 'Deposit {amount}').replace('{amount}', money(deposit)) : '',
+          count > 0 ? countText() : '',
+        ].filter(Boolean).join(' · ');
+        if (count > 0) {
+          amount = money(each);
+          per = perText(freq);
+        }
+        today = deposit > 0 ? deposit : each;
+        break;
+      case 'recurring':
+      case 'installments':
+        if (count > 0) {
+          desc = countText();
+          amount = money(each);
+          per = perText(freq);
+          today = each;
+        }
+        break;
+      case 'subscription': {
+        const interval = plan.subscription_frequency || 'monthly';
+        const trial = plan.subscription_trial_days || 0;
+        desc = [
+          interval === 'weekly'
+            ? t('enrollment.wizard.compact.plan.subWeekly', 'Weekly membership, renews until cancelled')
+            : interval === 'yearly'
+              ? t('enrollment.wizard.compact.plan.subYearly', 'Yearly membership, renews until cancelled')
+              : t('enrollment.wizard.compact.plan.subMonthly', 'Monthly membership, renews until cancelled'),
+          trial > 0 ? t('enrollment.wizard.compact.plan.trial', '{days} days free trial').replace('{days}', String(trial)) : '',
+        ].filter(Boolean).join(' · ');
+        per = perText(interval);
+        // With a free trial, what is charged today isn't known here.
+        today = trial > 0 ? null : total;
+        break;
+      }
+      case 'per_session':
+        // Pay as you go: the card is saved now, each session charged when held.
+        desc = t('enrollment.wizard.compact.plan.perSession', 'Paid per session, charged when each session is held');
+        amount = null;
+        today = 'none';
+        break;
+      default:
+        desc = plan.plan_description || '';
+    }
+    return { desc, amount, per, today };
   };
 
   const renderStepContent = () => {
     switch (currentStep) {
       case 'signature':
         return (
-          <div className="space-y-4">
-            <Alert className="border-primary/20 bg-primary/5">
-              <FileText className="h-4 w-4 text-primary" />
-              <AlertDescription className="text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.signature.info', 'You need to sign the enrollment agreement before proceeding.')}
-              </AlertDescription>
-            </Alert>
+          <section className={ui.card}>
+            <h2 className={ui.title}>{t('enrollment.wizard.compact.signature.title', 'Sign the agreement')}</h2>
+            <p className={ui.sub}>{t('enrollment.wizard.compact.signature.sub', 'The agreement opens in a window here on the page. It takes a minute.')}</p>
 
             {/* How signing in DocuSign works: its own screen doesn't say. */}
-            <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2">
-              <b className="block" suppressHydrationWarning>{t('enrollment.wizard.signature.howTitle', 'How to sign')}</b>
-              <ol className="list-decimal ps-5 space-y-1 text-muted-foreground">
-                <li suppressHydrationWarning>{t('enrollment.wizard.signature.how1', 'In the signing window, click "Next" at the top.')}</li>
-                <li suppressHydrationWarning>{t('enrollment.wizard.signature.how2', 'It takes you to the yellow "Sign" field. Click it and choose your signature.')}</li>
-                <li suppressHydrationWarning>{t('enrollment.wizard.signature.how3', 'Click "Finish". The enrollment continues here on its own.')}</li>
-              </ol>
-            </div>
+            <ol className="m-0 grid list-none gap-1.5 p-0">
+              {[
+                t('enrollment.wizard.signature.how1', 'In the signing window, click "Next" at the top.'),
+                t('enrollment.wizard.signature.how2', 'It takes you to the yellow "Sign" field. Click it and choose your signature.'),
+                t('enrollment.wizard.signature.how3', 'Click "Finish". The enrollment continues here on its own.'),
+              ].map((line, i) => (
+                <li key={i} className="flex items-baseline gap-2 text-sm">
+                  <span className="h-5 w-5 flex-none rounded-full bg-[#f1ebf8] text-center text-[11px] font-semibold leading-5 text-[#5b3a8e]" aria-hidden="true">
+                    {i + 1}
+                  </span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ol>
 
             {signingInWindow && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[#73698a]" role="status">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span suppressHydrationWarning>{t('enrollment.wizard.signature.waiting', 'The signing window is open. Waiting for your signature...')}</span>
-                <button type="button" className="underline hover:text-foreground" onClick={() => signingPopupRef.current?.focus()} suppressHydrationWarning>
+                <span>{t('enrollment.wizard.signature.waiting', 'The signing window is open. Waiting for your signature...')}</span>
+                <button type="button" className="underline hover:text-[#221a2e]" onClick={() => signingPopupRef.current?.focus()}>
                   {t('enrollment.wizard.signature.showWindow', 'Show the window')}
                 </button>
               </div>
             )}
 
-            <div className="flex gap-3">
-              {getPreviousStep() && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleBack}
-                  disabled={processing}
-                  className="flex-1"
-                  suppressHydrationWarning
-                >
-                  <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
-                  {t('enrollment.wizard.back', 'Back')}
-                </Button>
-              )}
-              <Button
-                size="lg"
-                className="flex-1"
-                onClick={() => handleSignatureStep('dialog')}
-                disabled={processing}
-                suppressHydrationWarning
-              >
+            <div className={ui.actions}>
+              {renderBack(processing)}
+              <button type="button" className={ui.primary} onClick={() => handleSignatureStep('dialog')} disabled={processing}>
                 {processing ? (
                   <>
-                    <Loader2 className="h-4 w-4 ltr:mr-2 rtl:ml-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     {t('enrollment.wizard.signature.sending', 'Opening signature...')}
                   </>
                 ) : (
-                  <>
-                    {t('enrollment.wizard.signature.button', 'Sign Agreement')}
-                    <ArrowRight className="h-4 w-4 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
-                  </>
+                  t('enrollment.wizard.compact.signature.button', 'Sign the agreement')
                 )}
-              </Button>
+              </button>
             </div>
-          </div>
+          </section>
         );
 
       case 'profile':
         return (
-          <div className="space-y-4">
-            <Alert className="border-primary/20 bg-primary/5">
-              <User className="h-4 w-4 text-primary" />
-              <AlertDescription className="text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.profile.info', 'Please complete your profile to continue with enrollment.')}
-              </AlertDescription>
-            </Alert>
+          <section className={ui.card}>
+            <h2 className={ui.title}>{t('enrollment.wizard.compact.profile.title', 'Your details')}</h2>
 
-            {/* Profile Form - Email First (Full Width) */}
-            <div className="space-y-4">
-              {/* Email Field - Full Width at Top */}
-              <div className="space-y-2">
-                <Label htmlFor="email" suppressHydrationWarning>
+            {/* Returning clients log in instead; the enrollment then continues in their portal. */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl bg-[#f1ebf8] px-3 py-2 text-sm">
+              <span>
+                <b className="font-semibold">{t('enrollment.wizard.profile.haveAccount', 'Already have an account?')}</b>{' '}
+                {t('enrollment.wizard.compact.profile.loginStrip', 'Log in and the enrollment will continue in your portal.')}
+              </span>
+              <button
+                type="button"
+                onClick={goToLogin}
+                className="rounded-[10px] border border-[#d9cbee] bg-white px-3.5 py-1.5 text-sm font-semibold text-[#5b3a8e] hover:bg-[#faf7fd]"
+              >
+                {t('enrollment.wizard.compact.profile.loginButton', 'Log in')}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {/* Email first, full width */}
+              <div className={`${ui.field} sm:col-span-2`}>
+                <Label htmlFor="email" className={ui.label}>
                   {t('enrollment.wizard.profile.email', 'Email')} *
                 </Label>
                 <Input
@@ -1706,682 +1885,404 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
                     }
                   }}
                   required
-                  className={emailError ? 'border-destructive' : ''}
+                  className={`${ui.input} ${emailError ? ui.inputErr : ''}`}
                 />
                 {emailError && (
-                  <div className="text-xs text-destructive mt-1.5">
+                  <div className={ui.err}>
                     {emailError.includes('login') || emailError.includes('התחבר') ? (
-                      <div className="flex items-center gap-1 flex-wrap">
+                      <div className="flex flex-wrap items-center gap-1">
                         <span>{emailError.split('.')[0]}.</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            // Store enrollment info for return after login
-                            sessionStorage.setItem('enrollment_return_id', enrollmentId);
-                            sessionStorage.setItem('enrollment_return_token', enrollmentToken || '');
-                            window.location.href = '/login';
-                          }}
-                          className="underline font-medium hover:text-destructive/80"
-                        >
+                        <button type="button" onClick={goToLogin} className="underline hover:opacity-80">
                           {t('enrollment.wizard.profile.email.loginLink', 'Click here to login')}
                         </button>
                       </div>
                     ) : (
-                      <p>{emailError}</p>
+                      <p className="m-0">{emailError}</p>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Name Fields - Side by Side */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="first_name" suppressHydrationWarning>
-                    {t('enrollment.wizard.profile.first_name', 'First Name')} *
-                  </Label>
-                  <Input
-                    id="first_name"
-                    type="text"
-                    value={profileData.first_name}
-                    onChange={(e) => {
-                      setProfileData({ ...profileData, first_name: e.target.value });
-                      if (firstNameError) setFirstNameError(null);
-                    }}
-                    disabled={!emailValidated}
-                    required
-                    className={firstNameError ? 'border-destructive' : ''}
-                  />
-                  {firstNameError && (
-                    <p className="text-xs text-destructive mt-1.5">
-                      {firstNameError}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="last_name" suppressHydrationWarning>
-                    {t('enrollment.wizard.profile.last_name', 'Last Name')} *
-                  </Label>
-                  <Input
-                    id="last_name"
-                    type="text"
-                    value={profileData.last_name}
-                    onChange={(e) => {
-                      setProfileData({ ...profileData, last_name: e.target.value });
-                      if (lastNameError) setLastNameError(null);
-                    }}
-                    disabled={!emailValidated}
-                    required
-                    className={lastNameError ? 'border-destructive' : ''}
-                  />
-                  {lastNameError && (
-                    <p className="text-xs text-destructive mt-1.5">
-                      {lastNameError}
-                    </p>
-                  )}
-                </div>
+              <div className={ui.field}>
+                <Label htmlFor="first_name" className={ui.label}>
+                  {t('enrollment.wizard.profile.first_name', 'First Name')} *
+                </Label>
+                <Input
+                  id="first_name"
+                  type="text"
+                  value={profileData.first_name}
+                  onChange={(e) => {
+                    setProfileData({ ...profileData, first_name: e.target.value });
+                    if (firstNameError) setFirstNameError(null);
+                  }}
+                  disabled={!emailValidated}
+                  required
+                  className={`${ui.input} ${firstNameError ? ui.inputErr : ''}`}
+                />
+                {firstNameError && <p className={`m-0 ${ui.err}`}>{firstNameError}</p>}
               </div>
 
-              {/* Phone and Address - Side by Side */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone" suppressHydrationWarning>
-                    {t('enrollment.wizard.profile.phone', 'Phone')} *
-                  </Label>
-                  <PhoneInput
-                    international
-                    defaultCountry="US"
-                    value={profileData.phone}
-                    onChange={(value) => {
-                      // Limit to 17 characters (max for international phone numbers)
-                      const maxLength = 17;
-                      if (value && value.length > maxLength) {
-                        setPhoneError(`Phone number is too long (max ${maxLength} characters)`);
-                        return;
-                      }
+              <div className={ui.field}>
+                <Label htmlFor="last_name" className={ui.label}>
+                  {t('enrollment.wizard.profile.last_name', 'Last Name')} *
+                </Label>
+                <Input
+                  id="last_name"
+                  type="text"
+                  value={profileData.last_name}
+                  onChange={(e) => {
+                    setProfileData({ ...profileData, last_name: e.target.value });
+                    if (lastNameError) setLastNameError(null);
+                  }}
+                  disabled={!emailValidated}
+                  required
+                  className={`${ui.input} ${lastNameError ? ui.inputErr : ''}`}
+                />
+                {lastNameError && <p className={`m-0 ${ui.err}`}>{lastNameError}</p>}
+              </div>
 
-                      setProfileData({ ...profileData, phone: value || '' });
+              <div className={ui.field}>
+                <Label htmlFor="phone" className={ui.label}>
+                  {t('enrollment.wizard.profile.phone', 'Phone')} *
+                </Label>
+                <PhoneInput
+                  id="phone"
+                  international
+                  defaultCountry="US"
+                  value={profileData.phone}
+                  onChange={(value) => {
+                    // Limit to 17 characters (max for international phone numbers)
+                    const maxLength = 17;
+                    if (value && value.length > maxLength) {
+                      setPhoneError(`Phone number is too long (max ${maxLength} characters)`);
+                      return;
+                    }
 
-                      // Real-time validation
-                      if (value && value.length > 5) {
-                        if (!isValidPhoneNumber(value)) {
-                          setPhoneError(t('enrollment.wizard.profile.phone.invalid.simple', 'Please enter a valid phone number'));
-                        } else {
-                          setPhoneError(null);
-                        }
-                      } else if (!value) {
+                    setProfileData({ ...profileData, phone: value || '' });
+
+                    // Real-time validation
+                    if (value && value.length > 5) {
+                      if (!isValidPhoneNumber(value)) {
+                        setPhoneError(t('enrollment.wizard.profile.phone.invalid.simple', 'Please enter a valid phone number'));
+                      } else {
                         setPhoneError(null);
                       }
-                    }}
-                    disabled={!emailValidated}
-                    placeholder="+1 234 567 8900"
-                    className="phone-input-wizard"
-                    smartCaret={true}
-                    numberInputProps={{
-                      maxLength: 17
-                    }}
-                  />
+                    } else if (!value) {
+                      setPhoneError(null);
+                    }
+                  }}
+                  disabled={!emailValidated}
+                  placeholder="+1 234 567 8900"
+                  className={`phone-input-wizard ${phoneError ? 'phone-input-wizard-error' : ''}`}
+                  smartCaret={true}
+                  numberInputProps={{
+                    maxLength: 17
+                  }}
+                />
                 <style jsx global>{`
-                  .phone-input-wizard {
-                    width: 100%;
-                    padding: 0.625rem 0.75rem;
-                    border: 1px solid hsl(var(--border));
-                    border-radius: calc(var(--radius) - 2px);
-                    font-size: var(--font-size-sm);
-                    font-family: var(--font-family-primary);
-                    background-color: hsl(var(--background));
-                    color: hsl(var(--text-body));
-                    transition: all 0.2s ease;
-                  }
-                  .phone-input-wizard .PhoneInputInput {
-                    padding: 0;
-                    border: none;
-                    outline: none;
-                    font-size: var(--font-size-sm);
-                    font-family: var(--font-family-primary);
-                    background-color: transparent;
-                    color: hsl(var(--text-body));
-                  }
-                  .phone-input-wizard .PhoneInputInput:focus {
-                    outline: none;
-                  }
                   .phone-input-wizard {
                     display: flex;
                     align-items: center;
+                    width: 100%;
+                    min-width: 0;
+                    height: 42px;
+                    padding: 0 12px;
+                    border: 1px solid #e9e3f1;
+                    border-radius: 10px;
+                    font-size: 14.5px;
+                    font-family: var(--font-family-primary);
+                    background-color: #fff;
+                    color: #221a2e;
+                    direction: ltr;
+                    transition: border-color 0.2s ease;
+                  }
+                  .phone-input-wizard.phone-input-wizard-error {
+                    border-color: #d0453a;
+                    background-color: #fff6f5;
+                  }
+                  .phone-input-wizard .PhoneInputInput {
+                    min-width: 0;
+                    padding: 0;
+                    border: none;
+                    outline: none;
+                    font-size: 14.5px;
+                    font-family: var(--font-family-primary);
+                    background-color: transparent;
+                    color: #221a2e;
+                  }
+                  .phone-input-wizard .PhoneInputInput:focus {
+                    outline: none;
                   }
                   .phone-input-wizard .PhoneInputCountry {
                     padding-right: 0.5rem;
                   }
                 `}</style>
-                {phoneError && (
-                  <p className="text-xs text-destructive mt-1.5">
-                    {phoneError}
-                  </p>
-                )}
-                </div>
+                {phoneError && <p className={`m-0 ${ui.err}`}>{phoneError}</p>}
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="address" suppressHydrationWarning>
-                    {t('enrollment.wizard.profile.address', 'Address')} *
-                  </Label>
-                  <Input
-                    ref={addressInputRef}
-                    id="address"
-                    type="text"
-                    value={profileData.address}
-                    onChange={(e) => {
-                      setProfileData({ ...profileData, address: e.target.value });
-                      if (addressError) setAddressError(null);
-                    }}
-                    disabled={!emailValidated}
-                    placeholder={t('enrollment.wizard.profile.address.placeholder', 'Start typing your address...')}
-                    dir="ltr"
-                    className={`text-left [direction:ltr] [unicode-bidi:bidi-override] ${addressError ? 'border-destructive' : ''}`}
-                    style={{ direction: 'ltr', textAlign: 'left' }}
-                    required
-                  />
-                  {addressError && (
-                    <p className="text-xs text-destructive mt-1.5">
-                      {addressError}
-                    </p>
-                  )}
-                  {googleMapsError && !addressError && (
-                    <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
-                      <span>⚠️</span>
-                      <span>{googleMapsError}</span>
-                    </p>
-                  )}
-                  {!googleMapsLoaded && !googleMapsError && !addressError && (
-                    <p className="text-xs text-muted-foreground mt-1.5" suppressHydrationWarning>
-                      {t('enrollment.wizard.profile.address.loading', 'Loading address autocomplete...')}
-                    </p>
-                  )}
-                  {googleMapsLoaded && !addressError && (
-                    <p className="text-xs text-green-600 mt-1.5" suppressHydrationWarning>
-                      ✓ {t('enrollment.wizard.profile.address.ready', 'Address autocomplete ready - start typing to see suggestions')}
-                    </p>
-                  )}
-                </div>
+              <div className={ui.field}>
+                <Label htmlFor="address" className={ui.label}>
+                  {t('enrollment.wizard.profile.address', 'Address')} *
+                </Label>
+                <Input
+                  ref={addressInputRef}
+                  id="address"
+                  type="text"
+                  value={profileData.address}
+                  onChange={(e) => {
+                    setProfileData({ ...profileData, address: e.target.value });
+                    if (addressError) setAddressError(null);
+                  }}
+                  disabled={!emailValidated}
+                  placeholder={t('enrollment.wizard.profile.address.placeholder', 'Start typing your address...')}
+                  dir="ltr"
+                  className={`${ui.input} text-left [direction:ltr] [unicode-bidi:bidi-override] ${addressError ? ui.inputErr : ''}`}
+                  style={{ direction: 'ltr', textAlign: 'left' }}
+                  required
+                />
+                {addressError && <p className={`m-0 ${ui.err}`}>{addressError}</p>}
+                {googleMapsError && !addressError && (
+                  <p className="m-0 text-[12.5px] text-amber-700">{googleMapsError}</p>
+                )}
               </div>
             </div>
 
-            <div className="flex gap-3">
-              {getPreviousStep() && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleBack}
-                  disabled={processing}
-                  className="flex-1"
-                  suppressHydrationWarning
-                >
-                  <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
-                  {t('enrollment.wizard.back', 'Back')}
-                </Button>
-              )}
-              <Button
-                size="lg"
-                className="flex-1"
-                onClick={handleSaveProfile}
-                disabled={processing || emailExistsDetected}
-                suppressHydrationWarning
-              >
+            <div className={ui.actions}>
+              <span className={ui.fine}>{t('enrollment.wizard.compact.profile.allRequired', 'All fields are required')}</span>
+              <button type="button" className={ui.primary} onClick={handleSaveProfile} disabled={processing || emailExistsDetected}>
                 {processing ? (
                   <>
-                    <Loader2 className="h-4 w-4 ltr:mr-2 rtl:ml-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     {t('enrollment.wizard.profile.saving', 'Saving...')}
                   </>
                 ) : (
-                  <>
-                    {t('enrollment.wizard.profile.save', 'Save Profile')}
-                    <ArrowRight className="h-4 w-4 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
-                  </>
+                  t('enrollment.wizard.compact.continue', 'Continue')
                 )}
-              </Button>
+              </button>
             </div>
-          </div>
+          </section>
         );
 
       case 'payment': {
         // Check if this is a multi-plan enrollment
         const alternativePlanIds = enrollment?.alternative_payment_plan_ids || [];
         const hasMultiplePlans = alternativePlanIds.length > 1;
+        const selectedPlan = availablePlans.find((p) => p.id === selectedPlanId);
+        // Payments that start on a later date: what is charged today isn't
+        // known here, so the "Paying today" line is left out.
+        const startsLater = !!enrollment?.payment_start_date && new Date(enrollment.payment_start_date) > new Date();
+        const selectedToday = selectedPlan && !startsLater ? describePlan(selectedPlan).today : null;
 
         return (
-          <div className="space-y-6">
-            <Alert className="border-primary/20 bg-primary/5">
-              <CreditCard className="h-4 w-4 text-primary" />
-              <AlertDescription className="text-foreground" suppressHydrationWarning>
-                {hasMultiplePlans
-                  ? t('enrollment.wizard.payment.selectPlan', 'Select your preferred payment plan to continue.')
-                  : t('enrollment.wizard.payment.info', 'Complete payment to activate your enrollment.')
-                }
-              </AlertDescription>
-            </Alert>
+          <section className={ui.card}>
+            <h2 className={ui.title}>{t('enrollment.wizard.compact.payment.title', 'How would you like to pay?')}</h2>
 
-            {/* Multi-Plan Selection UI */}
+            {/* Multi-plan selection: one row per plan */}
             {hasMultiplePlans && (
-              <div className="space-y-4">
-                {loadingPlans ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : availablePlans.length === 0 ? (
-                  <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      No payment plans available. Check console for debugging information.
-                    </p>
-                    <p className="text-xs text-yellow-600 mt-2">
-                      Alternative plan IDs: {alternativePlanIds.join(', ') || 'none'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4">
-                    {availablePlans.map((plan) => {
-                      const isSelected = selectedPlanId === plan.id;
-
-                      // Calculate payment details
-                      const depositAmount = plan.deposit_type === 'fixed'
-                        ? plan.deposit_amount
-                        : (plan.deposit_percentage && enrollment?.total_amount)
-                          ? (enrollment.total_amount * plan.deposit_percentage / 100)
-                          : 0;
-
-                      const remainingAfterDeposit = enrollment?.total_amount
-                        ? enrollment.total_amount - (depositAmount || 0)
-                        : 0;
-
-                      const installmentAmount = plan.installment_count
-                        ? remainingAfterDeposit / plan.installment_count
-                        : enrollment?.total_amount || 0;
-
-                      const frequencyText = t(
-                        `enrollment.paymentPlan.frequency.${plan.installment_frequency}`,
-                        plan.installment_frequency || 'monthly'
-                      );
-
-                      return (
-                        <Card
-                          key={plan.id}
-                          className={`cursor-pointer transition-all ${
-                            isSelected
-                              ? 'border-primary border-2 shadow-lg'
-                              : 'border-border hover:border-primary/50 hover:shadow-md'
+              loadingPlans ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#5b3a8e]" />
+                </div>
+              ) : availablePlans.length === 0 ? (
+                <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3">
+                  <p className="m-0 text-sm text-yellow-800">
+                    No payment plans available. Check console for debugging information.
+                  </p>
+                  <p className="m-0 mt-1 text-xs text-yellow-600">
+                    Alternative plan IDs: {alternativePlanIds.join(', ') || 'none'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-2" role="radiogroup" aria-label={t('enrollment.wizard.compact.payment.title', 'How would you like to pay?')}>
+                  {availablePlans.map((plan) => {
+                    const isSelected = selectedPlanId === plan.id;
+                    const { desc, amount, per } = describePlan(plan);
+                    return (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => setSelectedPlanId(plan.id)}
+                        className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-start transition-colors ${
+                          isSelected
+                            ? 'border-[#5b3a8e] bg-[#fbf9fe] shadow-[inset_0_0_0_1px_#5b3a8e]'
+                            : 'border-[#e9e3f1] bg-white hover:border-[#c7b9de]'
+                        }`}
+                      >
+                        <span
+                          className={`h-[18px] w-[18px] flex-none rounded-full border-2 ${
+                            isSelected ? 'border-[#5b3a8e] bg-[#5b3a8e] shadow-[inset_0_0_0_3px_#fff]' : 'border-[#c7b9de]'
                           }`}
-                          onClick={() => setSelectedPlanId(plan.id)}
-                        >
-                          <CardHeader className="pb-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                <CardTitle className="text-lg">{plan.plan_name}</CardTitle>
-                                {plan.plan_description && (
-                                  <CardDescription className="mt-1">
-                                    {plan.plan_description}
-                                  </CardDescription>
-                                )}
-                              </div>
-                              <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                                isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
-                              }`}>
-                                {isSelected && <CheckCircle2 className="h-3 w-3 text-primary-foreground" />}
-                              </div>
-                            </div>
-                          </CardHeader>
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-bold">{plan.plan_name}</span>
+                          {desc && <span className="block text-[13px] text-[#73698a]">{desc}</span>}
+                        </span>
+                        {amount && (
+                          <span className="ms-auto whitespace-nowrap text-end text-[15px] font-semibold">
+                            {amount}
+                            {per && <small className="block text-xs font-normal text-[#73698a]">{per}</small>}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            )}
 
-                          <CardContent className="space-y-3">
-                            {/* ONE-TIME PAYMENT */}
-                            {plan.plan_type === 'one_time' && (
-                              <div className="py-4 text-center">
-                                <div className="text-sm text-muted-foreground mb-2" suppressHydrationWarning>
-                                  {t('enrollment.wizard.payment.oneTimePayment', 'Single Payment')}
-                                </div>
-                                <div className="text-2xl font-bold text-primary" dir="ltr">
-                                  {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* DEPOSIT + INSTALLMENTS PLAN */}
-                            {plan.plan_type === 'deposit' && (
-                              <>
-                                {/* Deposit Details */}
-                                {depositAmount && depositAmount > 0 && (
-                                  <div className="flex justify-between items-center py-2 border-b">
-                                    <span className="text-sm text-muted-foreground" suppressHydrationWarning>
-                                      {t('enrollment.wizard.payment.deposit', 'Initial Deposit')}
-                                    </span>
-                                    <span className="font-semibold" dir="ltr">
-                                      {enrollment?.currency} {depositAmount.toFixed(2)}
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Installments */}
-                                {plan.installment_count && plan.installment_count > 0 && (
-                                  <div className="flex justify-between items-center py-2 border-b">
-                                    <span className="text-sm text-muted-foreground" suppressHydrationWarning>
-                                      {t('enrollment.wizard.payment.installments', 'Installments')}
-                                    </span>
-                                    <span className="font-medium" dir="ltr">
-                                      {plan.installment_count} × {enrollment?.currency} {installmentAmount.toFixed(2)}
-                                      <span className="text-sm text-muted-foreground ltr:ml-1 rtl:mr-1">
-                                        {frequencyText}
-                                      </span>
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Total Amount */}
-                                <div className="flex justify-between items-center pt-2">
-                                  <span className="text-sm font-medium" suppressHydrationWarning>
-                                    {t('enrollment.wizard.payment.total', 'Total Amount')}
-                                  </span>
-                                  <span className="text-lg font-bold text-primary" dir="ltr">
-                                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-
-                            {/* RECURRING PLAN (No Deposit) */}
-                            {plan.plan_type === 'recurring' && (
-                              <>
-                                <div className="flex justify-between items-center py-2 border-b">
-                                  <span className="text-sm text-muted-foreground" suppressHydrationWarning>
-                                    {t('enrollment.wizard.payment.recurringPayments', 'Recurring Payments')}
-                                  </span>
-                                  <span className="font-medium" dir="ltr">
-                                    {plan.installment_count} × {enrollment?.currency} {installmentAmount.toFixed(2)}
-                                    <span className="text-sm text-muted-foreground ltr:ml-1 rtl:mr-1">
-                                      {frequencyText}
-                                    </span>
-                                  </span>
-                                </div>
-
-                                {/* Total Amount */}
-                                <div className="flex justify-between items-center pt-2">
-                                  <span className="text-sm font-medium" suppressHydrationWarning>
-                                    {t('enrollment.wizard.payment.total', 'Total Amount')}
-                                  </span>
-                                  <span className="text-lg font-bold text-primary" dir="ltr">
-                                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-
-                            {/* SUBSCRIPTION PLAN */}
-                            {plan.plan_type === 'subscription' && (
-                              <div className="py-4">
-                                <div className="flex justify-between items-center py-2 border-b">
-                                  <span className="text-sm text-muted-foreground" suppressHydrationWarning>
-                                    {t('enrollment.wizard.payment.subscriptionPrice', 'Subscription')}
-                                  </span>
-                                  <span className="font-semibold" dir="ltr">
-                                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
-                                    <span className="text-sm text-muted-foreground ltr:ml-1 rtl:mr-1">
-                                      / {t(`enrollment.paymentPlan.interval.${plan.subscription_frequency || 'monthly'}`, plan.subscription_frequency || 'monthly')}
-                                    </span>
-                                  </span>
-                                </div>
-
-                                {plan.subscription_trial_days && plan.subscription_trial_days > 0 && (
-                                  <div className="mt-3 text-sm text-emerald-600" suppressHydrationWarning>
-                                    ✓ {plan.subscription_trial_days} {t('enrollment.wizard.payment.trialDays', 'days free trial')}
-                                  </div>
-                                )}
-
-                                <div className="mt-2 text-xs text-muted-foreground" suppressHydrationWarning>
-                                  {t('enrollment.wizard.payment.subscriptionRenews', 'Automatically renews until cancelled')}
-                                </div>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                )}
+            {/* What is charged now (for the chosen plan) */}
+            {hasMultiplePlans && selectedToday !== null && (
+              <div className="flex justify-between gap-3 border-t border-dashed border-[#e9e3f1] px-0.5 pt-2 text-sm">
+                <span>{t('enrollment.wizard.compact.payment.today', 'Paying today')}</span>
+                <b>{selectedToday === 'none' ? t('enrollment.wizard.compact.payment.nothingToday', 'Nothing today') : money(selectedToday)}</b>
               </div>
             )}
 
-            {/* Single Plan Display (No Selection Needed) */}
+            {/* A single plan: the total, as before */}
             {!hasMultiplePlans && (
-              <div className="bg-gradient-to-br from-muted/50 to-muted/30 p-6 rounded-2xl border border-border/50 shadow-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground" suppressHydrationWarning>
-                    {t('enrollment.wizard.payment.total', 'Total Amount')}:
-                  </span>
-                  <span className="text-2xl font-bold text-foreground" dir="ltr">
-                    {enrollment?.currency} {enrollment?.total_amount.toFixed(2)}
-                  </span>
-                </div>
+              <div className="flex justify-between gap-3 border-t border-dashed border-[#e9e3f1] px-0.5 pt-2 text-sm">
+                <span>{t('enrollment.wizard.compact.payment.total', 'Total')}</span>
+                <b>{money(enrollment?.total_amount || 0)}</b>
               </div>
             )}
 
             {/* A scheduled membership price, so the buyer knows before paying */}
             {enrollment?.upcoming_price && (
-              <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" suppressHydrationWarning>
+              <div className="rounded-xl border border-[#f4dfab] bg-[#fff8e8] px-3 py-2 text-[13.5px] font-medium text-[#5c4208]">
                 {t('enrollment.pricing.upcoming', 'From {date} the price will be {price}')
                   .replace('{date}', new Date(`${enrollment.upcoming_price.effective_date}T12:00:00`).toLocaleDateString(isRTL ? 'he-IL' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' }))
-                  .replace('{price}', `${enrollment.currency} ${enrollment.upcoming_price.amount.toFixed(2)}`)}
+                  .replace('{price}', money(enrollment.upcoming_price.amount))}
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              {getPreviousStep() && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleBack}
-                  disabled={processing || selectingPlan}
-                  className="flex-1"
-                  suppressHydrationWarning
-                >
-                  <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
-                  {t('enrollment.wizard.back', 'Back')}
-                </Button>
-              )}
-
-              <Button
-                size="lg"
-                className="flex-1"
+            <div className={ui.actions}>
+              {renderBack(processing || selectingPlan)}
+              <button
+                type="button"
+                className={ui.primary}
                 onClick={hasMultiplePlans ? handlePlanSelection : handlePaymentStep}
                 disabled={selectingPlan || (hasMultiplePlans && !selectedPlanId)}
-                suppressHydrationWarning
               >
                 {selectingPlan ? (
                   <>
-                    <Loader2 className="h-4 w-4 ltr:mr-2 rtl:ml-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     {t('enrollment.wizard.payment.selecting', 'Selecting...')}
                   </>
                 ) : (
-                  <>
-                    {t('enrollment.wizard.payment.button', 'Proceed to Payment')}
-                    <ArrowRight className="h-4 w-4 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
-                  </>
+                  t('enrollment.wizard.compact.payment.continue', 'Continue to payment')
                 )}
-              </Button>
+              </button>
             </div>
-          </div>
+            <span className={ui.fine}>{t('enrollment.wizard.compact.payment.fine', 'Payment is secure. The card is saved for the next payments.')}</span>
+          </section>
         );
       }
 
       case 'password':
         return (
-          <div className="space-y-4">
-            <Alert className="border-primary/20 bg-primary/5">
-              <Lock className="h-4 w-4 text-primary" />
-              <AlertDescription className="text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.password.info', 'Create a secure password for your account. This will be used to log in to your dashboard.')}
-              </AlertDescription>
-            </Alert>
+          <section className={ui.card}>
+            <h2 className={ui.title}>{t('enrollment.wizard.compact.password.title', 'Create a portal password')}</h2>
+            <p className={ui.sub}>
+              {t('enrollment.wizard.compact.password.sub', 'You will use it to log in to the portal and find "{product}" there.').replace('{product}', enrollment?.product_name || '')}
+            </p>
 
-            {/* Password Form */}
-            <div className="space-y-4 max-w-md mx-auto">
-              <div className="space-y-2">
-                <Label htmlFor="password" suppressHydrationWarning>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <div className={ui.field}>
+                <Label htmlFor="password" className={ui.label}>
                   {t('enrollment.wizard.password.label', 'Password')} *
                 </Label>
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="new-password"
                   value={wizardData.password}
                   onChange={(e) => setWizardData(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder={t('enrollment.wizard.password.placeholder', 'Enter a secure password (min. 8 characters)')}
                   required
                   minLength={8}
-                  className="text-base"
+                  className={ui.input}
                 />
-                <p className="text-xs text-muted-foreground" suppressHydrationWarning>
-                  {t('enrollment.wizard.password.min_length', 'Password must be at least 8 characters long')}
-                </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirm_password" suppressHydrationWarning>
+              <div className={ui.field}>
+                <Label htmlFor="confirm_password" className={ui.label}>
                   {t('enrollment.wizard.password.confirm', 'Confirm Password')} *
                 </Label>
                 <Input
                   id="confirm_password"
                   type="password"
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder={t('enrollment.wizard.password.confirm.placeholder', 'Re-enter your password')}
                   required
-                  className="text-base"
+                  className={`${ui.input} ${confirmPassword && wizardData.password !== confirmPassword ? ui.inputErr : ''}`}
                 />
                 {confirmPassword && wizardData.password !== confirmPassword && (
-                  <p className="text-xs text-destructive mt-1.5" suppressHydrationWarning>
-                    {t('enrollment.wizard.password.mismatch', 'Passwords do not match')}
-                  </p>
+                  <p className={`m-0 ${ui.err}`}>{t('enrollment.wizard.password.mismatch', 'Passwords do not match')}</p>
                 )}
               </div>
             </div>
 
-            {/* Password Requirements */}
-            <div className="bg-muted/30 rounded-xl p-4 space-y-2 max-w-md mx-auto">
-              <h4 className="text-sm font-semibold text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.password.requirements.title', 'Password requirements:')}
-              </h4>
-              <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                <li suppressHydrationWarning>
-                  {t('enrollment.wizard.password.requirements.min_chars', 'At least 8 characters long')}
-                </li>
-                <li suppressHydrationWarning>
-                  {t('enrollment.wizard.password.requirements.mix', 'Mix of letters and numbers recommended')}
-                </li>
-                <li suppressHydrationWarning>
-                  {t('enrollment.wizard.password.requirements.avoid', 'Avoid common words or patterns')}
-                </li>
-              </ul>
-            </div>
+            <span className="text-[12.5px] text-[#73698a]">
+              {t('enrollment.wizard.compact.password.hint', 'At least 8 characters. Mixing letters and numbers is recommended.')}
+            </span>
 
-            <div className="flex gap-3">
-              {getPreviousStep() && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleBack}
-                  disabled={processing}
-                  className="flex-1"
-                  suppressHydrationWarning
-                >
-                  <ArrowLeft className="h-4 w-4 ltr:mr-2 rtl:ml-2 rtl:rotate-180" />
-                  {t('enrollment.wizard.back', 'Back')}
-                </Button>
-              )}
-              <Button
-                size="lg"
-                className="flex-1"
+            <div className={ui.actions}>
+              {renderBack(processing)}
+              <button
+                type="button"
+                className={ui.primary}
                 onClick={handlePasswordSubmit}
                 disabled={processing || !wizardData.password || wizardData.password.length < 8 || wizardData.password !== confirmPassword}
-                suppressHydrationWarning
               >
                 {processing ? (
                   <>
-                    <Loader2 className="h-4 w-4 ltr:mr-2 rtl:ml-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     {t('enrollment.wizard.password.creating', 'Creating Account...')}
                   </>
                 ) : (
-                  <>
-                    {t('enrollment.wizard.password.button', 'Create Account')}
-                    <ArrowRight className="h-4 w-4 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
-                  </>
+                  t('enrollment.wizard.compact.password.button', 'Create account and finish')
                 )}
-              </Button>
+              </button>
             </div>
-          </div>
+          </section>
         );
 
       case 'complete':
-        const isAutoCompleting = false; // Disabled auto-complete
-
-        // Logged in: no Welcome screen, just a moment while it finishes.
+        // Logged in: no closing screen, just a moment while it finishes.
         if (skipWelcome) {
           return (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground" role="status">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span suppressHydrationWarning>{t('enrollment.wizard.complete.finalizing', 'Finalizing your enrollment...')}</span>
-            </div>
+            <section className={ui.card}>
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-[#73698a]" role="status">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>{t('enrollment.wizard.complete.finalizing', 'Finalizing your enrollment...')}</span>
+              </div>
+            </section>
           );
         }
 
         return (
-          <div className="space-y-6 text-center py-8">
-            {/* Success Animation */}
-            <div className="relative mx-auto w-24 h-24 sm:w-32 sm:h-32">
-              <div className="absolute inset-0 bg-emerald-100 rounded-full animate-ping opacity-75"></div>
-              <div className="relative bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full w-full h-full flex items-center justify-center shadow-2xl">
-                <CheckCircle2 className="h-12 w-12 sm:h-16 sm:w-16 text-white" strokeWidth={2.5} />
-              </div>
-            </div>
-
-            {/* Success Message */}
-            <div className="space-y-3">
-              <h2 className="text-2xl sm:text-3xl font-bold text-foreground" suppressHydrationWarning>
-                {t('enrollment.wizard.complete.congratulations', 'Congratulations!')}
-              </h2>
-              <p className="text-base sm:text-lg text-muted-foreground max-w-md mx-auto" suppressHydrationWarning>
-                {t('enrollment.wizard.complete.success', 'Your enrollment is complete! You can now access your content.')}
-              </p>
-            </div>
-
-            {/* Success Card */}
-            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6 space-y-4 max-w-md mx-auto shadow-lg">
-              <div className="flex items-center justify-center gap-2 text-emerald-700">
-                <CheckCircle2 className="h-5 w-5" />
-                <span className="font-semibold" suppressHydrationWarning>
-                  {t('enrollment.wizard.complete.allSteps', 'All steps completed')}
-                </span>
-              </div>
-              <p className="text-sm text-emerald-600/80" suppressHydrationWarning>
-                {processing
-                  ? t('enrollment.wizard.complete.finalizing', 'Finalizing your enrollment...')
-                  : t('enrollment.wizard.complete.clickBelow', 'Click below to access your dashboard and start your journey')
-                }
-              </p>
-            </div>
-
-            {/* Action Button */}
-            <Button
-              size="lg"
-              className="w-full max-w-md mx-auto bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg hover:shadow-xl transition-all duration-300"
-              onClick={handleComplete}
-              disabled={processing}
-              suppressHydrationWarning
-            >
+          <section className={`${ui.card} justify-items-center text-center`}>
+            <span className="grid h-[52px] w-[52px] place-items-center rounded-full bg-[#e6f4ec] text-[#1f7a4a]" aria-hidden="true">
+              <Check className="h-7 w-7" strokeWidth={3} />
+            </span>
+            <h2 className="m-0 text-lg font-semibold">{t('enrollment.wizard.compact.complete.title', 'You are enrolled')}</h2>
+            <p className="m-0 text-[13.5px] text-[#73698a]">
+              {t('enrollment.wizard.compact.complete.sub', '"{product}" is waiting for you in the portal.').replace('{product}', enrollment?.product_name || '')}
+            </p>
+            <button type="button" className={ui.primary} onClick={handleComplete} disabled={processing}>
               {processing ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
                 <>
-                  {t('enrollment.wizard.complete.button', 'Go to Dashboard')}
-                  <ArrowRight className="h-5 w-5 ltr:ml-2 rtl:mr-2 rtl:rotate-180" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('enrollment.wizard.complete.finalizing', 'Finalizing your enrollment...')}
                 </>
+              ) : (
+                t('enrollment.wizard.compact.complete.button', 'Go to the portal')
               )}
-            </Button>
-          </div>
+            </button>
+          </section>
         );
     }
   };
@@ -2398,35 +2299,68 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, skipWelcome]);
 
+  // The product's picture and whether it can be paid in installments, for the
+  // summary row. Not when embedded: there the portal card names the product.
+  const [summaryExtra, setSummaryExtra] = useState<{ imageUrl: string | null; installments: boolean }>({ imageUrl: null, installments: false });
+  useEffect(() => {
+    if (embedded || !enrollmentToken) return;
+    let cancelled = false;
+    fetch(`/api/enrollments/token/${enrollmentToken}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setSummaryExtra({
+          imageUrl: typeof data.product_image_url === 'string' && data.product_image_url ? data.product_image_url : null,
+          installments: data.payment_plan_data?.type === 'deposit_then_plan',
+        });
+      })
+      .catch(() => {
+        // The summary just shows the colored tile.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [embedded, enrollmentToken]);
+
+  // The school's name and logo for the top bar (not when embedded).
+  const [org, setOrg] = useState<{ name: string; logoUrl: string | null } | null>(null);
+  useEffect(() => {
+    if (embedded) return;
+    fetch('/api/public/tenant')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data?.tenant && setOrg({ name: data.tenant.name ?? '', logoUrl: data.tenant.logo_url ?? null }))
+      .catch(() => undefined);
+  }, [embedded]);
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background" dir={direction}>
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      <div
+        className={embedded ? 'flex items-center justify-center py-10' : 'min-h-screen flex items-center justify-center bg-[#f6f3fa]'}
+        dir={direction}
+      >
+        <Loader2 className="h-8 w-8 animate-spin text-[#5b3a8e]" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-muted/30 to-background" dir={direction}>
-        <Card className="max-w-md w-full border-destructive/20 shadow-xl">
-          <CardHeader className="bg-destructive/5">
-            <CardTitle className="text-destructive text-xl" suppressHydrationWarning>
-              {t('enrollment.wizard.error.title', 'Error')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground mb-6" suppressHydrationWarning>{error}</p>
-            <Button
-              variant="outline"
+      <div className={embedded ? 'py-2' : 'min-h-screen bg-[#f6f3fa] px-4 py-6 sm:py-10'} dir={direction}>
+        <section className="mx-auto grid w-full max-w-[640px] gap-3 rounded-2xl border border-[#e9e3f1] bg-white p-4 text-[#221a2e]">
+          <h1 className="m-0 text-lg font-semibold text-[#b3392f]">
+            {t('enrollment.wizard.error.title', 'Error')}
+          </h1>
+          <p className="m-0 text-sm text-[#73698a]">{error}</p>
+          <div>
+            <button
+              type="button"
               onClick={() => router.push('/dashboard')}
-              className="w-full"
-              suppressHydrationWarning
+              className="min-h-[44px] rounded-xl border border-[#d9cbee] bg-white px-5 text-[15px] font-semibold text-[#5b3a8e] hover:bg-[#faf7fd]"
             >
               {t('enrollment.wizard.error.dashboard', 'Go to Dashboard')}
-            </Button>
-          </CardContent>
-        </Card>
+            </button>
+          </div>
+        </section>
       </div>
     );
   }
@@ -2434,6 +2368,12 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
   if (!enrollment) {
     return null;
   }
+
+  const productTypeKeys = ['program', 'course', 'bundle', 'session_pack', 'lecture', 'workshop'];
+  const productTypeLabel = productTypeKeys.includes(enrollment.product_type)
+    ? t(`enrollment.wizard.compact.type.${enrollment.product_type}`, enrollment.product_type.replace('_', ' '))
+    : '';
+  const offersInstallments = summaryExtra.installments || (enrollment.alternative_payment_plan_ids || []).length > 1;
 
   return (
     <>
@@ -2469,111 +2409,88 @@ export default function EnrollmentWizard({ enrollmentId, token, embedded: embedd
         /* No page height inside the frame, so it can shrink to its content. */
         html.ips-embedded, html.ips-embedded body { min-height: 0 !important; height: auto !important; background: transparent; }
         html.ips-embedded body > div, html.ips-embedded main { min-height: 0 !important; }
-        /* Embedded in a portal page (directly, or framed): just the steps,
-           inside the page's own card, with the card's spacing. */
-        .wizard-embedded.wizard-root { min-height: 0; background: transparent; padding: 16px 20px 20px; }
-        /* Main action buttons: normal size, at the start, not full-width bars. */
-        .wizard-embedded .wizard-content button.w-full { width: auto; min-width: 200px; padding-inline: 24px; }
-        .wizard-embedded .wizard-content button.flex-1 { flex: 0 0 auto; min-width: 200px; padding-inline: 24px; }
+        /* Embedded in a portal page (directly, or framed): the step row and
+           the step itself, inside the page's own card, with its spacing. */
+        .wizard-embedded.wizard-root { min-height: 0; background: transparent; padding: 14px; }
         .wizard-embedded .wizard-inner { max-width: none; margin: 0; }
-        .wizard-embedded .wizard-card { box-shadow: none; background: transparent; backdrop-filter: none; border-radius: 0; border: 0; }
-        /* The page's card already says what this is: no second title, divider or help line. */
-        .wizard-embedded .wizard-hero, .wizard-embedded .wizard-help,
-        .wizard-embedded .wizard-step-header, .wizard-embedded .wizard-step-header-mobile { display: none !important; }
-        .wizard-embedded .wizard-content { padding: 0; }
-        .wizard-embedded .wizard-content > .space-y-6 > * + * { margin-top: 12px; }
+        /* The page's card already names the product: no summary, second title or help line. */
+        .wizard-embedded .wizard-summary, .wizard-embedded .wizard-help,
+        .wizard-embedded .wizard-step-title { display: none !important; }
+        .wizard-embedded .wizard-step-card { border: 0; border-radius: 0; padding: 0; background: transparent; }
+        .wizard-embedded .wizard-step-card > .wizard-step-title + p { margin-top: 0; }
       `}</style>
-      <div className={`wizard-root ${embedded ? 'wizard-embedded' : 'min-h-screen bg-gradient-to-br from-background via-muted/30 to-background py-4 sm:py-8 px-4'}`} dir={direction}>
-        <div className="wizard-inner max-w-3xl mx-auto">
-        {/* Modern Card with Gradient Header */}
-        <Card className="wizard-card shadow-2xl border-0 overflow-hidden backdrop-blur-sm bg-card/95">
-          {/* Gradient Header */}
-          <div className="wizard-hero relative bg-gradient-to-r from-primary via-primary/90 to-primary/80 text-primary-foreground px-4 sm:px-8 py-6 sm:py-8">
-            <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,transparent,black)]"></div>
-            <div className="relative">
-              <h1 className="text-2xl sm:text-3xl font-bold mb-2 text-white" suppressHydrationWarning>
-                {t('enrollment.wizard.header.title', 'Complete Your Enrollment')}
-              </h1>
-              <p className="text-white/90 text-sm sm:text-base" suppressHydrationWarning>
-                {enrollment.product_name}
-              </p>
+      {/* Slim top bar (approved mockup): the school and help. Not in the portal. */}
+      {!embedded && (
+        <header className="flex items-center justify-between gap-2.5 border-b border-[#e9e3f1] bg-white px-4 py-2.5 text-[#221a2e]" dir={direction}>
+          <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+            {org?.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={org.logoUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+            ) : (
+              <span className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-[#f0a66a] via-[#b85fa8] to-[#5b3a8e]" aria-hidden />
+            )}
+            <span className="truncate">{org?.name}</span>
+          </span>
+          <a href="/contact" className="text-[13px] text-[#73698a] no-underline hover:text-[#221a2e]">
+            {t('auth.login.help', 'Help')}
+          </a>
+        </header>
+      )}
+      <div className={`wizard-root ${embedded ? 'wizard-embedded' : 'min-h-[calc(100dvh-49px)] bg-[#f6f3fa] px-4 py-4 sm:py-8'}`} dir={direction}>
+        <div className="wizard-inner mx-auto grid w-full min-w-0 max-w-[640px] gap-3 text-[#221a2e]">
+          {/* What is being enrolled in */}
+          <div className="wizard-summary flex items-center gap-3 rounded-[14px] border border-[#e9e3f1] bg-white px-3 py-2.5">
+            {summaryExtra.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={summaryExtra.imageUrl} alt="" className="h-[46px] w-[46px] flex-none rounded-[10px] object-cover" />
+            ) : (
+              <span className="h-[46px] w-[46px] flex-none rounded-[10px] bg-gradient-to-br from-[#8d6cc7] to-[#5b3a8e]" aria-hidden="true" />
+            )}
+            <div className="min-w-0 flex-1">
+              <h1 className="m-0 truncate text-base font-semibold">{enrollment.product_name}</h1>
+              {productTypeLabel && <div className="text-[13px] text-[#73698a]">{productTypeLabel}</div>}
             </div>
-          </div>
-
-          <CardContent className="wizard-content p-4 sm:p-8">
-            {/* Wizard Step Indicator */}
-            <WizardStepIndicator
-              currentStep={currentStep}
-              completedSteps={getCompletedSteps()}
-              onStepClick={handleStepNavigation}
-              showSignature={enrollment.requires_signature}
-              showPayment={enrollment.payment_required}
-              // Logged-in (existing) users skip contact details and password:
-              // the bar shows only the steps they go through.
-              showProfile={!enrollment.user_id}
-              showPassword={!enrollment.user_id}
-              showComplete={!skipWelcome}
-              compact={embedded}
-            />
-
-            {/* Current Step Content */}
-            <div className="space-y-6">
-              {/* Step Header - Hidden on mobile, shown on desktop */}
-              <div className="wizard-step-header hidden sm:flex items-center gap-4 pb-4 border-b">
-                <div className="wizard-step-icon w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-sm">
-                  {getStepIcon(currentStep)}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-xl text-foreground" suppressHydrationWarning>
-                    {getStepTitle(currentStep)}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-0.5" suppressHydrationWarning>
-                    {getStepDescription(currentStep)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Mobile Step Header */}
-              <div className="wizard-step-header-mobile sm:hidden pb-4 border-b">
-                <h3 className="font-bold text-lg text-foreground mb-1" suppressHydrationWarning>
-                  {getStepTitle(currentStep)}
-                </h3>
-                <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                  {getStepDescription(currentStep)}
-                </p>
-              </div>
-
-              {/* Step Content (embedded: the payment opens here, in place) */}
-              <div className="pt-2">
-                {showPaymentInline ? (
-                  <EnrollmentPayment
-                    enrollmentId={enrollmentId}
-                    token={enrollmentToken}
-                    embedded
-                    onBack={() => setShowPaymentInline(false)}
-                    onDone={async () => {
-                      // Same as coming back from the pay page: the database
-                      // decides the next step.
-                      setShowPaymentInline(false);
-                      setIsReturningFromPayment(true);
-                      await fetchEnrollmentData(0);
-                      setInitialStepDetermined(true);
-                    }}
-                  />
-                ) : (
-                  renderStepContent()
+            {enrollment.payment_required && enrollment.total_amount > 0 && (
+              <div className="flex-none whitespace-nowrap text-end text-base font-bold">
+                {money(enrollment.total_amount)}
+                {offersInstallments && (
+                  <small className="block text-xs font-normal text-[#73698a]">
+                    {t('enrollment.wizard.compact.installmentsAvailable', 'Installments available')}
+                  </small>
                 )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            )}
+          </div>
 
-        {/* Footer Help Text */}
-        <p className="wizard-help text-center text-xs sm:text-sm text-muted-foreground mt-6 px-4" suppressHydrationWarning>
-          {t('enrollment.wizard.help.text', 'Need help? Contact support for assistance with your enrollment.')}
-        </p>
+          {renderStepBar()}
+
+          {/* Embedded: the payment opens here, in place */}
+          {showPaymentInline ? (
+            <div className="min-w-0">
+              <EnrollmentPayment
+                enrollmentId={enrollmentId}
+                token={enrollmentToken}
+                embedded
+                onBack={() => setShowPaymentInline(false)}
+                onDone={async () => {
+                  // Same as coming back from the pay page: the database
+                  // decides the next step.
+                  setShowPaymentInline(false);
+                  setIsReturningFromPayment(true);
+                  await fetchEnrollmentData(0);
+                  setInitialStepDetermined(true);
+                }}
+              />
+            </div>
+          ) : (
+            renderStepContent()
+          )}
+
+          <p className="wizard-help m-0 text-center text-[12.5px] text-[#73698a]">
+            {t('enrollment.wizard.compact.help', 'Need help? Contact us and we will be glad to help.')}
+          </p>
+        </div>
       </div>
-    </div>
 
       {/* DocuSign signing, in a dialog on this page */}
       <Dialog

@@ -338,6 +338,19 @@ export default function TriggersPage() {
           </Button>
         </div>
 
+        {/* Email triggers are moving into Automatic reminders. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
+          <p className="m-0 max-w-3xl" suppressHydrationWarning>
+            {t(
+              'emails.triggers.movingNote',
+              "Email triggers are moving into Automatic reminders, where every message follows the client's update settings. Turning on 'Before a live meeting' or 'Recording is ready' there switches the matching trigger here off, so nobody gets two.",
+            )}
+          </p>
+          <Link href="/admin/reminders" className="inline-flex min-h-[44px] items-center rounded-lg bg-primary px-4 font-medium text-primary-foreground hover:bg-primary/90">
+            {t('emails.triggers.openReminders', 'Open Automatic reminders')}
+          </Link>
+        </div>
+
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>

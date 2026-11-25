@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
-import { nextChargeable, recordSchedulePaid, refreshEnrollmentTotals, type ScheduleRow } from '@/lib/payments/dueSchedules';
+import { nextChargeable, recordInvoicePaid, recordSchedulePaid, refreshEnrollmentTotals, type ScheduleRow } from '@/lib/payments/dueSchedules';
 import { loadIntegration } from '@/lib/integrations/store';
 
 /**
@@ -109,6 +109,33 @@ export async function POST(
     }
     if (nextChargeable((dueCheck ?? []) as ScheduleRow[])?.id !== schedule.id) {
       return NextResponse.json({ error: "This payment isn't due yet." }, { status: 400 });
+    }
+
+    // An invoice from an earlier automatic charge (e.g. a declined card waiting
+    // for its retry): if it was paid after all, record it; otherwise close it,
+    // so it can't also be charged after the client pays here.
+    if (schedule.stripe_invoice_id) {
+      const earlier = await stripe.invoices.retrieve(schedule.stripe_invoice_id).catch(() => null);
+      if (earlier?.status === 'paid') {
+        await recordInvoicePaid(supabase, earlier, 'pay-page-check');
+        return NextResponse.json({ error: 'This payment has already been completed' }, { status: 400 });
+      }
+      if (earlier?.status === 'open') {
+        try {
+          await stripe.invoices.voidInvoice(earlier.id);
+        } catch {
+          const again = await stripe.invoices.retrieve(earlier.id).catch(() => null);
+          if (again?.status === 'paid') {
+            await recordInvoicePaid(supabase, again, 'pay-page-check');
+            return NextResponse.json({ error: 'This payment has already been completed' }, { status: 400 });
+          }
+          return NextResponse.json({ error: 'This payment is being charged right now. Try again in a few minutes.' }, { status: 409 });
+        }
+      }
+      if (earlier) {
+        // Closed (or never collected): the schedule is free for this payment.
+        await supabase.from('payment_schedules').update({ stripe_invoice_id: null }).eq('id', schedule.id);
+      }
     }
 
     // Check if there's an existing incomplete payment intent for this schedule
